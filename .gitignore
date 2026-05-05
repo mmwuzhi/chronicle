@@ -1,0 +1,14 @@
+# env
+.env
+.env.local
+
+# Go
+api/tmp/
+api/vendor/
+
+# Node
+web/node_modules/
+web/dist/
+
+# OS
+.DS_Store
