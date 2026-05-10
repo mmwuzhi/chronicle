@@ -64,7 +64,7 @@ func toBody(e db.LogEntry) LogEntryBody {
 
 // --- list ---
 
-type ListInput struct {
+type LogListInput struct {
 	TaskID string `query:"taskId" doc:"Filter by task (UUID)"`
 }
 
@@ -72,7 +72,7 @@ type ListOutput struct {
 	Body []LogEntryBody
 }
 
-func (h *handler) list(ctx context.Context, input *ListInput) (*ListOutput, error) {
+func (h *handler) list(ctx context.Context, input *LogListInput) (*ListOutput, error) {
 	uid, err := userID(ctx)
 	if err != nil {
 		return nil, err
@@ -97,7 +97,7 @@ func (h *handler) list(ctx context.Context, input *ListInput) (*ListOutput, erro
 
 // --- create ---
 
-type CreateInput struct {
+type LogCreateInput struct {
 	Body struct {
 		TaskID *string `json:"taskId,omitempty" format:"uuid"`
 		Body   string  `json:"body" minLength:"1"`
@@ -108,7 +108,7 @@ type CreateOutput struct {
 	Body LogEntryBody
 }
 
-func (h *handler) create(ctx context.Context, input *CreateInput) (*CreateOutput, error) {
+func (h *handler) create(ctx context.Context, input *LogCreateInput) (*CreateOutput, error) {
 	uid, err := userID(ctx)
 	if err != nil {
 		return nil, err
@@ -126,7 +126,7 @@ func (h *handler) create(ctx context.Context, input *CreateInput) (*CreateOutput
 
 // --- update ---
 
-type UpdateInput struct {
+type LogUpdateInput struct {
 	ID   string `path:"id" format:"uuid"`
 	Body struct {
 		Body string `json:"body" minLength:"1"`
@@ -137,7 +137,7 @@ type UpdateOutput struct {
 	Body LogEntryBody
 }
 
-func (h *handler) update(ctx context.Context, input *UpdateInput) (*UpdateOutput, error) {
+func (h *handler) update(ctx context.Context, input *LogUpdateInput) (*UpdateOutput, error) {
 	uid, err := userID(ctx)
 	if err != nil {
 		return nil, err
@@ -162,11 +162,11 @@ func (h *handler) update(ctx context.Context, input *UpdateInput) (*UpdateOutput
 
 // --- delete ---
 
-type DeleteInput struct {
+type LogDeleteInput struct {
 	ID string `path:"id" format:"uuid"`
 }
 
-func (h *handler) delete(ctx context.Context, input *DeleteInput) (*struct{}, error) {
+func (h *handler) delete(ctx context.Context, input *LogDeleteInput) (*struct{}, error) {
 	uid, err := userID(ctx)
 	if err != nil {
 		return nil, err

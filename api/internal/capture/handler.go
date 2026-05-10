@@ -74,7 +74,7 @@ func toBody(c db.Capture) CaptureBody {
 
 // --- list ---
 
-type ListInput struct {
+type CaptureListInput struct {
 	ClassifiedAs string `query:"classifiedAs" doc:"Filter by classification: task, idea, routine, log, unclassified"`
 }
 
@@ -82,7 +82,7 @@ type ListOutput struct {
 	Body []CaptureBody
 }
 
-func (h *handler) list(ctx context.Context, input *ListInput) (*ListOutput, error) {
+func (h *handler) list(ctx context.Context, input *CaptureListInput) (*ListOutput, error) {
 	uid, err := userID(ctx)
 	if err != nil {
 		return nil, err
@@ -103,7 +103,7 @@ func (h *handler) list(ctx context.Context, input *ListInput) (*ListOutput, erro
 
 // --- create ---
 
-type CreateInput struct {
+type CaptureCreateInput struct {
 	Body struct {
 		RawText      *string `json:"rawText,omitempty"`
 		MediaUrl     *string `json:"mediaUrl,omitempty"`
@@ -117,7 +117,7 @@ type CreateOutput struct {
 	Body CaptureBody
 }
 
-func (h *handler) create(ctx context.Context, input *CreateInput) (*CreateOutput, error) {
+func (h *handler) create(ctx context.Context, input *CaptureCreateInput) (*CreateOutput, error) {
 	uid, err := userID(ctx)
 	if err != nil {
 		return nil, err
@@ -142,7 +142,7 @@ func (h *handler) create(ctx context.Context, input *CreateInput) (*CreateOutput
 
 // --- update ---
 
-type UpdateInput struct {
+type CaptureUpdateInput struct {
 	ID   string `path:"id" format:"uuid"`
 	Body struct {
 		ClassifiedAs *string `json:"classifiedAs,omitempty" enum:"task,idea,routine,log,unclassified"`
@@ -154,7 +154,7 @@ type UpdateOutput struct {
 	Body CaptureBody
 }
 
-func (h *handler) update(ctx context.Context, input *UpdateInput) (*UpdateOutput, error) {
+func (h *handler) update(ctx context.Context, input *CaptureUpdateInput) (*UpdateOutput, error) {
 	uid, err := userID(ctx)
 	if err != nil {
 		return nil, err
@@ -180,11 +180,11 @@ func (h *handler) update(ctx context.Context, input *UpdateInput) (*UpdateOutput
 
 // --- delete ---
 
-type DeleteInput struct {
+type CaptureDeleteInput struct {
 	ID string `path:"id" format:"uuid"`
 }
 
-func (h *handler) delete(ctx context.Context, input *DeleteInput) (*struct{}, error) {
+func (h *handler) delete(ctx context.Context, input *CaptureDeleteInput) (*struct{}, error) {
 	uid, err := userID(ctx)
 	if err != nil {
 		return nil, err

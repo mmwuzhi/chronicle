@@ -62,7 +62,7 @@ func toBody(p db.Project) ProjectBody {
 
 // --- list ---
 
-type ListInput struct {
+type ProjectListInput struct {
 	Archived bool `query:"archived" default:"false" doc:"Include archived projects"`
 }
 
@@ -70,7 +70,7 @@ type ListOutput struct {
 	Body []ProjectBody
 }
 
-func (h *handler) list(ctx context.Context, input *ListInput) (*ListOutput, error) {
+func (h *handler) list(ctx context.Context, input *ProjectListInput) (*ListOutput, error) {
 	uid, err := userID(ctx)
 	if err != nil {
 		return nil, err
@@ -91,7 +91,7 @@ func (h *handler) list(ctx context.Context, input *ListInput) (*ListOutput, erro
 
 // --- create ---
 
-type CreateInput struct {
+type ProjectCreateInput struct {
 	Body struct {
 		Name  string `json:"name" minLength:"1" maxLength:"100"`
 		Color string `json:"color" default:"#6366f1"`
@@ -102,7 +102,7 @@ type CreateOutput struct {
 	Body ProjectBody
 }
 
-func (h *handler) create(ctx context.Context, input *CreateInput) (*CreateOutput, error) {
+func (h *handler) create(ctx context.Context, input *ProjectCreateInput) (*CreateOutput, error) {
 	uid, err := userID(ctx)
 	if err != nil {
 		return nil, err
@@ -120,7 +120,7 @@ func (h *handler) create(ctx context.Context, input *CreateInput) (*CreateOutput
 
 // --- update ---
 
-type UpdateInput struct {
+type ProjectUpdateInput struct {
 	ID   string `path:"id" format:"uuid"`
 	Body struct {
 		Name     *string `json:"name,omitempty" minLength:"1" maxLength:"100"`
@@ -133,7 +133,7 @@ type UpdateOutput struct {
 	Body ProjectBody
 }
 
-func (h *handler) update(ctx context.Context, input *UpdateInput) (*UpdateOutput, error) {
+func (h *handler) update(ctx context.Context, input *ProjectUpdateInput) (*UpdateOutput, error) {
 	uid, err := userID(ctx)
 	if err != nil {
 		return nil, err
@@ -160,11 +160,11 @@ func (h *handler) update(ctx context.Context, input *UpdateInput) (*UpdateOutput
 
 // --- delete ---
 
-type DeleteInput struct {
+type ProjectDeleteInput struct {
 	ID string `path:"id" format:"uuid"`
 }
 
-func (h *handler) delete(ctx context.Context, input *DeleteInput) (*struct{}, error) {
+func (h *handler) delete(ctx context.Context, input *ProjectDeleteInput) (*struct{}, error) {
 	uid, err := userID(ctx)
 	if err != nil {
 		return nil, err

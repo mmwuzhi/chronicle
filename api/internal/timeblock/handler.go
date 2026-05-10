@@ -74,7 +74,7 @@ func toBody(t db.TimeBlock) TimeBlockBody {
 
 // --- list ---
 
-type ListInput struct {
+type TimeBlockListInput struct {
 	TaskID string `query:"taskId" doc:"Filter by task (UUID)"`
 }
 
@@ -82,7 +82,7 @@ type ListOutput struct {
 	Body []TimeBlockBody
 }
 
-func (h *handler) list(ctx context.Context, input *ListInput) (*ListOutput, error) {
+func (h *handler) list(ctx context.Context, input *TimeBlockListInput) (*ListOutput, error) {
 	uid, err := userID(ctx)
 	if err != nil {
 		return nil, err
@@ -107,7 +107,7 @@ func (h *handler) list(ctx context.Context, input *ListInput) (*ListOutput, erro
 
 // --- create ---
 
-type CreateInput struct {
+type TimeBlockCreateInput struct {
 	Body struct {
 		TaskID      *string    `json:"taskId,omitempty" format:"uuid"`
 		StartedAt   *time.Time `json:"startedAt,omitempty"`
@@ -120,7 +120,7 @@ type CreateOutput struct {
 	Body TimeBlockBody
 }
 
-func (h *handler) create(ctx context.Context, input *CreateInput) (*CreateOutput, error) {
+func (h *handler) create(ctx context.Context, input *TimeBlockCreateInput) (*CreateOutput, error) {
 	uid, err := userID(ctx)
 	if err != nil {
 		return nil, err
@@ -144,7 +144,7 @@ func (h *handler) create(ctx context.Context, input *CreateInput) (*CreateOutput
 
 // --- update ---
 
-type UpdateInput struct {
+type TimeBlockUpdateInput struct {
 	ID   string `path:"id" format:"uuid"`
 	Body struct {
 		TaskID      *string    `json:"taskId,omitempty" format:"uuid"`
@@ -158,7 +158,7 @@ type UpdateOutput struct {
 	Body TimeBlockBody
 }
 
-func (h *handler) update(ctx context.Context, input *UpdateInput) (*UpdateOutput, error) {
+func (h *handler) update(ctx context.Context, input *TimeBlockUpdateInput) (*UpdateOutput, error) {
 	uid, err := userID(ctx)
 	if err != nil {
 		return nil, err
@@ -186,11 +186,11 @@ func (h *handler) update(ctx context.Context, input *UpdateInput) (*UpdateOutput
 
 // --- delete ---
 
-type DeleteInput struct {
+type TimeBlockDeleteInput struct {
 	ID string `path:"id" format:"uuid"`
 }
 
-func (h *handler) delete(ctx context.Context, input *DeleteInput) (*struct{}, error) {
+func (h *handler) delete(ctx context.Context, input *TimeBlockDeleteInput) (*struct{}, error) {
 	uid, err := userID(ctx)
 	if err != nil {
 		return nil, err

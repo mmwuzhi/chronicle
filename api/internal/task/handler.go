@@ -74,7 +74,7 @@ func toBody(t db.Task) TaskBody {
 
 // --- list ---
 
-type ListInput struct {
+type TaskListInput struct {
 	ProjectID string `query:"projectId" doc:"Filter by project (UUID)"`
 	Status    string `query:"status" doc:"Filter by status: todo, in_progress, done, archived"`
 	Type      string `query:"type" doc:"Filter by type: task, idea, routine, log"`
@@ -84,7 +84,7 @@ type ListOutput struct {
 	Body []TaskBody
 }
 
-func (h *handler) list(ctx context.Context, input *ListInput) (*ListOutput, error) {
+func (h *handler) list(ctx context.Context, input *TaskListInput) (*ListOutput, error) {
 	uid, err := userID(ctx)
 	if err != nil {
 		return nil, err
@@ -111,7 +111,7 @@ func (h *handler) list(ctx context.Context, input *ListInput) (*ListOutput, erro
 
 // --- get ---
 
-type GetInput struct {
+type TaskGetInput struct {
 	ID string `path:"id" format:"uuid"`
 }
 
@@ -119,7 +119,7 @@ type GetOutput struct {
 	Body TaskBody
 }
 
-func (h *handler) get(ctx context.Context, input *GetInput) (*GetOutput, error) {
+func (h *handler) get(ctx context.Context, input *TaskGetInput) (*GetOutput, error) {
 	uid, err := userID(ctx)
 	if err != nil {
 		return nil, err
@@ -140,7 +140,7 @@ func (h *handler) get(ctx context.Context, input *GetInput) (*GetOutput, error) 
 
 // --- create ---
 
-type CreateInput struct {
+type TaskCreateInput struct {
 	Body struct {
 		Title     string     `json:"title" minLength:"1" maxLength:"255"`
 		Type      string     `json:"type" enum:"task,idea,routine,log"`
@@ -153,7 +153,7 @@ type CreateOutput struct {
 	Body TaskBody
 }
 
-func (h *handler) create(ctx context.Context, input *CreateInput) (*CreateOutput, error) {
+func (h *handler) create(ctx context.Context, input *TaskCreateInput) (*CreateOutput, error) {
 	uid, err := userID(ctx)
 	if err != nil {
 		return nil, err
@@ -173,7 +173,7 @@ func (h *handler) create(ctx context.Context, input *CreateInput) (*CreateOutput
 
 // --- update ---
 
-type UpdateInput struct {
+type TaskUpdateInput struct {
 	ID   string `path:"id" format:"uuid"`
 	Body struct {
 		Title     *string    `json:"title,omitempty" minLength:"1" maxLength:"255"`
@@ -188,7 +188,7 @@ type UpdateOutput struct {
 	Body TaskBody
 }
 
-func (h *handler) update(ctx context.Context, input *UpdateInput) (*UpdateOutput, error) {
+func (h *handler) update(ctx context.Context, input *TaskUpdateInput) (*UpdateOutput, error) {
 	uid, err := userID(ctx)
 	if err != nil {
 		return nil, err
@@ -217,11 +217,11 @@ func (h *handler) update(ctx context.Context, input *UpdateInput) (*UpdateOutput
 
 // --- delete ---
 
-type DeleteInput struct {
+type TaskDeleteInput struct {
 	ID string `path:"id" format:"uuid"`
 }
 
-func (h *handler) delete(ctx context.Context, input *DeleteInput) (*struct{}, error) {
+func (h *handler) delete(ctx context.Context, input *TaskDeleteInput) (*struct{}, error) {
 	uid, err := userID(ctx)
 	if err != nil {
 		return nil, err
