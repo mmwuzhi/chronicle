@@ -61,7 +61,7 @@ docker compose up -d postgres redis  # just the data layer
 # Go backend
 cd api
 go run cmd/server/main.go         # run API
-go test ./...                     # all tests
+go test -p 1 ./...                # all tests (serial: packages share TEST_DATABASE_URL)
 go vet ./...                      # vet
 goose -dir db/migrations postgres $DATABASE_URL up      # apply migrations
 goose -dir db/migrations postgres $DATABASE_URL create <name> sql  # new migration

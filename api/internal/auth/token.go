@@ -56,6 +56,18 @@ func NewRefreshToken() (raw, hashed string, err error) {
 	return raw, hashed, nil
 }
 
+// ValidateToken returns a TokenValidator that parses an access token and
+// returns the user ID, suitable for use with middleware.RequireAuthHuma.
+func ValidateToken(secret string) func(raw string) (string, error) {
+	return func(raw string) (string, error) {
+		claims, err := ParseAccessToken(raw, secret)
+		if err != nil {
+			return "", err
+		}
+		return claims.UserID, nil
+	}
+}
+
 func HashRefreshToken(raw string) string {
 	h := sha256.Sum256([]byte(raw))
 	return hex.EncodeToString(h[:])

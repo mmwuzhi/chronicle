@@ -20,6 +20,8 @@ import (
 	"github.com/sikaoshenmi/chronicle/internal/auth"
 	"github.com/sikaoshenmi/chronicle/internal/config"
 	"github.com/sikaoshenmi/chronicle/internal/middleware"
+	"github.com/sikaoshenmi/chronicle/internal/project"
+	"github.com/sikaoshenmi/chronicle/internal/task"
 )
 
 func main() {
@@ -75,6 +77,10 @@ func main() {
 	api.UseMiddleware(auth.InjectHumaContext)
 
 	auth.Register(api, pool, cfg.JWTSecret)
+
+	authMW := middleware.RequireAuthHuma(auth.ValidateToken(cfg.JWTSecret))
+	project.Register(api, pool, authMW)
+	task.Register(api, pool, authMW)
 
 	_ = rdb
 
