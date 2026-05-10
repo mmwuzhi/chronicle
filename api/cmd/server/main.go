@@ -18,6 +18,7 @@ import (
 	"github.com/redis/go-redis/v9"
 
 	"github.com/sikaoshenmi/chronicle/internal/auth"
+	"github.com/sikaoshenmi/chronicle/internal/capture"
 	"github.com/sikaoshenmi/chronicle/internal/config"
 	"github.com/sikaoshenmi/chronicle/internal/logentry"
 	"github.com/sikaoshenmi/chronicle/internal/middleware"
@@ -85,6 +86,7 @@ func main() {
 	task.Register(api, pool, authMW)
 	logentry.Register(api, pool, authMW)
 	timeblock.Register(api, pool, authMW)
+	capture.Register(api, pool, authMW)
 
 	_ = rdb
 
