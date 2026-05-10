@@ -47,33 +47,38 @@ Soft delete only — `tasks` and `log_entries` have `deleted_at`. Never issue a 
 
 ## Common Commands
 
+Most things have a `make` shortcut — run `make help` from the repo root to see all targets.
+
 ```bash
 # First-time local setup
-docker compose up -d postgres redis
-cp .env.example .env              # fill in secrets
-cd api && goose -dir db/migrations postgres $DATABASE_URL up
-cd api && go run cmd/server/main.go
+make setup                        # copies .env.example → .env, starts postgres + redis, runs migrations
+# then edit .env to fill in real secrets (R2, JWT, etc.)
+make api                          # run API server
 
 # Daily dev
-docker compose up                 # full stack (api hot-reload via air, vite dev server)
-docker compose up -d postgres redis  # just the data layer
+make dev                          # full stack via docker compose watch
+make dev-data                     # just postgres + redis
+make down                         # stop all dev containers
+make api                          # API server only — auto-starts postgres + redis if needed
+make web                          # Vite dev server only (separate terminal)
 
-# Go backend
-cd api
-go run cmd/server/main.go         # run API
+# Codegen
+make sqlc                         # regenerate api/db/sqlc/ from db/queries/*.sql
+make orval                        # regenerate web/src/api/ from API's OpenAPI spec
+                                  # (API server must be running)
+
+# Go backend (run from api/)
 go test -p 1 ./...                # all tests (serial: packages share TEST_DATABASE_URL)
 go vet ./...                      # vet
-goose -dir db/migrations postgres $DATABASE_URL up      # apply migrations
-goose -dir db/migrations postgres $DATABASE_URL create <name> sql  # new migration
-sqlc generate                     # regenerate db/sqlc/ from db/queries/*.sql
 
-# Frontend
-cd web
-pnpm dev                          # Vite dev server (port 5173)
+# Migrations
+make migrate                      # apply pending migrations
+make migrate-new name=add_foo     # create a new migration file
+
+# Frontend (run from web/)
 pnpm build                        # production build
 pnpm typecheck                    # tsc --noEmit
 pnpm test                         # vitest
-pnpm orval                        # regenerate src/api/ from API's OpenAPI spec
 ```
 
 ## Conventions
@@ -84,6 +89,7 @@ pnpm orval                        # regenerate src/api/ from API's OpenAPI spec
 - **Soft delete only.** Set `deleted_at = now()`. Never run a hard DELETE on user data tables.
 - **Rate limiting runs before auth.** Per-IP for public routes, per-user for authenticated routes.
 - **Never edit generated files.** `api/db/sqlc/` and `web/src/api/` are codegen output. Run `sqlc generate` or `pnpm orval` instead.
+- **Prefix huma handler I/O types with the resource name.** huma uses a global schema registry — `CreateInput` in two packages collides. Use `ProjectCreateInput`, `TaskCreateInput`, etc.
 - **Run `/check` before every `git push`.** Steps in order:
 
   ```bash
@@ -92,7 +98,7 @@ pnpm orval                        # regenerate src/api/ from API's OpenAPI spec
   go fmt ./...                    # format — run first
   go vet ./...                    # vet — fix all issues
   staticcheck ./...               # linter
-  go test ./...                   # tests must pass
+  go test -p 1 ./...              # tests must pass (serial: packages share TEST_DATABASE_URL)
 
   # Frontend
   cd web
