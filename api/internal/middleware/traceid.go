@@ -41,4 +41,3 @@ func GetUserID(ctx context.Context) string {
 	}
 	return ""
 }
-
