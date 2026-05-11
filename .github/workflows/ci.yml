@@ -126,23 +126,65 @@ jobs:
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
 
-  # ── Frontend: placeholder (added when web/ is scaffolded) ───────────────────
-  # web-check:
-  #   name: Frontend typecheck & test
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     - uses: actions/checkout@v4
-  #     - uses: pnpm/action-setup@v4
-  #     - uses: actions/setup-node@v4
-  #       with:
-  #         node-version: "22"
-  #         cache: pnpm
-  #         cache-dependency-path: web/pnpm-lock.yaml
-  #     - run: pnpm install
-  #       working-directory: web
-  #     - run: pnpm typecheck
-  #       working-directory: web
-  #     - run: pnpm test --run
-  #       working-directory: web
-  #     - run: pnpm build
-  #       working-directory: web
+  # ── Frontend: lint + typecheck + build ──────────────────────────────────────
+  web-check:
+    name: Frontend lint & build
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+
+      - name: Install
+        working-directory: web
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        working-directory: web
+        run: pnpm lint
+
+      - name: Typecheck
+        working-directory: web
+        run: pnpm typecheck
+
+      - name: Build
+        working-directory: web
+        run: pnpm build
+
+      - uses: actions/upload-artifact@v4
+        if: github.ref == 'refs/heads/main'
+        with:
+          name: web-dist
+          path: web/dist
+          retention-days: 1
+
+  # ── Frontend: deploy to Cloudflare Pages ────────────────────────────────────
+  web-deploy:
+    name: Deploy frontend
+    needs: web-check
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+
+    environment: production
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: web-dist
+          path: web/dist
+
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy web/dist --project-name=chronicle-web --commit-dirty=true
