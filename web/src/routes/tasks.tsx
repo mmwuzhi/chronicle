@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import {
   useListTasks,
@@ -105,16 +105,21 @@ function Tasks() {
                 className="bg-white rounded-lg border border-gray-200 shadow-sm p-4 flex items-center gap-3"
               >
                 <button
-                  onClick={() => handleCycleStatus(t)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleCycleStatus(t);
+                  }}
                   className={`text-xs font-medium px-2 py-1 rounded-full whitespace-nowrap transition-colors hover:opacity-80 ${STATUS_COLORS[t.status] ?? "bg-gray-100 text-gray-600"}`}
                 >
                   {STATUS_LABELS[t.status] ?? t.status}
                 </button>
-                <span
-                  className={`flex-1 text-sm ${t.status === "done" ? "line-through text-gray-400" : ""}`}
+                <Link
+                  to="/tasks/$taskId"
+                  params={{ taskId: t.id }}
+                  className={`flex-1 text-sm hover:underline ${t.status === "done" ? "line-through text-gray-400" : ""}`}
                 >
                   {t.title}
-                </span>
+                </Link>
                 <button
                   onClick={() => del.mutate({ id: t.id })}
                   className="text-xs text-gray-400 hover:text-red-500 transition-colors"
