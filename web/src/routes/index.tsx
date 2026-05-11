@@ -1,8 +1,8 @@
-import { createFileRoute, Link } from '@tanstack/react-router'
+import { createFileRoute, Link } from "@tanstack/react-router";
 
-export const Route = createFileRoute('/')({
+export const Route = createFileRoute("/")({
   component: Index,
-})
+});
 
 function Index() {
   return (
@@ -17,12 +17,12 @@ function Index() {
           Sign in
         </Link>
         <Link
-          to="/projects"
+          to="/register"
           className="px-4 py-2 rounded-md border border-gray-300 text-sm hover:bg-gray-100 transition-colors"
         >
-          Projects
+          Create account
         </Link>
       </div>
     </div>
-  )
+  );
 }
