@@ -1,17 +1,17 @@
-import axios, { type AxiosRequestConfig } from 'axios'
+import axios, { type AxiosRequestConfig } from "axios";
 
 export const apiClient = axios.create({
-  baseURL: '/api',
+  baseURL: "/api",
   withCredentials: true,
-})
+});
 
 apiClient.interceptors.request.use((config) => {
-  const token = localStorage.getItem('access_token')
+  const token = localStorage.getItem("access_token");
   if (token) {
-    config.headers.Authorization = `Bearer ${token}`
+    config.headers.Authorization = `Bearer ${token}`;
   }
-  return config
-})
+  return config;
+});
 
 export const api = <T>(config: AxiosRequestConfig): Promise<T> =>
-  apiClient(config).then((res) => res.data)
+  apiClient(config).then((res) => res.data);
