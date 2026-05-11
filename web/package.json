@@ -12,6 +12,9 @@
     "orval": "orval --config orval.config.ts",
     "format": "prettier --write ."
   },
+  "pnpm": {
+    "onlyBuiltDependencies": ["esbuild"]
+  },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
     "@radix-ui/react-dialog": "^1.1.15",
