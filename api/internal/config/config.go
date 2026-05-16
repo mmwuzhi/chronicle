@@ -14,6 +14,7 @@ type Config struct {
 	R2AccountID  string `envconfig:"R2_ACCOUNT_ID"`
 	R2AccessKey  string `envconfig:"R2_ACCESS_KEY"`
 	R2SecretKey  string `envconfig:"R2_SECRET_KEY"`
+	FrontendURL  string `envconfig:"FRONTEND_URL"`
 	OpenAIKey    string `envconfig:"OPENAI_API_KEY"`
 	Port         string `envconfig:"PORT" default:"8080"`
 	Env          string `envconfig:"ENV" default:"development"`

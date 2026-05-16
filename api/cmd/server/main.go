@@ -61,8 +61,12 @@ func main() {
 
 	r := chi.NewRouter()
 	r.Use(chiMW.Recoverer)
+	allowedOrigins := []string{"http://localhost:5173"}
+	if cfg.FrontendURL != "" {
+		allowedOrigins = append(allowedOrigins, cfg.FrontendURL)
+	}
 	r.Use(cors.Handler(cors.Options{
-		AllowedOrigins:   []string{"http://localhost:5173"},
+		AllowedOrigins:   allowedOrigins,
 		AllowedMethods:   []string{"GET", "POST", "PATCH", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Authorization", "Content-Type"},
 		AllowCredentials: true,
