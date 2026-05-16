@@ -327,3 +327,26 @@ chronicle/
 - PWA / offline mode
 - Calendar sync (Google Calendar export)
 - Public profile page (`/u/:username`)
+
+---
+
+## Planned Features (deferred, not forgotten)
+
+### i18n — Chinese (zh) + Japanese (ja)
+
+**Decision**: use `react-i18next` (industry standard, not hand-rolled).
+**Deferred because**: page structure is still changing rapidly; extracting strings now means re-extracting them again after each new page.
+**Do it when**: page layout has stabilized (no new routes expected in the next sprint).
+
+Implementation plan:
+1. `pnpm add react-i18next i18next i18next-browser-languagedetector`
+2. Create `web/public/locales/zh/translation.json` and `web/public/locales/ja/translation.json`
+3. Init i18next in `web/src/main.tsx` with `LanguageDetector` (reads browser language, falls back to `zh`)
+4. Replace all UI string literals with `t('key')` across all route files
+5. Language switcher component in the nav bar (stores preference in localStorage)
+6. Add `i18next-parser` to CI to catch missing keys at build time
+
+### Settings / My Page
+
+**Account deletion**: `DELETE /users/me` endpoint — hard deletes the user row (cascade to all user data). Frontend: `/settings` route with confirmation dialog. Planned for next sprint.
+
