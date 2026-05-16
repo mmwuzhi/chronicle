@@ -19,6 +19,7 @@ import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
 import { Route as CapturesRouteImport } from './routes/captures'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as TasksTaskIdRouteImport } from './routes/tasks.$taskId'
+import { Route as AuthCallbackRouteImport } from './routes/auth.callback'
 
 const VerifyEmailRoute = VerifyEmailRouteImport.update({
   id: '/verify-email',
@@ -70,6 +71,11 @@ const TasksTaskIdRoute = TasksTaskIdRouteImport.update({
   path: '/$taskId',
   getParentRoute: () => TasksRoute,
 } as any)
+const AuthCallbackRoute = AuthCallbackRouteImport.update({
+  id: '/auth/callback',
+  path: '/auth/callback',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -81,6 +87,7 @@ export interface FileRoutesByFullPath {
   '/reset-password': typeof ResetPasswordRoute
   '/tasks': typeof TasksRouteWithChildren
   '/verify-email': typeof VerifyEmailRoute
+  '/auth/callback': typeof AuthCallbackRoute
   '/tasks/$taskId': typeof TasksTaskIdRoute
 }
 export interface FileRoutesByTo {
@@ -93,6 +100,7 @@ export interface FileRoutesByTo {
   '/reset-password': typeof ResetPasswordRoute
   '/tasks': typeof TasksRouteWithChildren
   '/verify-email': typeof VerifyEmailRoute
+  '/auth/callback': typeof AuthCallbackRoute
   '/tasks/$taskId': typeof TasksTaskIdRoute
 }
 export interface FileRoutesById {
@@ -106,6 +114,7 @@ export interface FileRoutesById {
   '/reset-password': typeof ResetPasswordRoute
   '/tasks': typeof TasksRouteWithChildren
   '/verify-email': typeof VerifyEmailRoute
+  '/auth/callback': typeof AuthCallbackRoute
   '/tasks/$taskId': typeof TasksTaskIdRoute
 }
 export interface FileRouteTypes {
@@ -120,6 +129,7 @@ export interface FileRouteTypes {
     | '/reset-password'
     | '/tasks'
     | '/verify-email'
+    | '/auth/callback'
     | '/tasks/$taskId'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -132,6 +142,7 @@ export interface FileRouteTypes {
     | '/reset-password'
     | '/tasks'
     | '/verify-email'
+    | '/auth/callback'
     | '/tasks/$taskId'
   id:
     | '__root__'
@@ -144,6 +155,7 @@ export interface FileRouteTypes {
     | '/reset-password'
     | '/tasks'
     | '/verify-email'
+    | '/auth/callback'
     | '/tasks/$taskId'
   fileRoutesById: FileRoutesById
 }
@@ -157,6 +169,7 @@ export interface RootRouteChildren {
   ResetPasswordRoute: typeof ResetPasswordRoute
   TasksRoute: typeof TasksRouteWithChildren
   VerifyEmailRoute: typeof VerifyEmailRoute
+  AuthCallbackRoute: typeof AuthCallbackRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -231,6 +244,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof TasksTaskIdRouteImport
       parentRoute: typeof TasksRoute
     }
+    '/auth/callback': {
+      id: '/auth/callback'
+      path: '/auth/callback'
+      fullPath: '/auth/callback'
+      preLoaderRoute: typeof AuthCallbackRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -254,6 +274,7 @@ const rootRouteChildren: RootRouteChildren = {
   ResetPasswordRoute: ResetPasswordRoute,
   TasksRoute: TasksRouteWithChildren,
   VerifyEmailRoute: VerifyEmailRoute,
+  AuthCallbackRoute: AuthCallbackRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

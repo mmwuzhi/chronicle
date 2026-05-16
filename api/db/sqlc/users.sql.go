@@ -15,12 +15,12 @@ import (
 const createUser = `-- name: CreateUser :one
 INSERT INTO users (email, password_hash)
 VALUES ($1, $2)
-RETURNING id, email, password_hash, created_at, email_verified, email_verify_token, password_reset_token, password_reset_expires
+RETURNING id, email, password_hash, created_at, email_verified, email_verify_token, password_reset_token, password_reset_expires, oauth_provider, oauth_provider_id
 `
 
 type CreateUserParams struct {
-	Email        string `json:"email"`
-	PasswordHash string `json:"password_hash"`
+	Email        string      `json:"email"`
+	PasswordHash pgtype.Text `json:"password_hash"`
 }
 
 func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, error) {
@@ -35,12 +35,14 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		&i.EmailVerifyToken,
 		&i.PasswordResetToken,
 		&i.PasswordResetExpires,
+		&i.OauthProvider,
+		&i.OauthProviderID,
 	)
 	return i, err
 }
 
 const getUserByEmail = `-- name: GetUserByEmail :one
-SELECT id, email, password_hash, created_at, email_verified, email_verify_token, password_reset_token, password_reset_expires FROM users
+SELECT id, email, password_hash, created_at, email_verified, email_verify_token, password_reset_token, password_reset_expires, oauth_provider, oauth_provider_id FROM users
 WHERE email = $1
 LIMIT 1
 `
@@ -57,12 +59,14 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error
 		&i.EmailVerifyToken,
 		&i.PasswordResetToken,
 		&i.PasswordResetExpires,
+		&i.OauthProvider,
+		&i.OauthProviderID,
 	)
 	return i, err
 }
 
 const getUserByID = `-- name: GetUserByID :one
-SELECT id, email, password_hash, created_at, email_verified, email_verify_token, password_reset_token, password_reset_expires FROM users
+SELECT id, email, password_hash, created_at, email_verified, email_verify_token, password_reset_token, password_reset_expires, oauth_provider, oauth_provider_id FROM users
 WHERE id = $1
 LIMIT 1
 `
@@ -79,12 +83,14 @@ func (q *Queries) GetUserByID(ctx context.Context, id uuid.UUID) (User, error) {
 		&i.EmailVerifyToken,
 		&i.PasswordResetToken,
 		&i.PasswordResetExpires,
+		&i.OauthProvider,
+		&i.OauthProviderID,
 	)
 	return i, err
 }
 
 const getUserByPasswordResetToken = `-- name: GetUserByPasswordResetToken :one
-SELECT id, email, password_hash, created_at, email_verified, email_verify_token, password_reset_token, password_reset_expires FROM users
+SELECT id, email, password_hash, created_at, email_verified, email_verify_token, password_reset_token, password_reset_expires, oauth_provider, oauth_provider_id FROM users
 WHERE password_reset_token = $1
   AND password_reset_expires > now()
 `
@@ -101,6 +107,8 @@ func (q *Queries) GetUserByPasswordResetToken(ctx context.Context, passwordReset
 		&i.EmailVerifyToken,
 		&i.PasswordResetToken,
 		&i.PasswordResetExpires,
+		&i.OauthProvider,
+		&i.OauthProviderID,
 	)
 	return i, err
 }
@@ -143,8 +151,8 @@ WHERE id = $1
 `
 
 type UpdatePasswordParams struct {
-	ID           uuid.UUID `json:"id"`
-	PasswordHash string    `json:"password_hash"`
+	ID           uuid.UUID   `json:"id"`
+	PasswordHash pgtype.Text `json:"password_hash"`
 }
 
 func (q *Queries) UpdatePassword(ctx context.Context, arg UpdatePasswordParams) error {
@@ -152,11 +160,44 @@ func (q *Queries) UpdatePassword(ctx context.Context, arg UpdatePasswordParams) 
 	return err
 }
 
+const upsertOAuthUser = `-- name: UpsertOAuthUser :one
+INSERT INTO users (email, oauth_provider, oauth_provider_id, email_verified)
+VALUES ($1, $2, $3, true)
+ON CONFLICT (email) DO UPDATE
+  SET oauth_provider    = EXCLUDED.oauth_provider,
+      oauth_provider_id = EXCLUDED.oauth_provider_id
+RETURNING id, email, password_hash, created_at, email_verified, email_verify_token, password_reset_token, password_reset_expires, oauth_provider, oauth_provider_id
+`
+
+type UpsertOAuthUserParams struct {
+	Email           string      `json:"email"`
+	OauthProvider   pgtype.Text `json:"oauth_provider"`
+	OauthProviderID pgtype.Text `json:"oauth_provider_id"`
+}
+
+func (q *Queries) UpsertOAuthUser(ctx context.Context, arg UpsertOAuthUserParams) (User, error) {
+	row := q.db.QueryRow(ctx, upsertOAuthUser, arg.Email, arg.OauthProvider, arg.OauthProviderID)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.PasswordHash,
+		&i.CreatedAt,
+		&i.EmailVerified,
+		&i.EmailVerifyToken,
+		&i.PasswordResetToken,
+		&i.PasswordResetExpires,
+		&i.OauthProvider,
+		&i.OauthProviderID,
+	)
+	return i, err
+}
+
 const verifyEmail = `-- name: VerifyEmail :one
 UPDATE users
 SET email_verified = true, email_verify_token = NULL
 WHERE email_verify_token = $1 AND email_verified = false
-RETURNING id, email, password_hash, created_at, email_verified, email_verify_token, password_reset_token, password_reset_expires
+RETURNING id, email, password_hash, created_at, email_verified, email_verify_token, password_reset_token, password_reset_expires, oauth_provider, oauth_provider_id
 `
 
 func (q *Queries) VerifyEmail(ctx context.Context, emailVerifyToken pgtype.Text) (User, error) {
@@ -171,6 +212,8 @@ func (q *Queries) VerifyEmail(ctx context.Context, emailVerifyToken pgtype.Text)
 		&i.EmailVerifyToken,
 		&i.PasswordResetToken,
 		&i.PasswordResetExpires,
+		&i.OauthProvider,
+		&i.OauthProviderID,
 	)
 	return i, err
 }

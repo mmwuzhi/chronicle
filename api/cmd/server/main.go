@@ -83,7 +83,16 @@ func main() {
 	api := humachi.New(r, huma.DefaultConfig("Chronicle API", "0.1.0"))
 	api.UseMiddleware(auth.InjectHumaContext)
 
-	auth.Register(api, pool, cfg.JWTSecret, cfg.ResendAPIKey, cfg.FrontendURL)
+	auth.Register(api, r, pool, rdb, auth.Options{
+		JWTSecret:          cfg.JWTSecret,
+		ResendAPIKey:       cfg.ResendAPIKey,
+		FrontendURL:        cfg.FrontendURL,
+		APIBaseURL:         cfg.APIBaseURL,
+		GoogleClientID:     cfg.GoogleClientID,
+		GoogleClientSecret: cfg.GoogleClientSecret,
+		GitHubClientID:     cfg.GitHubClientID,
+		GitHubClientSecret: cfg.GitHubClientSecret,
+	})
 
 	authMW := middleware.RequireAuthHuma(auth.ValidateToken(cfg.JWTSecret))
 	project.Register(api, pool, authMW)
@@ -91,8 +100,6 @@ func main() {
 	logentry.Register(api, pool, authMW)
 	timeblock.Register(api, pool, authMW)
 	capture.Register(api, pool, authMW)
-
-	_ = rdb
 
 	srv := &http.Server{
 		Addr:         ":" + cfg.Port,

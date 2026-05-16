@@ -36,3 +36,11 @@ WHERE password_reset_token = $1
 UPDATE users
 SET password_hash = $2, password_reset_token = NULL, password_reset_expires = NULL
 WHERE id = $1;
+
+-- name: UpsertOAuthUser :one
+INSERT INTO users (email, oauth_provider, oauth_provider_id, email_verified)
+VALUES ($1, $2, $3, true)
+ON CONFLICT (email) DO UPDATE
+  SET oauth_provider    = EXCLUDED.oauth_provider,
+      oauth_provider_id = EXCLUDED.oauth_provider_id
+RETURNING *;

@@ -10,27 +10,73 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
+	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/redis/go-redis/v9"
 	"golang.org/x/crypto/bcrypt"
+	"golang.org/x/oauth2"
+	"golang.org/x/oauth2/github"
+	"golang.org/x/oauth2/google"
 
 	db "github.com/sikaoshenmi/chronicle/db/sqlc"
 	"github.com/sikaoshenmi/chronicle/internal/middleware"
 )
+
+type Options struct {
+	JWTSecret          string
+	ResendAPIKey       string
+	FrontendURL        string
+	APIBaseURL         string
+	GoogleClientID     string
+	GoogleClientSecret string
+	GitHubClientID     string
+	GitHubClientSecret string
+}
 
 type handler struct {
 	q           *db.Queries
 	secret      string
 	resendKey   string
 	frontendURL string
+	apiBaseURL  string
+	rdb         *redis.Client
+	googleOAuth *oauth2.Config
+	githubOAuth *oauth2.Config
 }
 
-func Register(api huma.API, pool *pgxpool.Pool, jwtSecret, resendKey, frontendURL string) {
+func Register(api huma.API, r chi.Router, pool *pgxpool.Pool, rdb *redis.Client, opts Options) {
 	h := &handler{
 		q:           db.New(pool),
-		secret:      jwtSecret,
-		resendKey:   resendKey,
-		frontendURL: frontendURL,
+		secret:      opts.JWTSecret,
+		resendKey:   opts.ResendAPIKey,
+		frontendURL: opts.FrontendURL,
+		apiBaseURL:  opts.APIBaseURL,
+		rdb:         rdb,
+	}
+
+	if opts.GoogleClientID != "" {
+		h.googleOAuth = &oauth2.Config{
+			ClientID:     opts.GoogleClientID,
+			ClientSecret: opts.GoogleClientSecret,
+			Endpoint:     google.Endpoint,
+			RedirectURL:  opts.APIBaseURL + "/auth/google/callback",
+			Scopes:       []string{"openid", "email"},
+		}
+		r.Get("/auth/google", h.googleAuth)
+		r.Get("/auth/google/callback", h.googleCallback)
+	}
+
+	if opts.GitHubClientID != "" {
+		h.githubOAuth = &oauth2.Config{
+			ClientID:     opts.GitHubClientID,
+			ClientSecret: opts.GitHubClientSecret,
+			Endpoint:     github.Endpoint,
+			RedirectURL:  opts.APIBaseURL + "/auth/github/callback",
+			Scopes:       []string{"user:email"},
+		}
+		r.Get("/auth/github", h.githubAuth)
+		r.Get("/auth/github/callback", h.githubCallback)
 	}
 
 	huma.Register(api, huma.Operation{
@@ -116,7 +162,7 @@ func (h *handler) register(ctx context.Context, input *RegisterInput) (*Register
 
 	user, err := h.q.CreateUser(ctx, db.CreateUserParams{
 		Email:        input.Body.Email,
-		PasswordHash: string(hash),
+		PasswordHash: pgtype.Text{String: string(hash), Valid: true},
 	})
 	if err != nil {
 		return nil, huma.Error409Conflict("email already in use")
@@ -230,7 +276,7 @@ func (h *handler) resetPassword(ctx context.Context, input *ResetPasswordInput) 
 
 	if err := h.q.UpdatePassword(ctx, db.UpdatePasswordParams{
 		ID:           user.ID,
-		PasswordHash: string(hash),
+		PasswordHash: pgtype.Text{String: string(hash), Valid: true},
 	}); err != nil {
 		slog.ErrorContext(ctx, "failed to update password", "traceId", traceID, "err", err)
 		return nil, huma.Error500InternalServerError("internal error")
@@ -270,7 +316,10 @@ func (h *handler) login(ctx context.Context, input *LoginInput) (*LoginOutput, e
 		return nil, huma.Error401Unauthorized("invalid credentials")
 	}
 
-	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(input.Body.Password)); err != nil {
+	if !user.PasswordHash.Valid {
+		return nil, huma.Error401Unauthorized("invalid credentials")
+	}
+	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash.String), []byte(input.Body.Password)); err != nil {
 		return nil, huma.Error401Unauthorized("invalid credentials")
 	}
 
