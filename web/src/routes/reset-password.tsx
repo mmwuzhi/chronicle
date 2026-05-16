@@ -1,17 +1,17 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod/v3";
-import { useState } from "react";
-import { useRegister } from "../api";
+import { useMutation } from "@tanstack/react-query";
+import { api } from "../lib/axios";
 
-export const Route = createFileRoute("/register")({
-  component: Register,
+export const Route = createFileRoute("/reset-password")({
+  validateSearch: z.object({ token: z.string().default("") }),
+  component: ResetPassword,
 });
 
 const schema = z
   .object({
-    email: z.string().email(),
     password: z.string().min(8, "Password must be at least 8 characters"),
     confirmPassword: z.string().min(1, "Please confirm your password"),
   })
@@ -21,39 +21,40 @@ const schema = z
   });
 type FormData = z.infer<typeof schema>;
 
-function Register() {
-  const [sentEmail, setSentEmail] = useState("");
-  const registerMutation = useRegister({
-    mutation: {
-      onSuccess: (_, vars) => {
-        setSentEmail(vars.data.email);
-      },
-    },
+const resetPassword = (token: string, password: string) =>
+  api<void>({
+    url: "/auth/reset-password",
+    method: "POST",
+    data: { token, password },
+  });
+
+function ResetPassword() {
+  const { token } = Route.useSearch();
+  const navigate = useNavigate();
+  const mutation = useMutation({
+    mutationFn: (password: string) => resetPassword(token, password),
+    onSuccess: () => navigate({ to: "/login" }),
   });
 
   const {
     register,
     handleSubmit,
     formState: { errors },
-  } = useForm<FormData>({
-    resolver: zodResolver(schema),
-  });
+  } = useForm<FormData>({ resolver: zodResolver(schema) });
 
-  if (sentEmail) {
+  if (!token) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="w-full max-w-sm flex flex-col gap-4 p-8 bg-white rounded-xl border border-gray-200 shadow-sm text-center">
-          <h1 className="text-xl font-semibold">Check your inbox</h1>
+          <h1 className="text-xl font-semibold">Invalid link</h1>
           <p className="text-sm text-gray-600">
-            We sent a verification link to{" "}
-            <span className="font-medium text-gray-900">{sentEmail}</span>.
-            Click it to activate your account.
+            Use the link from your reset email.
           </p>
           <Link
-            to="/login"
+            to="/forgot-password"
             className="mt-2 text-sm text-gray-900 font-medium hover:underline"
           >
-            Sign in
+            Request a new link
           </Link>
         </div>
       </div>
@@ -63,30 +64,13 @@ function Register() {
   return (
     <div className="flex items-center justify-center min-h-screen">
       <form
-        onSubmit={handleSubmit((data) =>
-          registerMutation.mutate({
-            data: { email: data.email, password: data.password },
-          }),
-        )}
+        onSubmit={handleSubmit((data) => mutation.mutate(data.password))}
         className="w-full max-w-sm flex flex-col gap-4 p-8 bg-white rounded-xl border border-gray-200 shadow-sm"
       >
-        <h1 className="text-xl font-semibold">Create account</h1>
+        <h1 className="text-xl font-semibold">Choose a new password</h1>
 
         <div className="flex flex-col gap-1">
-          <label className="text-sm font-medium">Email</label>
-          <input
-            type="email"
-            autoComplete="email"
-            {...register("email")}
-            className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
-          />
-          {errors.email && (
-            <p className="text-red-500 text-xs">{errors.email.message}</p>
-          )}
-        </div>
-
-        <div className="flex flex-col gap-1">
-          <label className="text-sm font-medium">Password</label>
+          <label className="text-sm font-medium">New password</label>
           <input
             type="password"
             autoComplete="new-password"
@@ -99,7 +83,7 @@ function Register() {
         </div>
 
         <div className="flex flex-col gap-1">
-          <label className="text-sm font-medium">Confirm password</label>
+          <label className="text-sm font-medium">Confirm new password</label>
           <input
             type="password"
             autoComplete="new-password"
@@ -113,26 +97,19 @@ function Register() {
           )}
         </div>
 
-        {registerMutation.error && (
+        {mutation.isError && (
           <p className="text-red-500 text-sm">
-            Registration failed. Email may already be taken.
+            This link is invalid or has expired.
           </p>
         )}
 
         <button
           type="submit"
-          disabled={registerMutation.isPending}
+          disabled={mutation.isPending}
           className="bg-gray-900 text-white rounded-md py-2 text-sm font-medium hover:bg-gray-700 transition-colors disabled:opacity-50"
         >
-          {registerMutation.isPending ? "Creating account…" : "Create account"}
+          {mutation.isPending ? "Saving…" : "Set new password"}
         </button>
-
-        <p className="text-center text-sm text-gray-500">
-          Already have an account?{" "}
-          <Link to="/login" className="text-gray-900 font-medium hover:underline">
-            Sign in
-          </Link>
-        </p>
       </form>
     </div>
   );

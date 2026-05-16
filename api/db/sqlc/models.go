@@ -256,10 +256,14 @@ type TimeBlock struct {
 }
 
 type User struct {
-	ID           uuid.UUID          `json:"id"`
-	Email        string             `json:"email"`
-	PasswordHash string             `json:"password_hash"`
-	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	ID                   uuid.UUID          `json:"id"`
+	Email                string             `json:"email"`
+	PasswordHash         string             `json:"password_hash"`
+	CreatedAt            pgtype.Timestamptz `json:"created_at"`
+	EmailVerified        bool               `json:"email_verified"`
+	EmailVerifyToken     pgtype.Text        `json:"email_verify_token"`
+	PasswordResetToken   pgtype.Text        `json:"password_reset_token"`
+	PasswordResetExpires pgtype.Timestamptz `json:"password_reset_expires"`
 }
 
 type WeeklyReport struct {

@@ -83,7 +83,7 @@ func main() {
 	api := humachi.New(r, huma.DefaultConfig("Chronicle API", "0.1.0"))
 	api.UseMiddleware(auth.InjectHumaContext)
 
-	auth.Register(api, pool, cfg.JWTSecret)
+	auth.Register(api, pool, cfg.JWTSecret, cfg.ResendAPIKey, cfg.FrontendURL)
 
 	authMW := middleware.RequireAuthHuma(auth.ValidateToken(cfg.JWTSecret))
 	project.Register(api, pool, authMW)

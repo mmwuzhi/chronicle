@@ -25,7 +25,7 @@ func newServer(t *testing.T) *httptest.Server {
 	r := chi.NewRouter()
 	api := humachi.New(r, huma.DefaultConfig("Test API", "0.0.0"))
 	api.UseMiddleware(auth.InjectHumaContext)
-	auth.Register(api, pool, testSecret)
+	auth.Register(api, pool, testSecret, "", "")
 
 	srv := httptest.NewServer(r)
 	t.Cleanup(srv.Close)

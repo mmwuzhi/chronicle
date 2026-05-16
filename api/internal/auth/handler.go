@@ -2,6 +2,8 @@ package auth
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"log/slog"
 	"net/http"
 	"time"
@@ -17,14 +19,18 @@ import (
 )
 
 type handler struct {
-	q      *db.Queries
-	secret string
+	q           *db.Queries
+	secret      string
+	resendKey   string
+	frontendURL string
 }
 
-func Register(api huma.API, pool *pgxpool.Pool, jwtSecret string) {
+func Register(api huma.API, pool *pgxpool.Pool, jwtSecret, resendKey, frontendURL string) {
 	h := &handler{
-		q:      db.New(pool),
-		secret: jwtSecret,
+		q:           db.New(pool),
+		secret:      jwtSecret,
+		resendKey:   resendKey,
+		frontendURL: frontendURL,
 	}
 
 	huma.Register(api, huma.Operation{
@@ -58,6 +64,30 @@ func Register(api huma.API, pool *pgxpool.Pool, jwtSecret string) {
 		Summary:     "Revoke refresh token and clear cookie",
 		Tags:        []string{"auth"},
 	}, h.logout)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "verifyEmail",
+		Method:      http.MethodPost,
+		Path:        "/auth/verify-email",
+		Summary:     "Verify email address with token",
+		Tags:        []string{"auth"},
+	}, h.verifyEmail)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "forgotPassword",
+		Method:      http.MethodPost,
+		Path:        "/auth/forgot-password",
+		Summary:     "Send password reset email",
+		Tags:        []string{"auth"},
+	}, h.forgotPassword)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "resetPassword",
+		Method:      http.MethodPost,
+		Path:        "/auth/reset-password",
+		Summary:     "Reset password with token",
+		Tags:        []string{"auth"},
+	}, h.resetPassword)
 }
 
 // --- register ---
@@ -76,9 +106,11 @@ type RegisterOutput struct {
 }
 
 func (h *handler) register(ctx context.Context, input *RegisterInput) (*RegisterOutput, error) {
+	traceID := middleware.GetTraceID(ctx)
+
 	hash, err := bcrypt.GenerateFromPassword([]byte(input.Body.Password), bcrypt.DefaultCost)
 	if err != nil {
-		slog.ErrorContext(ctx, "bcrypt error", "traceId", middleware.GetTraceID(ctx), "err", err)
+		slog.ErrorContext(ctx, "bcrypt error", "traceId", traceID, "err", err)
 		return nil, huma.Error500InternalServerError("internal error")
 	}
 
@@ -90,9 +122,129 @@ func (h *handler) register(ctx context.Context, input *RegisterInput) (*Register
 		return nil, huma.Error409Conflict("email already in use")
 	}
 
+	token, err := randomHex(32)
+	if err != nil {
+		slog.ErrorContext(ctx, "token generation failed", "traceId", traceID, "err", err)
+		return nil, huma.Error500InternalServerError("internal error")
+	}
+
+	if err := h.q.SetEmailVerifyToken(ctx, db.SetEmailVerifyTokenParams{
+		ID:               user.ID,
+		EmailVerifyToken: pgtype.Text{String: token, Valid: true},
+	}); err != nil {
+		slog.ErrorContext(ctx, "failed to store verify token", "traceId", traceID, "err", err)
+		return nil, huma.Error500InternalServerError("internal error")
+	}
+
+	if h.resendKey != "" {
+		if err := sendVerificationEmail(h.resendKey, h.frontendURL, user.Email, token); err != nil {
+			slog.ErrorContext(ctx, "failed to send verification email", "traceId", traceID, "err", err)
+		}
+	}
+
 	out := &RegisterOutput{}
 	out.Body.UserID = user.ID.String()
 	return out, nil
+}
+
+// --- verify email ---
+
+type VerifyEmailInput struct {
+	Body struct {
+		Token string `json:"token" minLength:"1"`
+	}
+}
+
+func (h *handler) verifyEmail(ctx context.Context, input *VerifyEmailInput) (*struct{}, error) {
+	_, err := h.q.VerifyEmail(ctx, pgtype.Text{String: input.Body.Token, Valid: true})
+	if err != nil {
+		return nil, huma.Error400BadRequest("invalid or expired token")
+	}
+	return nil, nil
+}
+
+// --- forgot password ---
+
+type ForgotPasswordInput struct {
+	Body struct {
+		Email string `json:"email" format:"email"`
+	}
+}
+
+func (h *handler) forgotPassword(ctx context.Context, input *ForgotPasswordInput) (*struct{}, error) {
+	traceID := middleware.GetTraceID(ctx)
+
+	user, err := h.q.GetUserByEmail(ctx, input.Body.Email)
+	if err != nil {
+		// Return success regardless to avoid email enumeration
+		return nil, nil
+	}
+
+	token, err := randomHex(32)
+	if err != nil {
+		slog.ErrorContext(ctx, "token generation failed", "traceId", traceID, "err", err)
+		return nil, huma.Error500InternalServerError("internal error")
+	}
+
+	expires := pgtype.Timestamptz{Time: time.Now().Add(time.Hour), Valid: true}
+	if err := h.q.SetPasswordResetToken(ctx, db.SetPasswordResetTokenParams{
+		Email:                user.Email,
+		PasswordResetToken:   pgtype.Text{String: token, Valid: true},
+		PasswordResetExpires: expires,
+	}); err != nil {
+		slog.ErrorContext(ctx, "failed to store reset token", "traceId", traceID, "err", err)
+		return nil, huma.Error500InternalServerError("internal error")
+	}
+
+	if h.resendKey != "" {
+		if err := sendPasswordResetEmail(h.resendKey, h.frontendURL, user.Email, token); err != nil {
+			slog.ErrorContext(ctx, "failed to send reset email", "traceId", traceID, "err", err)
+		}
+	}
+
+	return nil, nil
+}
+
+// --- reset password ---
+
+type ResetPasswordInput struct {
+	Body struct {
+		Token    string `json:"token" minLength:"1"`
+		Password string `json:"password" minLength:"8"`
+	}
+}
+
+func (h *handler) resetPassword(ctx context.Context, input *ResetPasswordInput) (*struct{}, error) {
+	traceID := middleware.GetTraceID(ctx)
+
+	user, err := h.q.GetUserByPasswordResetToken(ctx, pgtype.Text{String: input.Body.Token, Valid: true})
+	if err != nil {
+		return nil, huma.Error400BadRequest("invalid or expired token")
+	}
+
+	hash, err := bcrypt.GenerateFromPassword([]byte(input.Body.Password), bcrypt.DefaultCost)
+	if err != nil {
+		slog.ErrorContext(ctx, "bcrypt error", "traceId", traceID, "err", err)
+		return nil, huma.Error500InternalServerError("internal error")
+	}
+
+	if err := h.q.UpdatePassword(ctx, db.UpdatePasswordParams{
+		ID:           user.ID,
+		PasswordHash: string(hash),
+	}); err != nil {
+		slog.ErrorContext(ctx, "failed to update password", "traceId", traceID, "err", err)
+		return nil, huma.Error500InternalServerError("internal error")
+	}
+
+	return nil, nil
+}
+
+func randomHex(n int) (string, error) {
+	b := make([]byte, n)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
 }
 
 // --- login ---

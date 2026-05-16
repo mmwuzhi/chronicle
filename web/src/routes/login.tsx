@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod/v3";
@@ -55,7 +55,15 @@ function Login() {
         </div>
 
         <div className="flex flex-col gap-1">
-          <label className="text-sm font-medium">Password</label>
+          <div className="flex items-center justify-between">
+            <label className="text-sm font-medium">Password</label>
+            <Link
+              to="/forgot-password"
+              className="text-xs text-gray-500 hover:text-gray-900 hover:underline"
+            >
+              Forgot password?
+            </Link>
+          </div>
           <input
             type="password"
             autoComplete="current-password"
@@ -78,6 +86,16 @@ function Login() {
         >
           {login.isPending ? "Signing in…" : "Sign in"}
         </button>
+
+        <p className="text-center text-sm text-gray-500">
+          No account?{" "}
+          <Link
+            to="/register"
+            className="text-gray-900 font-medium hover:underline"
+          >
+            Sign up
+          </Link>
+        </p>
       </form>
     </div>
   );

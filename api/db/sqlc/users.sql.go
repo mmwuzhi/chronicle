@@ -9,12 +9,13 @@ import (
 	"context"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const createUser = `-- name: CreateUser :one
 INSERT INTO users (email, password_hash)
 VALUES ($1, $2)
-RETURNING id, email, password_hash, created_at
+RETURNING id, email, password_hash, created_at, email_verified, email_verify_token, password_reset_token, password_reset_expires
 `
 
 type CreateUserParams struct {
@@ -30,12 +31,16 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		&i.Email,
 		&i.PasswordHash,
 		&i.CreatedAt,
+		&i.EmailVerified,
+		&i.EmailVerifyToken,
+		&i.PasswordResetToken,
+		&i.PasswordResetExpires,
 	)
 	return i, err
 }
 
 const getUserByEmail = `-- name: GetUserByEmail :one
-SELECT id, email, password_hash, created_at FROM users
+SELECT id, email, password_hash, created_at, email_verified, email_verify_token, password_reset_token, password_reset_expires FROM users
 WHERE email = $1
 LIMIT 1
 `
@@ -48,12 +53,16 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error
 		&i.Email,
 		&i.PasswordHash,
 		&i.CreatedAt,
+		&i.EmailVerified,
+		&i.EmailVerifyToken,
+		&i.PasswordResetToken,
+		&i.PasswordResetExpires,
 	)
 	return i, err
 }
 
 const getUserByID = `-- name: GetUserByID :one
-SELECT id, email, password_hash, created_at FROM users
+SELECT id, email, password_hash, created_at, email_verified, email_verify_token, password_reset_token, password_reset_expires FROM users
 WHERE id = $1
 LIMIT 1
 `
@@ -66,6 +75,102 @@ func (q *Queries) GetUserByID(ctx context.Context, id uuid.UUID) (User, error) {
 		&i.Email,
 		&i.PasswordHash,
 		&i.CreatedAt,
+		&i.EmailVerified,
+		&i.EmailVerifyToken,
+		&i.PasswordResetToken,
+		&i.PasswordResetExpires,
+	)
+	return i, err
+}
+
+const getUserByPasswordResetToken = `-- name: GetUserByPasswordResetToken :one
+SELECT id, email, password_hash, created_at, email_verified, email_verify_token, password_reset_token, password_reset_expires FROM users
+WHERE password_reset_token = $1
+  AND password_reset_expires > now()
+`
+
+func (q *Queries) GetUserByPasswordResetToken(ctx context.Context, passwordResetToken pgtype.Text) (User, error) {
+	row := q.db.QueryRow(ctx, getUserByPasswordResetToken, passwordResetToken)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.PasswordHash,
+		&i.CreatedAt,
+		&i.EmailVerified,
+		&i.EmailVerifyToken,
+		&i.PasswordResetToken,
+		&i.PasswordResetExpires,
+	)
+	return i, err
+}
+
+const setEmailVerifyToken = `-- name: SetEmailVerifyToken :exec
+UPDATE users SET email_verify_token = $2 WHERE id = $1
+`
+
+type SetEmailVerifyTokenParams struct {
+	ID               uuid.UUID   `json:"id"`
+	EmailVerifyToken pgtype.Text `json:"email_verify_token"`
+}
+
+func (q *Queries) SetEmailVerifyToken(ctx context.Context, arg SetEmailVerifyTokenParams) error {
+	_, err := q.db.Exec(ctx, setEmailVerifyToken, arg.ID, arg.EmailVerifyToken)
+	return err
+}
+
+const setPasswordResetToken = `-- name: SetPasswordResetToken :exec
+UPDATE users
+SET password_reset_token = $2, password_reset_expires = $3
+WHERE email = $1
+`
+
+type SetPasswordResetTokenParams struct {
+	Email                string             `json:"email"`
+	PasswordResetToken   pgtype.Text        `json:"password_reset_token"`
+	PasswordResetExpires pgtype.Timestamptz `json:"password_reset_expires"`
+}
+
+func (q *Queries) SetPasswordResetToken(ctx context.Context, arg SetPasswordResetTokenParams) error {
+	_, err := q.db.Exec(ctx, setPasswordResetToken, arg.Email, arg.PasswordResetToken, arg.PasswordResetExpires)
+	return err
+}
+
+const updatePassword = `-- name: UpdatePassword :exec
+UPDATE users
+SET password_hash = $2, password_reset_token = NULL, password_reset_expires = NULL
+WHERE id = $1
+`
+
+type UpdatePasswordParams struct {
+	ID           uuid.UUID `json:"id"`
+	PasswordHash string    `json:"password_hash"`
+}
+
+func (q *Queries) UpdatePassword(ctx context.Context, arg UpdatePasswordParams) error {
+	_, err := q.db.Exec(ctx, updatePassword, arg.ID, arg.PasswordHash)
+	return err
+}
+
+const verifyEmail = `-- name: VerifyEmail :one
+UPDATE users
+SET email_verified = true, email_verify_token = NULL
+WHERE email_verify_token = $1 AND email_verified = false
+RETURNING id, email, password_hash, created_at, email_verified, email_verify_token, password_reset_token, password_reset_expires
+`
+
+func (q *Queries) VerifyEmail(ctx context.Context, emailVerifyToken pgtype.Text) (User, error) {
+	row := q.db.QueryRow(ctx, verifyEmail, emailVerifyToken)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.PasswordHash,
+		&i.CreatedAt,
+		&i.EmailVerified,
+		&i.EmailVerifyToken,
+		&i.PasswordResetToken,
+		&i.PasswordResetExpires,
 	)
 	return i, err
 }

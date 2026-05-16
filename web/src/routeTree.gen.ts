@@ -9,17 +9,30 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as VerifyEmailRouteImport } from './routes/verify-email'
 import { Route as TasksRouteImport } from './routes/tasks'
+import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as RegisterRouteImport } from './routes/register'
 import { Route as ProjectsRouteImport } from './routes/projects'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
 import { Route as CapturesRouteImport } from './routes/captures'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as TasksTaskIdRouteImport } from './routes/tasks.$taskId'
 
+const VerifyEmailRoute = VerifyEmailRouteImport.update({
+  id: '/verify-email',
+  path: '/verify-email',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const TasksRoute = TasksRouteImport.update({
   id: '/tasks',
   path: '/tasks',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ResetPasswordRoute = ResetPasswordRouteImport.update({
+  id: '/reset-password',
+  path: '/reset-password',
   getParentRoute: () => rootRouteImport,
 } as any)
 const RegisterRoute = RegisterRouteImport.update({
@@ -35,6 +48,11 @@ const ProjectsRoute = ProjectsRouteImport.update({
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ForgotPasswordRoute = ForgotPasswordRouteImport.update({
+  id: '/forgot-password',
+  path: '/forgot-password',
   getParentRoute: () => rootRouteImport,
 } as any)
 const CapturesRoute = CapturesRouteImport.update({
@@ -56,29 +74,38 @@ const TasksTaskIdRoute = TasksTaskIdRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/captures': typeof CapturesRoute
+  '/forgot-password': typeof ForgotPasswordRoute
   '/login': typeof LoginRoute
   '/projects': typeof ProjectsRoute
   '/register': typeof RegisterRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/tasks': typeof TasksRouteWithChildren
+  '/verify-email': typeof VerifyEmailRoute
   '/tasks/$taskId': typeof TasksTaskIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/captures': typeof CapturesRoute
+  '/forgot-password': typeof ForgotPasswordRoute
   '/login': typeof LoginRoute
   '/projects': typeof ProjectsRoute
   '/register': typeof RegisterRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/tasks': typeof TasksRouteWithChildren
+  '/verify-email': typeof VerifyEmailRoute
   '/tasks/$taskId': typeof TasksTaskIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/captures': typeof CapturesRoute
+  '/forgot-password': typeof ForgotPasswordRoute
   '/login': typeof LoginRoute
   '/projects': typeof ProjectsRoute
   '/register': typeof RegisterRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/tasks': typeof TasksRouteWithChildren
+  '/verify-email': typeof VerifyEmailRoute
   '/tasks/$taskId': typeof TasksTaskIdRoute
 }
 export interface FileRouteTypes {
@@ -86,47 +113,73 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/captures'
+    | '/forgot-password'
     | '/login'
     | '/projects'
     | '/register'
+    | '/reset-password'
     | '/tasks'
+    | '/verify-email'
     | '/tasks/$taskId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/captures'
+    | '/forgot-password'
     | '/login'
     | '/projects'
     | '/register'
+    | '/reset-password'
     | '/tasks'
+    | '/verify-email'
     | '/tasks/$taskId'
   id:
     | '__root__'
     | '/'
     | '/captures'
+    | '/forgot-password'
     | '/login'
     | '/projects'
     | '/register'
+    | '/reset-password'
     | '/tasks'
+    | '/verify-email'
     | '/tasks/$taskId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   CapturesRoute: typeof CapturesRoute
+  ForgotPasswordRoute: typeof ForgotPasswordRoute
   LoginRoute: typeof LoginRoute
   ProjectsRoute: typeof ProjectsRoute
   RegisterRoute: typeof RegisterRoute
+  ResetPasswordRoute: typeof ResetPasswordRoute
   TasksRoute: typeof TasksRouteWithChildren
+  VerifyEmailRoute: typeof VerifyEmailRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/verify-email': {
+      id: '/verify-email'
+      path: '/verify-email'
+      fullPath: '/verify-email'
+      preLoaderRoute: typeof VerifyEmailRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/tasks': {
       id: '/tasks'
       path: '/tasks'
       fullPath: '/tasks'
       preLoaderRoute: typeof TasksRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/reset-password': {
+      id: '/reset-password'
+      path: '/reset-password'
+      fullPath: '/reset-password'
+      preLoaderRoute: typeof ResetPasswordRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/register': {
@@ -148,6 +201,13 @@ declare module '@tanstack/react-router' {
       path: '/login'
       fullPath: '/login'
       preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/forgot-password': {
+      id: '/forgot-password'
+      path: '/forgot-password'
+      fullPath: '/forgot-password'
+      preLoaderRoute: typeof ForgotPasswordRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/captures': {
@@ -187,10 +247,13 @@ const TasksRouteWithChildren = TasksRoute._addFileChildren(TasksRouteChildren)
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   CapturesRoute: CapturesRoute,
+  ForgotPasswordRoute: ForgotPasswordRoute,
   LoginRoute: LoginRoute,
   ProjectsRoute: ProjectsRoute,
   RegisterRoute: RegisterRoute,
+  ResetPasswordRoute: ResetPasswordRoute,
   TasksRoute: TasksRouteWithChildren,
+  VerifyEmailRoute: VerifyEmailRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
