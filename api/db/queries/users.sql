@@ -37,6 +37,9 @@ UPDATE users
 SET password_hash = $2, password_reset_token = NULL, password_reset_expires = NULL
 WHERE id = $1;
 
+-- name: DeleteUser :exec
+DELETE FROM users WHERE id = $1;
+
 -- name: UpsertOAuthUser :one
 INSERT INTO users (email, oauth_provider, oauth_provider_id, email_verified)
 VALUES ($1, $2, $3, true)

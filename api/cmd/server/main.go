@@ -25,6 +25,7 @@ import (
 	"github.com/sikaoshenmi/chronicle/internal/project"
 	"github.com/sikaoshenmi/chronicle/internal/task"
 	"github.com/sikaoshenmi/chronicle/internal/timeblock"
+	"github.com/sikaoshenmi/chronicle/internal/user"
 )
 
 func main() {
@@ -100,6 +101,7 @@ func main() {
 	logentry.Register(api, pool, authMW)
 	timeblock.Register(api, pool, authMW)
 	capture.Register(api, pool, authMW)
+	user.Register(api, pool, authMW)
 
 	srv := &http.Server{
 		Addr:         ":" + cfg.Port,

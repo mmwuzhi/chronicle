@@ -27,6 +27,14 @@ export function Nav() {
             Projects
           </Link>
         </div>
+        <div className="ml-auto">
+          <Link
+            to="/settings"
+            className="text-gray-400 hover:text-gray-900 transition-colors [&.active]:text-gray-900 text-sm"
+          >
+            Settings
+          </Link>
+        </div>
       </div>
     </nav>
   );
