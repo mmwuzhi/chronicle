@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import * as Dialog from "@radix-ui/react-dialog";
+import { useConfirm } from "../components/confirm-dialog";
 import {
   useListProjects,
   useUpdateProject,
@@ -49,7 +49,7 @@ function ProjectDetail() {
   const [editing, setEditing] = useState(false);
   const [editName, setEditName] = useState("");
   const [editColor, setEditColor] = useState("");
-  const [deleteOpen, setDeleteOpen] = useState(false);
+  const confirm = useConfirm();
 
   const {
     data: projects,
@@ -230,41 +230,20 @@ function ProjectDetail() {
             >
               Archive
             </button>
-            <Dialog.Root open={deleteOpen} onOpenChange={setDeleteOpen}>
-              <Dialog.Trigger asChild>
-                <button className="text-xs text-gray-400 hover:text-red-500 transition-colors">
-                  Delete
-                </button>
-              </Dialog.Trigger>
-              <Dialog.Portal>
-                <Dialog.Overlay className="fixed inset-0 bg-black/40" />
-                <Dialog.Content className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-white rounded-xl shadow-lg p-6 w-full max-w-sm flex flex-col gap-4">
-                  <Dialog.Title className="text-lg font-semibold">
-                    Delete project
-                  </Dialog.Title>
-                  <Dialog.Description className="text-sm text-gray-600">
-                    This will permanently delete "{project.name}". Tasks in this
-                    project will be kept but unassigned.
-                  </Dialog.Description>
-                  <div className="flex justify-end gap-3 mt-2">
-                    <Dialog.Close asChild>
-                      <button className="text-sm px-4 py-2 rounded-md border border-gray-300 hover:bg-gray-50 transition-colors">
-                        Cancel
-                      </button>
-                    </Dialog.Close>
-                    <button
-                      onClick={() =>
-                        deleteProject.mutate({ id: projectId })
-                      }
-                      disabled={deleteProject.isPending}
-                      className="text-sm px-4 py-2 rounded-md bg-red-600 text-white hover:bg-red-700 transition-colors disabled:opacity-50"
-                    >
-                      {deleteProject.isPending ? "Deleting…" : "Yes, delete"}
-                    </button>
-                  </div>
-                </Dialog.Content>
-              </Dialog.Portal>
-            </Dialog.Root>
+            <button
+              onClick={async () => {
+                const ok = await confirm({
+                  title: "Delete project",
+                  description: `This will permanently delete "${project.name}". Tasks in this project will be kept but unassigned.`,
+                  confirmLabel: "Yes, delete",
+                  variant: "danger",
+                });
+                if (ok) deleteProject.mutate({ id: projectId });
+              }}
+              className="text-xs text-gray-400 hover:text-red-500 transition-colors"
+            >
+              Delete
+            </button>
           </div>
         )}
 
