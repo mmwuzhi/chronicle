@@ -19,7 +19,10 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
 import { Route as CapturesRouteImport } from './routes/captures'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as TasksIndexRouteImport } from './routes/tasks.index'
+import { Route as ProjectsIndexRouteImport } from './routes/projects.index'
 import { Route as TasksTaskIdRouteImport } from './routes/tasks.$taskId'
+import { Route as ProjectsProjectIdRouteImport } from './routes/projects.$projectId'
 import { Route as AuthCallbackRouteImport } from './routes/auth.callback'
 
 const VerifyEmailRoute = VerifyEmailRouteImport.update({
@@ -72,10 +75,25 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const TasksIndexRoute = TasksIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => TasksRoute,
+} as any)
+const ProjectsIndexRoute = ProjectsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => ProjectsRoute,
+} as any)
 const TasksTaskIdRoute = TasksTaskIdRouteImport.update({
   id: '/$taskId',
   path: '/$taskId',
   getParentRoute: () => TasksRoute,
+} as any)
+const ProjectsProjectIdRoute = ProjectsProjectIdRouteImport.update({
+  id: '/$projectId',
+  path: '/$projectId',
+  getParentRoute: () => ProjectsRoute,
 } as any)
 const AuthCallbackRoute = AuthCallbackRouteImport.update({
   id: '/auth/callback',
@@ -88,28 +106,32 @@ export interface FileRoutesByFullPath {
   '/captures': typeof CapturesRoute
   '/forgot-password': typeof ForgotPasswordRoute
   '/login': typeof LoginRoute
-  '/projects': typeof ProjectsRoute
+  '/projects': typeof ProjectsRouteWithChildren
   '/register': typeof RegisterRoute
   '/reset-password': typeof ResetPasswordRoute
   '/settings': typeof SettingsRoute
   '/tasks': typeof TasksRouteWithChildren
   '/verify-email': typeof VerifyEmailRoute
   '/auth/callback': typeof AuthCallbackRoute
+  '/projects/$projectId': typeof ProjectsProjectIdRoute
   '/tasks/$taskId': typeof TasksTaskIdRoute
+  '/projects/': typeof ProjectsIndexRoute
+  '/tasks/': typeof TasksIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/captures': typeof CapturesRoute
   '/forgot-password': typeof ForgotPasswordRoute
   '/login': typeof LoginRoute
-  '/projects': typeof ProjectsRoute
   '/register': typeof RegisterRoute
   '/reset-password': typeof ResetPasswordRoute
   '/settings': typeof SettingsRoute
-  '/tasks': typeof TasksRouteWithChildren
   '/verify-email': typeof VerifyEmailRoute
   '/auth/callback': typeof AuthCallbackRoute
+  '/projects/$projectId': typeof ProjectsProjectIdRoute
   '/tasks/$taskId': typeof TasksTaskIdRoute
+  '/projects': typeof ProjectsIndexRoute
+  '/tasks': typeof TasksIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -117,14 +139,17 @@ export interface FileRoutesById {
   '/captures': typeof CapturesRoute
   '/forgot-password': typeof ForgotPasswordRoute
   '/login': typeof LoginRoute
-  '/projects': typeof ProjectsRoute
+  '/projects': typeof ProjectsRouteWithChildren
   '/register': typeof RegisterRoute
   '/reset-password': typeof ResetPasswordRoute
   '/settings': typeof SettingsRoute
   '/tasks': typeof TasksRouteWithChildren
   '/verify-email': typeof VerifyEmailRoute
   '/auth/callback': typeof AuthCallbackRoute
+  '/projects/$projectId': typeof ProjectsProjectIdRoute
   '/tasks/$taskId': typeof TasksTaskIdRoute
+  '/projects/': typeof ProjectsIndexRoute
+  '/tasks/': typeof TasksIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -140,21 +165,25 @@ export interface FileRouteTypes {
     | '/tasks'
     | '/verify-email'
     | '/auth/callback'
+    | '/projects/$projectId'
     | '/tasks/$taskId'
+    | '/projects/'
+    | '/tasks/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/captures'
     | '/forgot-password'
     | '/login'
-    | '/projects'
     | '/register'
     | '/reset-password'
     | '/settings'
-    | '/tasks'
     | '/verify-email'
     | '/auth/callback'
+    | '/projects/$projectId'
     | '/tasks/$taskId'
+    | '/projects'
+    | '/tasks'
   id:
     | '__root__'
     | '/'
@@ -168,7 +197,10 @@ export interface FileRouteTypes {
     | '/tasks'
     | '/verify-email'
     | '/auth/callback'
+    | '/projects/$projectId'
     | '/tasks/$taskId'
+    | '/projects/'
+    | '/tasks/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -176,7 +208,7 @@ export interface RootRouteChildren {
   CapturesRoute: typeof CapturesRoute
   ForgotPasswordRoute: typeof ForgotPasswordRoute
   LoginRoute: typeof LoginRoute
-  ProjectsRoute: typeof ProjectsRoute
+  ProjectsRoute: typeof ProjectsRouteWithChildren
   RegisterRoute: typeof RegisterRoute
   ResetPasswordRoute: typeof ResetPasswordRoute
   SettingsRoute: typeof SettingsRoute
@@ -257,12 +289,33 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/tasks/': {
+      id: '/tasks/'
+      path: '/'
+      fullPath: '/tasks/'
+      preLoaderRoute: typeof TasksIndexRouteImport
+      parentRoute: typeof TasksRoute
+    }
+    '/projects/': {
+      id: '/projects/'
+      path: '/'
+      fullPath: '/projects/'
+      preLoaderRoute: typeof ProjectsIndexRouteImport
+      parentRoute: typeof ProjectsRoute
+    }
     '/tasks/$taskId': {
       id: '/tasks/$taskId'
       path: '/$taskId'
       fullPath: '/tasks/$taskId'
       preLoaderRoute: typeof TasksTaskIdRouteImport
       parentRoute: typeof TasksRoute
+    }
+    '/projects/$projectId': {
+      id: '/projects/$projectId'
+      path: '/$projectId'
+      fullPath: '/projects/$projectId'
+      preLoaderRoute: typeof ProjectsProjectIdRouteImport
+      parentRoute: typeof ProjectsRoute
     }
     '/auth/callback': {
       id: '/auth/callback'
@@ -274,12 +327,28 @@ declare module '@tanstack/react-router' {
   }
 }
 
+interface ProjectsRouteChildren {
+  ProjectsProjectIdRoute: typeof ProjectsProjectIdRoute
+  ProjectsIndexRoute: typeof ProjectsIndexRoute
+}
+
+const ProjectsRouteChildren: ProjectsRouteChildren = {
+  ProjectsProjectIdRoute: ProjectsProjectIdRoute,
+  ProjectsIndexRoute: ProjectsIndexRoute,
+}
+
+const ProjectsRouteWithChildren = ProjectsRoute._addFileChildren(
+  ProjectsRouteChildren,
+)
+
 interface TasksRouteChildren {
   TasksTaskIdRoute: typeof TasksTaskIdRoute
+  TasksIndexRoute: typeof TasksIndexRoute
 }
 
 const TasksRouteChildren: TasksRouteChildren = {
   TasksTaskIdRoute: TasksTaskIdRoute,
+  TasksIndexRoute: TasksIndexRoute,
 }
 
 const TasksRouteWithChildren = TasksRoute._addFileChildren(TasksRouteChildren)
@@ -289,7 +358,7 @@ const rootRouteChildren: RootRouteChildren = {
   CapturesRoute: CapturesRoute,
   ForgotPasswordRoute: ForgotPasswordRoute,
   LoginRoute: LoginRoute,
-  ProjectsRoute: ProjectsRoute,
+  ProjectsRoute: ProjectsRouteWithChildren,
   RegisterRoute: RegisterRoute,
   ResetPasswordRoute: ResetPasswordRoute,
   SettingsRoute: SettingsRoute,

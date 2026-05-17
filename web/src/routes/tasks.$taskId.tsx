@@ -1,5 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   useGetTask,
   useUpdateTask,
@@ -9,6 +10,8 @@ import {
   useListTimeBlocks,
   useCreateTimeBlock,
   useUpdateTimeBlock,
+  useListProjects,
+  getListTasksQueryKey,
 } from "../api";
 import type {
   LogEntryBody,
@@ -171,6 +174,7 @@ function Timer({ taskId }: { taskId: string }) {
 function TaskDetail() {
   const { taskId } = Route.useParams();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [body, setBody] = useState("");
 
   const {
@@ -181,7 +185,16 @@ function TaskDetail() {
   const { data: entries, isLoading: entriesLoading } = useListLogEntries({
     taskId,
   });
-  const update = useUpdateTask();
+  const { data: projects } = useListProjects();
+  const activeProjects = (projects ?? []).filter((p) => !p.archived);
+  const currentProject = task?.projectId
+    ? activeProjects.find((p) => p.id === task.projectId)
+    : null;
+
+  const invalidateTasks = () =>
+    queryClient.invalidateQueries({ queryKey: getListTasksQueryKey() });
+
+  const update = useUpdateTask({ mutation: { onSuccess: invalidateTasks } });
   const createEntry = useCreateLogEntry();
   const deleteEntry = useDeleteLogEntry();
 
@@ -237,6 +250,41 @@ function TaskDetail() {
               >
                 {STATUS_LABELS[task.status] ?? task.status}
               </button>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <span className="text-sm text-gray-500">Project:</span>
+              {currentProject && (
+                <Link
+                  to="/projects/$projectId"
+                  params={{ projectId: currentProject.id }}
+                  className="flex items-center gap-1.5 text-sm text-gray-700 hover:text-gray-900 transition-colors"
+                >
+                  <span
+                    className="w-2.5 h-2.5 rounded-full"
+                    style={{ backgroundColor: currentProject.color }}
+                  />
+                  <span className="font-medium">{currentProject.name}</span>
+                </Link>
+              )}
+              <select
+                value={task.projectId ?? ""}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  update.mutate({
+                    id: taskId,
+                    data: { projectId: val || undefined },
+                  });
+                }}
+                className="border border-gray-300 rounded-md px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
+              >
+                <option value="">No project</option>
+                {activeProjects.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
             </div>
 
             <Timer taskId={taskId} />
