@@ -2,8 +2,15 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod/v3";
-import { useState } from "react";
-import { useRegister } from "../api";
+import { useRef, useState } from "react";
+import { useMutation } from "@tanstack/react-query";
+import { Turnstile } from "@marsidev/react-turnstile";
+import type { TurnstileInstance } from "@marsidev/react-turnstile";
+import { api } from "../lib/axios";
+
+const TURNSTILE_SITE_KEY = import.meta.env.VITE_TURNSTILE_SITE_KEY as
+  | string
+  | undefined;
 
 function GoogleIcon() {
   return (
@@ -40,14 +47,32 @@ const schema = z
   });
 type FormData = z.infer<typeof schema>;
 
+const registerUser = (
+  email: string,
+  password: string,
+  cfTurnstileResponse: string,
+) =>
+  api<{ userId: string }>({
+    url: "/auth/register",
+    method: "POST",
+    data: { email, password, cfTurnstileResponse },
+  });
+
 function Register() {
   const [sentEmail, setSentEmail] = useState("");
-  const registerMutation = useRegister({
-    mutation: {
-      onSuccess: (_, vars) => {
-        setSentEmail(vars.data.email);
-      },
-    },
+  const [turnstileToken, setTurnstileToken] = useState("");
+  const turnstileRef = useRef<TurnstileInstance>(null);
+
+  const registerMutation = useMutation({
+    mutationFn: ({
+      email,
+      password,
+    }: {
+      email: string;
+      password: string;
+    }) => registerUser(email, password, turnstileToken),
+    onSuccess: (_, vars) => setSentEmail(vars.email),
+    onError: () => turnstileRef.current?.reset(),
   });
 
   const {
@@ -83,9 +108,7 @@ function Register() {
     <div className="flex items-center justify-center min-h-screen">
       <form
         onSubmit={handleSubmit((data) =>
-          registerMutation.mutate({
-            data: { email: data.email, password: data.password },
-          }),
+          registerMutation.mutate({ email: data.email, password: data.password }),
         )}
         className="w-full max-w-sm flex flex-col gap-4 p-8 bg-white rounded-xl border border-gray-200 shadow-sm"
       >
@@ -132,6 +155,15 @@ function Register() {
           )}
         </div>
 
+        {TURNSTILE_SITE_KEY && (
+          <Turnstile
+            ref={turnstileRef}
+            siteKey={TURNSTILE_SITE_KEY}
+            onSuccess={setTurnstileToken}
+            options={{ size: "invisible" }}
+          />
+        )}
+
         {registerMutation.error && (
           <p className="text-red-500 text-sm">
             Registration failed. Email may already be taken.
@@ -140,7 +172,10 @@ function Register() {
 
         <button
           type="submit"
-          disabled={registerMutation.isPending}
+          disabled={
+            registerMutation.isPending ||
+            (!!TURNSTILE_SITE_KEY && !turnstileToken)
+          }
           className="bg-gray-900 text-white rounded-md py-2 text-sm font-medium hover:bg-gray-700 transition-colors disabled:opacity-50"
         >
           {registerMutation.isPending ? "Creating account…" : "Create account"}

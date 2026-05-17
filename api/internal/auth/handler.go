@@ -4,8 +4,12 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -32,27 +36,30 @@ type Options struct {
 	GoogleClientSecret string
 	GitHubClientID     string
 	GitHubClientSecret string
+	TurnstileSecret    string
 }
 
 type handler struct {
-	q           *db.Queries
-	secret      string
-	resendKey   string
-	frontendURL string
-	apiBaseURL  string
-	rdb         *redis.Client
-	googleOAuth *oauth2.Config
-	githubOAuth *oauth2.Config
+	q               *db.Queries
+	secret          string
+	resendKey       string
+	frontendURL     string
+	apiBaseURL      string
+	rdb             *redis.Client
+	googleOAuth     *oauth2.Config
+	githubOAuth     *oauth2.Config
+	turnstileSecret string
 }
 
 func Register(api huma.API, r chi.Router, pool *pgxpool.Pool, rdb *redis.Client, opts Options) {
 	h := &handler{
-		q:           db.New(pool),
-		secret:      opts.JWTSecret,
-		resendKey:   opts.ResendAPIKey,
-		frontendURL: opts.FrontendURL,
-		apiBaseURL:  opts.APIBaseURL,
-		rdb:         rdb,
+		q:               db.New(pool),
+		secret:          opts.JWTSecret,
+		resendKey:       opts.ResendAPIKey,
+		frontendURL:     opts.FrontendURL,
+		apiBaseURL:      opts.APIBaseURL,
+		rdb:             rdb,
+		turnstileSecret: opts.TurnstileSecret,
 	}
 
 	if opts.GoogleClientID != "" {
@@ -140,8 +147,9 @@ func Register(api huma.API, r chi.Router, pool *pgxpool.Pool, rdb *redis.Client,
 
 type RegisterInput struct {
 	Body struct {
-		Email    string `json:"email" format:"email"`
-		Password string `json:"password" minLength:"8"`
+		Email               string `json:"email" format:"email"`
+		Password            string `json:"password" minLength:"8"`
+		CfTurnstileResponse string `json:"cfTurnstileResponse"`
 	}
 }
 
@@ -153,6 +161,30 @@ type RegisterOutput struct {
 
 func (h *handler) register(ctx context.Context, input *RegisterInput) (*RegisterOutput, error) {
 	traceID := middleware.GetTraceID(ctx)
+
+	// Per-IP registration rate limit: max 3 per hour
+	if h.rdb != nil {
+		r, _ := responseWriter(ctx)
+		ip := clientIP(r)
+		key := "reg:ip:" + ip
+		count, err := h.rdb.Incr(ctx, key).Result()
+		if err == nil {
+			if count == 1 {
+				h.rdb.Expire(ctx, key, time.Hour)
+			}
+			if count > 3 {
+				return nil, huma.NewError(http.StatusTooManyRequests, "too many registrations from this IP, try again later")
+			}
+		}
+	}
+
+	// Turnstile bot check
+	if h.turnstileSecret != "" {
+		if err := verifyTurnstile(ctx, h.turnstileSecret, input.Body.CfTurnstileResponse); err != nil {
+			slog.WarnContext(ctx, "turnstile verification failed", "traceId", traceID, "err", err)
+			return nil, huma.Error400BadRequest("bot verification failed")
+		}
+	}
 
 	hash, err := bcrypt.GenerateFromPassword([]byte(input.Body.Password), bcrypt.DefaultCost)
 	if err != nil {
@@ -291,6 +323,37 @@ func randomHex(n int) (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(b), nil
+}
+
+func clientIP(r *http.Request) string {
+	if r == nil {
+		return "unknown"
+	}
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		return strings.TrimSpace(strings.SplitN(xff, ",", 2)[0])
+	}
+	return r.RemoteAddr
+}
+
+func verifyTurnstile(ctx context.Context, secret, token string) error {
+	resp, err := http.PostForm(
+		"https://challenges.cloudflare.com/turnstile/v0/siteverify",
+		url.Values{"secret": {secret}, "response": {token}},
+	)
+	if err != nil {
+		return fmt.Errorf("turnstile request: %w", err)
+	}
+	defer resp.Body.Close()
+	var result struct {
+		Success bool `json:"success"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return fmt.Errorf("turnstile decode: %w", err)
+	}
+	if !result.Success {
+		return fmt.Errorf("turnstile rejected")
+	}
+	return nil
 }
 
 // --- login ---

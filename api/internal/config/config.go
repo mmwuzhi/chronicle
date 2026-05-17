@@ -21,6 +21,7 @@ type Config struct {
 	GoogleClientSecret string `envconfig:"GOOGLE_CLIENT_SECRET"`
 	GitHubClientID     string `envconfig:"GITHUB_CLIENT_ID"`
 	GitHubClientSecret string `envconfig:"GITHUB_CLIENT_SECRET"`
+	TurnstileSecret    string `envconfig:"TURNSTILE_SECRET_KEY"`
 	OpenAIKey          string `envconfig:"OPENAI_API_KEY"`
 	Port               string `envconfig:"PORT" default:"8080"`
 	Env                string `envconfig:"ENV" default:"development"`

@@ -93,6 +93,7 @@ func main() {
 		GoogleClientSecret: cfg.GoogleClientSecret,
 		GitHubClientID:     cfg.GitHubClientID,
 		GitHubClientSecret: cfg.GitHubClientSecret,
+		TurnstileSecret:    cfg.TurnstileSecret,
 	})
 
 	authMW := middleware.RequireAuthHuma(auth.ValidateToken(cfg.JWTSecret))
