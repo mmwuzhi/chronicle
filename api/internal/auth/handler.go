@@ -149,7 +149,7 @@ type RegisterInput struct {
 	Body struct {
 		Email               string `json:"email" format:"email"`
 		Password            string `json:"password" minLength:"8"`
-		CfTurnstileResponse string `json:"cfTurnstileResponse"`
+		CfTurnstileResponse string `json:"cfTurnstileResponse,omitempty"`
 	}
 }
 
