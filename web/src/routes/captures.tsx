@@ -1,10 +1,12 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   useListCaptures,
   useCreateCapture,
   useUpdateCapture,
   useDeleteCapture,
+  getListCapturesQueryKey,
 } from "../api";
 import type { CaptureBody, CaptureUpdateInputBodyClassifiedAs } from "../api";
 import { Nav } from "../components/nav";
@@ -48,15 +50,19 @@ const RECLASSIFY_OPTIONS: CaptureUpdateInputBodyClassifiedAs[] = [
 
 function Captures() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [tab, setTab] = useState<Tab>("all");
   const [text, setText] = useState("");
 
   const params = tab === "all" ? undefined : { classifiedAs: tab };
   const { data: captures, error, isLoading } = useListCaptures(params);
 
-  const create = useCreateCapture();
-  const update = useUpdateCapture();
-  const del = useDeleteCapture();
+  const invalidate = () =>
+    queryClient.invalidateQueries({ queryKey: getListCapturesQueryKey() });
+
+  const create = useCreateCapture({ mutation: { onSuccess: invalidate } });
+  const update = useUpdateCapture({ mutation: { onSuccess: invalidate } });
+  const del = useDeleteCapture({ mutation: { onSuccess: invalidate } });
 
   if (error) {
     const status = (error as { status?: number }).status;
@@ -80,6 +86,7 @@ function Captures() {
       },
       { onSuccess: () => setText("") },
     );
+
   };
 
   const handleReclassify = (

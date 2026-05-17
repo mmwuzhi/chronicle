@@ -1,10 +1,12 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   useListTasks,
   useCreateTask,
   useUpdateTask,
   useDeleteTask,
+  getListTasksQueryKey,
 } from "../api";
 import type { TaskBody, TaskUpdateInputBodyStatus } from "../api";
 import { Nav } from "../components/nav";
@@ -35,12 +37,17 @@ const STATUS_COLORS: Record<string, string> = {
 
 function Tasks() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [title, setTitle] = useState("");
 
   const { data: tasks, error, isLoading } = useListTasks(undefined);
-  const create = useCreateTask();
-  const update = useUpdateTask();
-  const del = useDeleteTask();
+
+  const invalidate = () =>
+    queryClient.invalidateQueries({ queryKey: getListTasksQueryKey() });
+
+  const create = useCreateTask({ mutation: { onSuccess: invalidate } });
+  const update = useUpdateTask({ mutation: { onSuccess: invalidate } });
+  const del = useDeleteTask({ mutation: { onSuccess: invalidate } });
 
   if (error) {
     const status = (error as { status?: number }).status;

@@ -2,7 +2,13 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod/v3";
-import { useListProjects, useCreateProject, useUpdateProject } from "../api";
+import { useQueryClient } from "@tanstack/react-query";
+import {
+  useListProjects,
+  useCreateProject,
+  useUpdateProject,
+  getListProjectsQueryKey,
+} from "../api";
 import { Nav } from "../components/nav";
 
 export const Route = createFileRoute("/projects")({
@@ -17,10 +23,15 @@ type CreateForm = z.infer<typeof createSchema>;
 
 function Projects() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
 
   const { data: projects, isLoading, error } = useListProjects();
-  const create = useCreateProject();
-  const update = useUpdateProject();
+
+  const invalidate = () =>
+    queryClient.invalidateQueries({ queryKey: getListProjectsQueryKey() });
+
+  const create = useCreateProject({ mutation: { onSuccess: invalidate } });
+  const update = useUpdateProject({ mutation: { onSuccess: invalidate } });
 
   const {
     register,

@@ -13,5 +13,43 @@ apiClient.interceptors.request.use((config) => {
   return config;
 });
 
+let refreshing: Promise<string> | null = null;
+
+apiClient.interceptors.response.use(
+  (res) => res,
+  async (error) => {
+    const original = error.config;
+    if (
+      error.response?.status !== 401 ||
+      original._retry ||
+      original.url?.includes("/auth/refresh")
+    ) {
+      return Promise.reject(error);
+    }
+    original._retry = true;
+    try {
+      if (!refreshing) {
+        refreshing = apiClient
+          .post<{ accessToken: string }>("/auth/refresh")
+          .then((r) => {
+            const token = r.data.accessToken;
+            localStorage.setItem("access_token", token);
+            return token;
+          })
+          .finally(() => {
+            refreshing = null;
+          });
+      }
+      const token = await refreshing;
+      original.headers.Authorization = `Bearer ${token}`;
+      return apiClient(original);
+    } catch {
+      localStorage.removeItem("access_token");
+      window.location.href = "/login";
+      return Promise.reject(error);
+    }
+  },
+);
+
 export const api = <T>(config: AxiosRequestConfig): Promise<T> =>
   apiClient(config).then((res) => res.data);
