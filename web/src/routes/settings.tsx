@@ -1,6 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
+import * as Dialog from "@radix-ui/react-dialog";
 import { Nav } from "../components/nav";
 import { api } from "../lib/axios";
 
@@ -13,7 +14,7 @@ const deleteAccount = () =>
 
 function Settings() {
   const navigate = useNavigate();
-  const [confirming, setConfirming] = useState(false);
+  const [open, setOpen] = useState(false);
 
   const mutation = useMutation({
     mutationFn: deleteAccount,
@@ -37,40 +38,49 @@ function Settings() {
             <div>
               <p className="text-sm font-medium">Delete account</p>
               <p className="text-xs text-gray-500 mt-0.5">
-                Permanently delete your account and all data. This cannot be undone.
+                Permanently delete your account and all data. This cannot be
+                undone.
               </p>
             </div>
-            {!confirming ? (
-              <button
-                onClick={() => setConfirming(true)}
-                className="text-sm px-4 py-2 rounded-md border border-red-300 text-red-600 hover:bg-red-50 transition-colors"
-              >
-                Delete account
-              </button>
-            ) : (
-              <div className="flex items-center gap-3">
-                <p className="text-sm text-gray-600">Are you sure?</p>
-                <button
-                  onClick={() => setConfirming(false)}
-                  className="text-sm px-3 py-1.5 rounded-md border border-gray-300 hover:bg-gray-50 transition-colors"
-                >
-                  Cancel
+            <Dialog.Root open={open} onOpenChange={setOpen}>
+              <Dialog.Trigger asChild>
+                <button className="text-sm px-4 py-2 rounded-md border border-red-300 text-red-600 hover:bg-red-50 transition-colors">
+                  Delete account
                 </button>
-                <button
-                  onClick={() => mutation.mutate()}
-                  disabled={mutation.isPending}
-                  className="text-sm px-3 py-1.5 rounded-md bg-red-600 text-white hover:bg-red-700 transition-colors disabled:opacity-50"
-                >
-                  {mutation.isPending ? "Deleting…" : "Yes, delete"}
-                </button>
-              </div>
-            )}
+              </Dialog.Trigger>
+              <Dialog.Portal>
+                <Dialog.Overlay className="fixed inset-0 bg-black/40" />
+                <Dialog.Content className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-white rounded-xl shadow-lg p-6 w-full max-w-sm flex flex-col gap-4">
+                  <Dialog.Title className="text-lg font-semibold">
+                    Delete account
+                  </Dialog.Title>
+                  <Dialog.Description className="text-sm text-gray-600">
+                    This will permanently delete your account and all your data.
+                    This action cannot be undone.
+                  </Dialog.Description>
+                  {mutation.isError && (
+                    <p className="text-sm text-red-500">
+                      Something went wrong. Please try again.
+                    </p>
+                  )}
+                  <div className="flex justify-end gap-3 mt-2">
+                    <Dialog.Close asChild>
+                      <button className="text-sm px-4 py-2 rounded-md border border-gray-300 hover:bg-gray-50 transition-colors">
+                        Cancel
+                      </button>
+                    </Dialog.Close>
+                    <button
+                      onClick={() => mutation.mutate()}
+                      disabled={mutation.isPending}
+                      className="text-sm px-4 py-2 rounded-md bg-red-600 text-white hover:bg-red-700 transition-colors disabled:opacity-50"
+                    >
+                      {mutation.isPending ? "Deleting…" : "Yes, delete"}
+                    </button>
+                  </div>
+                </Dialog.Content>
+              </Dialog.Portal>
+            </Dialog.Root>
           </div>
-          {mutation.isError && (
-            <p className="px-6 pb-6 text-sm text-red-500">
-              Something went wrong. Please try again.
-            </p>
-          )}
         </div>
       </div>
     </div>
