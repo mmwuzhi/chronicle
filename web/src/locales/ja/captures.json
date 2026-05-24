@@ -1,0 +1,12 @@
+{
+  "title": "キャプチャ",
+  "placeholder": "思いついたことを書く… (Enterで保存)",
+  "tabs": {
+    "all": "すべて",
+    "unclassified": "未分類",
+    "idea": "アイデア",
+    "task": "タスク"
+  },
+  "nothingHere": "まだ何もありません。",
+  "failedToLoad": "キャプチャの読み込みに失敗しました"
+}

@@ -23,6 +23,7 @@ import { Route as TasksIndexRouteImport } from './routes/tasks.index'
 import { Route as ProjectsIndexRouteImport } from './routes/projects.index'
 import { Route as TasksTaskIdRouteImport } from './routes/tasks.$taskId'
 import { Route as ProjectsProjectIdRouteImport } from './routes/projects.$projectId'
+import { Route as AuthMfaRouteImport } from './routes/auth.mfa'
 import { Route as AuthCallbackRouteImport } from './routes/auth.callback'
 
 const VerifyEmailRoute = VerifyEmailRouteImport.update({
@@ -95,6 +96,11 @@ const ProjectsProjectIdRoute = ProjectsProjectIdRouteImport.update({
   path: '/$projectId',
   getParentRoute: () => ProjectsRoute,
 } as any)
+const AuthMfaRoute = AuthMfaRouteImport.update({
+  id: '/auth/mfa',
+  path: '/auth/mfa',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AuthCallbackRoute = AuthCallbackRouteImport.update({
   id: '/auth/callback',
   path: '/auth/callback',
@@ -113,6 +119,7 @@ export interface FileRoutesByFullPath {
   '/tasks': typeof TasksRouteWithChildren
   '/verify-email': typeof VerifyEmailRoute
   '/auth/callback': typeof AuthCallbackRoute
+  '/auth/mfa': typeof AuthMfaRoute
   '/projects/$projectId': typeof ProjectsProjectIdRoute
   '/tasks/$taskId': typeof TasksTaskIdRoute
   '/projects/': typeof ProjectsIndexRoute
@@ -128,6 +135,7 @@ export interface FileRoutesByTo {
   '/settings': typeof SettingsRoute
   '/verify-email': typeof VerifyEmailRoute
   '/auth/callback': typeof AuthCallbackRoute
+  '/auth/mfa': typeof AuthMfaRoute
   '/projects/$projectId': typeof ProjectsProjectIdRoute
   '/tasks/$taskId': typeof TasksTaskIdRoute
   '/projects': typeof ProjectsIndexRoute
@@ -146,6 +154,7 @@ export interface FileRoutesById {
   '/tasks': typeof TasksRouteWithChildren
   '/verify-email': typeof VerifyEmailRoute
   '/auth/callback': typeof AuthCallbackRoute
+  '/auth/mfa': typeof AuthMfaRoute
   '/projects/$projectId': typeof ProjectsProjectIdRoute
   '/tasks/$taskId': typeof TasksTaskIdRoute
   '/projects/': typeof ProjectsIndexRoute
@@ -165,6 +174,7 @@ export interface FileRouteTypes {
     | '/tasks'
     | '/verify-email'
     | '/auth/callback'
+    | '/auth/mfa'
     | '/projects/$projectId'
     | '/tasks/$taskId'
     | '/projects/'
@@ -180,6 +190,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/verify-email'
     | '/auth/callback'
+    | '/auth/mfa'
     | '/projects/$projectId'
     | '/tasks/$taskId'
     | '/projects'
@@ -197,6 +208,7 @@ export interface FileRouteTypes {
     | '/tasks'
     | '/verify-email'
     | '/auth/callback'
+    | '/auth/mfa'
     | '/projects/$projectId'
     | '/tasks/$taskId'
     | '/projects/'
@@ -215,6 +227,7 @@ export interface RootRouteChildren {
   TasksRoute: typeof TasksRouteWithChildren
   VerifyEmailRoute: typeof VerifyEmailRoute
   AuthCallbackRoute: typeof AuthCallbackRoute
+  AuthMfaRoute: typeof AuthMfaRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -317,6 +330,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProjectsProjectIdRouteImport
       parentRoute: typeof ProjectsRoute
     }
+    '/auth/mfa': {
+      id: '/auth/mfa'
+      path: '/auth/mfa'
+      fullPath: '/auth/mfa'
+      preLoaderRoute: typeof AuthMfaRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/auth/callback': {
       id: '/auth/callback'
       path: '/auth/callback'
@@ -365,6 +385,7 @@ const rootRouteChildren: RootRouteChildren = {
   TasksRoute: TasksRouteWithChildren,
   VerifyEmailRoute: VerifyEmailRoute,
   AuthCallbackRoute: AuthCallbackRoute,
+  AuthMfaRoute: AuthMfaRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

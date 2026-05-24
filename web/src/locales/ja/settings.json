@@ -1,0 +1,80 @@
+{
+  "title": "設定",
+  "account": {
+    "title": "アカウント",
+    "linkedAccounts": "連携アカウント",
+    "connect": "連携",
+    "connected": "連携済み",
+    "disconnect": "解除",
+    "disconnectConfirm": "{{provider}}の連携を解除しますか？",
+    "disconnectDescription": "解除すると、この{{provider}}アカウントでログインできなくなります。",
+    "cannotDisconnect": "唯一のログイン方法を解除する前に、パスワードを設定してください。",
+    "linkSuccess": "{{provider}}アカウントを連携しました。",
+    "linkError": "このアカウントは既に別のユーザーに連携されています。"
+  },
+  "profile": {
+    "title": "プロフィール",
+    "email": "メールアドレス",
+    "authMethod": "認証方法",
+    "verifyHint": "メールアドレスが未認証です。受信トレイの確認リンクをご確認ください。"
+  },
+  "password": {
+    "label": "パスワード",
+    "changePassword": "パスワード変更",
+    "setPassword": "パスワード設定",
+    "cancel": "キャンセル",
+    "oauthNote": "{{provider}}でサインアップしました。パスワードを設定するとメールでもログインできます。",
+    "oauthSetHint": "パスワードを設定するとメールでもログインできます。",
+    "currentPassword": "現在のパスワード",
+    "newPassword": "新しいパスワード",
+    "placeholder": "8文字以上",
+    "saving": "保存中…",
+    "updated": "パスワードを更新しました",
+    "error": "エラーが発生しました"
+  },
+  "security": {
+    "title": "セキュリティ",
+    "passkeys": {
+      "title": "パスキー",
+      "description": "デバイスの生体認証やセキュリティキーを使って、パスワードなしでサインインできます。",
+      "add": "パスキーを追加",
+      "empty": "パスキーはまだ登録されていません。",
+      "delete": "削除",
+      "deleteConfirm": "このパスキーを削除しますか？",
+      "deleteDescription": "削除すると、このパスキーでサインインできなくなります。"
+    },
+    "mfa": {
+      "title": "二要素認証",
+      "description": "認証アプリを使ってアカウントにセキュリティを追加します。",
+      "enable": "有効にする",
+      "disable": "無効にする",
+      "enabled": "有効",
+      "disabled": "無効",
+      "setupTitle": "二要素認証の設定",
+      "scanQR": "認証アプリでこのQRコードをスキャンしてください。",
+      "manualEntry": "または手動でこのコードを入力：",
+      "enterCode": "アプリに表示される6桁のコードを入力",
+      "verifyAndEnable": "確認して有効化",
+      "recoveryCodes": "リカバリーコード",
+      "recoveryCodesDescription": "これらのコードを安全な場所に保存してください。各コードは一度だけ使用できます。",
+      "recoveryCodesSaved": "コードを保存しました",
+      "disableConfirm": "二要素認証を無効にしますか？",
+      "disableDescription": "認証アプリの6桁コード、またはリカバリーコードを入力して確認してください。",
+      "invalidCode": "コードが無効です。もう一度お試しください。"
+    }
+  },
+  "danger": {
+    "title": "危険な操作",
+    "deleteAccount": "アカウント削除",
+    "deleteDescription": "アカウントとすべてのデータを完全に削除します。この操作は取り消せません。",
+    "deleting": "削除中…",
+    "confirmTitle": "アカウント削除",
+    "confirmDescription": "アカウントとすべてのデータが完全に削除されます。この操作は取り消せません。",
+    "confirmLabel": "はい、削除します",
+    "deleteFailed": "エラーが発生しました。もう一度お試しください。"
+  },
+  "language": {
+    "title": "言語",
+    "description": "使用する言語を選択してください。この設定はローカルに保存されます。"
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "title": "タスク",
+  "addPlaceholder": "タスクを追加… (Enterで保存)",
+  "add": "追加",
+  "filterProject": "プロジェクト：",
+  "allProjects": "すべてのプロジェクト",
+  "noTasks": "タスクはまだありません。",
+  "failedToLoad": "タスクの読み込みに失敗しました",
+  "detail": {
+    "breadcrumb": "詳細",
+    "failedToLoad": "タスクの読み込みに失敗しました"
+  },
+  "time": {
+    "title": "時間",
+    "stop": "停止",
+    "startTimer": "タイマー開始",
+    "noTimeLogged": "まだ記録はありません",
+    "total": "合計：{{duration}}"
+  },
+  "log": {
+    "title": "ログ",
+    "placeholder": "メモを追加… (Enterで保存、Shift+Enterで改行)",
+    "addNote": "メモを追加",
+    "noNotes": "メモはまだありません。"
+  },
+  "duration": {
+    "hoursMinutes": "{{h}}時間{{m}}分",
+    "minutesSeconds": "{{m}}分{{s}}秒",
+    "seconds": "{{s}}秒"
+  }
+}

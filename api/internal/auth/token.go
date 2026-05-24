@@ -16,18 +16,24 @@ const (
 
 type Claims struct {
 	UserID string `json:"sub"`
+	MFA    bool   `json:"mfa,omitempty"`
 	jwt.RegisteredClaims
 }
 
-func NewAccessToken(userID, secret string) (string, error) {
+func newTokenWithClaims(userID, secret string, ttl time.Duration, mfa bool) (string, error) {
 	claims := Claims{
 		UserID: userID,
+		MFA:    mfa,
 		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(AccessTokenTTL)),
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(ttl)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
 		},
 	}
 	return jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(secret))
+}
+
+func NewAccessToken(userID, secret string) (string, error) {
+	return newTokenWithClaims(userID, secret, AccessTokenTTL, false)
 }
 
 func ParseAccessToken(raw, secret string) (*Claims, error) {
@@ -63,6 +69,9 @@ func ValidateToken(secret string) func(raw string) (string, error) {
 		claims, err := ParseAccessToken(raw, secret)
 		if err != nil {
 			return "", err
+		}
+		if claims.MFA {
+			return "", jwt.ErrTokenInvalidClaims
 		}
 		return claims.UserID, nil
 	}

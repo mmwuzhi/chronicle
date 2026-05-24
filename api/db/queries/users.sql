@@ -40,10 +40,7 @@ WHERE id = $1;
 -- name: DeleteUser :exec
 DELETE FROM users WHERE id = $1;
 
--- name: UpsertOAuthUser :one
-INSERT INTO users (email, oauth_provider, oauth_provider_id, email_verified)
-VALUES ($1, $2, $3, true)
-ON CONFLICT (email) DO UPDATE
-  SET oauth_provider    = EXCLUDED.oauth_provider,
-      oauth_provider_id = EXCLUDED.oauth_provider_id
+-- name: CreateOAuthUser :one
+INSERT INTO users (email, email_verified)
+VALUES ($1, true)
 RETURNING *;

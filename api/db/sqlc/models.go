@@ -208,6 +208,25 @@ type LogEntry struct {
 	DeletedAt pgtype.Timestamptz `json:"deleted_at"`
 }
 
+type OauthAccount struct {
+	ID         uuid.UUID          `json:"id"`
+	UserID     uuid.UUID          `json:"user_id"`
+	Provider   string             `json:"provider"`
+	ProviderID string             `json:"provider_id"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+}
+
+type Passkey struct {
+	ID           uuid.UUID          `json:"id"`
+	UserID       uuid.UUID          `json:"user_id"`
+	CredentialID []byte             `json:"credential_id"`
+	PublicKey    []byte             `json:"public_key"`
+	Aaguid       []byte             `json:"aaguid"`
+	SignCount    int64              `json:"sign_count"`
+	Name         string             `json:"name"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+}
+
 type Project struct {
 	ID        uuid.UUID          `json:"id"`
 	UserID    uuid.UUID          `json:"user_id"`
@@ -222,6 +241,13 @@ type PublicShare struct {
 	ReportID  uuid.UUID          `json:"report_id"`
 	Slug      string             `json:"slug"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
+type RecoveryCode struct {
+	ID       uuid.UUID `json:"id"`
+	UserID   uuid.UUID `json:"user_id"`
+	CodeHash string    `json:"code_hash"`
+	Used     bool      `json:"used"`
 }
 
 type RefreshToken struct {
@@ -264,8 +290,8 @@ type User struct {
 	EmailVerifyToken     pgtype.Text        `json:"email_verify_token"`
 	PasswordResetToken   pgtype.Text        `json:"password_reset_token"`
 	PasswordResetExpires pgtype.Timestamptz `json:"password_reset_expires"`
-	OauthProvider        pgtype.Text        `json:"oauth_provider"`
-	OauthProviderID      pgtype.Text        `json:"oauth_provider_id"`
+	TotpSecret           pgtype.Text        `json:"totp_secret"`
+	TotpEnabled          bool               `json:"totp_enabled"`
 }
 
 type WeeklyReport struct {

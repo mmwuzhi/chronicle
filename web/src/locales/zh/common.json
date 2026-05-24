@@ -1,0 +1,42 @@
+{
+  "brand": "Chronicle",
+  "tagline": "个人生产力系统",
+  "nav": {
+    "captures": "捕获",
+    "tasks": "任务",
+    "projects": "项目",
+    "settings": "设置"
+  },
+  "status": {
+    "todo": "待办",
+    "in_progress": "进行中",
+    "done": "已完成",
+    "archived": "已归档"
+  },
+  "classification": {
+    "unclassified": "未分类",
+    "idea": "想法",
+    "task": "任务",
+    "routine": "日常",
+    "log": "日志"
+  },
+  "actions": {
+    "save": "保存",
+    "cancel": "取消",
+    "confirm": "确认",
+    "delete": "删除",
+    "edit": "编辑",
+    "archive": "归档",
+    "add": "添加",
+    "polish": "润色"
+  },
+  "errors": {
+    "polishFailed": "润色失败，请重试。"
+  },
+  "loading": "加载中…",
+  "error": "出错了",
+  "or": "或",
+  "noProject": "无项目",
+  "signIn": "登录",
+  "createAccount": "注册"
+}

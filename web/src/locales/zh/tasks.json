@@ -1,0 +1,31 @@
+{
+  "title": "任务",
+  "addPlaceholder": "添加任务… (按 Enter 保存)",
+  "add": "添加",
+  "filterProject": "项目：",
+  "allProjects": "所有项目",
+  "noTasks": "还没有任务。",
+  "failedToLoad": "加载任务失败",
+  "detail": {
+    "breadcrumb": "详情",
+    "failedToLoad": "加载任务失败"
+  },
+  "time": {
+    "title": "时间",
+    "stop": "停止",
+    "startTimer": "开始计时",
+    "noTimeLogged": "还没有记录",
+    "total": "总计：{{duration}}"
+  },
+  "log": {
+    "title": "日志",
+    "placeholder": "添加笔记… (Enter 保存，Shift+Enter 换行)",
+    "addNote": "添加笔记",
+    "noNotes": "还没有笔记。"
+  },
+  "duration": {
+    "hoursMinutes": "{{h}}小时{{m}}分钟",
+    "minutesSeconds": "{{m}}分钟{{s}}秒",
+    "seconds": "{{s}}秒"
+  }
+}

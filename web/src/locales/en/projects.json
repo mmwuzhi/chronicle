@@ -1,0 +1,17 @@
+{
+  "title": "Projects",
+  "newProjectName": "New project name",
+  "addProject": "Add project",
+  "noProjects": "No projects yet. Create one above.",
+  "failedToLoad": "Failed to load projects",
+  "detail": {
+    "deleteTitle": "Delete project",
+    "deleteDescription": "This will permanently delete \"{{name}}\". Tasks in this project will be kept but unassigned.",
+    "deleteConfirm": "Yes, delete",
+    "addPlaceholder": "Add a task… (Enter to save)",
+    "notFound": "Project not found.",
+    "backToProjects": "Back to projects",
+    "noTasks": "No tasks in this project yet.",
+    "failedToLoad": "Failed to load project"
+  }
+}

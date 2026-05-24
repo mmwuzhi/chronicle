@@ -1,0 +1,17 @@
+{
+  "title": "プロジェクト",
+  "newProjectName": "新しいプロジェクト名",
+  "addProject": "プロジェクトを追加",
+  "noProjects": "プロジェクトはまだありません。上から作成してください。",
+  "failedToLoad": "プロジェクトの読み込みに失敗しました",
+  "detail": {
+    "deleteTitle": "プロジェクトを削除",
+    "deleteDescription": "「{{name}}」を完全に削除します。このプロジェクトのタスクは保持されますが、未割り当てになります。",
+    "deleteConfirm": "はい、削除します",
+    "addPlaceholder": "タスクを追加… (Enterで保存)",
+    "notFound": "プロジェクトが見つかりません。",
+    "backToProjects": "プロジェクト一覧に戻る",
+    "noTasks": "このプロジェクトにはまだタスクがありません。",
+    "failedToLoad": "プロジェクトの読み込みに失敗しました"
+  }
+}

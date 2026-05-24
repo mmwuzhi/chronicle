@@ -22,7 +22,10 @@ type Config struct {
 	GitHubClientID     string `envconfig:"GITHUB_CLIENT_ID"`
 	GitHubClientSecret string `envconfig:"GITHUB_CLIENT_SECRET"`
 	TurnstileSecret    string `envconfig:"TURNSTILE_SECRET_KEY"`
+	WebAuthnRPID       string `envconfig:"WEBAUTHN_RP_ID" default:"localhost"`
+	WebAuthnRPOrigin   string `envconfig:"WEBAUTHN_RP_ORIGIN" default:"http://localhost:5173"`
 	OpenAIKey          string `envconfig:"OPENAI_API_KEY"`
+	GeminiKey          string `envconfig:"GEMINI_API_KEY"`
 	Port               string `envconfig:"PORT" default:"8080"`
 	Env                string `envconfig:"ENV" default:"development"`
 }

@@ -1,0 +1,80 @@
+{
+  "title": "Settings",
+  "account": {
+    "title": "Account",
+    "linkedAccounts": "Linked accounts",
+    "connect": "Connect",
+    "connected": "Connected",
+    "disconnect": "Disconnect",
+    "disconnectConfirm": "Disconnect {{provider}}?",
+    "disconnectDescription": "You will no longer be able to sign in with this {{provider}} account.",
+    "cannotDisconnect": "Set a password first before disconnecting your only login method.",
+    "linkSuccess": "{{provider}} account linked successfully.",
+    "linkError": "This account is already linked to another user."
+  },
+  "profile": {
+    "title": "Profile",
+    "email": "Email",
+    "authMethod": "Auth method",
+    "verifyHint": "Your email is not verified. Please check your inbox for the verification link."
+  },
+  "password": {
+    "label": "Password",
+    "changePassword": "Change password",
+    "setPassword": "Set password",
+    "cancel": "Cancel",
+    "oauthNote": "You signed up with {{provider}}. Set a password to enable email login.",
+    "oauthSetHint": "Setting a password lets you sign in with email too.",
+    "currentPassword": "Current password",
+    "newPassword": "New password",
+    "placeholder": "Minimum 8 characters",
+    "saving": "Saving…",
+    "updated": "Password updated",
+    "error": "Something went wrong"
+  },
+  "security": {
+    "title": "Security",
+    "passkeys": {
+      "title": "Passkeys",
+      "description": "Use your device's biometrics or security key to sign in without a password.",
+      "add": "Add passkey",
+      "empty": "No passkeys registered yet.",
+      "delete": "Remove",
+      "deleteConfirm": "Remove this passkey?",
+      "deleteDescription": "You will no longer be able to sign in with this passkey."
+    },
+    "mfa": {
+      "title": "Two-factor authentication",
+      "description": "Add an extra layer of security with an authenticator app.",
+      "enable": "Enable",
+      "disable": "Disable",
+      "enabled": "Enabled",
+      "disabled": "Disabled",
+      "setupTitle": "Set up two-factor authentication",
+      "scanQR": "Scan this QR code with your authenticator app.",
+      "manualEntry": "Or enter this code manually:",
+      "enterCode": "Enter the 6-digit code from your app",
+      "verifyAndEnable": "Verify & enable",
+      "recoveryCodes": "Recovery codes",
+      "recoveryCodesDescription": "Save these codes in a safe place. Each code can only be used once.",
+      "recoveryCodesSaved": "I've saved these codes",
+      "disableConfirm": "Disable two-factor authentication?",
+      "disableDescription": "Enter a 6-digit code from your authenticator app, or a recovery code, to confirm.",
+      "invalidCode": "Invalid code. Please try again."
+    }
+  },
+  "danger": {
+    "title": "Danger zone",
+    "deleteAccount": "Delete account",
+    "deleteDescription": "Permanently delete your account and all data. This cannot be undone.",
+    "deleting": "Deleting…",
+    "confirmTitle": "Delete account",
+    "confirmDescription": "This will permanently delete your account and all your data. This action cannot be undone.",
+    "confirmLabel": "Yes, delete",
+    "deleteFailed": "Something went wrong. Please try again."
+  },
+  "language": {
+    "title": "Language",
+    "description": "Choose your preferred language. This setting is saved locally."
+  }
+}

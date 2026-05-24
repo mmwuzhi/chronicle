@@ -15,6 +15,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
 	"github.com/go-chi/chi/v5"
+	"github.com/go-webauthn/webauthn/webauthn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
@@ -37,6 +38,8 @@ type Options struct {
 	GitHubClientID     string
 	GitHubClientSecret string
 	TurnstileSecret    string
+	WebAuthnRPID       string
+	WebAuthnRPOrigin   string
 }
 
 type handler struct {
@@ -49,6 +52,7 @@ type handler struct {
 	googleOAuth     *oauth2.Config
 	githubOAuth     *oauth2.Config
 	turnstileSecret string
+	wan             *webauthn.WebAuthn
 }
 
 func Register(api huma.API, r chi.Router, pool *pgxpool.Pool, rdb *redis.Client, opts Options) {
@@ -60,6 +64,23 @@ func Register(api huma.API, r chi.Router, pool *pgxpool.Pool, rdb *redis.Client,
 		apiBaseURL:      opts.APIBaseURL,
 		rdb:             rdb,
 		turnstileSecret: opts.TurnstileSecret,
+	}
+
+	if opts.WebAuthnRPID != "" {
+		origins := []string{opts.WebAuthnRPOrigin}
+		if opts.WebAuthnRPOrigin == "" {
+			origins = []string{"http://localhost:5173"}
+		}
+		wan, err := webauthn.New(&webauthn.Config{
+			RPID:          opts.WebAuthnRPID,
+			RPDisplayName: "Chronicle",
+			RPOrigins:     origins,
+		})
+		if err != nil {
+			slog.Error("failed to init webauthn", "err", err)
+		} else {
+			h.wan = wan
+		}
 	}
 
 	if opts.GoogleClientID != "" {
@@ -141,6 +162,107 @@ func Register(api huma.API, r chi.Router, pool *pgxpool.Pool, rdb *redis.Client,
 		Summary:     "Reset password with token",
 		Tags:        []string{"auth"},
 	}, h.resetPassword)
+
+	authMW := middleware.RequireAuthHuma(ValidateToken(opts.JWTSecret))
+
+	huma.Register(api, huma.Operation{
+		OperationID: "totpSetup",
+		Method:      http.MethodPost,
+		Path:        "/auth/mfa/setup",
+		Summary:     "Generate TOTP secret and URI",
+		Tags:        []string{"auth"},
+		Middlewares: huma.Middlewares{authMW},
+	}, h.totpSetup)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "totpEnable",
+		Method:      http.MethodPost,
+		Path:        "/auth/mfa/enable",
+		Summary:     "Enable TOTP with verification code",
+		Tags:        []string{"auth"},
+		Middlewares: huma.Middlewares{authMW},
+	}, h.totpEnable)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "totpDisable",
+		Method:      http.MethodPost,
+		Path:        "/auth/mfa/disable",
+		Summary:     "Disable TOTP",
+		Tags:        []string{"auth"},
+		Middlewares: huma.Middlewares{authMW},
+	}, h.totpDisable)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "mfaVerify",
+		Method:      http.MethodPost,
+		Path:        "/auth/mfa/verify",
+		Summary:     "Verify MFA code and receive tokens",
+		Tags:        []string{"auth"},
+	}, h.mfaVerify)
+
+	if h.wan != nil {
+
+		huma.Register(api, huma.Operation{
+			OperationID: "passkeyRegisterBegin",
+			Method:      http.MethodPost,
+			Path:        "/auth/passkeys/register/begin",
+			Summary:     "Start passkey registration",
+			Tags:        []string{"auth"},
+			Middlewares: huma.Middlewares{authMW},
+		}, h.passkeyRegisterBegin)
+
+		huma.Register(api, huma.Operation{
+			OperationID: "passkeyRegisterFinish",
+			Method:      http.MethodPost,
+			Path:        "/auth/passkeys/register/finish",
+			Summary:     "Complete passkey registration",
+			Tags:        []string{"auth"},
+			Middlewares: huma.Middlewares{authMW},
+		}, h.passkeyRegisterFinish)
+
+		huma.Register(api, huma.Operation{
+			OperationID: "passkeyLoginBegin",
+			Method:      http.MethodPost,
+			Path:        "/auth/passkeys/login/begin",
+			Summary:     "Start passkey login",
+			Tags:        []string{"auth"},
+		}, h.passkeyLoginBegin)
+
+		huma.Register(api, huma.Operation{
+			OperationID: "passkeyLoginFinish",
+			Method:      http.MethodPost,
+			Path:        "/auth/passkeys/login/finish",
+			Summary:     "Complete passkey login and receive tokens",
+			Tags:        []string{"auth"},
+		}, h.passkeyLoginFinish)
+
+		huma.Register(api, huma.Operation{
+			OperationID: "listPasskeys",
+			Method:      http.MethodGet,
+			Path:        "/auth/passkeys",
+			Summary:     "List registered passkeys",
+			Tags:        []string{"auth"},
+			Middlewares: huma.Middlewares{authMW},
+		}, h.listPasskeys)
+
+		huma.Register(api, huma.Operation{
+			OperationID: "deletePasskey",
+			Method:      http.MethodDelete,
+			Path:        "/auth/passkeys/{id}",
+			Summary:     "Delete a passkey",
+			Tags:        []string{"auth"},
+			Middlewares: huma.Middlewares{authMW},
+		}, h.deletePasskey)
+
+		huma.Register(api, huma.Operation{
+			OperationID: "renamePasskey",
+			Method:      http.MethodPatch,
+			Path:        "/auth/passkeys/{id}",
+			Summary:     "Rename a passkey",
+			Tags:        []string{"auth"},
+			Middlewares: huma.Middlewares{authMW},
+		}, h.renamePasskey)
+	}
 }
 
 // --- register ---
@@ -367,7 +489,9 @@ type LoginInput struct {
 
 type LoginOutput struct {
 	Body struct {
-		AccessToken string `json:"accessToken"`
+		AccessToken string `json:"accessToken,omitempty"`
+		MFARequired bool   `json:"mfaRequired,omitempty"`
+		MFAToken    string `json:"mfaToken,omitempty"`
 	}
 }
 
@@ -384,6 +508,18 @@ func (h *handler) login(ctx context.Context, input *LoginInput) (*LoginOutput, e
 	}
 	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash.String), []byte(input.Body.Password)); err != nil {
 		return nil, huma.Error401Unauthorized("invalid credentials")
+	}
+
+	if user.TotpEnabled {
+		mfaToken, err := NewMFAToken(user.ID.String(), h.secret)
+		if err != nil {
+			slog.ErrorContext(ctx, "mfa token generation failed", "traceId", traceID, "err", err)
+			return nil, huma.Error500InternalServerError("internal error")
+		}
+		out := &LoginOutput{}
+		out.Body.MFARequired = true
+		out.Body.MFAToken = mfaToken
+		return out, nil
 	}
 
 	accessToken, err := NewAccessToken(user.ID.String(), h.secret)
@@ -476,7 +612,7 @@ func setRefreshCookie(ctx context.Context, value string, ttl time.Duration) {
 		HttpOnly: true,
 		Secure:   true,
 		SameSite: http.SameSiteStrictMode,
-		Path:     "/auth/refresh",
+		Path:     "/",
 		MaxAge:   int(ttl.Seconds()),
 	})
 }
@@ -492,7 +628,7 @@ func clearRefreshCookie(ctx context.Context) {
 		HttpOnly: true,
 		Secure:   true,
 		SameSite: http.SameSiteStrictMode,
-		Path:     "/auth/refresh",
+		Path:     "/",
 		MaxAge:   -1,
 	})
 }

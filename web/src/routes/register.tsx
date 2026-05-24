@@ -7,6 +7,7 @@ import { useMutation } from "@tanstack/react-query";
 import { Turnstile } from "@marsidev/react-turnstile";
 import type { TurnstileInstance } from "@marsidev/react-turnstile";
 import { api } from "../lib/axios";
+import { useTranslation, Trans } from "react-i18next";
 
 const TURNSTILE_SITE_KEY = import.meta.env.VITE_TURNSTILE_SITE_KEY as
   | string
@@ -35,33 +36,34 @@ export const Route = createFileRoute("/register")({
   component: Register,
 });
 
-const schema = z
-  .object({
-    email: z.string().email(),
-    password: z.string().min(8, "Password must be at least 8 characters"),
-    confirmPassword: z.string().min(1, "Please confirm your password"),
-  })
-  .refine((d) => d.password === d.confirmPassword, {
-    message: "Passwords do not match",
-    path: ["confirmPassword"],
-  });
-type FormData = z.infer<typeof schema>;
-
-const registerUser = (
-  email: string,
-  password: string,
-  cfTurnstileResponse: string,
-) =>
-  api<{ userId: string }>({
-    url: "/auth/register",
-    method: "POST",
-    data: { email, password, cfTurnstileResponse },
-  });
-
 function Register() {
+  const { t } = useTranslation("auth");
   const [sentEmail, setSentEmail] = useState("");
   const [turnstileToken, setTurnstileToken] = useState("");
   const turnstileRef = useRef<TurnstileInstance>(null);
+
+  const schema = z
+    .object({
+      email: z.string().email(),
+      password: z.string().min(8, t("register.passwordMinLength")),
+      confirmPassword: z.string().min(1, t("register.confirmRequired")),
+    })
+    .refine((d) => d.password === d.confirmPassword, {
+      message: t("register.passwordsNoMatch"),
+      path: ["confirmPassword"],
+    });
+  type FormData = z.infer<typeof schema>;
+
+  const registerUser = (
+    email: string,
+    password: string,
+    cfTurnstileResponse: string,
+  ) =>
+    api<{ userId: string }>({
+      url: "/auth/register",
+      method: "POST",
+      data: { email, password, cfTurnstileResponse },
+    });
 
   const registerMutation = useMutation({
     mutationFn: ({
@@ -87,17 +89,20 @@ function Register() {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="w-full max-w-sm flex flex-col gap-4 p-8 bg-white rounded-xl border border-gray-200 shadow-sm text-center">
-          <h1 className="text-xl font-semibold">Check your inbox</h1>
+          <h1 className="text-xl font-semibold">{t("register.checkInbox")}</h1>
           <p className="text-sm text-gray-600">
-            We sent a verification link to{" "}
-            <span className="font-medium text-gray-900">{sentEmail}</span>.
-            Click it to activate your account.
+            <Trans
+              i18nKey="register.verificationSent"
+              ns="auth"
+              values={{ email: sentEmail }}
+              components={{ strong: <span className="font-medium text-gray-900" /> }}
+            />
           </p>
           <Link
             to="/login"
             className="mt-2 text-sm text-gray-900 font-medium hover:underline"
           >
-            Sign in
+            {t("login.submit")}
           </Link>
         </div>
       </div>
@@ -112,10 +117,10 @@ function Register() {
         )}
         className="w-full max-w-sm flex flex-col gap-4 p-8 bg-white rounded-xl border border-gray-200 shadow-sm"
       >
-        <h1 className="text-xl font-semibold">Create account</h1>
+        <h1 className="text-xl font-semibold">{t("register.title")}</h1>
 
         <div className="flex flex-col gap-1">
-          <label className="text-sm font-medium">Email</label>
+          <label className="text-sm font-medium">{t("register.email")}</label>
           <input
             type="email"
             autoComplete="email"
@@ -128,7 +133,7 @@ function Register() {
         </div>
 
         <div className="flex flex-col gap-1">
-          <label className="text-sm font-medium">Password</label>
+          <label className="text-sm font-medium">{t("register.password")}</label>
           <input
             type="password"
             autoComplete="new-password"
@@ -141,7 +146,7 @@ function Register() {
         </div>
 
         <div className="flex flex-col gap-1">
-          <label className="text-sm font-medium">Confirm password</label>
+          <label className="text-sm font-medium">{t("register.confirmPassword")}</label>
           <input
             type="password"
             autoComplete="new-password"
@@ -166,7 +171,7 @@ function Register() {
 
         {registerMutation.error && (
           <p className="text-red-500 text-sm">
-            Registration failed. Email may already be taken.
+            {t("register.registrationFailed")}
           </p>
         )}
 
@@ -178,12 +183,12 @@ function Register() {
           }
           className="bg-gray-900 text-white rounded-md py-2 text-sm font-medium hover:bg-gray-700 transition-colors disabled:opacity-50"
         >
-          {registerMutation.isPending ? "Creating account…" : "Create account"}
+          {registerMutation.isPending ? t("register.creatingAccount") : t("register.submit")}
         </button>
 
         <div className="relative flex items-center gap-3">
           <div className="flex-1 h-px bg-gray-200" />
-          <span className="text-xs text-gray-400">or</span>
+          <span className="text-xs text-gray-400">{t("common:or")}</span>
           <div className="flex-1 h-px bg-gray-200" />
         </div>
 
@@ -192,7 +197,7 @@ function Register() {
           className="flex items-center justify-center gap-2 border border-gray-300 rounded-md py-2 text-sm font-medium hover:bg-gray-50 transition-colors"
         >
           <GoogleIcon />
-          Continue with Google
+          {t("register.continueGoogle")}
         </a>
 
         <a
@@ -200,13 +205,13 @@ function Register() {
           className="flex items-center justify-center gap-2 border border-gray-300 rounded-md py-2 text-sm font-medium hover:bg-gray-50 transition-colors"
         >
           <GitHubIcon />
-          Continue with GitHub
+          {t("register.continueGithub")}
         </a>
 
         <p className="text-center text-sm text-gray-500">
-          Already have an account?{" "}
+          {t("register.alreadyHaveAccount")}{" "}
           <Link to="/login" className="text-gray-900 font-medium hover:underline">
-            Sign in
+            {t("login.submit")}
           </Link>
         </p>
       </form>

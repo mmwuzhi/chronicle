@@ -15,6 +15,7 @@ import {
 } from "../api";
 import type { TaskBody, TaskUpdateInputBodyStatus } from "../api";
 import { Nav } from "../components/nav";
+import { useTranslation } from "react-i18next";
 
 export const Route = createFileRoute("/projects/$projectId")({
   component: ProjectDetail,
@@ -26,13 +27,6 @@ const STATUS_CYCLE: Record<string, TaskUpdateInputBodyStatus> = {
   done: "todo",
 };
 
-const STATUS_LABELS: Record<string, string> = {
-  todo: "To Do",
-  in_progress: "In Progress",
-  done: "Done",
-  archived: "Archived",
-};
-
 const STATUS_COLORS: Record<string, string> = {
   todo: "bg-gray-100 text-gray-600",
   in_progress: "bg-blue-100 text-blue-700",
@@ -41,6 +35,8 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 function ProjectDetail() {
+  const { t } = useTranslation("projects");
+  const { t: tc } = useTranslation("common");
   const { projectId } = Route.useParams();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -92,7 +88,7 @@ function ProjectDetail() {
       navigate({ to: "/login" });
       return null;
     }
-    return <div className="p-8 text-red-500">Failed to load project</div>;
+    return <div className="p-8 text-red-500">{t("detail.failedToLoad")}</div>;
   }
 
   if (projectsLoading) {
@@ -100,7 +96,7 @@ function ProjectDetail() {
       <div className="min-h-screen bg-gray-50">
         <Nav />
         <div className="max-w-3xl mx-auto px-8 py-8">
-          <div className="text-gray-400 text-sm">Loading…</div>
+          <div className="text-gray-400 text-sm">{tc("loading")}</div>
         </div>
       </div>
     );
@@ -111,12 +107,12 @@ function ProjectDetail() {
       <div className="min-h-screen bg-gray-50">
         <Nav />
         <div className="max-w-3xl mx-auto px-8 py-8 flex flex-col gap-4">
-          <p className="text-gray-500 text-sm">Project not found.</p>
+          <p className="text-gray-500 text-sm">{t("detail.notFound")}</p>
           <Link
             to="/projects"
             className="text-sm text-gray-900 font-medium hover:underline"
           >
-            Back to projects
+            {t("detail.backToProjects")}
           </Link>
         </div>
       </div>
@@ -152,26 +148,24 @@ function ProjectDetail() {
   };
 
   const active = (tasks ?? []).filter(
-    (t: TaskBody) => t.status !== "archived",
+    (task: TaskBody) => task.status !== "archived",
   );
 
   return (
     <div className="min-h-screen bg-gray-50">
       <Nav />
       <div className="max-w-3xl mx-auto px-8 py-8 flex flex-col gap-6">
-        {/* Breadcrumb */}
         <div className="flex items-center gap-2 text-sm text-gray-400">
           <Link
             to="/projects"
             className="hover:text-gray-600 transition-colors"
           >
-            Projects
+            {t("title")}
           </Link>
           <span>/</span>
           <span className="text-gray-600">{project.name}</span>
         </div>
 
-        {/* Header */}
         {editing ? (
           <div className="flex items-center gap-3">
             <input
@@ -195,13 +189,13 @@ function ProjectDetail() {
               disabled={updateProject.isPending || !editName.trim()}
               className="bg-gray-900 text-white rounded-md px-4 py-2 text-sm font-medium hover:bg-gray-700 transition-colors disabled:opacity-50"
             >
-              Save
+              {tc("actions.save")}
             </button>
             <button
               onClick={() => setEditing(false)}
               className="text-sm text-gray-400 hover:text-gray-600 transition-colors"
             >
-              Cancel
+              {tc("actions.cancel")}
             </button>
           </div>
         ) : (
@@ -217,7 +211,7 @@ function ProjectDetail() {
               onClick={startEdit}
               className="text-xs text-gray-400 hover:text-gray-600 transition-colors"
             >
-              Edit
+              {tc("actions.edit")}
             </button>
             <button
               onClick={() =>
@@ -228,26 +222,25 @@ function ProjectDetail() {
               }
               className="text-xs text-gray-400 hover:text-gray-600 transition-colors"
             >
-              Archive
+              {tc("actions.archive")}
             </button>
             <button
               onClick={async () => {
                 const ok = await confirm({
-                  title: "Delete project",
-                  description: `This will permanently delete "${project.name}". Tasks in this project will be kept but unassigned.`,
-                  confirmLabel: "Yes, delete",
+                  title: t("detail.deleteTitle"),
+                  description: t("detail.deleteDescription", { name: project.name }),
+                  confirmLabel: t("detail.deleteConfirm"),
                   variant: "danger",
                 });
                 if (ok) deleteProject.mutate({ id: projectId });
               }}
               className="text-xs text-gray-400 hover:text-red-500 transition-colors"
             >
-              Delete
+              {tc("actions.delete")}
             </button>
           </div>
         )}
 
-        {/* Quick-add task */}
         <div className="flex gap-2">
           <input
             value={title}
@@ -258,7 +251,7 @@ function ProjectDetail() {
                 handleAddTask();
               }
             }}
-            placeholder="Add a task… (Enter to save)"
+            placeholder={t("detail.addPlaceholder")}
             className="flex-1 border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
           />
           <button
@@ -266,44 +259,43 @@ function ProjectDetail() {
             disabled={createTask.isPending || !title.trim()}
             className="bg-gray-900 text-white rounded-md px-4 py-2 text-sm font-medium hover:bg-gray-700 transition-colors disabled:opacity-50"
           >
-            Add
+            {tc("actions.add")}
           </button>
         </div>
 
-        {/* Task list */}
         {tasksLoading ? (
-          <div className="text-gray-400 text-sm">Loading…</div>
+          <div className="text-gray-400 text-sm">{tc("loading")}</div>
         ) : (
           <ul className="flex flex-col gap-2">
-            {active.map((t: TaskBody) => (
+            {active.map((task: TaskBody) => (
               <li
-                key={t.id}
+                key={task.id}
                 className="bg-white rounded-lg border border-gray-200 shadow-sm p-4 flex items-center gap-3"
               >
                 <button
-                  onClick={() => handleCycleStatus(t)}
-                  className={`text-xs font-medium px-2 py-1 rounded-full whitespace-nowrap transition-colors hover:opacity-80 ${STATUS_COLORS[t.status] ?? "bg-gray-100 text-gray-600"}`}
+                  onClick={() => handleCycleStatus(task)}
+                  className={`text-xs font-medium px-2 py-1 rounded-full whitespace-nowrap transition-colors hover:opacity-80 ${STATUS_COLORS[task.status] ?? "bg-gray-100 text-gray-600"}`}
                 >
-                  {STATUS_LABELS[t.status] ?? t.status}
+                  {tc(`status.${task.status}`)}
                 </button>
                 <Link
                   to="/tasks/$taskId"
-                  params={{ taskId: t.id }}
-                  className={`flex-1 text-sm hover:underline ${t.status === "done" ? "line-through text-gray-400" : ""}`}
+                  params={{ taskId: task.id }}
+                  className={`flex-1 text-sm hover:underline ${task.status === "done" ? "line-through text-gray-400" : ""}`}
                 >
-                  {t.title}
+                  {task.title}
                 </Link>
                 <button
-                  onClick={() => deleteTask.mutate({ id: t.id })}
+                  onClick={() => deleteTask.mutate({ id: task.id })}
                   className="text-xs text-gray-400 hover:text-red-500 transition-colors"
                 >
-                  Delete
+                  {tc("actions.delete")}
                 </button>
               </li>
             ))}
             {active.length === 0 && (
               <p className="text-gray-400 text-sm">
-                No tasks in this project yet.
+                {t("detail.noTasks")}
               </p>
             )}
           </ul>

@@ -7,6 +7,7 @@ import {
   type ReactNode,
 } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
+import { useTranslation } from "react-i18next";
 
 interface ConfirmOptions {
   title: string;
@@ -27,6 +28,7 @@ export function useConfirm(): ConfirmFn {
 }
 
 export function ConfirmProvider({ children }: { children: ReactNode }) {
+  const { t } = useTranslation();
   const [options, setOptions] = useState<ConfirmOptions | null>(null);
   const resolveRef = useRef<((value: boolean) => void) | null>(null);
 
@@ -70,7 +72,7 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
                 onClick={() => handleClose(false)}
                 className="text-sm px-4 py-2 rounded-md border border-gray-300 hover:bg-gray-50 transition-colors"
               >
-                {options?.cancelLabel ?? "Cancel"}
+                {options?.cancelLabel ?? t("actions.cancel")}
               </button>
               <button
                 onClick={() => handleClose(true)}
@@ -80,7 +82,7 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
                     : "bg-gray-900 text-white hover:bg-gray-700"
                 }`}
               >
-                {options?.confirmLabel ?? "Confirm"}
+                {options?.confirmLabel ?? t("actions.confirm")}
               </button>
             </div>
           </Dialog.Content>

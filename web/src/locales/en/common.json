@@ -1,0 +1,42 @@
+{
+  "brand": "Chronicle",
+  "tagline": "Personal productivity OS",
+  "nav": {
+    "captures": "Captures",
+    "tasks": "Tasks",
+    "projects": "Projects",
+    "settings": "Settings"
+  },
+  "status": {
+    "todo": "To Do",
+    "in_progress": "In Progress",
+    "done": "Done",
+    "archived": "Archived"
+  },
+  "classification": {
+    "unclassified": "Unclassified",
+    "idea": "Idea",
+    "task": "Task",
+    "routine": "Routine",
+    "log": "Log"
+  },
+  "actions": {
+    "save": "Save",
+    "cancel": "Cancel",
+    "confirm": "Confirm",
+    "delete": "Delete",
+    "edit": "Edit",
+    "archive": "Archive",
+    "add": "Add",
+    "polish": "Polish"
+  },
+  "errors": {
+    "polishFailed": "Couldn't polish text. Try again."
+  },
+  "loading": "Loading…",
+  "error": "Something went wrong",
+  "or": "or",
+  "noProject": "No project",
+  "signIn": "Sign in",
+  "createAccount": "Create account"
+}

@@ -7,8 +7,10 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/redis/go-redis/v9"
 	"golang.org/x/oauth2"
@@ -19,15 +21,51 @@ import (
 
 const oauthStateTTL = 10 * time.Minute
 
+type oauthStateData struct {
+	Action string `json:"action,omitempty"`
+	UserID string `json:"userId,omitempty"`
+}
+
+func (h *handler) storeOAuthState(ctx context.Context, r *http.Request) (string, error) {
+	state, err := randomHex(16)
+	if err != nil {
+		return "", err
+	}
+
+	data := oauthStateData{}
+	if r.URL.Query().Get("action") == "link" {
+		raw := ""
+		if auth := r.Header.Get("Authorization"); strings.HasPrefix(auth, "Bearer ") {
+			raw = strings.TrimPrefix(auth, "Bearer ")
+		} else if tok := r.URL.Query().Get("token"); tok != "" {
+			raw = tok
+		}
+		if raw == "" {
+			return "", fmt.Errorf("must be logged in to link account")
+		}
+		claims, err := ParseAccessToken(raw, h.secret)
+		if err != nil {
+			return "", fmt.Errorf("invalid token")
+		}
+		data.Action = "link"
+		data.UserID = claims.UserID
+	}
+
+	val, err := json.Marshal(data)
+	if err != nil {
+		return "", err
+	}
+	if err := h.rdb.Set(ctx, "oauth:state:"+state, string(val), oauthStateTTL).Err(); err != nil {
+		return "", err
+	}
+	return state, nil
+}
+
 // --- Google ---
 
 func (h *handler) googleAuth(w http.ResponseWriter, r *http.Request) {
-	state, err := randomHex(16)
+	state, err := h.storeOAuthState(r.Context(), r)
 	if err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
-	}
-	if err := h.rdb.Set(r.Context(), "oauth:state:"+state, "1", oauthStateTTL).Err(); err != nil {
 		slog.ErrorContext(r.Context(), "failed to store oauth state", "err", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
@@ -39,7 +77,8 @@ func (h *handler) googleCallback(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	traceID := middleware.GetTraceID(ctx)
 
-	if err := h.validateState(ctx, r.URL.Query().Get("state")); err != nil {
+	stateData, err := h.validateState(ctx, r.URL.Query().Get("state"))
+	if err != nil {
 		http.Error(w, "invalid state", http.StatusBadRequest)
 		return
 	}
@@ -58,7 +97,7 @@ func (h *handler) googleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.finishOAuthLogin(w, r, ctx, traceID, email, "google", providerID)
+	h.finishOAuth(w, r, ctx, traceID, stateData, email, "google", providerID)
 }
 
 func fetchGoogleUser(ctx context.Context, cfg *oauth2.Config, tok *oauth2.Token) (email, id string, err error) {
@@ -88,12 +127,8 @@ func fetchGoogleUser(ctx context.Context, cfg *oauth2.Config, tok *oauth2.Token)
 // --- GitHub ---
 
 func (h *handler) githubAuth(w http.ResponseWriter, r *http.Request) {
-	state, err := randomHex(16)
+	state, err := h.storeOAuthState(r.Context(), r)
 	if err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
-	}
-	if err := h.rdb.Set(r.Context(), "oauth:state:"+state, "1", oauthStateTTL).Err(); err != nil {
 		slog.ErrorContext(r.Context(), "failed to store oauth state", "err", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
@@ -105,7 +140,8 @@ func (h *handler) githubCallback(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	traceID := middleware.GetTraceID(ctx)
 
-	if err := h.validateState(ctx, r.URL.Query().Get("state")); err != nil {
+	stateData, err := h.validateState(ctx, r.URL.Query().Get("state"))
+	if err != nil {
 		http.Error(w, "invalid state", http.StatusBadRequest)
 		return
 	}
@@ -124,7 +160,7 @@ func (h *handler) githubCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.finishOAuthLogin(w, r, ctx, traceID, email, "github", providerID)
+	h.finishOAuth(w, r, ctx, traceID, stateData, email, "github", providerID)
 }
 
 func fetchGitHubUser(ctx context.Context, cfg *oauth2.Config, tok *oauth2.Token) (email, id string, err error) {
@@ -177,32 +213,85 @@ func fetchGitHubUser(ctx context.Context, cfg *oauth2.Config, tok *oauth2.Token)
 
 // --- shared ---
 
-func (h *handler) validateState(ctx context.Context, state string) error {
+func (h *handler) validateState(ctx context.Context, state string) (*oauthStateData, error) {
 	if state == "" {
-		return fmt.Errorf("missing state")
+		return nil, fmt.Errorf("missing state")
 	}
 	val, err := h.rdb.GetDel(ctx, "oauth:state:"+state).Result()
 	if err == redis.Nil {
-		return fmt.Errorf("state not found or expired")
+		return nil, fmt.Errorf("state not found or expired")
 	}
 	if err != nil {
-		return fmt.Errorf("redis error: %w", err)
+		return nil, fmt.Errorf("redis error: %w", err)
 	}
-	if val != "1" {
-		return fmt.Errorf("invalid state value")
+
+	var data oauthStateData
+	if err := json.Unmarshal([]byte(val), &data); err != nil {
+		return nil, fmt.Errorf("invalid state data")
 	}
-	return nil
+	return &data, nil
 }
 
-func (h *handler) finishOAuthLogin(w http.ResponseWriter, r *http.Request, ctx context.Context, traceID, email, provider, providerID string) {
-	user, err := h.q.UpsertOAuthUser(ctx, db.UpsertOAuthUserParams{
-		Email:           email,
-		OauthProvider:   pgtype.Text{String: provider, Valid: true},
-		OauthProviderID: pgtype.Text{String: providerID, Valid: true},
+func (h *handler) finishOAuth(w http.ResponseWriter, r *http.Request, ctx context.Context, traceID string, stateData *oauthStateData, email, provider, providerID string) {
+	frontendURL := h.frontendURL
+	if frontendURL == "" {
+		frontendURL = "http://localhost:5173"
+	}
+
+	// Link flow: attach this OAuth identity to an existing logged-in user
+	if stateData.Action == "link" {
+		uid, err := uuid.Parse(stateData.UserID)
+		if err != nil {
+			http.Error(w, "invalid user", http.StatusBadRequest)
+			return
+		}
+		if _, err := h.q.CreateOAuthAccount(ctx, db.CreateOAuthAccountParams{
+			UserID:     uid,
+			Provider:   provider,
+			ProviderID: providerID,
+		}); err != nil {
+			slog.ErrorContext(ctx, "link oauth account failed", "traceId", traceID, "err", err)
+			http.Redirect(w, r, frontendURL+"/settings?oauth_error=already_linked", http.StatusFound)
+			return
+		}
+		http.Redirect(w, r, frontendURL+"/settings?oauth_linked="+provider, http.StatusFound)
+		return
+	}
+
+	// Login flow
+	user, err := h.q.GetUserByOAuth(ctx, db.GetUserByOAuthParams{
+		Provider:   provider,
+		ProviderID: providerID,
 	})
 	if err != nil {
-		slog.ErrorContext(ctx, "upsert oauth user failed", "traceId", traceID, "err", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		user, err = h.q.GetUserByEmail(ctx, email)
+		if err != nil {
+			user, err = h.q.CreateOAuthUser(ctx, email)
+			if err != nil {
+				slog.ErrorContext(ctx, "create oauth user failed", "traceId", traceID, "err", err)
+				http.Error(w, "internal error", http.StatusInternalServerError)
+				return
+			}
+		}
+		if _, err := h.q.CreateOAuthAccount(ctx, db.CreateOAuthAccountParams{
+			UserID:     user.ID,
+			Provider:   provider,
+			ProviderID: providerID,
+		}); err != nil {
+			slog.ErrorContext(ctx, "link oauth account failed", "traceId", traceID, "err", err)
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+	}
+
+	if user.TotpEnabled {
+		mfaToken, err := NewMFAToken(user.ID.String(), h.secret)
+		if err != nil {
+			slog.ErrorContext(ctx, "mfa token generation failed", "traceId", traceID, "err", err)
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+		http.Redirect(w, r, frontendURL+"/auth/mfa?mfa_token="+mfaToken, http.StatusFound)
 		return
 	}
 
@@ -236,13 +325,9 @@ func (h *handler) finishOAuthLogin(w http.ResponseWriter, r *http.Request, ctx c
 		HttpOnly: true,
 		Secure:   true,
 		SameSite: http.SameSiteStrictMode,
-		Path:     "/auth/refresh",
+		Path:     "/",
 		MaxAge:   int(RefreshTokenTTL.Seconds()),
 	})
 
-	frontendURL := h.frontendURL
-	if frontendURL == "" {
-		frontendURL = "http://localhost:5173"
-	}
 	http.Redirect(w, r, frontendURL+"/auth/callback?access_token="+accessToken, http.StatusFound)
 }

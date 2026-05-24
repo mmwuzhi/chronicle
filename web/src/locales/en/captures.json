@@ -1,0 +1,12 @@
+{
+  "title": "Captures",
+  "placeholder": "Capture a thought… (Enter to save)",
+  "tabs": {
+    "all": "All",
+    "unclassified": "Unclassified",
+    "idea": "Ideas",
+    "task": "Tasks"
+  },
+  "nothingHere": "Nothing here yet.",
+  "failedToLoad": "Failed to load captures"
+}

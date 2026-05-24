@@ -1,0 +1,12 @@
+{
+  "title": "捕获",
+  "placeholder": "记录一个想法… (按 Enter 保存)",
+  "tabs": {
+    "all": "全部",
+    "unclassified": "未分类",
+    "idea": "想法",
+    "task": "任务"
+  },
+  "nothingHere": "这里还没有内容。",
+  "failedToLoad": "加载捕获失败"
+}

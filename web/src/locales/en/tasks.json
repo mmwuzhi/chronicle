@@ -1,0 +1,31 @@
+{
+  "title": "Tasks",
+  "addPlaceholder": "Add a task… (Enter to save)",
+  "add": "Add",
+  "filterProject": "Project:",
+  "allProjects": "All projects",
+  "noTasks": "No tasks yet.",
+  "failedToLoad": "Failed to load tasks",
+  "detail": {
+    "breadcrumb": "Detail",
+    "failedToLoad": "Failed to load task"
+  },
+  "time": {
+    "title": "Time",
+    "stop": "Stop",
+    "startTimer": "Start timer",
+    "noTimeLogged": "No time logged yet",
+    "total": "Total: {{duration}}"
+  },
+  "log": {
+    "title": "Log",
+    "placeholder": "Add a note… (Enter to save, Shift+Enter for newline)",
+    "addNote": "Add note",
+    "noNotes": "No notes yet."
+  },
+  "duration": {
+    "hoursMinutes": "{{h}}h {{m}}m",
+    "minutesSeconds": "{{m}}m {{s}}s",
+    "seconds": "{{s}}s"
+  }
+}

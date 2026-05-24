@@ -1,0 +1,80 @@
+{
+  "title": "设置",
+  "account": {
+    "title": "账号",
+    "linkedAccounts": "关联账号",
+    "connect": "绑定",
+    "connected": "已绑定",
+    "disconnect": "解绑",
+    "disconnectConfirm": "解绑 {{provider}}？",
+    "disconnectDescription": "解绑后将无法使用该 {{provider}} 账号登录。",
+    "cannotDisconnect": "请先设置密码，再解绑唯一的登录方式。",
+    "linkSuccess": "{{provider}} 账号绑定成功。",
+    "linkError": "该账号已绑定到其他用户。"
+  },
+  "profile": {
+    "title": "个人信息",
+    "email": "邮箱",
+    "authMethod": "登录方式",
+    "verifyHint": "你的邮箱尚未验证，请查看收件箱中的验证链接。"
+  },
+  "password": {
+    "label": "密码",
+    "changePassword": "修改密码",
+    "setPassword": "设置密码",
+    "cancel": "取消",
+    "oauthNote": "你使用 {{provider}} 注册。设置密码后可以使用邮箱登录。",
+    "oauthSetHint": "设置密码后也可以使用邮箱登录。",
+    "currentPassword": "当前密码",
+    "newPassword": "新密码",
+    "placeholder": "至少8个字符",
+    "saving": "保存中…",
+    "updated": "密码已更新",
+    "error": "出错了"
+  },
+  "security": {
+    "title": "安全",
+    "passkeys": {
+      "title": "通行密钥",
+      "description": "使用设备的生物识别或安全密钥登录，无需密码。",
+      "add": "添加通行密钥",
+      "empty": "尚未注册通行密钥。",
+      "delete": "移除",
+      "deleteConfirm": "移除此通行密钥？",
+      "deleteDescription": "移除后将无法使用此通行密钥登录。"
+    },
+    "mfa": {
+      "title": "两步验证",
+      "description": "使用验证器应用为账号添加额外的安全保护。",
+      "enable": "启用",
+      "disable": "停用",
+      "enabled": "已启用",
+      "disabled": "未启用",
+      "setupTitle": "设置两步验证",
+      "scanQR": "使用验证器应用扫描此二维码。",
+      "manualEntry": "或手动输入此密钥：",
+      "enterCode": "输入验证器应用中的6位数字",
+      "verifyAndEnable": "验证并启用",
+      "recoveryCodes": "恢复码",
+      "recoveryCodesDescription": "将这些恢复码保存在安全的地方。每个恢复码只能使用一次。",
+      "recoveryCodesSaved": "我已保存这些恢复码",
+      "disableConfirm": "停用两步验证？",
+      "disableDescription": "输入验证器应用中的6位数字，或恢复码，以确认操作。",
+      "invalidCode": "验证码无效，请重试。"
+    }
+  },
+  "danger": {
+    "title": "危险操作",
+    "deleteAccount": "删除账号",
+    "deleteDescription": "永久删除你的账号和所有数据。此操作不可撤销。",
+    "deleting": "删除中…",
+    "confirmTitle": "删除账号",
+    "confirmDescription": "将永久删除你的账号和所有数据。此操作不可撤销。",
+    "confirmLabel": "确认删除",
+    "deleteFailed": "出错了，请重试。"
+  },
+  "language": {
+    "title": "语言",
+    "description": "选择你的首选语言。此设置保存在本地。"
+  }
+}

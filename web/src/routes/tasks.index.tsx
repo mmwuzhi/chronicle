@@ -11,6 +11,7 @@ import {
 } from "../api";
 import type { TaskBody, TaskUpdateInputBodyStatus } from "../api";
 import { Nav } from "../components/nav";
+import { useTranslation } from "react-i18next";
 
 export const Route = createFileRoute("/tasks/")({
   component: Tasks,
@@ -22,13 +23,6 @@ const STATUS_CYCLE: Record<string, TaskUpdateInputBodyStatus> = {
   done: "todo",
 };
 
-const STATUS_LABELS: Record<string, string> = {
-  todo: "To Do",
-  in_progress: "In Progress",
-  done: "Done",
-  archived: "Archived",
-};
-
 const STATUS_COLORS: Record<string, string> = {
   todo: "bg-gray-100 text-gray-600",
   in_progress: "bg-blue-100 text-blue-700",
@@ -37,6 +31,8 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 function Tasks() {
+  const { t } = useTranslation("tasks");
+  const { t: tc } = useTranslation("common");
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [title, setTitle] = useState("");
@@ -63,7 +59,7 @@ function Tasks() {
       navigate({ to: "/login" });
       return null;
     }
-    return <div className="p-8 text-red-500">Failed to load tasks</div>;
+    return <div className="p-8 text-red-500">{t("failedToLoad")}</div>;
   }
 
   const handleAdd = () => {
@@ -86,13 +82,13 @@ function Tasks() {
     update.mutate({ id: task.id, data: { status: next } });
   };
 
-  const active = (tasks ?? []).filter((t: TaskBody) => t.status !== "archived");
+  const active = (tasks ?? []).filter((task: TaskBody) => task.status !== "archived");
 
   return (
     <div className="min-h-screen bg-gray-50">
       <Nav />
       <div className="max-w-3xl mx-auto px-8 py-8 flex flex-col gap-6">
-        <h1 className="text-2xl font-semibold tracking-tight">Tasks</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">{t("title")}</h1>
 
         <div className="flex gap-2">
           <input
@@ -104,7 +100,7 @@ function Tasks() {
                 handleAdd();
               }
             }}
-            placeholder="Add a task… (Enter to save)"
+            placeholder={t("addPlaceholder")}
             className="flex-1 border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
           />
           <select
@@ -112,7 +108,7 @@ function Tasks() {
             onChange={(e) => setNewTaskProjectId(e.target.value)}
             className="border border-gray-300 rounded-md px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
           >
-            <option value="">No project</option>
+            <option value="">{tc("noProject")}</option>
             {activeProjects.map((p) => (
               <option key={p.id} value={p.id}>
                 {p.name}
@@ -124,18 +120,18 @@ function Tasks() {
             disabled={create.isPending || !title.trim()}
             className="bg-gray-900 text-white rounded-md px-4 py-2 text-sm font-medium hover:bg-gray-700 transition-colors disabled:opacity-50"
           >
-            Add
+            {t("add")}
           </button>
         </div>
 
         <div className="flex items-center gap-2">
-          <span className="text-sm text-gray-500">Project:</span>
+          <span className="text-sm text-gray-500">{t("filterProject")}</span>
           <select
             value={filterProjectId}
             onChange={(e) => setFilterProjectId(e.target.value)}
             className="border border-gray-300 rounded-md px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
           >
-            <option value="">All projects</option>
+            <option value="">{t("allProjects")}</option>
             {activeProjects.map((p) => (
               <option key={p.id} value={p.id}>
                 {p.name}
@@ -145,55 +141,55 @@ function Tasks() {
         </div>
 
         {isLoading ? (
-          <div className="text-gray-400 text-sm">Loading…</div>
+          <div className="text-gray-400 text-sm">{tc("loading")}</div>
         ) : (
           <ul className="flex flex-col gap-2">
-            {active.map((t: TaskBody) => (
+            {active.map((task: TaskBody) => (
               <li
-                key={t.id}
+                key={task.id}
                 className="bg-white rounded-lg border border-gray-200 shadow-sm p-4 flex items-center gap-3"
               >
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
-                    handleCycleStatus(t);
+                    handleCycleStatus(task);
                   }}
-                  className={`text-xs font-medium px-2 py-1 rounded-full whitespace-nowrap transition-colors hover:opacity-80 ${STATUS_COLORS[t.status] ?? "bg-gray-100 text-gray-600"}`}
+                  className={`text-xs font-medium px-2 py-1 rounded-full whitespace-nowrap transition-colors hover:opacity-80 ${STATUS_COLORS[task.status] ?? "bg-gray-100 text-gray-600"}`}
                 >
-                  {STATUS_LABELS[t.status] ?? t.status}
+                  {tc(`status.${task.status}`)}
                 </button>
-                {t.projectId && projectMap.get(t.projectId) && (
+                {task.projectId && projectMap.get(task.projectId) && (
                   <Link
                     to="/projects/$projectId"
-                    params={{ projectId: t.projectId }}
+                    params={{ projectId: task.projectId }}
                     className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-600 transition-colors shrink-0"
                   >
                     <span
                       className="w-2 h-2 rounded-full"
                       style={{
-                        backgroundColor: projectMap.get(t.projectId)!.color,
+                        backgroundColor: projectMap.get(task.projectId)!.color,
                       }}
                     />
-                    {projectMap.get(t.projectId)!.name}
+                    {projectMap.get(task.projectId)!.name}
                   </Link>
                 )}
                 <Link
                   to="/tasks/$taskId"
-                  params={{ taskId: t.id }}
-                  className={`flex-1 text-sm hover:underline ${t.status === "done" ? "line-through text-gray-400" : ""}`}
+                  params={{ taskId: task.id }}
+                  className={`flex-1 text-sm hover:underline ${task.status === "done" ? "line-through text-gray-400" : ""}`}
                 >
-                  {t.title}
+                  {task.title}
                 </Link>
                 <button
-                  onClick={() => del.mutate({ id: t.id })}
+                  onClick={() => del.mutate({ id: task.id })}
                   className="text-xs text-gray-400 hover:text-red-500 transition-colors"
                 >
-                  Delete
+                  {tc("actions.delete")}
                 </button>
               </li>
             ))}
             {active.length === 0 && (
-              <p className="text-gray-400 text-sm">No tasks yet.</p>
+              <p className="text-gray-400 text-sm">{t("noTasks")}</p>
             )}
           </ul>
         )}

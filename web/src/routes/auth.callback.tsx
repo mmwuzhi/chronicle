@@ -1,6 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { z } from "zod/v3";
+import { useTranslation } from "react-i18next";
 
 export const Route = createFileRoute("/auth/callback")({
   validateSearch: z.object({ access_token: z.string().default("") }),
@@ -8,6 +9,7 @@ export const Route = createFileRoute("/auth/callback")({
 });
 
 function OAuthCallback() {
+  const { t } = useTranslation("auth");
   const { access_token } = Route.useSearch();
   const navigate = useNavigate();
 
@@ -20,7 +22,7 @@ function OAuthCallback() {
 
   return (
     <div className="flex items-center justify-center min-h-screen">
-      <p className="text-sm text-gray-500">Signing in…</p>
+      <p className="text-sm text-gray-500">{t("callback.signingIn")}</p>
     </div>
   );
 }

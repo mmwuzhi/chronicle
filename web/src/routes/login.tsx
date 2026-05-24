@@ -1,8 +1,10 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod/v3";
 import { useLogin } from "../api";
+import { useTranslation } from "react-i18next";
 
 export const Route = createFileRoute("/login")({
   component: Login,
@@ -46,15 +48,90 @@ function GitHubIcon() {
 }
 
 function Login() {
+  const { t } = useTranslation("auth");
   const navigate = useNavigate();
+  const [passkeyError, setPasskeyError] = useState(false);
+  const [mfaToken, setMfaToken] = useState<string | null>(null);
+  const [mfaCode, setMfaCode] = useState("");
+  const [mfaError, setMfaError] = useState("");
+  const [mfaVerifying, setMfaVerifying] = useState(false);
+
   const login = useLogin({
     mutation: {
       onSuccess: (data) => {
-        localStorage.setItem("access_token", data.accessToken);
-        navigate({ to: "/projects" });
+        const res = data as unknown as {
+          accessToken?: string;
+          mfaRequired?: boolean;
+          mfaToken?: string;
+        };
+        if (res.mfaRequired && res.mfaToken) {
+          setMfaToken(res.mfaToken);
+          return;
+        }
+        if (res.accessToken) {
+          localStorage.setItem("access_token", res.accessToken);
+          navigate({ to: "/projects" });
+        }
       },
     },
   });
+
+  const handleMfaVerify = async () => {
+    if (!mfaCode.trim() || !mfaToken) return;
+    setMfaError("");
+    setMfaVerifying(true);
+    try {
+      const apiBase = import.meta.env.VITE_API_URL ?? "/api";
+      const res = await fetch(`${apiBase}/auth/mfa/verify`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mfaToken, code: mfaCode }),
+        credentials: "include",
+      });
+      if (!res.ok) {
+        setMfaError(t("mfa.invalidCode"));
+        return;
+      }
+      const { accessToken } = await res.json();
+      localStorage.setItem("access_token", accessToken);
+      navigate({ to: "/projects" });
+    } finally {
+      setMfaVerifying(false);
+    }
+  };
+
+  const handlePasskeyLogin = async () => {
+    setPasskeyError(false);
+    try {
+      const { startAuthentication } = await import("@simplewebauthn/browser");
+      const apiBase = import.meta.env.VITE_API_URL ?? "/api";
+
+      const beginRes = await fetch(`${apiBase}/auth/passkeys/login/begin`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      if (!beginRes.ok) return;
+      const { options } = await beginRes.json();
+
+      const credential = await startAuthentication({ optionsJSON: options });
+
+      const finishRes = await fetch(`${apiBase}/auth/passkeys/login/finish`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ credential }),
+        credentials: "include",
+      });
+      if (!finishRes.ok) {
+        setPasskeyError(true);
+        return;
+      }
+      const { accessToken } = await finishRes.json();
+      localStorage.setItem("access_token", accessToken);
+      navigate({ to: "/projects" });
+    } catch {
+      // user cancelled
+    }
+  };
 
   const {
     register,
@@ -64,16 +141,63 @@ function Login() {
     resolver: zodResolver(schema),
   });
 
+  if (mfaToken) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="w-full max-w-sm flex flex-col gap-4 p-8 bg-white rounded-xl border border-gray-200 shadow-sm">
+          <h1 className="text-xl font-semibold">{t("mfa.title")}</h1>
+          <p className="text-sm text-gray-500">{t("mfa.enterCode")}</p>
+
+          <input
+            type="text"
+            autoComplete="one-time-code"
+            maxLength={8}
+            value={mfaCode}
+            onChange={(e) => setMfaCode(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") handleMfaVerify();
+            }}
+            placeholder={t("mfa.placeholder")}
+            className="border border-gray-300 rounded-md px-3 py-2 text-sm text-center tracking-widest focus:outline-none focus:ring-2 focus:ring-gray-900"
+            autoFocus
+          />
+
+          {mfaError && <p className="text-red-500 text-sm">{mfaError}</p>}
+
+          <button
+            onClick={handleMfaVerify}
+            disabled={mfaVerifying || !mfaCode.trim()}
+            className="bg-gray-900 text-white rounded-md py-2 text-sm font-medium hover:bg-gray-700 transition-colors disabled:opacity-50"
+          >
+            {mfaVerifying ? t("mfa.verifying") : t("mfa.verify")}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setMfaToken(null);
+              setMfaCode("");
+              setMfaError("");
+            }}
+            className="text-sm text-gray-500 hover:text-gray-900"
+          >
+            {t("verifyEmail.backToSignIn")}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex items-center justify-center min-h-screen">
       <form
         onSubmit={handleSubmit((data) => login.mutate({ data }))}
         className="w-full max-w-sm flex flex-col gap-4 p-8 bg-white rounded-xl border border-gray-200 shadow-sm"
       >
-        <h1 className="text-xl font-semibold">Sign in</h1>
+        <h1 className="text-xl font-semibold">{t("login.title")}</h1>
 
         <div className="flex flex-col gap-1">
-          <label className="text-sm font-medium">Email</label>
+          <label className="text-sm font-medium">{t("login.email")}</label>
           <input
             type="email"
             autoComplete="email"
@@ -87,12 +211,12 @@ function Login() {
 
         <div className="flex flex-col gap-1">
           <div className="flex items-center justify-between">
-            <label className="text-sm font-medium">Password</label>
+            <label className="text-sm font-medium">{t("login.password")}</label>
             <Link
               to="/forgot-password"
               className="text-xs text-gray-500 hover:text-gray-900 hover:underline"
             >
-              Forgot password?
+              {t("login.forgotPassword")}
             </Link>
           </div>
           <input
@@ -107,7 +231,7 @@ function Login() {
         </div>
 
         {login.error && (
-          <p className="text-red-500 text-sm">Invalid email or password</p>
+          <p className="text-red-500 text-sm">{t("login.invalidCredentials")}</p>
         )}
 
         <button
@@ -115,12 +239,12 @@ function Login() {
           disabled={login.isPending}
           className="bg-gray-900 text-white rounded-md py-2 text-sm font-medium hover:bg-gray-700 transition-colors disabled:opacity-50"
         >
-          {login.isPending ? "Signing in…" : "Sign in"}
+          {login.isPending ? t("login.signingIn") : t("login.submit")}
         </button>
 
         <div className="relative flex items-center gap-3">
           <div className="flex-1 h-px bg-gray-200" />
-          <span className="text-xs text-gray-400">or</span>
+          <span className="text-xs text-gray-400">{t("common:or")}</span>
           <div className="flex-1 h-px bg-gray-200" />
         </div>
 
@@ -129,7 +253,7 @@ function Login() {
           className="flex items-center justify-center gap-2 border border-gray-300 rounded-md py-2 text-sm font-medium hover:bg-gray-50 transition-colors"
         >
           <GoogleIcon />
-          Continue with Google
+          {t("login.continueGoogle")}
         </a>
 
         <a
@@ -137,16 +261,42 @@ function Login() {
           className="flex items-center justify-center gap-2 border border-gray-300 rounded-md py-2 text-sm font-medium hover:bg-gray-50 transition-colors"
         >
           <GitHubIcon />
-          Continue with GitHub
+          {t("login.continueGithub")}
         </a>
 
+        <button
+          type="button"
+          onClick={handlePasskeyLogin}
+          className="flex items-center justify-center gap-2 border border-gray-300 rounded-md py-2 text-sm font-medium hover:bg-gray-50 transition-colors"
+        >
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M2 18v3c0 .6.4 1 1 1h4v-3h3v-3h2l1.4-1.4a6.5 6.5 0 1 0-4-4Z" />
+            <circle cx="16.5" cy="7.5" r=".5" fill="currentColor" />
+          </svg>
+          {t("login.passkey")}
+        </button>
+
+        {passkeyError && (
+          <p className="text-red-500 text-sm">{t("login.passkeyFailed")}</p>
+        )}
+
         <p className="text-center text-sm text-gray-500">
-          No account?{" "}
+          {t("login.noAccount")}{" "}
           <Link
             to="/register"
             className="text-gray-900 font-medium hover:underline"
           >
-            Sign up
+            {t("login.signUp")}
           </Link>
         </p>
       </form>

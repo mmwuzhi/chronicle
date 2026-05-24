@@ -10,6 +10,7 @@ import {
   getListProjectsQueryKey,
 } from "../api";
 import { Nav } from "../components/nav";
+import { useTranslation } from "react-i18next";
 
 export const Route = createFileRoute("/projects/")({
   component: Projects,
@@ -22,6 +23,8 @@ const createSchema = z.object({
 type CreateForm = z.infer<typeof createSchema>;
 
 function Projects() {
+  const { t } = useTranslation("projects");
+  const { t: tc } = useTranslation("common");
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
@@ -49,7 +52,7 @@ function Projects() {
       navigate({ to: "/login" });
       return null;
     }
-    return <div className="p-8 text-red-500">Failed to load projects</div>;
+    return <div className="p-8 text-red-500">{t("failedToLoad")}</div>;
   }
 
   const active = projects?.filter((p) => !p.archived) ?? [];
@@ -59,7 +62,7 @@ function Projects() {
       <Nav />
       <div className="max-w-2xl mx-auto p-8 flex flex-col gap-8">
         <header>
-          <h1 className="text-2xl font-semibold tracking-tight">Projects</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">{t("title")}</h1>
         </header>
 
         <form
@@ -71,7 +74,7 @@ function Projects() {
           <div className="flex flex-col gap-1 flex-1">
             <input
               {...register("name")}
-              placeholder="New project name"
+              placeholder={t("newProjectName")}
               className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
             />
             {errors.name && (
@@ -89,12 +92,12 @@ function Projects() {
             disabled={create.isPending}
             className="bg-gray-900 text-white rounded-md px-4 py-2 text-sm font-medium hover:bg-gray-700 transition-colors disabled:opacity-50 whitespace-nowrap"
           >
-            Add project
+            {t("addProject")}
           </button>
         </form>
 
         {isLoading ? (
-          <div className="text-gray-400 text-sm">Loading…</div>
+          <div className="text-gray-400 text-sm">{tc("loading")}</div>
         ) : (
           <ul className="flex flex-col gap-2">
             {active.map((p) => (
@@ -121,14 +124,14 @@ function Projects() {
                     }}
                     className="text-xs text-gray-400 hover:text-gray-600 transition-colors"
                   >
-                    Archive
+                    {tc("actions.archive")}
                   </button>
                 </div>
               </li>
             ))}
             {active.length === 0 && (
               <p className="text-gray-400 text-sm">
-                No projects yet. Create one above.
+                {t("noProjects")}
               </p>
             )}
           </ul>

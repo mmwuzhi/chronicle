@@ -1,6 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { apiClient } from "../lib/axios";
 import {
   useListCaptures,
   useCreateCapture,
@@ -10,6 +11,7 @@ import {
 } from "../api";
 import type { CaptureBody, CaptureUpdateInputBodyClassifiedAs } from "../api";
 import { Nav } from "../components/nav";
+import { useTranslation } from "react-i18next";
 
 export const Route = createFileRoute("/captures")({
   component: Captures,
@@ -17,20 +19,7 @@ export const Route = createFileRoute("/captures")({
 
 type Tab = "all" | "unclassified" | "idea" | "task";
 
-const TABS: { id: Tab; label: string }[] = [
-  { id: "all", label: "All" },
-  { id: "unclassified", label: "Unclassified" },
-  { id: "idea", label: "Ideas" },
-  { id: "task", label: "Tasks" },
-];
-
-const CLASS_LABELS: Record<string, string> = {
-  unclassified: "Unclassified",
-  idea: "Idea",
-  task: "Task",
-  routine: "Routine",
-  log: "Log",
-};
+const TAB_IDS: Tab[] = ["all", "unclassified", "idea", "task"];
 
 const CLASS_COLORS: Record<string, string> = {
   unclassified: "bg-gray-100 text-gray-500",
@@ -49,10 +38,14 @@ const RECLASSIFY_OPTIONS: CaptureUpdateInputBodyClassifiedAs[] = [
 ];
 
 function Captures() {
+  const { t } = useTranslation("captures");
+  const { t: tc } = useTranslation("common");
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [tab, setTab] = useState<Tab>("all");
   const [text, setText] = useState("");
+  const [polishing, setPolishing] = useState(false);
+  const [polishError, setPolishError] = useState(false);
 
   const params = tab === "all" ? undefined : { classifiedAs: tab };
   const { data: captures, error, isLoading } = useListCaptures(params);
@@ -70,8 +63,24 @@ function Captures() {
       navigate({ to: "/login" });
       return null;
     }
-    return <div className="p-8 text-red-500">Failed to load captures</div>;
+    return <div className="p-8 text-red-500">{t("failedToLoad")}</div>;
   }
+
+  const handlePolish = async () => {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    setPolishError(false);
+    setPolishing(true);
+    try {
+      const res = await apiClient.post<{ polished: string }>("/ai/polish", { text: trimmed });
+      setText(res.data.polished);
+    } catch {
+      setPolishError(true);
+      setTimeout(() => setPolishError(false), 3000);
+    } finally {
+      setPolishing(false);
+    }
+  };
 
   const handleAdd = () => {
     const trimmed = text.trim();
@@ -86,7 +95,6 @@ function Captures() {
       },
       { onSuccess: () => setText("") },
     );
-
   };
 
   const handleReclassify = (
@@ -100,9 +108,8 @@ function Captures() {
     <div className="min-h-screen bg-gray-50">
       <Nav />
       <div className="max-w-3xl mx-auto px-8 py-8 flex flex-col gap-6">
-        <h1 className="text-2xl font-semibold tracking-tight">Captures</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">{t("title")}</h1>
 
-        {/* Quick add */}
         <div className="flex gap-2">
           <textarea
             value={text}
@@ -113,39 +120,52 @@ function Captures() {
                 handleAdd();
               }
             }}
-            placeholder="Capture a thought… (Enter to save)"
+            placeholder={t("placeholder")}
             rows={2}
             className="flex-1 border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900 resize-none"
           />
-          <button
-            onClick={handleAdd}
-            disabled={create.isPending || !text.trim()}
-            className="self-end bg-gray-900 text-white rounded-md px-4 py-2 text-sm font-medium hover:bg-gray-700 transition-colors disabled:opacity-50"
-          >
-            Save
-          </button>
+          <div className="self-end flex flex-col gap-1 items-end">
+            <div className="flex gap-2">
+              <button
+                onClick={handlePolish}
+                disabled={polishing || !text.trim()}
+                className="border border-gray-300 rounded-md px-3 py-2 text-sm font-medium hover:bg-gray-50 transition-colors disabled:opacity-50"
+                title={tc("actions.polish")}
+              >
+                {polishing ? "…" : "✨"}
+              </button>
+              <button
+                onClick={handleAdd}
+                disabled={create.isPending || !text.trim()}
+                className="bg-gray-900 text-white rounded-md px-4 py-2 text-sm font-medium hover:bg-gray-700 transition-colors disabled:opacity-50"
+              >
+                {tc("actions.save")}
+              </button>
+            </div>
+            {polishError && (
+              <p className="text-xs text-red-500">{tc("errors.polishFailed")}</p>
+            )}
+          </div>
         </div>
 
-        {/* Tabs */}
         <div className="flex gap-1">
-          {TABS.map((t) => (
+          {TAB_IDS.map((id) => (
             <button
-              key={t.id}
-              onClick={() => setTab(t.id)}
+              key={id}
+              onClick={() => setTab(id)}
               className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
-                tab === t.id
+                tab === id
                   ? "bg-gray-900 text-white"
                   : "text-gray-500 hover:text-gray-900 hover:bg-gray-100"
               }`}
             >
-              {t.label}
+              {t(`tabs.${id}`)}
             </button>
           ))}
         </div>
 
-        {/* List */}
         {isLoading ? (
-          <div className="text-gray-400 text-sm">Loading…</div>
+          <div className="text-gray-400 text-sm">{tc("loading")}</div>
         ) : (
           <ul className="flex flex-col gap-2">
             {(captures ?? []).map((c: CaptureBody) => (
@@ -167,7 +187,7 @@ function Captures() {
                   >
                     {RECLASSIFY_OPTIONS.map((opt) => (
                       <option key={opt} value={opt}>
-                        {CLASS_LABELS[opt]}
+                        {tc(`classification.${opt}`)}
                       </option>
                     ))}
                   </select>
@@ -176,13 +196,13 @@ function Captures() {
                     onClick={() => del.mutate({ id: c.id })}
                     className="text-xs text-gray-400 hover:text-red-500 transition-colors"
                   >
-                    Delete
+                    {tc("actions.delete")}
                   </button>
                 </div>
               </li>
             ))}
             {(captures ?? []).length === 0 && (
-              <p className="text-gray-400 text-sm">Nothing here yet.</p>
+              <p className="text-gray-400 text-sm">{t("nothingHere")}</p>
             )}
           </ul>
         )}

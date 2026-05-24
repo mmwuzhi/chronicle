@@ -17,6 +17,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 
+	"github.com/sikaoshenmi/chronicle/internal/ai"
 	"github.com/sikaoshenmi/chronicle/internal/auth"
 	"github.com/sikaoshenmi/chronicle/internal/capture"
 	"github.com/sikaoshenmi/chronicle/internal/config"
@@ -94,6 +95,8 @@ func main() {
 		GitHubClientID:     cfg.GitHubClientID,
 		GitHubClientSecret: cfg.GitHubClientSecret,
 		TurnstileSecret:    cfg.TurnstileSecret,
+		WebAuthnRPID:       cfg.WebAuthnRPID,
+		WebAuthnRPOrigin:   cfg.WebAuthnRPOrigin,
 	})
 
 	authMW := middleware.RequireAuthHuma(auth.ValidateToken(cfg.JWTSecret))
@@ -103,6 +106,7 @@ func main() {
 	timeblock.Register(api, pool, authMW)
 	capture.Register(api, pool, authMW)
 	user.Register(api, pool, authMW)
+	ai.Register(api, cfg.GeminiKey, authMW)
 
 	srv := &http.Server{
 		Addr:         ":" + cfg.Port,
