@@ -39,5 +39,12 @@
   "or": "または",
   "noProject": "プロジェクトなし",
   "signIn": "ログイン",
-  "createAccount": "アカウント作成"
+  "createAccount": "アカウント作成",
+  "search": {
+    "placeholder": "キャプチャ、タスク、ログを検索…",
+    "captures": "キャプチャ",
+    "tasks": "タスク",
+    "logEntries": "ログエントリ",
+    "noResults": "結果なし"
+  }
 }

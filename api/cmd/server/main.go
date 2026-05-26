@@ -25,6 +25,7 @@ import (
 	"github.com/sikaoshenmi/chronicle/internal/middleware"
 	"github.com/sikaoshenmi/chronicle/internal/project"
 	"github.com/sikaoshenmi/chronicle/internal/report"
+	"github.com/sikaoshenmi/chronicle/internal/search"
 	"github.com/sikaoshenmi/chronicle/internal/task"
 	"github.com/sikaoshenmi/chronicle/internal/timeblock"
 	"github.com/sikaoshenmi/chronicle/internal/user"
@@ -109,6 +110,7 @@ func main() {
 	user.Register(api, pool, authMW)
 	ai.Register(api, cfg.GeminiKey, authMW)
 	report.Register(api, pool, cfg.GeminiKey, authMW)
+	search.Register(api, pool, authMW)
 
 	srv := &http.Server{
 		Addr:         ":" + cfg.Port,

@@ -39,5 +39,12 @@
   "or": "或",
   "noProject": "无项目",
   "signIn": "登录",
-  "createAccount": "注册"
+  "createAccount": "注册",
+  "search": {
+    "placeholder": "搜索捕获、任务、日志…",
+    "captures": "捕获",
+    "tasks": "任务",
+    "logEntries": "日志",
+    "noResults": "无结果"
+  }
 }

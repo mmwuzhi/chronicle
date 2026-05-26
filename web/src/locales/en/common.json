@@ -39,5 +39,12 @@
   "or": "or",
   "noProject": "No project",
   "signIn": "Sign in",
-  "createAccount": "Create account"
+  "createAccount": "Create account",
+  "search": {
+    "placeholder": "Search captures, tasks, logs…",
+    "captures": "Captures",
+    "tasks": "Tasks",
+    "logEntries": "Log entries",
+    "noResults": "No results"
+  }
 }
