@@ -20,10 +20,13 @@ import (
 const geminiModel = "gemini-3.1-flash-lite"
 
 var (
-	urlRe    = regexp.MustCompile(`https?://[^\s"'<>]+`)
-	titleRe  = regexp.MustCompile(`(?i)<title[^>]*>([^<]+)</title>`)
-	descRe1  = regexp.MustCompile(`(?i)<meta[^>]+name=["']description["'][^>]+content=["']([^"']{1,300})["']`)
-	descRe2  = regexp.MustCompile(`(?i)<meta[^>]+content=["']([^"']{1,300})["'][^>]+name=["']description["']`)
+	urlRe   = regexp.MustCompile(`https?://[^\s"'<>]+`)
+	titleRe = regexp.MustCompile(`(?i)<title[^>]*>([^<]+)</title>`)
+	descRe1 = regexp.MustCompile(`(?i)<meta[^>]+name=["']description["'][^>]+content=["']([^"']{1,300})["']`)
+	descRe2 = regexp.MustCompile(`(?i)<meta[^>]+content=["']([^"']{1,300})["'][^>]+name=["']description["']`)
+
+	// geminiClient caps Gemini API calls to 30s so we fail fast before Fly.io's 60s limit.
+	geminiClient = &http.Client{Timeout: 30 * time.Second}
 )
 
 const systemPromptTmpl = `You are a personal assistant helping the user enrich their quick notes.
@@ -209,7 +212,7 @@ func (h *handler) polish(ctx context.Context, input *PolishInput) (*PolishOutput
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := geminiClient.Do(req)
 	if err != nil {
 		return nil, huma.NewError(http.StatusBadGateway, "AI service unavailable")
 	}
