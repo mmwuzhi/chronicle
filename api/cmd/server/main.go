@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -9,11 +10,16 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
 	"github.com/go-chi/chi/v5"
 	chiMW "github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
+	"github.com/aws/aws-sdk-go-v2/credentials"
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 
@@ -27,6 +33,7 @@ import (
 	"github.com/sikaoshenmi/chronicle/internal/report"
 	"github.com/sikaoshenmi/chronicle/internal/search"
 	"github.com/sikaoshenmi/chronicle/internal/task"
+	"github.com/sikaoshenmi/chronicle/internal/upload"
 	"github.com/sikaoshenmi/chronicle/internal/timeblock"
 	"github.com/sikaoshenmi/chronicle/internal/user"
 )
@@ -101,7 +108,27 @@ func main() {
 		WebAuthnRPOrigin:   cfg.WebAuthnRPOrigin,
 	})
 
+	// Init R2/S3 client if all credentials are present
+	var s3client upload.S3Putter
+	if cfg.R2BucketName != "" && cfg.R2AccountID != "" && cfg.R2AccessKey != "" && cfg.R2SecretKey != "" {
+		awsCfg, err := awsconfig.LoadDefaultConfig(ctx,
+			awsconfig.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(cfg.R2AccessKey, cfg.R2SecretKey, "")),
+			awsconfig.WithRegion("auto"),
+		)
+		if err == nil {
+			s3client = s3.NewFromConfig(awsCfg, func(o *s3.Options) {
+				o.BaseEndpoint = aws.String(fmt.Sprintf("https://%s.r2.cloudflarestorage.com", cfg.R2AccountID))
+			})
+			slog.Info("R2 storage configured")
+		}
+	}
+
 	authMW := middleware.RequireAuthHuma(auth.ValidateToken(cfg.JWTSecret))
+	upload.Register(r, s3client, upload.Config{
+		R2BucketName: cfg.R2BucketName,
+		R2AccountID:  cfg.R2AccountID,
+		OpenAIKey:    cfg.OpenAIKey,
+	}, auth.ValidateToken(cfg.JWTSecret))
 	project.Register(api, pool, authMW)
 	task.Register(api, pool, authMW)
 	logentry.Register(api, pool, authMW)

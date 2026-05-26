@@ -8,5 +8,10 @@
     "task": "Tasks"
   },
   "nothingHere": "Nothing here yet.",
-  "failedToLoad": "Failed to load captures"
+  "failedToLoad": "Failed to load captures",
+  "uploadImage": "Image",
+  "uploadAudio": "Record",
+  "recording": "Recording…",
+  "transcribing": "Transcribing…",
+  "uploadFailed": "Upload failed"
 }

@@ -8,5 +8,10 @@
     "task": "タスク"
   },
   "nothingHere": "まだ何もありません。",
-  "failedToLoad": "キャプチャの読み込みに失敗しました"
+  "failedToLoad": "キャプチャの読み込みに失敗しました",
+  "uploadImage": "画像",
+  "uploadAudio": "録音",
+  "recording": "録音中…",
+  "transcribing": "文字起こし中…",
+  "uploadFailed": "アップロード失敗"
 }

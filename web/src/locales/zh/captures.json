@@ -8,5 +8,10 @@
     "task": "任务"
   },
   "nothingHere": "这里还没有内容。",
-  "failedToLoad": "加载捕获失败"
+  "failedToLoad": "加载捕获失败",
+  "uploadImage": "图片",
+  "uploadAudio": "录音",
+  "recording": "录音中…",
+  "transcribing": "转写中…",
+  "uploadFailed": "上传失败"
 }
