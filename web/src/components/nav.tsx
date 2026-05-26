@@ -17,27 +17,31 @@ export function Nav() {
           <div className="flex items-center gap-4 text-sm">
             <Link
               to="/captures"
-              className="text-gray-500 hover:text-gray-900 transition-colors [&.active]:text-gray-900 [&.active]:font-medium"
+              className="relative text-gray-500 hover:text-gray-900 transition-colors [&.active]:text-gray-900 [&.active]:font-medium"
             >
-              {t("nav.captures")}
+              <span className="font-medium invisible" aria-hidden="true">{t("nav.captures")}</span>
+              <span className="absolute inset-0 flex items-center">{t("nav.captures")}</span>
             </Link>
             <Link
               to="/tasks"
-              className="text-gray-500 hover:text-gray-900 transition-colors [&.active]:text-gray-900 [&.active]:font-medium"
+              className="relative text-gray-500 hover:text-gray-900 transition-colors [&.active]:text-gray-900 [&.active]:font-medium"
             >
-              {t("nav.tasks")}
+              <span className="font-medium invisible" aria-hidden="true">{t("nav.tasks")}</span>
+              <span className="absolute inset-0 flex items-center">{t("nav.tasks")}</span>
             </Link>
             <Link
               to="/projects"
-              className="text-gray-500 hover:text-gray-900 transition-colors [&.active]:text-gray-900 [&.active]:font-medium"
+              className="relative text-gray-500 hover:text-gray-900 transition-colors [&.active]:text-gray-900 [&.active]:font-medium"
             >
-              {t("nav.projects")}
+              <span className="font-medium invisible" aria-hidden="true">{t("nav.projects")}</span>
+              <span className="absolute inset-0 flex items-center">{t("nav.projects")}</span>
             </Link>
             <Link
               to="/reports"
-              className="text-gray-500 hover:text-gray-900 transition-colors [&.active]:text-gray-900 [&.active]:font-medium"
+              className="relative text-gray-500 hover:text-gray-900 transition-colors [&.active]:text-gray-900 [&.active]:font-medium"
             >
-              {t("nav.reports")}
+              <span className="font-medium invisible" aria-hidden="true">{t("nav.reports")}</span>
+              <span className="absolute inset-0 flex items-center">{t("nav.reports")}</span>
             </Link>
           </div>
           <div className="ml-auto flex items-center gap-3">
