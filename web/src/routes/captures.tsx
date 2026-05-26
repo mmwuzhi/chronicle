@@ -54,6 +54,7 @@ function AutoTextarea({
   value,
   onChange,
   onKeyDown,
+  onBlur,
   placeholder,
   className,
   autoFocus,
@@ -61,6 +62,7 @@ function AutoTextarea({
   value: string;
   onChange: (v: string) => void;
   onKeyDown?: React.KeyboardEventHandler<HTMLTextAreaElement>;
+  onBlur?: React.FocusEventHandler<HTMLTextAreaElement>;
   placeholder?: string;
   className?: string;
   autoFocus?: boolean;
@@ -85,6 +87,7 @@ function AutoTextarea({
       autoFocus={autoFocus}
       onChange={(e) => { onChange(e.target.value); resize(); }}
       onKeyDown={onKeyDown}
+      onBlur={onBlur}
       placeholder={placeholder}
       rows={1}
       className={className}
@@ -130,9 +133,10 @@ function CaptureCard({
           value={draft}
           onChange={setDraft}
           onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); commitEdit(); }
+            if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); commitEdit(); }
             if (e.key === "Escape") { setDraft(c.rawText ?? ""); setEditing(false); }
           }}
+          onBlur={commitEdit}
           className="text-sm w-full border-0 p-0 focus:outline-none resize-none bg-transparent"
         />
       ) : (
@@ -198,6 +202,7 @@ function Captures() {
   const queryClient = useQueryClient();
   const [tab, setTab] = useState<Tab>("all");
   const [text, setText] = useState("");
+  const [polishedText, setPolishedText] = useState<string | null>(null);
   const [polishing, setPolishing] = useState(false);
   const [polishError, setPolishError] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -293,7 +298,7 @@ function Captures() {
     setPolishing(true);
     try {
       const res = await apiClient.post<{ polished: string }>("/ai/polish", { text: trimmed });
-      setText(res.data.polished);
+      setPolishedText(res.data.polished);
     } catch {
       setPolishError(true);
       setTimeout(() => setPolishError(false), 3000);
@@ -329,63 +334,92 @@ function Captures() {
         <h1 className="text-2xl font-semibold tracking-tight">{t("title")}</h1>
 
         <div className="flex flex-col gap-2">
-          <div className="flex gap-2 items-end">
-            <AutoTextarea
-              value={text}
-              onChange={setText}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
+          <AutoTextarea
+            value={polishedText !== null ? polishedText : text}
+            onChange={(v) => { if (polishedText !== null) setPolishedText(v); else setText(v); }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                e.preventDefault();
+                if (polishedText !== null) {
+                  const trimmed = polishedText.trim();
+                  if (!trimmed) return;
+                  create.mutate(
+                    { data: { rawText: trimmed, mediaType: "text", classifiedAs: "unclassified" } },
+                    { onSuccess: () => { setText(""); setPolishedText(null); } },
+                  );
+                } else {
                   handleAdd();
                 }
-              }}
-              placeholder={t("placeholder")}
-              className="flex-1 border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900 resize-none min-h-[40px]"
-            />
-            <div className="flex flex-col gap-1 items-end flex-shrink-0">
-              <div className="flex gap-2">
+              }
+            }}
+            placeholder={t("placeholder")}
+            className={`w-full border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900 resize-none min-h-[40px] ${polishedText !== null ? "border-purple-300 bg-purple-50 ring-1 ring-purple-200" : "border-gray-300"}`}
+          />
+          {polishedText !== null && (
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-purple-600 font-medium">✨ {tc("actions.polishResult")}</span>
+              <div className="flex gap-2 ml-auto">
                 <button
-                  onClick={() => imageInputRef.current?.click()}
-                  disabled={uploading || recording}
-                  className="border border-gray-300 rounded-md px-3 py-2 text-sm font-medium hover:bg-gray-50 transition-colors disabled:opacity-50"
-                  title={t("uploadImage")}
+                  onClick={() => { setText(polishedText); setPolishedText(null); }}
+                  className="text-xs px-2.5 py-1 rounded-md bg-purple-600 text-white hover:bg-purple-700 transition-colors"
                 >
-                  📎
+                  {tc("actions.accept")}
                 </button>
                 <button
-                  onClick={handleAudioToggle}
-                  disabled={uploading}
-                  className={`border rounded-md px-3 py-2 text-sm font-medium transition-colors disabled:opacity-50 ${recording ? "border-red-400 bg-red-50 text-red-600 hover:bg-red-100" : "border-gray-300 hover:bg-gray-50"}`}
-                  title={t("uploadAudio")}
+                  onClick={() => navigator.clipboard.writeText(polishedText)}
+                  className="text-xs px-2.5 py-1 rounded-md border border-gray-300 hover:bg-gray-50 transition-colors"
                 >
-                  {recording ? "⏹" : "🎙"}
+                  {tc("actions.copy")}
                 </button>
                 <button
-                  onClick={handlePolish}
-                  disabled={polishing || !text.trim()}
-                  className="border border-gray-300 rounded-md px-3 py-2 text-sm font-medium hover:bg-gray-50 transition-colors disabled:opacity-50"
-                  title={tc("actions.polish")}
+                  onClick={() => setPolishedText(null)}
+                  className="text-xs px-2.5 py-1 rounded-md border border-gray-300 hover:bg-gray-50 transition-colors"
                 >
-                  {polishing ? "…" : "✨"}
-                </button>
-                <button
-                  onClick={handleAdd}
-                  disabled={create.isPending || !text.trim()}
-                  className="bg-gray-900 text-white rounded-md px-4 py-2 text-sm font-medium hover:bg-gray-700 transition-colors disabled:opacity-50"
-                >
-                  {tc("actions.save")}
+                  {tc("actions.dismiss")}
                 </button>
               </div>
-              {polishError && (
-                <p className="text-xs text-red-500">{tc("errors.polishFailed")}</p>
-              )}
-              {uploadError && (
-                <p className="text-xs text-red-500">{t("uploadFailed")}</p>
-              )}
-              {uploading && (
-                <p className="text-xs text-gray-400">{recording ? t("recording") : t("transcribing")}</p>
-              )}
             </div>
+          )}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => imageInputRef.current?.click()}
+              disabled={uploading || recording}
+              className="border border-gray-300 rounded-md px-3 py-2 text-sm font-medium hover:bg-gray-50 transition-colors disabled:opacity-50"
+              title={t("uploadImage")}
+            >
+              📎
+            </button>
+            <button
+              onClick={handleAudioToggle}
+              disabled={uploading}
+              className={`border rounded-md px-3 py-2 text-sm font-medium transition-colors disabled:opacity-50 ${recording ? "border-red-400 bg-red-50 text-red-600 hover:bg-red-100" : "border-gray-300 hover:bg-gray-50"}`}
+              title={t("uploadAudio")}
+            >
+              {recording ? "⏹" : "🎙"}
+            </button>
+            <button
+              onClick={handlePolish}
+              disabled={polishing || !text.trim() || polishedText !== null}
+              className="border border-gray-300 rounded-md px-3 py-2 text-sm font-medium hover:bg-gray-50 transition-colors disabled:opacity-50"
+              title={tc("actions.polish")}
+            >
+              {polishing ? "…" : "✨"}
+            </button>
+            <div className="flex-1" />
+            {(polishError || uploadError || uploading) && (
+              <span className="text-xs text-gray-400">
+                {polishError ? <span className="text-red-500">{tc("errors.polishFailed")}</span>
+                  : uploadError ? <span className="text-red-500">{t("uploadFailed")}</span>
+                  : recording ? t("recording") : t("transcribing")}
+              </span>
+            )}
+            <button
+              onClick={handleAdd}
+              disabled={create.isPending || !text.trim() || polishedText !== null}
+              className="bg-gray-900 text-white rounded-md px-4 py-2 text-sm font-medium hover:bg-gray-700 transition-colors disabled:opacity-50"
+            >
+              {tc("actions.save")}
+            </button>
           </div>
           <input
             ref={imageInputRef}

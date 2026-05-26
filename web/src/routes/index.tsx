@@ -1,13 +1,16 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   useGetMe,
   useListTasks,
   useListCaptures,
   useListTimeBlocks,
   useListLogEntries,
+  useUpdateTask,
+  getListTasksQueryKey,
 } from "../api";
-import type { CaptureBody, TaskBody } from "../api";
+import type { CaptureBody, TaskBody, TaskUpdateInputBodyStatus } from "../api";
 import { Nav } from "../components/nav";
 
 export const Route = createFileRoute("/")({
@@ -33,15 +36,21 @@ const CLASS_COLORS: Record<string, string> = {
   log: "bg-yellow-100 text-yellow-700",
 };
 
+const STATUS_OPTIONS: TaskUpdateInputBodyStatus[] = ["todo", "in_progress", "done"];
+
 function Dashboard() {
   const { t } = useTranslation("dashboard");
   const { t: tc } = useTranslation("common");
+  const queryClient = useQueryClient();
 
   const { data: me } = useGetMe();
   const { data: tasks } = useListTasks(undefined, { query: { enabled: !!me } });
   const { data: captures } = useListCaptures(undefined, { query: { enabled: !!me } });
   const { data: blocks } = useListTimeBlocks(undefined, { query: { enabled: !!me } });
   const { data: entries } = useListLogEntries(undefined, { query: { enabled: !!me } });
+
+  const invalidateTasks = () => queryClient.invalidateQueries({ queryKey: getListTasksQueryKey() });
+  const updateTask = useUpdateTask({ mutation: { onSuccess: invalidateTasks } });
 
   const ws = weekStart();
 
@@ -87,12 +96,17 @@ function Dashboard() {
           ) : (
             <ul className="flex flex-col gap-2">
               {recentCaptures.map((c: CaptureBody) => (
-                <li key={c.id} className="bg-white rounded-lg border border-gray-200 px-4 py-3 flex items-center gap-3">
-                  <p className="text-sm flex-1 truncate">{c.rawText ?? "—"}</p>
-                  <span className={`text-xs px-2 py-0.5 rounded-full flex-shrink-0 ${CLASS_COLORS[c.classifiedAs] ?? "bg-gray-100 text-gray-500"}`}>
-                    {tc(`classification.${c.classifiedAs}`)}
-                  </span>
-                  <span className="text-xs text-gray-400 flex-shrink-0">{fmtDate(c.createdAt)}</span>
+                <li key={c.id}>
+                  <Link
+                    to="/captures"
+                    className="bg-white rounded-lg border border-gray-200 px-4 py-3 flex items-center gap-3 hover:bg-gray-50 transition-colors"
+                  >
+                    <p className="text-sm flex-1 truncate">{c.rawText ?? "—"}</p>
+                    <span className={`text-xs px-2 py-0.5 rounded-full flex-shrink-0 ${CLASS_COLORS[c.classifiedAs] ?? "bg-gray-100 text-gray-500"}`}>
+                      {tc(`classification.${c.classifiedAs}`)}
+                    </span>
+                    <span className="text-xs text-gray-400 flex-shrink-0">{fmtDate(c.createdAt)}</span>
+                  </Link>
                 </li>
               ))}
             </ul>
@@ -107,10 +121,25 @@ function Dashboard() {
             <ul className="flex flex-col gap-2">
               {activeTasks.slice(0, 10).map((task: TaskBody) => (
                 <li key={task.id} className="bg-white rounded-lg border border-gray-200 px-4 py-3 flex items-center gap-3">
-                  <p className="text-sm flex-1 truncate">{task.title}</p>
-                  <span className={`text-xs px-2 py-0.5 rounded-full flex-shrink-0 ${task.status === "in_progress" ? "bg-blue-100 text-blue-700" : "bg-gray-100 text-gray-500"}`}>
-                    {tc(`status.${task.status}`)}
-                  </span>
+                  <Link
+                    to="/tasks/$taskId"
+                    params={{ taskId: task.id }}
+                    className="text-sm flex-1 truncate hover:underline"
+                  >
+                    {task.title}
+                  </Link>
+                  <select
+                    value={task.status}
+                    onChange={(e) =>
+                      updateTask.mutate({ id: task.id, data: { status: e.target.value as TaskUpdateInputBodyStatus } })
+                    }
+                    onClick={(e) => e.stopPropagation()}
+                    className={`text-xs px-2 py-0.5 rounded-full border-0 cursor-pointer flex-shrink-0 ${task.status === "in_progress" ? "bg-blue-100 text-blue-700" : "bg-gray-100 text-gray-500"}`}
+                  >
+                    {STATUS_OPTIONS.map((s) => (
+                      <option key={s} value={s}>{tc(`status.${s}`)}</option>
+                    ))}
+                  </select>
                 </li>
               ))}
             </ul>

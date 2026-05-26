@@ -29,7 +29,11 @@
     "edit": "編集",
     "archive": "アーカイブ",
     "add": "追加",
-    "polish": "推敲"
+    "polish": "推敲",
+    "polishResult": "AI 提案",
+    "accept": "採用",
+    "copy": "コピー",
+    "dismiss": "閉じる"
   },
   "errors": {
     "polishFailed": "推敲に失敗しました。もう一度お試しください。"

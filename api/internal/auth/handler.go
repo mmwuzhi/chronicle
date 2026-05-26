@@ -16,6 +16,7 @@ import (
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-webauthn/webauthn/webauthn"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
@@ -164,6 +165,15 @@ func Register(api huma.API, r chi.Router, pool *pgxpool.Pool, rdb *redis.Client,
 	}, h.resetPassword)
 
 	authMW := middleware.RequireAuthHuma(ValidateToken(opts.JWTSecret))
+
+	huma.Register(api, huma.Operation{
+		OperationID: "resendVerificationEmail",
+		Method:      http.MethodPost,
+		Path:        "/auth/resend-verification",
+		Summary:     "Resend email verification link",
+		Tags:        []string{"auth"},
+		Middlewares: huma.Middlewares{authMW},
+	}, h.resendVerification)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "totpSetup",
@@ -360,6 +370,56 @@ func (h *handler) verifyEmail(ctx context.Context, input *VerifyEmailInput) (*st
 	if err != nil {
 		return nil, huma.Error400BadRequest("invalid or expired token")
 	}
+	return nil, nil
+}
+
+// --- resend verification email ---
+
+func (h *handler) resendVerification(ctx context.Context, _ *struct{}) (*struct{}, error) {
+	traceID := middleware.GetTraceID(ctx)
+	userIDStr := middleware.GetUserID(ctx)
+
+	userUUID, err := uuid.Parse(userIDStr)
+	if err != nil {
+		return nil, huma.Error401Unauthorized("unauthorized")
+	}
+
+	user, err := h.q.GetUserByID(ctx, userUUID)
+	if err != nil {
+		return nil, huma.Error401Unauthorized("unauthorized")
+	}
+
+	if user.EmailVerified {
+		return nil, nil
+	}
+
+	// Rate-limit: one resend per 60 seconds per user
+	rlKey := "resend-verify:" + userIDStr
+	set, err := h.rdb.SetNX(ctx, rlKey, 1, 60*time.Second).Result()
+	if err == nil && !set {
+		return nil, huma.NewError(http.StatusTooManyRequests, "please wait before requesting another verification email")
+	}
+
+	token, err := randomHex(32)
+	if err != nil {
+		slog.ErrorContext(ctx, "token generation failed", "traceId", traceID, "err", err)
+		return nil, huma.Error500InternalServerError("internal error")
+	}
+
+	if err := h.q.SetEmailVerifyToken(ctx, db.SetEmailVerifyTokenParams{
+		ID:               user.ID,
+		EmailVerifyToken: pgtype.Text{String: token, Valid: true},
+	}); err != nil {
+		slog.ErrorContext(ctx, "failed to store verify token", "traceId", traceID, "err", err)
+		return nil, huma.Error500InternalServerError("internal error")
+	}
+
+	if h.resendKey != "" {
+		if err := sendVerificationEmail(h.resendKey, h.frontendURL, user.Email, token); err != nil {
+			slog.ErrorContext(ctx, "failed to send verification email", "traceId", traceID, "err", err)
+		}
+	}
+
 	return nil, nil
 }
 

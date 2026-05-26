@@ -29,7 +29,11 @@
     "edit": "Edit",
     "archive": "Archive",
     "add": "Add",
-    "polish": "Polish"
+    "polish": "Polish",
+    "polishResult": "AI suggestion",
+    "accept": "Accept",
+    "copy": "Copy",
+    "dismiss": "Dismiss"
   },
   "errors": {
     "polishFailed": "Couldn't polish text. Try again."

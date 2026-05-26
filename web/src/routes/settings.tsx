@@ -249,6 +249,7 @@ function AccountSection() {
   const { t } = useTranslation("settings");
   const { t: tc } = useTranslation("common");
   const [pwModalOpen, setPwModalOpen] = useState(false);
+  const [resendState, setResendState] = useState<"idle" | "sent" | "error">("idle");
   const { data: me, isLoading } = useGetMe();
 
   if (isLoading) {
@@ -264,8 +265,27 @@ function AccountSection() {
       <h2 className="text-lg font-semibold">{t("account.title")}</h2>
 
       {!me.emailVerified && (
-        <div className="rounded-md bg-amber-50 border border-amber-200 px-4 py-3 text-sm text-amber-700">
-          {t("profile.verifyHint")}
+        <div className="rounded-md bg-amber-50 border border-amber-200 px-4 py-3 text-sm text-amber-700 flex items-center justify-between gap-3">
+          <span>{t("profile.verifyHint")}</span>
+          <button
+            disabled={resendState !== "idle"}
+            onClick={async () => {
+              try {
+                const res = await apiFetch("/auth/resend-verification", { method: "POST" });
+                setResendState(res.status === 429 ? "error" : "sent");
+              } catch {
+                setResendState("error");
+              }
+              setTimeout(() => setResendState("idle"), 4000);
+            }}
+            className="text-xs px-2.5 py-1 rounded-md border border-amber-400 bg-amber-100 hover:bg-amber-200 transition-colors disabled:opacity-50 whitespace-nowrap flex-shrink-0"
+          >
+            {resendState === "sent"
+              ? t("profile.verifySent")
+              : resendState === "error"
+                ? t("profile.verifyFailed")
+                : t("profile.verifyResend")}
+          </button>
         </div>
       )}
 

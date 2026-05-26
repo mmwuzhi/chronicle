@@ -1,6 +1,6 @@
 {
   "title": "捕获",
-  "placeholder": "记录一个想法… (按 Enter 保存)",
+  "placeholder": "记录一个想法… (⌘ Enter 保存)",
   "tabs": {
     "all": "全部",
     "unclassified": "未分类",
