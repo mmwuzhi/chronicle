@@ -10,7 +10,7 @@ func sendVerificationEmail(apiKey, frontendURL, to, token string) error {
 	client := resend.NewClient(apiKey)
 	link := fmt.Sprintf("%s/verify-email?token=%s", frontendURL, token)
 	_, err := client.Emails.Send(&resend.SendEmailRequest{
-		From:    "Chronicle <noreply@chronicle.wuwuwu.cc>",
+		From:    "Chronicle <chronicle-noreply@wuwuwu.cc>",
 		To:      []string{to},
 		Subject: "Verify your Chronicle account",
 		Html: fmt.Sprintf(`
@@ -26,7 +26,7 @@ func sendPasswordResetEmail(apiKey, frontendURL, to, token string) error {
 	client := resend.NewClient(apiKey)
 	link := fmt.Sprintf("%s/reset-password?token=%s", frontendURL, token)
 	_, err := client.Emails.Send(&resend.SendEmailRequest{
-		From:    "Chronicle <noreply@chronicle.wuwuwu.cc>",
+		From:    "Chronicle <chronicle-noreply@wuwuwu.cc>",
 		To:      []string{to},
 		Subject: "Reset your Chronicle password",
 		Html: fmt.Sprintf(`

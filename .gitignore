@@ -9,6 +9,7 @@ api/vendor/
 # Node
 web/node_modules/
 web/dist/
+web/.pnpm-store/
 
 # OS
 .DS_Store

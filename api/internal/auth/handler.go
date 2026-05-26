@@ -415,11 +415,10 @@ func (h *handler) resendVerification(ctx context.Context, _ *struct{}) (*struct{
 	}
 
 	if h.resendKey != "" {
-		go func() {
-			if err := sendVerificationEmail(h.resendKey, h.frontendURL, user.Email, token); err != nil {
-				slog.Error("failed to send verification email", "traceId", traceID, "err", err)
-			}
-		}()
+		if err := sendVerificationEmail(h.resendKey, h.frontendURL, user.Email, token); err != nil {
+			slog.ErrorContext(ctx, "failed to send verification email", "traceId", traceID, "err", err)
+			return nil, huma.Error500InternalServerError("failed to send verification email")
+		}
 	}
 
 	return nil, nil
