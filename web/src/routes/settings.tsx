@@ -249,7 +249,7 @@ function AccountSection() {
   const { t } = useTranslation("settings");
   const { t: tc } = useTranslation("common");
   const [pwModalOpen, setPwModalOpen] = useState(false);
-  const [resendState, setResendState] = useState<"idle" | "sent" | "error">("idle");
+  const [resendState, setResendState] = useState<"idle" | "loading" | "sent" | "error">("idle");
   const { data: me, isLoading } = useGetMe();
 
   if (isLoading) {
@@ -270,6 +270,7 @@ function AccountSection() {
           <button
             disabled={resendState !== "idle"}
             onClick={async () => {
+              setResendState("loading");
               try {
                 const res = await apiFetch("/auth/resend-verification", { method: "POST" });
                 setResendState(res.status === 429 ? "error" : "sent");
@@ -280,7 +281,9 @@ function AccountSection() {
             }}
             className="text-xs px-2.5 py-1 rounded-md border border-amber-400 bg-amber-100 hover:bg-amber-200 transition-colors disabled:opacity-50 whitespace-nowrap flex-shrink-0"
           >
-            {resendState === "sent"
+            {resendState === "loading"
+              ? t("profile.verifySending")
+              : resendState === "sent"
               ? t("profile.verifySent")
               : resendState === "error"
                 ? t("profile.verifyFailed")

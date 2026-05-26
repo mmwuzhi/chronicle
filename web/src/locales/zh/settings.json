@@ -18,6 +18,7 @@
     "authMethod": "登录方式",
     "verifyHint": "你的邮箱尚未验证，请查看收件箱中的验证链接。",
     "verifyResend": "重新发送",
+    "verifySending": "发送中…",
     "verifySent": "已发送！",
     "verifyFailed": "发送失败，请重试"
   },
