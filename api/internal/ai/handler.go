@@ -5,11 +5,38 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"html"
 	"io"
 	"net/http"
+	"net/url"
+	"regexp"
+	"strings"
+	"sync"
+	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 )
+
+const geminiModel = "gemini-3.1-flash-lite"
+
+var (
+	urlRe    = regexp.MustCompile(`https?://[^\s"'<>]+`)
+	titleRe  = regexp.MustCompile(`(?i)<title[^>]*>([^<]+)</title>`)
+	descRe1  = regexp.MustCompile(`(?i)<meta[^>]+name=["']description["'][^>]+content=["']([^"']{1,300})["']`)
+	descRe2  = regexp.MustCompile(`(?i)<meta[^>]+content=["']([^"']{1,300})["'][^>]+name=["']description["']`)
+)
+
+const systemPromptTmpl = `You are a personal assistant helping the user enrich their quick notes.
+Current time: %s (UTC)
+
+Transform the note as follows:
+1. Resolve vague time words (等会, 待会, soon, later, 下午, 明天, tomorrow, etc.) into approximate concrete times based on the current time above.
+2. If URLs are present and metadata is provided below, replace each bare URL with a concise inline description in the note's language and keep the URL in parentheses — e.g. "鶏そばきらり拉面 (https://...)".
+3. Fix typos and improve clarity. Preserve the author's voice.
+4. Return only the enriched note text. No explanation, no markdown, no extra commentary.
+
+URL metadata:
+%s`
 
 type handler struct {
 	apiKey string
@@ -40,7 +67,6 @@ type PolishOutput struct {
 	}
 }
 
-// Gemini API types
 type geminiRequest struct {
 	SystemInstruction geminiContent   `json:"system_instruction"`
 	Contents          []geminiContent `json:"contents"`
@@ -62,29 +88,122 @@ type geminiResponse struct {
 	} `json:"candidates"`
 }
 
-const systemPrompt = "You are a writing assistant. Polish the following note: fix typos, improve grammar and clarity, keep it concise. Preserve the author's voice and original meaning. Return only the polished text, no explanation."
+type urlMeta struct {
+	URL   string
+	Title string
+	Desc  string
+}
 
-const geminiModel = "gemini-2.5-flash"
+func isPrivateHost(host string) bool {
+	private := []string{
+		"localhost", "127.", "0.0.0.0", "[::1]",
+		"10.", "192.168.",
+		"172.16.", "172.17.", "172.18.", "172.19.", "172.20.",
+		"172.21.", "172.22.", "172.23.", "172.24.", "172.25.",
+		"172.26.", "172.27.", "172.28.", "172.29.", "172.30.", "172.31.",
+	}
+	for _, p := range private {
+		if strings.HasPrefix(host, p) {
+			return true
+		}
+	}
+	return false
+}
+
+func fetchMeta(ctx context.Context, rawURL string) urlMeta {
+	meta := urlMeta{URL: rawURL}
+	u, err := url.Parse(rawURL)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || isPrivateHost(u.Hostname()) {
+		return meta
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+	if err != nil {
+		return meta
+	}
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
+	req.Header.Set("Accept-Language", "ja,zh;q=0.9,en;q=0.8")
+	req.Header.Set("Accept", "text/html,application/xhtml+xml")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return meta
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return meta
+	}
+
+	chunk, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
+	s := string(chunk)
+
+	if m := titleRe.FindStringSubmatch(s); len(m) > 1 {
+		meta.Title = html.UnescapeString(strings.TrimSpace(m[1]))
+	}
+	if m := descRe1.FindStringSubmatch(s); len(m) > 1 {
+		meta.Desc = html.UnescapeString(strings.TrimSpace(m[1]))
+	} else if m := descRe2.FindStringSubmatch(s); len(m) > 1 {
+		meta.Desc = html.UnescapeString(strings.TrimSpace(m[1]))
+	}
+
+	return meta
+}
+
+func buildURLContext(metas []urlMeta) string {
+	if len(metas) == 0 {
+		return "(none)"
+	}
+	var sb strings.Builder
+	for _, m := range metas {
+		sb.WriteString(fmt.Sprintf("- %s", m.URL))
+		if m.Title != "" {
+			sb.WriteString(fmt.Sprintf(" → %s", m.Title))
+		}
+		if m.Desc != "" {
+			sb.WriteString(fmt.Sprintf("; %s", m.Desc))
+		}
+		sb.WriteString("\n")
+	}
+	return sb.String()
+}
 
 func (h *handler) polish(ctx context.Context, input *PolishInput) (*PolishOutput, error) {
 	if h.apiKey == "" {
 		return nil, huma.NewError(http.StatusServiceUnavailable, "AI features not configured")
 	}
 
+	// Extract URLs (max 5) and fetch metadata in parallel with a 3s deadline
+	urls := urlRe.FindAllString(input.Body.Text, 5)
+	metas := make([]urlMeta, len(urls))
+	if len(urls) > 0 {
+		fetchCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+		defer cancel()
+		var wg sync.WaitGroup
+		for i, u := range urls {
+			wg.Add(1)
+			go func(i int, u string) {
+				defer wg.Done()
+				metas[i] = fetchMeta(fetchCtx, u)
+			}(i, u)
+		}
+		wg.Wait()
+	}
+
+	prompt := fmt.Sprintf(systemPromptTmpl,
+		time.Now().UTC().Format("2006-01-02 15:04"),
+		buildURLContext(metas),
+	)
+
 	reqBody, err := json.Marshal(geminiRequest{
-		SystemInstruction: geminiContent{
-			Parts: []geminiPart{{Text: systemPrompt}},
-		},
-		Contents: []geminiContent{
-			{Parts: []geminiPart{{Text: input.Body.Text}}},
-		},
+		SystemInstruction: geminiContent{Parts: []geminiPart{{Text: prompt}}},
+		Contents:          []geminiContent{{Parts: []geminiPart{{Text: input.Body.Text}}}},
 	})
 	if err != nil {
 		return nil, huma.Error500InternalServerError("internal error")
 	}
 
-	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s", geminiModel, h.apiKey)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(reqBody))
+	apiURL := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s", geminiModel, h.apiKey)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, apiURL, bytes.NewReader(reqBody))
 	if err != nil {
 		return nil, huma.Error500InternalServerError("internal error")
 	}
