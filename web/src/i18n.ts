@@ -9,6 +9,7 @@ import enProjects from "./locales/en/projects.json";
 import enCaptures from "./locales/en/captures.json";
 import enSettings from "./locales/en/settings.json";
 import enReports from "./locales/en/reports.json";
+import enDashboard from "./locales/en/dashboard.json";
 
 import jaCommon from "./locales/ja/common.json";
 import jaAuth from "./locales/ja/auth.json";
@@ -17,6 +18,7 @@ import jaProjects from "./locales/ja/projects.json";
 import jaCaptures from "./locales/ja/captures.json";
 import jaSettings from "./locales/ja/settings.json";
 import jaReports from "./locales/ja/reports.json";
+import jaDashboard from "./locales/ja/dashboard.json";
 
 import zhCommon from "./locales/zh/common.json";
 import zhAuth from "./locales/zh/auth.json";
@@ -25,6 +27,7 @@ import zhProjects from "./locales/zh/projects.json";
 import zhCaptures from "./locales/zh/captures.json";
 import zhSettings from "./locales/zh/settings.json";
 import zhReports from "./locales/zh/reports.json";
+import zhDashboard from "./locales/zh/dashboard.json";
 
 i18n
   .use(LanguageDetector)
@@ -39,6 +42,7 @@ i18n
         captures: enCaptures,
         settings: enSettings,
         reports: enReports,
+      dashboard: enDashboard,
       },
       ja: {
         common: jaCommon,
@@ -48,6 +52,7 @@ i18n
         captures: jaCaptures,
         settings: jaSettings,
         reports: jaReports,
+      dashboard: jaDashboard,
       },
       zh: {
         common: zhCommon,
@@ -57,6 +62,7 @@ i18n
         captures: zhCaptures,
         settings: zhSettings,
         reports: zhReports,
+      dashboard: zhDashboard,
       },
     },
     fallbackLng: "en",

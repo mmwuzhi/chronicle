@@ -1,13 +1,134 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
+import {
+  useGetMe,
+  useListTasks,
+  useListCaptures,
+  useListTimeBlocks,
+  useListLogEntries,
+} from "../api";
+import type { CaptureBody, TaskBody } from "../api";
+import { Nav } from "../components/nav";
 
 export const Route = createFileRoute("/")({
   component: Index,
 });
 
-function Index() {
-  const { t } = useTranslation();
+function weekStart(): Date {
+  const now = new Date();
+  const day = now.getUTCDay();
+  const diff = day === 0 ? 6 : day - 1;
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - diff));
+}
 
+function fmtDate(iso: string) {
+  return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+const CLASS_COLORS: Record<string, string> = {
+  unclassified: "bg-gray-100 text-gray-500",
+  idea: "bg-purple-100 text-purple-700",
+  task: "bg-blue-100 text-blue-700",
+  routine: "bg-green-100 text-green-700",
+  log: "bg-yellow-100 text-yellow-700",
+};
+
+function Dashboard() {
+  const { t } = useTranslation("dashboard");
+  const { t: tc } = useTranslation("common");
+
+  const { data: me } = useGetMe();
+  const { data: tasks } = useListTasks(undefined, { query: { enabled: !!me } });
+  const { data: captures } = useListCaptures(undefined, { query: { enabled: !!me } });
+  const { data: blocks } = useListTimeBlocks(undefined, { query: { enabled: !!me } });
+  const { data: entries } = useListLogEntries(undefined, { query: { enabled: !!me } });
+
+  const ws = weekStart();
+
+  const allTasks = tasks ?? [];
+  const activeTasks = allTasks.filter((t: TaskBody) => t.status === "todo" || t.status === "in_progress");
+  const doneTasks = allTasks.filter((t: TaskBody) => t.status === "done");
+
+  const allCaptures = captures ?? [];
+  const recentCaptures = allCaptures.slice(0, 5);
+
+  const weekBlocks = (blocks ?? []).filter((b) => new Date(b.startedAt) >= ws);
+  const totalSec = weekBlocks.reduce((s, b) => s + (b.durationSec ?? 0), 0);
+  const hours = Math.floor(totalSec / 3600);
+  const minutes = Math.floor((totalSec % 3600) / 60);
+
+  const entryCount = (entries ?? []).length;
+
+  const name = me?.email?.split("@")[0] ?? "";
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      <Nav />
+      <div className="max-w-3xl mx-auto px-8 py-8 flex flex-col gap-8">
+        <div>
+          <p className="text-sm text-gray-500">{t("greeting")}</p>
+          <h1 className="text-2xl font-semibold tracking-tight">{name}</h1>
+        </div>
+
+        <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-5">
+          <p className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-4">{t("thisWeek")}</p>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            <Stat label={t("tasksDone", { done: doneTasks.length, total: allTasks.length })} />
+            <Stat label={t("capturesCreated", { count: allCaptures.length })} />
+            <Stat label={t("logEntries", { count: entryCount })} />
+            <Stat label={t("timeTracked", { h: hours, m: minutes })} />
+          </div>
+        </div>
+
+        <section className="flex flex-col gap-3">
+          <h2 className="text-sm font-semibold text-gray-700">{t("recentCaptures")}</h2>
+          {recentCaptures.length === 0 ? (
+            <p className="text-sm text-gray-400">{t("noCaptures")}</p>
+          ) : (
+            <ul className="flex flex-col gap-2">
+              {recentCaptures.map((c: CaptureBody) => (
+                <li key={c.id} className="bg-white rounded-lg border border-gray-200 px-4 py-3 flex items-center gap-3">
+                  <p className="text-sm flex-1 truncate">{c.rawText ?? "—"}</p>
+                  <span className={`text-xs px-2 py-0.5 rounded-full flex-shrink-0 ${CLASS_COLORS[c.classifiedAs] ?? "bg-gray-100 text-gray-500"}`}>
+                    {tc(`classification.${c.classifiedAs}`)}
+                  </span>
+                  <span className="text-xs text-gray-400 flex-shrink-0">{fmtDate(c.createdAt)}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+
+        <section className="flex flex-col gap-3">
+          <h2 className="text-sm font-semibold text-gray-700">{t("activeTasks")}</h2>
+          {activeTasks.length === 0 ? (
+            <p className="text-sm text-gray-400">{t("noTasks")}</p>
+          ) : (
+            <ul className="flex flex-col gap-2">
+              {activeTasks.slice(0, 10).map((task: TaskBody) => (
+                <li key={task.id} className="bg-white rounded-lg border border-gray-200 px-4 py-3 flex items-center gap-3">
+                  <p className="text-sm flex-1 truncate">{task.title}</p>
+                  <span className={`text-xs px-2 py-0.5 rounded-full flex-shrink-0 ${task.status === "in_progress" ? "bg-blue-100 text-blue-700" : "bg-gray-100 text-gray-500"}`}>
+                    {tc(`status.${task.status}`)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      </div>
+    </div>
+  );
+}
+
+function Stat({ label }: { label: string }) {
+  return (
+    <div className="text-sm text-gray-700 font-medium">{label}</div>
+  );
+}
+
+function Landing() {
+  const { t } = useTranslation();
   return (
     <div className="flex flex-col items-center justify-center min-h-screen gap-4">
       <h1 className="text-4xl font-semibold tracking-tight">{t("brand")}</h1>
@@ -28,4 +149,12 @@ function Index() {
       </div>
     </div>
   );
+}
+
+function Index() {
+  const { data: me, isLoading } = useGetMe();
+
+  if (isLoading) return null;
+  if (!me) return <Landing />;
+  return <Dashboard />;
 }

@@ -1,0 +1,12 @@
+{
+  "greeting": "Welcome back",
+  "thisWeek": "This week",
+  "tasksDone": "{{done}} / {{total}} tasks done",
+  "capturesCreated": "{{count}} captures",
+  "logEntries": "{{count}} log entries",
+  "timeTracked": "{{h}}h {{m}}m tracked",
+  "recentCaptures": "Recent captures",
+  "activeTasks": "Active tasks",
+  "noCaptures": "No captures yet",
+  "noTasks": "No active tasks"
+}

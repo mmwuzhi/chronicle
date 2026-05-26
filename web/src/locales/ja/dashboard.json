@@ -1,0 +1,12 @@
+{
+  "greeting": "おかえりなさい",
+  "thisWeek": "今週",
+  "tasksDone": "タスク {{done}} / {{total}} 完了",
+  "capturesCreated": "{{count}} キャプチャ",
+  "logEntries": "{{count}} ログエントリ",
+  "timeTracked": "{{h}}h {{m}}m 記録",
+  "recentCaptures": "最近のキャプチャ",
+  "activeTasks": "進行中のタスク",
+  "noCaptures": "キャプチャはまだありません",
+  "noTasks": "進行中のタスクはありません"
+}

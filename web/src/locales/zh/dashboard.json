@@ -1,0 +1,12 @@
+{
+  "greeting": "欢迎回来",
+  "thisWeek": "本周",
+  "tasksDone": "任务 {{done}} / {{total}} 已完成",
+  "capturesCreated": "{{count}} 条捕获",
+  "logEntries": "{{count}} 条日志",
+  "timeTracked": "已记录 {{h}}h {{m}}m",
+  "recentCaptures": "最近捕获",
+  "activeTasks": "进行中的任务",
+  "noCaptures": "暂无捕获",
+  "noTasks": "没有进行中的任务"
+}
