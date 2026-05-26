@@ -145,6 +145,7 @@ func (h *handler) create(ctx context.Context, input *CaptureCreateInput) (*Creat
 type CaptureUpdateInput struct {
 	ID   string `path:"id" format:"uuid"`
 	Body struct {
+		RawText      *string `json:"rawText,omitempty"`
 		ClassifiedAs *string `json:"classifiedAs,omitempty" enum:"task,idea,routine,log,unclassified"`
 		TaskID       *string `json:"taskId,omitempty" format:"uuid"`
 	}
@@ -166,6 +167,7 @@ func (h *handler) update(ctx context.Context, input *CaptureUpdateInput) (*Updat
 	c, err := h.q.UpdateCapture(ctx, db.UpdateCaptureParams{
 		ID:           id,
 		UserID:       uid,
+		RawText:      nullText(input.Body.RawText),
 		ClassifiedAs: nullText(input.Body.ClassifiedAs),
 		TaskID:       nullUUID(input.Body.TaskID),
 	})

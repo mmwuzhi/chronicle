@@ -12,6 +12,7 @@ RETURNING *;
 -- name: UpdateCapture :one
 UPDATE captures
 SET
+  raw_text      = COALESCE(sqlc.narg('raw_text')::text,           raw_text),
   classified_as = CASE WHEN sqlc.narg('classified_as')::text IS NOT NULL
                   THEN sqlc.narg('classified_as')::capture_classified_as
                   ELSE classified_as END,

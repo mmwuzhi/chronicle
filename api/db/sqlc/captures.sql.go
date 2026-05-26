@@ -155,15 +155,17 @@ func (q *Queries) ListCapturesInRange(ctx context.Context, arg ListCapturesInRan
 const updateCapture = `-- name: UpdateCapture :one
 UPDATE captures
 SET
-  classified_as = CASE WHEN $1::text IS NOT NULL
-                  THEN $1::capture_classified_as
+  raw_text      = COALESCE($1::text,           raw_text),
+  classified_as = CASE WHEN $2::text IS NOT NULL
+                  THEN $2::capture_classified_as
                   ELSE classified_as END,
-  task_id       = COALESCE($2::uuid, task_id)
-WHERE id = $3 AND user_id = $4
+  task_id       = COALESCE($3::uuid, task_id)
+WHERE id = $4 AND user_id = $5
 RETURNING id, user_id, raw_text, media_url, media_type, classified_as, task_id, created_at
 `
 
 type UpdateCaptureParams struct {
+	RawText      pgtype.Text `json:"raw_text"`
 	ClassifiedAs pgtype.Text `json:"classified_as"`
 	TaskID       pgtype.UUID `json:"task_id"`
 	ID           uuid.UUID   `json:"id"`
@@ -172,6 +174,7 @@ type UpdateCaptureParams struct {
 
 func (q *Queries) UpdateCapture(ctx context.Context, arg UpdateCaptureParams) (Capture, error) {
 	row := q.db.QueryRow(ctx, updateCapture,
+		arg.RawText,
 		arg.ClassifiedAs,
 		arg.TaskID,
 		arg.ID,
