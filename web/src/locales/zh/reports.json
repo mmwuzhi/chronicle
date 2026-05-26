@@ -1,0 +1,28 @@
+{
+  "title": "周报",
+  "generate": "生成本周周报",
+  "generating": "生成中…",
+  "noReports": "暂无周报。生成你的第一份周报吧。",
+  "weekOf": "{{date}} 周",
+  "stats": {
+    "tasksCreated": "创建任务",
+    "tasksDone": "完成任务",
+    "timeTracked": "追踪时间",
+    "captures": "捕获",
+    "logEntries": "日志"
+  },
+  "hours": "{{h}}h {{m}}m",
+  "share": "分享",
+  "unshare": "取消分享",
+  "shared": "已分享",
+  "copyLink": "复制链接",
+  "linkCopied": "已复制！",
+  "tasks": "任务",
+  "summary": "AI 总结",
+  "noSummary": "无 AI 总结 — 未配置 Gemini Key。",
+  "errors": {
+    "generateFailed": "生成失败，请重试。",
+    "shareFailed": "分享链接创建失败。",
+    "unshareFailed": "取消分享失败。"
+  }
+}

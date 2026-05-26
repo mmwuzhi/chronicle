@@ -147,6 +147,51 @@ func (q *Queries) ListTasks(ctx context.Context, arg ListTasksParams) ([]Task, e
 	return items, nil
 }
 
+const listTasksInRange = `-- name: ListTasksInRange :many
+SELECT id, user_id, project_id, title, type, status, due_at, created_at, deleted_at FROM tasks
+WHERE user_id = $1
+  AND deleted_at IS NULL
+  AND created_at >= $2
+  AND created_at < $3
+ORDER BY created_at
+`
+
+type ListTasksInRangeParams struct {
+	UserID      uuid.UUID          `json:"user_id"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	CreatedAt_2 pgtype.Timestamptz `json:"created_at_2"`
+}
+
+func (q *Queries) ListTasksInRange(ctx context.Context, arg ListTasksInRangeParams) ([]Task, error) {
+	rows, err := q.db.Query(ctx, listTasksInRange, arg.UserID, arg.CreatedAt, arg.CreatedAt_2)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Task
+	for rows.Next() {
+		var i Task
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.ProjectID,
+			&i.Title,
+			&i.Type,
+			&i.Status,
+			&i.DueAt,
+			&i.CreatedAt,
+			&i.DeletedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const updateTask = `-- name: UpdateTask :one
 UPDATE tasks
 SET

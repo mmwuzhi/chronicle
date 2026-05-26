@@ -29,6 +29,12 @@ export function Nav() {
           >
             {t("nav.projects")}
           </Link>
+          <Link
+            to="/reports"
+            className="text-gray-500 hover:text-gray-900 transition-colors [&.active]:text-gray-900 [&.active]:font-medium"
+          >
+            {t("nav.reports")}
+          </Link>
         </div>
         <div className="ml-auto">
           <Link

@@ -1,0 +1,28 @@
+{
+  "title": "Weekly Reports",
+  "generate": "Generate This Week's Report",
+  "generating": "Generating…",
+  "noReports": "No reports yet. Generate your first weekly report.",
+  "weekOf": "Week of {{date}}",
+  "stats": {
+    "tasksCreated": "Tasks created",
+    "tasksDone": "Tasks done",
+    "timeTracked": "Time tracked",
+    "captures": "Captures",
+    "logEntries": "Log entries"
+  },
+  "hours": "{{h}}h {{m}}m",
+  "share": "Share",
+  "unshare": "Unshare",
+  "shared": "Shared",
+  "copyLink": "Copy link",
+  "linkCopied": "Link copied!",
+  "tasks": "Tasks",
+  "summary": "Summary",
+  "noSummary": "No AI summary — Gemini key not configured.",
+  "errors": {
+    "generateFailed": "Failed to generate report. Try again.",
+    "shareFailed": "Failed to create share link.",
+    "unshareFailed": "Failed to remove share link."
+  }
+}

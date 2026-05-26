@@ -105,6 +105,48 @@ func (q *Queries) ListTimeBlocks(ctx context.Context, arg ListTimeBlocksParams) 
 	return items, nil
 }
 
+const listTimeBlocksInRange = `-- name: ListTimeBlocksInRange :many
+SELECT id, user_id, task_id, started_at, ended_at, duration_sec, created_at FROM time_blocks
+WHERE user_id = $1
+  AND started_at >= $2
+  AND started_at < $3
+ORDER BY started_at
+`
+
+type ListTimeBlocksInRangeParams struct {
+	UserID      uuid.UUID          `json:"user_id"`
+	StartedAt   pgtype.Timestamptz `json:"started_at"`
+	StartedAt_2 pgtype.Timestamptz `json:"started_at_2"`
+}
+
+func (q *Queries) ListTimeBlocksInRange(ctx context.Context, arg ListTimeBlocksInRangeParams) ([]TimeBlock, error) {
+	rows, err := q.db.Query(ctx, listTimeBlocksInRange, arg.UserID, arg.StartedAt, arg.StartedAt_2)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []TimeBlock
+	for rows.Next() {
+		var i TimeBlock
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.TaskID,
+			&i.StartedAt,
+			&i.EndedAt,
+			&i.DurationSec,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const updateTimeBlock = `-- name: UpdateTimeBlock :one
 UPDATE time_blocks
 SET

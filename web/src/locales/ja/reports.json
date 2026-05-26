@@ -1,0 +1,28 @@
+{
+  "title": "週次レポート",
+  "generate": "今週のレポートを生成",
+  "generating": "生成中…",
+  "noReports": "レポートがありません。最初の週次レポートを生成しましょう。",
+  "weekOf": "{{date}} の週",
+  "stats": {
+    "tasksCreated": "作成タスク",
+    "tasksDone": "完了タスク",
+    "timeTracked": "計測時間",
+    "captures": "キャプチャ",
+    "logEntries": "ログエントリ"
+  },
+  "hours": "{{h}}h {{m}}m",
+  "share": "共有",
+  "unshare": "共有解除",
+  "shared": "共有中",
+  "copyLink": "リンクをコピー",
+  "linkCopied": "コピーしました！",
+  "tasks": "タスク",
+  "summary": "AIサマリー",
+  "noSummary": "AIサマリーなし — Gemini Keyが設定されていません。",
+  "errors": {
+    "generateFailed": "レポートの生成に失敗しました。もう一度お試しください。",
+    "shareFailed": "共有リンクの作成に失敗しました。",
+    "unshareFailed": "共有解除に失敗しました。"
+  }
+}

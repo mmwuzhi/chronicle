@@ -97,6 +97,48 @@ func (q *Queries) ListLogEntries(ctx context.Context, arg ListLogEntriesParams) 
 	return items, nil
 }
 
+const listLogEntriesInRange = `-- name: ListLogEntriesInRange :many
+SELECT id, user_id, task_id, body, created_at, deleted_at FROM log_entries
+WHERE user_id = $1
+  AND deleted_at IS NULL
+  AND created_at >= $2
+  AND created_at < $3
+ORDER BY created_at
+`
+
+type ListLogEntriesInRangeParams struct {
+	UserID      uuid.UUID          `json:"user_id"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	CreatedAt_2 pgtype.Timestamptz `json:"created_at_2"`
+}
+
+func (q *Queries) ListLogEntriesInRange(ctx context.Context, arg ListLogEntriesInRangeParams) ([]LogEntry, error) {
+	rows, err := q.db.Query(ctx, listLogEntriesInRange, arg.UserID, arg.CreatedAt, arg.CreatedAt_2)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []LogEntry
+	for rows.Next() {
+		var i LogEntry
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.TaskID,
+			&i.Body,
+			&i.CreatedAt,
+			&i.DeletedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const updateLogEntry = `-- name: UpdateLogEntry :one
 UPDATE log_entries
 SET body = $1

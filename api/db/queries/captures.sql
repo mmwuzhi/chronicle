@@ -23,3 +23,10 @@ RETURNING *;
 DELETE FROM captures
 WHERE id = $1 AND user_id = $2
 RETURNING id;
+
+-- name: ListCapturesInRange :many
+SELECT * FROM captures
+WHERE user_id = $1
+  AND created_at >= $2
+  AND created_at < $3
+ORDER BY created_at;

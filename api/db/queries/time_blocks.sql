@@ -23,3 +23,10 @@ RETURNING *;
 DELETE FROM time_blocks
 WHERE id = $1 AND user_id = $2
 RETURNING id;
+
+-- name: ListTimeBlocksInRange :many
+SELECT * FROM time_blocks
+WHERE user_id = $1
+  AND started_at >= $2
+  AND started_at < $3
+ORDER BY started_at;

@@ -109,6 +109,49 @@ func (q *Queries) ListCaptures(ctx context.Context, arg ListCapturesParams) ([]C
 	return items, nil
 }
 
+const listCapturesInRange = `-- name: ListCapturesInRange :many
+SELECT id, user_id, raw_text, media_url, media_type, classified_as, task_id, created_at FROM captures
+WHERE user_id = $1
+  AND created_at >= $2
+  AND created_at < $3
+ORDER BY created_at
+`
+
+type ListCapturesInRangeParams struct {
+	UserID      uuid.UUID          `json:"user_id"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	CreatedAt_2 pgtype.Timestamptz `json:"created_at_2"`
+}
+
+func (q *Queries) ListCapturesInRange(ctx context.Context, arg ListCapturesInRangeParams) ([]Capture, error) {
+	rows, err := q.db.Query(ctx, listCapturesInRange, arg.UserID, arg.CreatedAt, arg.CreatedAt_2)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Capture
+	for rows.Next() {
+		var i Capture
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.RawText,
+			&i.MediaUrl,
+			&i.MediaType,
+			&i.ClassifiedAs,
+			&i.TaskID,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const updateCapture = `-- name: UpdateCapture :one
 UPDATE captures
 SET
