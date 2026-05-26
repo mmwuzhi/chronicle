@@ -102,10 +102,6 @@ function CaptureCard({
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(c.rawText ?? "");
 
-  useEffect(() => {
-    if (!editing) setDraft(c.rawText ?? "");
-  }, [c.rawText, editing]);
-
   const commitEdit = () => {
     const trimmed = draft.trim();
     if (trimmed && trimmed !== c.rawText) {
