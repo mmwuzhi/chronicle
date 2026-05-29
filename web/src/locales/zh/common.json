@@ -2,6 +2,7 @@
   "brand": "Chronicle",
   "tagline": "个人生产力系统",
   "nav": {
+    "home": "首页",
     "captures": "捕获",
     "tasks": "任务",
     "projects": "项目",

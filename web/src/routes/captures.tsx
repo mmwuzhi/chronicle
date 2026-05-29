@@ -330,7 +330,7 @@ function Captures() {
   return (
     <div className="min-h-screen bg-gray-50">
       <Nav />
-      <div className="max-w-3xl mx-auto px-8 py-8 flex flex-col gap-6">
+      <div className="max-w-3xl mx-auto px-4 md:px-8 py-6 md:py-8 flex flex-col gap-6">
         <h1 className="text-2xl font-semibold tracking-tight">{t("title")}</h1>
 
         <div className="flex flex-col gap-2">

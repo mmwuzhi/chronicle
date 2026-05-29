@@ -226,7 +226,7 @@ function Reports() {
     return (
       <div className="min-h-screen bg-white">
         <Nav />
-        <div className="max-w-3xl mx-auto px-8 py-12 text-sm text-gray-500">
+        <div className="max-w-3xl mx-auto px-4 md:px-8 py-12 text-sm text-gray-500">
           {tc("error")}
         </div>
       </div>
@@ -236,7 +236,7 @@ function Reports() {
   return (
     <div className="min-h-screen bg-white">
       <Nav />
-      <div className="max-w-3xl mx-auto px-8 py-8 flex flex-col gap-6">
+      <div className="max-w-3xl mx-auto px-4 md:px-8 py-6 md:py-8 flex flex-col gap-6">
         <div className="flex items-center justify-between">
           <h1 className="text-lg font-semibold text-gray-900">{t("title")}</h1>
           <button

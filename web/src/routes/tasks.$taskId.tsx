@@ -245,7 +245,7 @@ function TaskDetail() {
   return (
     <div className="min-h-screen bg-gray-50">
       <Nav />
-      <div className="max-w-3xl mx-auto px-8 py-8 flex flex-col gap-6">
+      <div className="max-w-3xl mx-auto px-4 md:px-8 py-6 md:py-8 flex flex-col gap-6">
         <div className="flex items-center gap-2 text-sm text-gray-400">
           <Link to="/tasks" className="hover:text-gray-600 transition-colors">
             {t("title")}

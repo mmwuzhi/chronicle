@@ -95,7 +95,7 @@ function ProjectDetail() {
     return (
       <div className="min-h-screen bg-gray-50">
         <Nav />
-        <div className="max-w-3xl mx-auto px-8 py-8">
+        <div className="max-w-3xl mx-auto px-4 md:px-8 py-6 md:py-8">
           <div className="text-gray-400 text-sm">{tc("loading")}</div>
         </div>
       </div>
@@ -106,7 +106,7 @@ function ProjectDetail() {
     return (
       <div className="min-h-screen bg-gray-50">
         <Nav />
-        <div className="max-w-3xl mx-auto px-8 py-8 flex flex-col gap-4">
+        <div className="max-w-3xl mx-auto px-4 md:px-8 py-6 md:py-8 flex flex-col gap-4">
           <p className="text-gray-500 text-sm">{t("detail.notFound")}</p>
           <Link
             to="/projects"
@@ -154,7 +154,7 @@ function ProjectDetail() {
   return (
     <div className="min-h-screen bg-gray-50">
       <Nav />
-      <div className="max-w-3xl mx-auto px-8 py-8 flex flex-col gap-6">
+      <div className="max-w-3xl mx-auto px-4 md:px-8 py-6 md:py-8 flex flex-col gap-6">
         <div className="flex items-center gap-2 text-sm text-gray-400">
           <Link
             to="/projects"

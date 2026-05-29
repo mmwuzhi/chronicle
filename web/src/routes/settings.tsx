@@ -946,8 +946,8 @@ function Settings() {
         </div>
       )}
 
-      <div className="max-w-4xl mx-auto px-8 py-12 flex gap-12">
-        <nav className="w-44 shrink-0 flex flex-col gap-1">
+      <div className="max-w-4xl mx-auto px-4 md:px-8 py-8 md:py-12 flex flex-col gap-6 md:flex-row md:gap-12">
+        <nav className="flex flex-row flex-wrap gap-1 md:flex-col md:w-44 md:shrink-0">
           <h1 className="text-xl font-semibold mb-4">{t("title")}</h1>
           {tabs.map((tab) => (
             <button

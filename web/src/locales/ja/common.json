@@ -2,6 +2,7 @@
   "brand": "Chronicle",
   "tagline": "パーソナル生産性OS",
   "nav": {
+    "home": "ホーム",
     "captures": "キャプチャ",
     "tasks": "タスク",
     "projects": "プロジェクト",

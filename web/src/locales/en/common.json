@@ -2,6 +2,7 @@
   "brand": "Chronicle",
   "tagline": "Personal productivity OS",
   "nav": {
+    "home": "Home",
     "captures": "Captures",
     "tasks": "Tasks",
     "projects": "Projects",

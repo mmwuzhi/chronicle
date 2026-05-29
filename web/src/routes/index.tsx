@@ -73,7 +73,7 @@ function Dashboard() {
   return (
     <div className="min-h-screen bg-gray-50">
       <Nav />
-      <div className="max-w-3xl mx-auto px-8 py-8 flex flex-col gap-8">
+      <div className="max-w-3xl mx-auto px-4 md:px-8 py-6 md:py-8 flex flex-col gap-8">
         <div>
           <p className="text-sm text-gray-500">{t("greeting")}</p>
           <h1 className="text-2xl font-semibold tracking-tight">{name}</h1>

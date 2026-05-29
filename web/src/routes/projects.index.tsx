@@ -60,7 +60,7 @@ function Projects() {
   return (
     <div className="min-h-screen bg-gray-50">
       <Nav />
-      <div className="max-w-2xl mx-auto p-8 flex flex-col gap-8">
+      <div className="max-w-2xl mx-auto p-4 md:p-8 flex flex-col gap-8">
         <header>
           <h1 className="text-2xl font-semibold tracking-tight">{t("title")}</h1>
         </header>
