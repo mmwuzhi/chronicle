@@ -1,4 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod/v3";
@@ -27,6 +28,7 @@ function Projects() {
   const { t: tc } = useTranslation("common");
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const [showArchived, setShowArchived] = useState(false);
 
   const { data: projects, isLoading, error } = useListProjects();
 
@@ -56,6 +58,7 @@ function Projects() {
   }
 
   const active = projects?.filter((p) => !p.archived) ?? [];
+  const archived = projects?.filter((p) => p.archived) ?? [];
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -99,42 +102,79 @@ function Projects() {
         {isLoading ? (
           <div className="text-gray-400 text-sm">{tc("loading")}</div>
         ) : (
-          <ul className="flex flex-col gap-2">
-            {active.map((p) => (
-              <li
-                key={p.id}
-                className="bg-white rounded-lg border border-gray-200 shadow-sm"
-              >
-                <div className="flex items-center gap-3 p-3">
-                  <Link
-                    to="/projects/$projectId"
-                    params={{ projectId: p.id }}
-                    className="flex items-center gap-3 flex-1 hover:opacity-70 transition-opacity"
-                  >
-                    <span
-                      className="w-3 h-3 rounded-full shrink-0"
-                      style={{ backgroundColor: p.color }}
-                    />
-                    <span className="text-sm font-medium">{p.name}</span>
-                  </Link>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      update.mutate({ id: p.id, data: { archived: true } });
-                    }}
-                    className="text-xs text-gray-400 hover:text-gray-600 transition-colors"
-                  >
-                    {tc("actions.archive")}
-                  </button>
-                </div>
-              </li>
-            ))}
-            {active.length === 0 && (
-              <p className="text-gray-400 text-sm">
-                {t("noProjects")}
-              </p>
+          <div className="flex flex-col gap-6">
+            <ul className="flex flex-col gap-2">
+              {active.map((p) => (
+                <li
+                  key={p.id}
+                  className="bg-white rounded-lg border border-gray-200 shadow-sm"
+                >
+                  <div className="flex items-center gap-3 p-3">
+                    <Link
+                      to="/projects/$projectId"
+                      params={{ projectId: p.id }}
+                      className="flex items-center gap-3 flex-1 hover:opacity-70 transition-opacity"
+                    >
+                      <span
+                        className="w-3 h-3 rounded-full shrink-0"
+                        style={{ backgroundColor: p.color }}
+                      />
+                      <span className="text-sm font-medium">{p.name}</span>
+                    </Link>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        update.mutate({ id: p.id, data: { archived: true } });
+                      }}
+                      className="text-xs text-gray-400 hover:text-gray-600 transition-colors"
+                    >
+                      {tc("actions.archive")}
+                    </button>
+                  </div>
+                </li>
+              ))}
+              {active.length === 0 && (
+                <p className="text-gray-400 text-sm">{t("noProjects")}</p>
+              )}
+            </ul>
+
+            {archived.length > 0 && (
+              <div className="flex flex-col gap-2">
+                <button
+                  onClick={() => setShowArchived((v) => !v)}
+                  className="text-xs text-gray-400 hover:text-gray-600 transition-colors self-start"
+                >
+                  {showArchived ? t("hideArchived") : t("showArchived")} ({archived.length})
+                </button>
+                {showArchived && (
+                  <ul className="flex flex-col gap-2">
+                    {archived.map((p) => (
+                      <li
+                        key={p.id}
+                        className="bg-white rounded-lg border border-gray-200 shadow-sm opacity-60"
+                      >
+                        <div className="flex items-center gap-3 p-3">
+                          <span
+                            className="w-3 h-3 rounded-full shrink-0"
+                            style={{ backgroundColor: p.color }}
+                          />
+                          <span className="text-sm font-medium flex-1">{p.name}</span>
+                          <button
+                            onClick={() =>
+                              update.mutate({ id: p.id, data: { archived: false } })
+                            }
+                            className="text-xs text-gray-400 hover:text-gray-600 transition-colors"
+                          >
+                            {t("unarchive")}
+                          </button>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
             )}
-          </ul>
+          </div>
         )}
       </div>
     </div>

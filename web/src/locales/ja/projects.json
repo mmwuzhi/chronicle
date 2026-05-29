@@ -3,6 +3,11 @@
   "newProjectName": "新しいプロジェクト名",
   "addProject": "プロジェクトを追加",
   "noProjects": "プロジェクトはまだありません。上から作成してください。",
+  "showArchived": "アーカイブを表示",
+  "hideArchived": "アーカイブを非表示",
+  "archived": "アーカイブ済み",
+  "unarchive": "アーカイブ解除",
+  "noArchivedProjects": "アーカイブされたプロジェクトはありません。",
   "failedToLoad": "プロジェクトの読み込みに失敗しました",
   "detail": {
     "deleteTitle": "プロジェクトを削除",

@@ -3,6 +3,11 @@
   "newProjectName": "New project name",
   "addProject": "Add project",
   "noProjects": "No projects yet. Create one above.",
+  "showArchived": "Show archived",
+  "hideArchived": "Hide archived",
+  "archived": "Archived",
+  "unarchive": "Unarchive",
+  "noArchivedProjects": "No archived projects.",
   "failedToLoad": "Failed to load projects",
   "detail": {
     "deleteTitle": "Delete project",
