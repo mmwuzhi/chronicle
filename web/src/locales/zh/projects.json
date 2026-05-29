@@ -3,6 +3,7 @@
   "newProjectName": "新项目名称",
   "addProject": "添加项目",
   "noProjects": "还没有项目，在上方创建一个吧。",
+  "tasksDone": "{{done}} / {{total}} 已完成",
   "showArchived": "显示已归档",
   "hideArchived": "隐藏已归档",
   "archived": "已归档",

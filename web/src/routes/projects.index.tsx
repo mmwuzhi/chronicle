@@ -9,7 +9,9 @@ import {
   useCreateProject,
   useUpdateProject,
   getListProjectsQueryKey,
+  useListTasks,
 } from "../api";
+import type { TaskBody } from "../api";
 import { Nav } from "../components/nav";
 import { useTranslation } from "react-i18next";
 
@@ -31,6 +33,7 @@ function Projects() {
   const [showArchived, setShowArchived] = useState(false);
 
   const { data: projects, isLoading, error } = useListProjects();
+  const { data: allTasks } = useListTasks({});
 
   const invalidate = () =>
     queryClient.invalidateQueries({ queryKey: getListProjectsQueryKey() });
@@ -59,6 +62,15 @@ function Projects() {
 
   const active = projects?.filter((p) => !p.archived) ?? [];
   const archived = projects?.filter((p) => p.archived) ?? [];
+
+  const taskStatsByProject = new Map<string, { done: number; total: number }>();
+  for (const task of (allTasks ?? []) as TaskBody[]) {
+    if (!task.projectId || task.status === "archived") continue;
+    const s = taskStatsByProject.get(task.projectId) ?? { done: 0, total: 0 };
+    s.total++;
+    if (task.status === "done") s.done++;
+    taskStatsByProject.set(task.projectId, s);
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -113,13 +125,23 @@ function Projects() {
                     <Link
                       to="/projects/$projectId"
                       params={{ projectId: p.id }}
-                      className="flex items-center gap-3 flex-1 hover:opacity-70 transition-opacity"
+                      className="flex items-center gap-3 flex-1 hover:opacity-70 transition-opacity min-w-0"
                     >
                       <span
                         className="w-3 h-3 rounded-full shrink-0"
                         style={{ backgroundColor: p.color }}
                       />
-                      <span className="text-sm font-medium">{p.name}</span>
+                      <span className="flex flex-col min-w-0">
+                        <span className="text-sm font-medium">{p.name}</span>
+                        {(taskStatsByProject.get(p.id)?.total ?? 0) > 0 && (
+                          <span className="text-xs text-gray-400">
+                            {t("tasksDone", {
+                              done: taskStatsByProject.get(p.id)!.done,
+                              total: taskStatsByProject.get(p.id)!.total,
+                            })}
+                          </span>
+                        )}
+                      </span>
                     </Link>
                     <button
                       onClick={(e) => {

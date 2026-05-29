@@ -3,6 +3,7 @@
   "newProjectName": "New project name",
   "addProject": "Add project",
   "noProjects": "No projects yet. Create one above.",
+  "tasksDone": "{{done}} / {{total}} done",
   "showArchived": "Show archived",
   "hideArchived": "Hide archived",
   "archived": "Archived",

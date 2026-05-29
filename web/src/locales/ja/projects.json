@@ -3,6 +3,7 @@
   "newProjectName": "新しいプロジェクト名",
   "addProject": "プロジェクトを追加",
   "noProjects": "プロジェクトはまだありません。上から作成してください。",
+  "tasksDone": "{{done}} / {{total}} 完了",
   "showArchived": "アーカイブを表示",
   "hideArchived": "アーカイブを非表示",
   "archived": "アーカイブ済み",
