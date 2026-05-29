@@ -14,6 +14,7 @@
     "deleteDescription": "This will permanently delete \"{{name}}\". Tasks in this project will be kept but unassigned.",
     "deleteConfirm": "Yes, delete",
     "addPlaceholder": "Add a task… (Enter to save)",
+    "timeTracked": "{{h}}h {{m}}m tracked",
     "notFound": "Project not found.",
     "backToProjects": "Back to projects",
     "noTasks": "No tasks in this project yet.",

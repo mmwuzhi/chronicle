@@ -14,6 +14,7 @@
     "deleteDescription": "将永久删除「{{name}}」。该项目中的任务将保留但变为未分配。",
     "deleteConfirm": "确认删除",
     "addPlaceholder": "添加任务… (按 Enter 保存)",
+    "timeTracked": "已追踪 {{h}}h {{m}}m",
     "notFound": "项目未找到。",
     "backToProjects": "返回项目列表",
     "noTasks": "该项目还没有任务。",

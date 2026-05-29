@@ -12,6 +12,7 @@ import {
   useUpdateTask,
   useDeleteTask,
   getListTasksQueryKey,
+  useListTimeBlocks,
 } from "../api";
 import type { TaskBody, TaskUpdateInputBodyStatus } from "../api";
 import { Nav } from "../components/nav";
@@ -55,6 +56,7 @@ function ProjectDetail() {
   const project = projects?.find((p) => p.id === projectId);
 
   const { data: tasks, isLoading: tasksLoading } = useListTasks({ projectId });
+  const { data: timeBlocks } = useListTimeBlocks();
 
   const invalidateProjects = () =>
     queryClient.invalidateQueries({ queryKey: getListProjectsQueryKey() });
@@ -151,6 +153,13 @@ function ProjectDetail() {
     (task: TaskBody) => task.status !== "archived",
   );
 
+  const taskIds = new Set((tasks ?? []).map((t: TaskBody) => t.id));
+  const totalSec = (timeBlocks ?? [])
+    .filter((b) => b.taskId !== null && taskIds.has(b.taskId))
+    .reduce((s, b) => s + (b.durationSec ?? 0), 0);
+  const hours = Math.floor(totalSec / 3600);
+  const minutes = Math.floor((totalSec % 3600) / 60);
+
   return (
     <div className="min-h-screen bg-gray-50">
       <Nav />
@@ -204,9 +213,16 @@ function ProjectDetail() {
               className="w-4 h-4 rounded-full shrink-0"
               style={{ backgroundColor: project.color }}
             />
-            <h1 className="text-2xl font-semibold tracking-tight flex-1">
-              {project.name}
-            </h1>
+            <div className="flex-1 flex flex-col gap-0.5">
+              <h1 className="text-2xl font-semibold tracking-tight">
+                {project.name}
+              </h1>
+              {totalSec > 0 && (
+                <p className="text-xs text-gray-400">
+                  {t("detail.timeTracked", { h: hours, m: minutes })}
+                </p>
+              )}
+            </div>
             <button
               onClick={startEdit}
               className="text-xs text-gray-400 hover:text-gray-600 transition-colors"
