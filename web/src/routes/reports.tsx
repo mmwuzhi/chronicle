@@ -3,6 +3,7 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "../lib/axios";
 import { Nav } from "../components/nav";
+import { fmtDate } from "../utils/format";
 import { useTranslation } from "react-i18next";
 
 export const Route = createFileRoute("/reports")({
@@ -44,14 +45,6 @@ function fmtTime(sec: number) {
   const h = Math.floor(sec / 3600);
   const m = Math.floor((sec % 3600) / 60);
   return `${h}h ${m}m`;
-}
-
-function fmtDate(iso: string) {
-  return new Date(iso).toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
 }
 
 function StatCard({ label, value }: { label: string; value: string | number }) {

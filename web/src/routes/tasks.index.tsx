@@ -9,51 +9,15 @@ import {
   getListTasksQueryKey,
   useListProjects,
 } from "../api";
-import type { TaskBody, TaskUpdateInputBodyStatus } from "../api";
+import type { TaskBody } from "../api";
 import { Nav } from "../components/nav";
+import { DueBadge } from "../components/DueBadge";
+import { STATUS_CYCLE, STATUS_COLORS } from "../constants/status";
 import { useTranslation } from "react-i18next";
 
 export const Route = createFileRoute("/tasks/")({
   component: Tasks,
 });
-
-function DueBadge({ dueAt, t }: { dueAt: string; t: (k: string) => string }) {
-  const todayStr = new Date().toLocaleDateString("en-CA");
-  const dueStr = new Date(dueAt).toLocaleDateString("en-CA");
-  const overdue = dueStr < todayStr;
-  const isToday = dueStr === todayStr;
-  const label = overdue
-    ? t("overdue")
-    : isToday
-      ? t("dueToday")
-      : new Date(dueAt).toLocaleDateString(undefined, {
-          month: "short",
-          day: "numeric",
-        });
-  const cls = overdue
-    ? "bg-red-100 text-red-700"
-    : isToday
-      ? "bg-amber-100 text-amber-700"
-      : "bg-gray-100 text-gray-500";
-  return (
-    <span className={`text-xs px-2 py-0.5 rounded-full flex-shrink-0 ${cls}`}>
-      {label}
-    </span>
-  );
-}
-
-const STATUS_CYCLE: Record<string, TaskUpdateInputBodyStatus> = {
-  todo: "in_progress",
-  in_progress: "done",
-  done: "todo",
-};
-
-const STATUS_COLORS: Record<string, string> = {
-  todo: "bg-gray-100 text-gray-600",
-  in_progress: "bg-blue-100 text-blue-700",
-  done: "bg-green-100 text-green-700",
-  archived: "bg-gray-100 text-gray-400",
-};
 
 function Tasks() {
   const { t } = useTranslation("tasks");

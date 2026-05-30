@@ -111,6 +111,7 @@ pnpm test                         # vitest
 
   Fix every failure before pushing. CI runs these same steps exactly.
 
+- **Route files are orchestration only.** They may declare data-fetching hooks, layout structure, and event handlers. Target < 250 lines. Any sub-component longer than 60 lines must live in its own file under `web/src/components/`. Any constant or utility used in more than one file must move to `web/src/constants/` or `web/src/utils/` on the second use.
 - **Coding rules are in [`CODING.md`](./CODING.md).** Read it before writing new code.
 
 ## Environment

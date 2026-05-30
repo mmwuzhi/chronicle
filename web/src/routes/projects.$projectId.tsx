@@ -14,26 +14,14 @@ import {
   getListTasksQueryKey,
   useListTimeBlocks,
 } from "../api";
-import type { TaskBody, TaskUpdateInputBodyStatus } from "../api";
+import type { TaskBody } from "../api";
 import { Nav } from "../components/nav";
+import { STATUS_CYCLE, STATUS_COLORS } from "../constants/status";
 import { useTranslation } from "react-i18next";
 
 export const Route = createFileRoute("/projects/$projectId")({
   component: ProjectDetail,
 });
-
-const STATUS_CYCLE: Record<string, TaskUpdateInputBodyStatus> = {
-  todo: "in_progress",
-  in_progress: "done",
-  done: "todo",
-};
-
-const STATUS_COLORS: Record<string, string> = {
-  todo: "bg-gray-100 text-gray-600",
-  in_progress: "bg-blue-100 text-blue-700",
-  done: "bg-green-100 text-green-700",
-  archived: "bg-gray-100 text-gray-400",
-};
 
 function ProjectDetail() {
   const { t } = useTranslation("projects");
