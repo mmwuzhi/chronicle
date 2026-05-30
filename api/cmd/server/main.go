@@ -12,14 +12,14 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/credentials"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
 	"github.com/go-chi/chi/v5"
 	chiMW "github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
-	"github.com/aws/aws-sdk-go-v2/credentials"
-	awsconfig "github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 
@@ -33,8 +33,8 @@ import (
 	"github.com/sikaoshenmi/chronicle/internal/report"
 	"github.com/sikaoshenmi/chronicle/internal/search"
 	"github.com/sikaoshenmi/chronicle/internal/task"
-	"github.com/sikaoshenmi/chronicle/internal/upload"
 	"github.com/sikaoshenmi/chronicle/internal/timeblock"
+	"github.com/sikaoshenmi/chronicle/internal/upload"
 	"github.com/sikaoshenmi/chronicle/internal/user"
 )
 

@@ -1,4 +1,8 @@
-import { createFileRoute, useNavigate, useSearch } from "@tanstack/react-router";
+import {
+  createFileRoute,
+  useNavigate,
+  useSearch,
+} from "@tanstack/react-router";
 import { useState, useEffect } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { z } from "zod";
@@ -159,15 +163,22 @@ function LinkedAccountsSection() {
 
   if (!me) return null;
 
-  const linked = (me as unknown as { oauthAccounts?: { id: string; provider: string }[] }).oauthAccounts ?? [];
+  const linked =
+    (me as unknown as { oauthAccounts?: { id: string; provider: string }[] })
+      .oauthAccounts ?? [];
 
   const handleConnect = (provider: string) => {
     const token = localStorage.getItem("access_token");
     const apiBase = import.meta.env.VITE_API_URL ?? "/api";
-    window.location.assign(`${apiBase}/auth/${provider}?action=link&token=${token}`);
+    window.location.assign(
+      `${apiBase}/auth/${provider}?action=link&token=${token}`,
+    );
   };
 
-  const handleDisconnect = async (account: { id: string; provider: string }) => {
+  const handleDisconnect = async (account: {
+    id: string;
+    provider: string;
+  }) => {
     if (!me.hasPassword && linked.length <= 1) {
       await confirm({
         title: t("account.disconnect"),
@@ -178,8 +189,12 @@ function LinkedAccountsSection() {
     }
 
     const ok = await confirm({
-      title: t("account.disconnectConfirm", { provider: capitalize(account.provider) }),
-      description: t("account.disconnectDescription", { provider: capitalize(account.provider) }),
+      title: t("account.disconnectConfirm", {
+        provider: capitalize(account.provider),
+      }),
+      description: t("account.disconnectDescription", {
+        provider: capitalize(account.provider),
+      }),
       confirmLabel: t("account.disconnect"),
       variant: "danger",
     });
@@ -249,7 +264,9 @@ function AccountSection() {
   const { t } = useTranslation("settings");
   const { t: tc } = useTranslation("common");
   const [pwModalOpen, setPwModalOpen] = useState(false);
-  const [resendState, setResendState] = useState<"idle" | "loading" | "sent" | "error">("idle");
+  const [resendState, setResendState] = useState<
+    "idle" | "loading" | "sent" | "error"
+  >("idle");
   const { data: me, isLoading } = useGetMe();
 
   if (isLoading) {
@@ -258,7 +275,9 @@ function AccountSection() {
 
   if (!me) return null;
 
-  const linked = (me as unknown as { oauthAccounts?: { id: string; provider: string }[] }).oauthAccounts ?? [];
+  const linked =
+    (me as unknown as { oauthAccounts?: { id: string; provider: string }[] })
+      .oauthAccounts ?? [];
 
   return (
     <>
@@ -272,7 +291,9 @@ function AccountSection() {
             onClick={async () => {
               setResendState("loading");
               try {
-                const res = await apiFetch("/auth/resend-verification", { method: "POST" });
+                const res = await apiFetch("/auth/resend-verification", {
+                  method: "POST",
+                });
                 setResendState(res.status === 429 ? "error" : "sent");
               } catch {
                 setResendState("error");
@@ -284,10 +305,10 @@ function AccountSection() {
             {resendState === "loading"
               ? t("profile.verifySending")
               : resendState === "sent"
-              ? t("profile.verifySent")
-              : resendState === "error"
-                ? t("profile.verifyFailed")
-                : t("profile.verifyResend")}
+                ? t("profile.verifySent")
+                : resendState === "error"
+                  ? t("profile.verifyFailed")
+                  : t("profile.verifyResend")}
           </button>
         </div>
       )}
@@ -339,7 +360,9 @@ function LanguageRow() {
     <div className="flex items-center justify-between py-4">
       <span className="text-sm text-gray-500">{t("language.title")}</span>
       <select
-        value={LANGS.find((l) => i18n.language.startsWith(l.code))?.code ?? "en"}
+        value={
+          LANGS.find((l) => i18n.language.startsWith(l.code))?.code ?? "en"
+        }
         onChange={(e) => i18n.changeLanguage(e.target.value)}
         className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
       >
@@ -435,7 +458,9 @@ function PasskeysSection() {
     <div>
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="text-sm font-medium">{t("security.passkeys.title")}</h3>
+          <h3 className="text-sm font-medium">
+            {t("security.passkeys.title")}
+          </h3>
           <p className="text-sm text-gray-500 mt-0.5">
             {t("security.passkeys.description")}
           </p>
@@ -456,10 +481,7 @@ function PasskeysSection() {
       ) : (
         <div className="mt-3 divide-y divide-gray-100">
           {passkeys.map((pk) => (
-            <div
-              key={pk.id}
-              className="flex items-center justify-between py-3"
-            >
+            <div key={pk.id} className="flex items-center justify-between py-3">
               <div>
                 <p className="text-sm">{pk.name}</p>
                 <p className="text-xs text-gray-400">
@@ -948,7 +970,7 @@ function Settings() {
 
       <div className="max-w-4xl mx-auto px-4 md:px-8 py-8 md:py-12 flex flex-col gap-6 md:flex-row md:gap-12">
         <nav className="flex flex-row flex-wrap gap-1 md:flex-col md:w-44 md:shrink-0">
-          <h1 className="text-xl font-semibold mb-4">{t("title")}</h1>
+          <h1 className="w-full text-xl font-semibold mb-2">{t("title")}</h1>
           {tabs.map((tab) => (
             <button
               key={tab.id}
