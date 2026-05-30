@@ -87,7 +87,7 @@ function Tasks() {
       <div className="max-w-3xl mx-auto px-4 md:px-8 py-6 md:py-8 flex flex-col gap-6">
         <h1 className="text-2xl font-semibold tracking-tight">{t("title")}</h1>
 
-        <div className="flex gap-2">
+        <div className="bg-white border border-gray-200 rounded-xl p-3 flex flex-col gap-2.5 shadow-sm">
           <input
             value={title}
             onChange={(e) => setTitle(e.target.value)}
@@ -98,43 +98,79 @@ function Tasks() {
               }
             }}
             placeholder={t("addPlaceholder")}
-            className="flex-1 border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
+            className="w-full text-sm focus:outline-none placeholder:text-gray-400 bg-transparent"
           />
-          <select
-            value={newTaskProjectId}
-            onChange={(e) => setNewTaskProjectId(e.target.value)}
-            className="border border-gray-300 rounded-md px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
-          >
-            <option value="">{tc("noProject")}</option>
-            {activeProjects.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
-            ))}
-          </select>
-          <button
-            onClick={handleAdd}
-            disabled={create.isPending || !title.trim()}
-            className="bg-gray-900 text-white rounded-md px-4 py-2 text-sm font-medium hover:bg-gray-700 transition-colors disabled:opacity-50"
-          >
-            {t("add")}
-          </button>
+          <div className="flex items-center gap-2">
+            <div className="flex gap-1 flex-1 overflow-x-auto">
+              <button
+                onClick={() => setNewTaskProjectId("")}
+                className={`text-xs px-2.5 py-1 rounded-full whitespace-nowrap transition-colors ${
+                  newTaskProjectId === ""
+                    ? "bg-gray-100 ring-1 ring-gray-300 text-gray-700"
+                    : "text-gray-400 hover:text-gray-600 hover:bg-gray-50"
+                }`}
+              >
+                {tc("noProject")}
+              </button>
+              {activeProjects.map((p) => (
+                <button
+                  key={p.id}
+                  onClick={() => setNewTaskProjectId(p.id)}
+                  className={`flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full whitespace-nowrap transition-colors ${
+                    newTaskProjectId === p.id
+                      ? "bg-gray-100 ring-1 ring-gray-300 text-gray-700"
+                      : "text-gray-400 hover:text-gray-600 hover:bg-gray-50"
+                  }`}
+                >
+                  <span
+                    className="w-1.5 h-1.5 rounded-full shrink-0"
+                    style={{ backgroundColor: p.color }}
+                  />
+                  {p.name}
+                </button>
+              ))}
+            </div>
+            <button
+              onClick={handleAdd}
+              disabled={create.isPending || !title.trim()}
+              className="bg-gray-900 text-white rounded-md px-4 py-1.5 text-sm font-medium hover:bg-gray-700 transition-colors disabled:opacity-50 shrink-0"
+            >
+              {t("add")}
+            </button>
+          </div>
         </div>
 
-        <div className="flex items-center gap-2">
-          <span className="text-sm text-gray-500">{t("filterProject")}</span>
-          <select
-            value={filterProjectId}
-            onChange={(e) => setFilterProjectId(e.target.value)}
-            className="border border-gray-300 rounded-md px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
+        <div className="flex gap-1 overflow-x-auto">
+          <button
+            onClick={() => setFilterProjectId("")}
+            className={`px-3 py-1.5 rounded-md text-sm font-medium whitespace-nowrap transition-colors ${
+              filterProjectId === ""
+                ? "bg-gray-900 text-white"
+                : "text-gray-500 hover:text-gray-900 hover:bg-gray-100"
+            }`}
           >
-            <option value="">{t("allProjects")}</option>
-            {activeProjects.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
-            ))}
-          </select>
+            {t("allProjects")}
+          </button>
+          {activeProjects.map((p) => (
+            <button
+              key={p.id}
+              onClick={() => setFilterProjectId(p.id)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium whitespace-nowrap transition-colors ${
+                filterProjectId === p.id
+                  ? "bg-gray-900 text-white"
+                  : "text-gray-500 hover:text-gray-900 hover:bg-gray-100"
+              }`}
+            >
+              <span
+                className="w-2 h-2 rounded-full shrink-0"
+                style={{
+                  backgroundColor:
+                    filterProjectId === p.id ? "white" : p.color,
+                }}
+              />
+              {p.name}
+            </button>
+          ))}
         </div>
 
         {isLoading ? (
