@@ -9,6 +9,9 @@
   "overdue": "Overdue",
   "dueToday": "Today",
   "failedToLoad": "Failed to load tasks",
+  "showArchived": "Show archived",
+  "hideArchived": "Hide archived",
+  "unarchive": "Unarchive",
   "detail": {
     "breadcrumb": "Detail",
     "failedToLoad": "Failed to load task"

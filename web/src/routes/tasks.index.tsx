@@ -63,6 +63,7 @@ function Tasks() {
   const [title, setTitle] = useState("");
   const [filterProjectId, setFilterProjectId] = useState("");
   const [newTaskProjectId, setNewTaskProjectId] = useState("");
+  const [showArchived, setShowArchived] = useState(false);
 
   const { data: projects } = useListProjects();
   const activeProjects = (projects ?? []).filter((p) => !p.archived);
@@ -111,6 +112,9 @@ function Tasks() {
 
   const active = (tasks ?? []).filter(
     (task: TaskBody) => task.status !== "archived",
+  );
+  const archived = (tasks ?? []).filter(
+    (task: TaskBody) => task.status === "archived",
   );
 
   return (
@@ -172,58 +176,115 @@ function Tasks() {
         {isLoading ? (
           <div className="text-gray-400 text-sm">{tc("loading")}</div>
         ) : (
-          <ul className="flex flex-col gap-2">
-            {active.map((task: TaskBody) => (
-              <li
-                key={task.id}
-                className="bg-white rounded-lg border border-gray-200 shadow-sm p-4 flex items-center gap-3"
-              >
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleCycleStatus(task);
-                  }}
-                  className={`text-xs font-medium px-2 py-1 rounded-full whitespace-nowrap transition-colors hover:opacity-80 ${STATUS_COLORS[task.status] ?? "bg-gray-100 text-gray-600"}`}
+          <>
+            <ul className="flex flex-col gap-2">
+              {active.map((task: TaskBody) => (
+                <li
+                  key={task.id}
+                  className="bg-white rounded-lg border border-gray-200 shadow-sm p-4 flex items-center gap-3"
                 >
-                  {tc(`status.${task.status}`)}
-                </button>
-                {task.projectId && projectMap.get(task.projectId) && (
-                  <Link
-                    to="/projects/$projectId"
-                    params={{ projectId: task.projectId }}
-                    className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-600 transition-colors shrink-0"
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleCycleStatus(task);
+                    }}
+                    className={`text-xs font-medium px-2 py-1 rounded-full whitespace-nowrap transition-colors hover:opacity-80 ${STATUS_COLORS[task.status] ?? "bg-gray-100 text-gray-600"}`}
                   >
-                    <span
-                      className="w-2 h-2 rounded-full"
-                      style={{
-                        backgroundColor: projectMap.get(task.projectId)!.color,
-                      }}
-                    />
-                    {projectMap.get(task.projectId)!.name}
+                    {tc(`status.${task.status}`)}
+                  </button>
+                  {task.projectId && projectMap.get(task.projectId) && (
+                    <Link
+                      to="/projects/$projectId"
+                      params={{ projectId: task.projectId }}
+                      className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-600 transition-colors shrink-0"
+                    >
+                      <span
+                        className="w-2 h-2 rounded-full"
+                        style={{
+                          backgroundColor: projectMap.get(task.projectId)!
+                            .color,
+                        }}
+                      />
+                      {projectMap.get(task.projectId)!.name}
+                    </Link>
+                  )}
+                  <Link
+                    to="/tasks/$taskId"
+                    params={{ taskId: task.id }}
+                    className={`flex-1 text-sm hover:underline ${task.status === "done" ? "line-through text-gray-400" : ""}`}
+                  >
+                    {task.title}
                   </Link>
-                )}
-                <Link
-                  to="/tasks/$taskId"
-                  params={{ taskId: task.id }}
-                  className={`flex-1 text-sm hover:underline ${task.status === "done" ? "line-through text-gray-400" : ""}`}
-                >
-                  {task.title}
-                </Link>
-                {task.dueAt && task.status !== "done" && (
-                  <DueBadge dueAt={task.dueAt} t={t} />
-                )}
+                  {task.dueAt && task.status !== "done" && (
+                    <DueBadge dueAt={task.dueAt} t={t} />
+                  )}
+                  <button
+                    onClick={() =>
+                      update.mutate({
+                        id: task.id,
+                        data: { status: "archived" },
+                      })
+                    }
+                    className="text-xs text-gray-400 hover:text-gray-600 transition-colors"
+                  >
+                    {tc("actions.archive")}
+                  </button>
+                  <button
+                    onClick={() => del.mutate({ id: task.id })}
+                    className="text-xs text-gray-400 hover:text-red-500 transition-colors"
+                  >
+                    {tc("actions.delete")}
+                  </button>
+                </li>
+              ))}
+              {active.length === 0 && (
+                <p className="text-gray-400 text-sm">{t("noTasks")}</p>
+              )}
+            </ul>
+
+            {archived.length > 0 && (
+              <div className="flex flex-col gap-2">
                 <button
-                  onClick={() => del.mutate({ id: task.id })}
-                  className="text-xs text-gray-400 hover:text-red-500 transition-colors"
+                  onClick={() => setShowArchived((v) => !v)}
+                  className="text-xs text-gray-400 hover:text-gray-600 transition-colors self-start"
                 >
-                  {tc("actions.delete")}
+                  {showArchived ? t("hideArchived") : t("showArchived")} (
+                  {archived.length})
                 </button>
-              </li>
-            ))}
-            {active.length === 0 && (
-              <p className="text-gray-400 text-sm">{t("noTasks")}</p>
+                {showArchived && (
+                  <ul className="flex flex-col gap-2">
+                    {archived.map((task: TaskBody) => (
+                      <li
+                        key={task.id}
+                        className="bg-white rounded-lg border border-gray-200 shadow-sm p-4 flex items-center gap-3 opacity-60"
+                      >
+                        <span className="flex-1 text-sm line-through text-gray-400">
+                          {task.title}
+                        </span>
+                        <button
+                          onClick={() =>
+                            update.mutate({
+                              id: task.id,
+                              data: { status: "todo" },
+                            })
+                          }
+                          className="text-xs text-gray-400 hover:text-gray-600 transition-colors"
+                        >
+                          {t("unarchive")}
+                        </button>
+                        <button
+                          onClick={() => del.mutate({ id: task.id })}
+                          className="text-xs text-gray-400 hover:text-red-500 transition-colors"
+                        >
+                          {tc("actions.delete")}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
             )}
-          </ul>
+          </>
         )}
       </div>
     </div>

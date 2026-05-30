@@ -9,6 +9,9 @@
   "overdue": "期限超過",
   "dueToday": "今日",
   "failedToLoad": "タスクの読み込みに失敗しました",
+  "showArchived": "アーカイブ済みを表示",
+  "hideArchived": "アーカイブ済みを非表示",
+  "unarchive": "アーカイブ解除",
   "detail": {
     "breadcrumb": "詳細",
     "failedToLoad": "タスクの読み込みに失敗しました"

@@ -9,6 +9,9 @@
   "overdue": "已逾期",
   "dueToday": "今天",
   "failedToLoad": "加载任务失败",
+  "showArchived": "显示已归档",
+  "hideArchived": "隐藏已归档",
+  "unarchive": "取消归档",
   "detail": {
     "breadcrumb": "详情",
     "failedToLoad": "加载任务失败"
