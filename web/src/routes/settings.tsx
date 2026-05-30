@@ -6,15 +6,14 @@ import {
 import { useState, useEffect } from "react";
 import { z } from "zod";
 import { Nav } from "../components/nav";
-import { useConfirm } from "../components/confirm-dialog";
-import { useGetMe, useDeleteAccount } from "../api";
+import { useGetMe } from "../api";
 import { useTranslation } from "react-i18next";
 import { useQueryClient } from "@tanstack/react-query";
 import { PasswordModal } from "../components/settings/PasswordModal";
-import { MFASetupModal } from "../components/settings/MFASetupModal";
-import { MFADisableModal } from "../components/settings/MFADisableModal";
 import { PasskeysSection } from "../components/settings/PasskeysSection";
 import { LinkedAccountsSection } from "../components/settings/LinkedAccountsSection";
+import { MFASection } from "../components/settings/MFASection";
+import { DangerSection } from "../components/settings/DangerSection";
 import { apiFetch } from "../lib/apiFetch";
 
 export const Route = createFileRoute("/settings")({
@@ -153,66 +152,6 @@ function LanguageRow() {
   );
 }
 
-function MFASection() {
-  const { t } = useTranslation("settings");
-  const queryClient = useQueryClient();
-  const { data: me } = useGetMe();
-  const [setupOpen, setSetupOpen] = useState(false);
-  const [disableOpen, setDisableOpen] = useState(false);
-
-  const totpEnabled = me?.totpEnabled ?? false;
-
-  const setTotpEnabled = (value: boolean) => {
-    queryClient.setQueryData(
-      ["/users/me"],
-      (old: { totpEnabled?: boolean } | undefined) =>
-        old ? { ...old, totpEnabled: value } : old,
-    );
-  };
-
-  return (
-    <div className="flex items-center justify-between">
-      <div>
-        <p className="text-sm font-medium">{t("security.mfa.title")}</p>
-        <p className="text-sm text-gray-500 mt-0.5">
-          {t("security.mfa.description")}
-        </p>
-      </div>
-      {totpEnabled ? (
-        <div className="flex items-center gap-3">
-          <span className="text-xs text-green-600 bg-green-50 px-2 py-0.5 rounded-full">
-            {t("security.mfa.enabled")}
-          </span>
-          <button
-            onClick={() => setDisableOpen(true)}
-            className="text-sm px-3 py-1.5 rounded-md border border-gray-300 hover:bg-gray-50 transition-colors"
-          >
-            {t("security.mfa.disable")}
-          </button>
-        </div>
-      ) : (
-        <button
-          onClick={() => setSetupOpen(true)}
-          className="text-sm px-3 py-1.5 rounded-md border border-gray-300 hover:bg-gray-50 transition-colors"
-        >
-          {t("security.mfa.enable")}
-        </button>
-      )}
-
-      <MFASetupModal
-        open={setupOpen}
-        onOpenChange={setSetupOpen}
-        onEnabled={() => setTotpEnabled(true)}
-      />
-      <MFADisableModal
-        open={disableOpen}
-        onOpenChange={setDisableOpen}
-        onDisabled={() => setTotpEnabled(false)}
-      />
-    </div>
-  );
-}
-
 function SecuritySection() {
   const { t } = useTranslation("settings");
 
@@ -228,59 +167,6 @@ function SecuritySection() {
         <div className="py-4">
           <MFASection />
         </div>
-      </div>
-    </>
-  );
-}
-
-function DangerSection() {
-  const { t } = useTranslation("settings");
-  const navigate = useNavigate();
-  const confirm = useConfirm();
-
-  const deleteMutation = useDeleteAccount({
-    mutation: {
-      onSuccess: () => {
-        localStorage.removeItem("access_token");
-        navigate({ to: "/" });
-      },
-    },
-  });
-
-  const handleDelete = async () => {
-    const ok = await confirm({
-      title: t("danger.confirmTitle"),
-      description: t("danger.confirmDescription"),
-      confirmLabel: t("danger.confirmLabel"),
-      variant: "danger",
-    });
-    if (ok) deleteMutation.mutate();
-  };
-
-  return (
-    <>
-      <h2 className="text-lg font-semibold">{t("danger.title")}</h2>
-
-      <div className="divide-y divide-gray-100">
-        <div className="flex items-center justify-between py-4">
-          <div>
-            <p className="text-sm">{t("danger.deleteDescription")}</p>
-          </div>
-          <button
-            onClick={handleDelete}
-            disabled={deleteMutation.isPending}
-            className="text-sm px-3 py-1.5 rounded-md border border-gray-300 hover:bg-gray-50 transition-colors shrink-0 ml-8"
-          >
-            {deleteMutation.isPending
-              ? t("danger.deleting")
-              : t("danger.deleteAccount")}
-          </button>
-        </div>
-        {deleteMutation.isError && (
-          <p className="py-4 text-sm text-red-500">
-            {t("danger.deleteFailed")}
-          </p>
-        )}
       </div>
     </>
   );
