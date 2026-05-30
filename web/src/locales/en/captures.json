@@ -13,5 +13,6 @@
   "uploadAudio": "Record",
   "recording": "Recording…",
   "transcribing": "Transcribing…",
-  "uploadFailed": "Upload failed"
+  "uploadFailed": "Upload failed",
+  "promoteToTask": "→ Task"
 }

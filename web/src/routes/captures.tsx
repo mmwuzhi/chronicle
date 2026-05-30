@@ -8,6 +8,8 @@ import {
   useUpdateCapture,
   useDeleteCapture,
   getListCapturesQueryKey,
+  useCreateTask,
+  getListTasksQueryKey,
 } from "../api";
 import type {
   CaptureBody,
@@ -110,12 +112,15 @@ function CaptureCard({
   onReclassify,
   onDelete,
   onSaveText,
+  onPromoteToTask,
 }: {
   c: CaptureBody;
   onReclassify: (id: string, v: CaptureUpdateInputBodyClassifiedAs) => void;
   onDelete: (id: string) => void;
   onSaveText: (id: string, text: string) => void;
+  onPromoteToTask: (rawText: string) => void;
 }) {
+  const { t } = useTranslation("captures");
   const { t: tc } = useTranslation("common");
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(c.rawText ?? "");
@@ -212,6 +217,14 @@ function CaptureCard({
                 {fmtDate(c.createdAt)}
               </span>
             )}
+            {c.classifiedAs === "task" && c.rawText && (
+              <button
+                onClick={() => onPromoteToTask(c.rawText!)}
+                className="text-xs text-blue-600 hover:text-blue-800 font-medium transition-colors"
+              >
+                {t("promoteToTask")}
+              </button>
+            )}
             <button
               onClick={() => onDelete(c.id)}
               className="text-xs text-gray-400 hover:text-red-500 transition-colors"
@@ -247,10 +260,15 @@ function Captures() {
 
   const invalidate = () =>
     queryClient.invalidateQueries({ queryKey: getListCapturesQueryKey() });
+  const invalidateTasks = () =>
+    queryClient.invalidateQueries({ queryKey: getListTasksQueryKey() });
 
   const create = useCreateCapture({ mutation: { onSuccess: invalidate } });
   const update = useUpdateCapture({ mutation: { onSuccess: invalidate } });
   const del = useDeleteCapture({ mutation: { onSuccess: invalidate } });
+  const createTask = useCreateTask({
+    mutation: { onSuccess: invalidateTasks },
+  });
 
   if (error) {
     const status = (error as { status?: number }).status;
@@ -376,6 +394,10 @@ function Captures() {
       .patch(`/captures/${id}`, { rawText })
       .then(() => invalidate())
       .catch(() => invalidate());
+  };
+
+  const handlePromoteToTask = (rawText: string) => {
+    createTask.mutate({ data: { title: rawText, type: "task" } });
   };
 
   return (
@@ -537,6 +559,7 @@ function Captures() {
                 onReclassify={handleReclassify}
                 onDelete={(id) => del.mutate({ id })}
                 onSaveText={handleSaveText}
+                onPromoteToTask={handlePromoteToTask}
               />
             ))}
             {(captures ?? []).length === 0 && (

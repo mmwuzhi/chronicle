@@ -13,5 +13,6 @@
   "uploadAudio": "録音",
   "recording": "録音中…",
   "transcribing": "文字起こし中…",
-  "uploadFailed": "アップロード失敗"
+  "uploadFailed": "アップロード失敗",
+  "promoteToTask": "→ タスク"
 }

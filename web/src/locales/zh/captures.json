@@ -13,5 +13,6 @@
   "uploadAudio": "录音",
   "recording": "录音中…",
   "transcribing": "转写中…",
-  "uploadFailed": "上传失败"
+  "uploadFailed": "上传失败",
+  "promoteToTask": "→ 任务"
 }
