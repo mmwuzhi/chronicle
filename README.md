@@ -100,7 +100,10 @@ chronicle/
 └── web/
     └── src/
         ├── api/           # orval-generated hooks — never edit by hand
-        ├── components/
+        ├── components/    # ui/ for Radix primitives, settings/ for settings sections
+        ├── constants/     # shared constants (status cycles, colors)
+        ├── utils/         # shared pure utilities (formatting)
+        ├── lib/           # non-React helpers (axios client, authenticated fetch)
         └── routes/        # TanStack Router file-based routes
 ```
 

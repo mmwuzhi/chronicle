@@ -26,7 +26,10 @@ Personal productivity OS. Capture text, images, and voice; track time on tasks; 
 - `web/` — Vite frontend
 - `web/src/api/` — orval-generated TanStack Query hooks, never edit by hand
 - `web/src/routes/` — TanStack Router file-based routes
-- `web/src/components/ui/` — Radix-based primitives
+- `web/src/components/` — shared components; `ui/` for Radix primitives, `settings/` for settings sections
+- `web/src/constants/` — shared constants (e.g. `status.ts`)
+- `web/src/utils/` — shared pure utilities (e.g. `format.ts`)
+- `web/src/lib/` — non-React helpers (axios client, authenticated fetch)
 - `.env.example` — all required env vars
 
 ## Data Model

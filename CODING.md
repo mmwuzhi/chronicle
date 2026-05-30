@@ -26,7 +26,6 @@ Rules that apply across the entire codebase. Read before writing new code.
 - **All API calls go through the orval-generated hooks in `src/api/`.** Never call `fetch` directly in a component. Never hand-write API client code — run `pnpm orval` if the spec changed.
 - **Never edit `src/api/`.** It is codegen output. If a hook is missing, check whether `pnpm orval` needs to be re-run.
 - **Mutation errors must surface to the user.** Use a toast in `onError` of `useMutation`. Do not silently swallow errors.
-- **Hooks live in `src/hooks/`.** One file per domain (tasks, projects, timer, captures, reports). Do not put query or mutation logic directly in page or component files.
 - **No inline styles for layout.** Use CSS classes. Inline `style={{}}` is acceptable only for dynamic values that cannot be expressed statically (e.g. a CSS custom property derived from a runtime value).
 
 ## TypeScript (`web/`)
