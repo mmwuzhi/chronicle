@@ -9,7 +9,11 @@ import {
   useDeleteCapture,
   getListCapturesQueryKey,
 } from "../api";
-import type { CaptureBody, CaptureUpdateInputBodyClassifiedAs, CaptureCreateInputBodyMediaType } from "../api";
+import type {
+  CaptureBody,
+  CaptureUpdateInputBodyClassifiedAs,
+  CaptureCreateInputBodyMediaType,
+} from "../api";
 import { Nav } from "../components/nav";
 import { useTranslation } from "react-i18next";
 
@@ -45,9 +49,11 @@ const RECLASSIFY_OPTIONS: CaptureUpdateInputBodyClassifiedAs[] = [
 
 function fmtDate(iso: string) {
   const d = new Date(iso);
-  return d.toLocaleDateString(undefined, { month: "short", day: "numeric" }) +
+  return (
+    d.toLocaleDateString(undefined, { month: "short", day: "numeric" }) +
     " " +
-    d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+    d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })
+  );
 }
 
 function AutoTextarea({
@@ -85,7 +91,10 @@ function AutoTextarea({
       ref={ref}
       value={value}
       autoFocus={autoFocus}
-      onChange={(e) => { onChange(e.target.value); resize(); }}
+      onChange={(e) => {
+        onChange(e.target.value);
+        resize();
+      }}
       onKeyDown={onKeyDown}
       onBlur={onBlur}
       placeholder={placeholder}
@@ -122,7 +131,11 @@ function CaptureCard({
   return (
     <li className="bg-white rounded-lg border border-gray-200 shadow-sm p-4 flex flex-col gap-3">
       {c.mediaType === "image" && c.mediaUrl && (
-        <img src={c.mediaUrl} alt="" className="rounded-md max-h-48 object-contain w-full" />
+        <img
+          src={c.mediaUrl}
+          alt=""
+          className="rounded-md max-h-48 object-contain w-full"
+        />
       )}
       {c.mediaType === "audio" && c.mediaUrl && (
         <audio controls src={c.mediaUrl} className="w-full h-8" />
@@ -133,8 +146,14 @@ function CaptureCard({
           value={draft}
           onChange={setDraft}
           onKeyDown={(e) => {
-            if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); commitEdit(); }
-            if (e.key === "Escape") { setDraft(c.rawText ?? ""); setEditing(false); }
+            if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+              e.preventDefault();
+              commitEdit();
+            }
+            if (e.key === "Escape") {
+              setDraft(c.rawText ?? "");
+              setEditing(false);
+            }
           }}
           onBlur={commitEdit}
           className="text-sm w-full border-0 p-0 focus:outline-none resize-none bg-transparent"
@@ -142,7 +161,10 @@ function CaptureCard({
       ) : (
         <p
           className="text-sm whitespace-pre-wrap cursor-text"
-          onClick={() => { setDraft(c.rawText ?? ""); setEditing(true); }}
+          onClick={() => {
+            setDraft(c.rawText ?? "");
+            setEditing(true);
+          }}
         >
           {c.rawText}
         </p>
@@ -151,7 +173,10 @@ function CaptureCard({
         <select
           value={c.classifiedAs}
           onChange={(e) =>
-            onReclassify(c.id, e.target.value as CaptureUpdateInputBodyClassifiedAs)
+            onReclassify(
+              c.id,
+              e.target.value as CaptureUpdateInputBodyClassifiedAs,
+            )
           }
           className={`text-xs font-medium px-2 py-1 rounded-full border-0 cursor-pointer ${CLASS_COLORS[c.classifiedAs] ?? "bg-gray-100 text-gray-500"}`}
         >
@@ -171,7 +196,10 @@ function CaptureCard({
               {tc("actions.save")}
             </button>
             <button
-              onClick={() => { setDraft(c.rawText ?? ""); setEditing(false); }}
+              onClick={() => {
+                setDraft(c.rawText ?? "");
+                setEditing(false);
+              }}
               className="text-xs text-gray-400 hover:text-gray-600 transition-colors"
             >
               {tc("actions.cancel")}
@@ -180,7 +208,9 @@ function CaptureCard({
         ) : (
           <>
             {c.createdAt && (
-              <span className="text-xs text-gray-400">{fmtDate(c.createdAt)}</span>
+              <span className="text-xs text-gray-400">
+                {fmtDate(c.createdAt)}
+              </span>
             )}
             <button
               onClick={() => onDelete(c.id)}
@@ -236,7 +266,11 @@ function Captures() {
     setUploading(true);
     try {
       const fd = new FormData();
-      fd.append("file", file, filename ?? (file instanceof File ? file.name : "recording.webm"));
+      fd.append(
+        "file",
+        file,
+        filename ?? (file instanceof File ? file.name : "recording.webm"),
+      );
       const res = await apiClient.post<UploadResult>("/captures/upload", fd);
       const { mediaUrl, mediaType, rawText } = res.data;
       if (rawText) setText(rawText);
@@ -249,7 +283,11 @@ function Captures() {
             classifiedAs: "unclassified",
           },
         },
-        { onSuccess: () => { if (!rawText) setText(""); } },
+        {
+          onSuccess: () => {
+            if (!rawText) setText("");
+          },
+        },
       );
     } catch {
       setUploadError(true);
@@ -275,7 +313,9 @@ function Captures() {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const mr = new MediaRecorder(stream);
       audioChunksRef.current = [];
-      mr.ondataavailable = (e) => { audioChunksRef.current.push(e.data); };
+      mr.ondataavailable = (e) => {
+        audioChunksRef.current.push(e.data);
+      };
       mr.onstop = () => {
         stream.getTracks().forEach((t) => t.stop());
         setRecording(false);
@@ -297,7 +337,9 @@ function Captures() {
     setPolishError(false);
     setPolishing(true);
     try {
-      const res = await apiClient.post<{ polished: string }>("/ai/polish", { text: trimmed });
+      const res = await apiClient.post<{ polished: string }>("/ai/polish", {
+        text: trimmed,
+      });
       setPolishedText(res.data.polished);
     } catch {
       setPolishError(true);
@@ -311,12 +353,21 @@ function Captures() {
     const trimmed = text.trim();
     if (!trimmed) return;
     create.mutate(
-      { data: { rawText: trimmed, mediaType: "text", classifiedAs: "unclassified" } },
+      {
+        data: {
+          rawText: trimmed,
+          mediaType: "text",
+          classifiedAs: "unclassified",
+        },
+      },
       { onSuccess: () => setText("") },
     );
   };
 
-  const handleReclassify = (id: string, classifiedAs: CaptureUpdateInputBodyClassifiedAs) => {
+  const handleReclassify = (
+    id: string,
+    classifiedAs: CaptureUpdateInputBodyClassifiedAs,
+  ) => {
     update.mutate({ id, data: { classifiedAs } });
   };
 
@@ -336,7 +387,10 @@ function Captures() {
         <div className="flex flex-col gap-2">
           <AutoTextarea
             value={polishedText !== null ? polishedText : text}
-            onChange={(v) => { if (polishedText !== null) setPolishedText(v); else setText(v); }}
+            onChange={(v) => {
+              if (polishedText !== null) setPolishedText(v);
+              else setText(v);
+            }}
             onKeyDown={(e) => {
               if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
                 e.preventDefault();
@@ -344,8 +398,19 @@ function Captures() {
                   const trimmed = polishedText.trim();
                   if (!trimmed) return;
                   create.mutate(
-                    { data: { rawText: trimmed, mediaType: "text", classifiedAs: "unclassified" } },
-                    { onSuccess: () => { setText(""); setPolishedText(null); } },
+                    {
+                      data: {
+                        rawText: trimmed,
+                        mediaType: "text",
+                        classifiedAs: "unclassified",
+                      },
+                    },
+                    {
+                      onSuccess: () => {
+                        setText("");
+                        setPolishedText(null);
+                      },
+                    },
                   );
                 } else {
                   handleAdd();
@@ -357,10 +422,15 @@ function Captures() {
           />
           {polishedText !== null && (
             <div className="flex items-center gap-2">
-              <span className="text-xs text-purple-600 font-medium">✨ {tc("actions.polishResult")}</span>
+              <span className="text-xs text-purple-600 font-medium">
+                ✨ {tc("actions.polishResult")}
+              </span>
               <div className="flex gap-2 ml-auto">
                 <button
-                  onClick={() => { setText(polishedText); setPolishedText(null); }}
+                  onClick={() => {
+                    setText(polishedText);
+                    setPolishedText(null);
+                  }}
                   className="text-xs px-2.5 py-1 rounded-md bg-purple-600 text-white hover:bg-purple-700 transition-colors"
                 >
                   {tc("actions.accept")}
@@ -408,14 +478,24 @@ function Captures() {
             <div className="flex-1" />
             {(polishError || uploadError || uploading) && (
               <span className="text-xs text-gray-400">
-                {polishError ? <span className="text-red-500">{tc("errors.polishFailed")}</span>
-                  : uploadError ? <span className="text-red-500">{t("uploadFailed")}</span>
-                  : recording ? t("recording") : t("transcribing")}
+                {polishError ? (
+                  <span className="text-red-500">
+                    {tc("errors.polishFailed")}
+                  </span>
+                ) : uploadError ? (
+                  <span className="text-red-500">{t("uploadFailed")}</span>
+                ) : recording ? (
+                  t("recording")
+                ) : (
+                  t("transcribing")
+                )}
               </span>
             )}
             <button
               onClick={handleAdd}
-              disabled={create.isPending || !text.trim() || polishedText !== null}
+              disabled={
+                create.isPending || !text.trim() || polishedText !== null
+              }
               className="bg-gray-900 text-white rounded-md px-4 py-2 text-sm font-medium hover:bg-gray-700 transition-colors disabled:opacity-50"
             >
               {tc("actions.save")}

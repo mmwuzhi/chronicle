@@ -48,7 +48,9 @@ function ResetPassword() {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="w-full max-w-sm flex flex-col gap-4 p-8 bg-white rounded-xl border border-gray-200 shadow-sm text-center">
-          <h1 className="text-xl font-semibold">{t("resetPassword.invalidLink")}</h1>
+          <h1 className="text-xl font-semibold">
+            {t("resetPassword.invalidLink")}
+          </h1>
           <p className="text-sm text-gray-600">
             {t("resetPassword.useResetLink")}
           </p>
@@ -72,7 +74,9 @@ function ResetPassword() {
         <h1 className="text-xl font-semibold">{t("resetPassword.title")}</h1>
 
         <div className="flex flex-col gap-1">
-          <label className="text-sm font-medium">{t("resetPassword.newPassword")}</label>
+          <label className="text-sm font-medium">
+            {t("resetPassword.newPassword")}
+          </label>
           <input
             type="password"
             autoComplete="new-password"
@@ -85,7 +89,9 @@ function ResetPassword() {
         </div>
 
         <div className="flex flex-col gap-1">
-          <label className="text-sm font-medium">{t("resetPassword.confirmNewPassword")}</label>
+          <label className="text-sm font-medium">
+            {t("resetPassword.confirmNewPassword")}
+          </label>
           <input
             type="password"
             autoComplete="new-password"
@@ -110,7 +116,9 @@ function ResetPassword() {
           disabled={mutation.isPending}
           className="bg-gray-900 text-white rounded-md py-2 text-sm font-medium hover:bg-gray-700 transition-colors disabled:opacity-50"
         >
-          {mutation.isPending ? t("resetPassword.saving") : t("resetPassword.submit")}
+          {mutation.isPending
+            ? t("resetPassword.saving")
+            : t("resetPassword.submit")}
         </button>
       </form>
     </div>

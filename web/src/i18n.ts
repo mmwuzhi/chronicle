@@ -42,7 +42,7 @@ i18n
         captures: enCaptures,
         settings: enSettings,
         reports: enReports,
-      dashboard: enDashboard,
+        dashboard: enDashboard,
       },
       ja: {
         common: jaCommon,
@@ -52,7 +52,7 @@ i18n
         captures: jaCaptures,
         settings: jaSettings,
         reports: jaReports,
-      dashboard: jaDashboard,
+        dashboard: jaDashboard,
       },
       zh: {
         common: zhCommon,
@@ -62,7 +62,7 @@ i18n
         captures: zhCaptures,
         settings: zhSettings,
         reports: zhReports,
-      dashboard: zhDashboard,
+        dashboard: zhDashboard,
       },
     },
     fallbackLng: "en",

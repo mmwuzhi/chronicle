@@ -50,7 +50,10 @@ export function SearchModal({ onClose }: { onClose: () => void }) {
   }, [onClose]);
 
   const runSearch = useCallback((q: string) => {
-    if (!q.trim()) { setResults(null); return; }
+    if (!q.trim()) {
+      setResults(null);
+      return;
+    }
     setLoading(true);
     apiClient
       .get<SearchResults>("/search", { params: { q } })
@@ -66,18 +69,30 @@ export function SearchModal({ onClose }: { onClose: () => void }) {
     timerRef.current = setTimeout(() => runSearch(q), 300);
   };
 
-  const hasResults = results &&
-    (results.captures.length > 0 || results.tasks.length > 0 || results.logEntries.length > 0);
+  const hasResults =
+    results &&
+    (results.captures.length > 0 ||
+      results.tasks.length > 0 ||
+      results.logEntries.length > 0);
 
   return (
     <div
       className="fixed inset-0 z-50 flex items-start justify-center pt-20 bg-black/40"
-      onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
     >
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-xl mx-4 flex flex-col max-h-[70vh]">
-        <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-100">
-          <svg className="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-            <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-xl mx-4 flex flex-col max-h-[70vh] overflow-hidden">
+        <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-100 shrink-0">
+          <svg
+            className="w-4 h-4 text-gray-400 flex-shrink-0"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={2}
+            viewBox="0 0 24 24"
+          >
+            <circle cx="11" cy="11" r="8" />
+            <path d="m21 21-4.35-4.35" />
           </svg>
           <input
             ref={inputRef}
@@ -89,9 +104,11 @@ export function SearchModal({ onClose }: { onClose: () => void }) {
           {loading && <span className="text-xs text-gray-400">…</span>}
         </div>
 
-        <div className="overflow-y-auto">
+        <div className="overflow-y-auto flex-1 min-h-0">
           {query && !loading && !hasResults && (
-            <p className="px-4 py-6 text-sm text-gray-400 text-center">{t("search.noResults")}</p>
+            <p className="px-4 py-6 text-sm text-gray-400 text-center">
+              {t("search.noResults")}
+            </p>
           )}
 
           {results && results.captures.length > 0 && (
@@ -101,7 +118,10 @@ export function SearchModal({ onClose }: { onClose: () => void }) {
                   key={c.id}
                   primary={c.rawText ?? "—"}
                   secondary={new Date(c.createdAt).toLocaleDateString()}
-                  onClick={() => { navigate({ to: "/captures" }); onClose(); }}
+                  onClick={() => {
+                    navigate({ to: "/captures" });
+                    onClose();
+                  }}
                 />
               ))}
             </Section>
@@ -114,7 +134,13 @@ export function SearchModal({ onClose }: { onClose: () => void }) {
                   key={task.id}
                   primary={task.title}
                   secondary={task.status}
-                  onClick={() => { navigate({ to: "/tasks/$taskId", params: { taskId: task.id } }); onClose(); }}
+                  onClick={() => {
+                    navigate({
+                      to: "/tasks/$taskId",
+                      params: { taskId: task.id },
+                    });
+                    onClose();
+                  }}
                 />
               ))}
             </Section>
@@ -127,7 +153,10 @@ export function SearchModal({ onClose }: { onClose: () => void }) {
                   key={e.id}
                   primary={e.body}
                   secondary={new Date(e.createdAt).toLocaleDateString()}
-                  onClick={() => { navigate({ to: "/tasks" }); onClose(); }}
+                  onClick={() => {
+                    navigate({ to: "/tasks" });
+                    onClose();
+                  }}
                 />
               ))}
             </Section>
@@ -138,16 +167,32 @@ export function SearchModal({ onClose }: { onClose: () => void }) {
   );
 }
 
-function Section({ label, children }: { label: string; children: React.ReactNode }) {
+function Section({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
   return (
     <div className="py-2">
-      <p className="px-4 py-1 text-xs font-medium text-gray-400 uppercase tracking-wide">{label}</p>
+      <p className="px-4 py-1 text-xs font-medium text-gray-400 uppercase tracking-wide">
+        {label}
+      </p>
       {children}
     </div>
   );
 }
 
-function ResultRow({ primary, secondary, onClick }: { primary: string; secondary: string; onClick: () => void }) {
+function ResultRow({
+  primary,
+  secondary,
+  onClick,
+}: {
+  primary: string;
+  secondary: string;
+  onClick: () => void;
+}) {
   return (
     <button
       onClick={onClick}

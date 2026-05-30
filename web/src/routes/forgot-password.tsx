@@ -40,7 +40,9 @@ function ForgotPassword() {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="w-full max-w-sm flex flex-col gap-4 p-8 bg-white rounded-xl border border-gray-200 shadow-sm text-center">
-          <h1 className="text-xl font-semibold">{t("forgotPassword.checkInbox")}</h1>
+          <h1 className="text-xl font-semibold">
+            {t("forgotPassword.checkInbox")}
+          </h1>
           <p className="text-sm text-gray-600">
             {t("forgotPassword.sentDescription")}
           </p>
@@ -61,7 +63,9 @@ function ForgotPassword() {
         </p>
 
         <div className="flex flex-col gap-1">
-          <label className="text-sm font-medium">{t("forgotPassword.email")}</label>
+          <label className="text-sm font-medium">
+            {t("forgotPassword.email")}
+          </label>
           <input
             type="email"
             autoComplete="email"
@@ -78,7 +82,9 @@ function ForgotPassword() {
           disabled={mutation.isPending}
           className="bg-gray-900 text-white rounded-md py-2 text-sm font-medium hover:bg-gray-700 transition-colors disabled:opacity-50"
         >
-          {mutation.isPending ? t("forgotPassword.sending") : t("forgotPassword.submit")}
+          {mutation.isPending
+            ? t("forgotPassword.sending")
+            : t("forgotPassword.submit")}
         </button>
       </form>
     </div>

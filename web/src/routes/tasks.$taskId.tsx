@@ -223,7 +223,9 @@ function TaskDetail() {
     setPolishError(false);
     setPolishing(true);
     try {
-      const res = await apiClient.post<{ polished: string }>("/ai/polish", { text: trimmed });
+      const res = await apiClient.post<{ polished: string }>("/ai/polish", {
+        text: trimmed,
+      });
       setBody(res.data.polished);
     } catch {
       setPolishError(true);
@@ -273,7 +275,9 @@ function TaskDetail() {
             </div>
 
             <div className="flex items-center gap-3">
-              <span className="text-sm text-gray-500">{t("filterProject")}</span>
+              <span className="text-sm text-gray-500">
+                {t("filterProject")}
+              </span>
               {currentProject && (
                 <Link
                   to="/projects/$projectId"
@@ -347,7 +351,9 @@ function TaskDetail() {
                     </button>
                   </div>
                   {polishError && (
-                    <p className="text-xs text-red-500">{tc("errors.polishFailed")}</p>
+                    <p className="text-xs text-red-500">
+                      {tc("errors.polishFailed")}
+                    </p>
                   )}
                 </div>
               </div>

@@ -244,7 +244,9 @@ function ProjectDetail() {
               onClick={async () => {
                 const ok = await confirm({
                   title: t("detail.deleteTitle"),
-                  description: t("detail.deleteDescription", { name: project.name }),
+                  description: t("detail.deleteDescription", {
+                    name: project.name,
+                  }),
                   confirmLabel: t("detail.deleteConfirm"),
                   variant: "danger",
                 });
@@ -310,9 +312,7 @@ function ProjectDetail() {
               </li>
             ))}
             {active.length === 0 && (
-              <p className="text-gray-400 text-sm">
-                {t("detail.noTasks")}
-              </p>
+              <p className="text-gray-400 text-sm">{t("detail.noTasks")}</p>
             )}
           </ul>
         )}

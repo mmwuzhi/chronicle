@@ -172,7 +172,10 @@ function ReportCard({ report }: { report: ReportBody }) {
           </summary>
           <ul className="mt-2 space-y-1">
             {tasks.map((task, i) => (
-              <li key={i} className="flex items-center gap-2 text-xs text-gray-600">
+              <li
+                key={i}
+                className="flex items-center gap-2 text-xs text-gray-600"
+              >
                 <span
                   className={`inline-block w-1.5 h-1.5 rounded-full flex-shrink-0 ${
                     task.status === "done"
@@ -206,10 +209,13 @@ function Reports() {
   const qc = useQueryClient();
   const [generateErr, setGenerateErr] = useState(false);
 
-  const { data: reports, isLoading, error } = useQuery({
+  const {
+    data: reports,
+    isLoading,
+    error,
+  } = useQuery({
     queryKey: REPORTS_KEY,
-    queryFn: () =>
-      apiClient.get<ReportBody[]>("/reports").then((r) => r.data),
+    queryFn: () => apiClient.get<ReportBody[]>("/reports").then((r) => r.data),
   });
 
   const generateMutation = useMutation({

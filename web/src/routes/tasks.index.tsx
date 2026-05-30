@@ -43,7 +43,9 @@ function Tasks() {
   const activeProjects = (projects ?? []).filter((p) => !p.archived);
   const projectMap = new Map(activeProjects.map((p) => [p.id, p]));
 
-  const taskParams = filterProjectId ? { projectId: filterProjectId } : undefined;
+  const taskParams = filterProjectId
+    ? { projectId: filterProjectId }
+    : undefined;
   const { data: tasks, error, isLoading } = useListTasks(taskParams);
 
   const invalidate = () =>
@@ -82,7 +84,9 @@ function Tasks() {
     update.mutate({ id: task.id, data: { status: next } });
   };
 
-  const active = (tasks ?? []).filter((task: TaskBody) => task.status !== "archived");
+  const active = (tasks ?? []).filter(
+    (task: TaskBody) => task.status !== "archived",
+  );
 
   return (
     <div className="min-h-screen bg-gray-50">

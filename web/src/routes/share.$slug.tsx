@@ -64,7 +64,11 @@ function SharedReport() {
   const { t } = useTranslation("reports");
   const { t: tc } = useTranslation("common");
 
-  const { data: report, isLoading, error } = useQuery({
+  const {
+    data: report,
+    isLoading,
+    error,
+  } = useQuery({
     queryKey: ["share", slug],
     queryFn: () =>
       apiClient.get<ReportBody>(`/share/${slug}`).then((r) => r.data),
@@ -101,7 +105,10 @@ function SharedReport() {
         </div>
 
         <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
-          <StatCard label={t("stats.tasksCreated")} value={stats.tasksCreated} />
+          <StatCard
+            label={t("stats.tasksCreated")}
+            value={stats.tasksCreated}
+          />
           <StatCard label={t("stats.tasksDone")} value={stats.tasksDone} />
           <StatCard
             label={t("stats.timeTracked")}
@@ -127,7 +134,10 @@ function SharedReport() {
             </h2>
             <ul className="space-y-1.5">
               {tasks.map((task, i) => (
-                <li key={i} className="flex items-center gap-2 text-sm text-gray-700">
+                <li
+                  key={i}
+                  className="flex items-center gap-2 text-sm text-gray-700"
+                >
                   <span
                     className={`inline-block w-1.5 h-1.5 rounded-full flex-shrink-0 ${
                       task.status === "done"

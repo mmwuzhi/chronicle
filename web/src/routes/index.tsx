@@ -21,11 +21,16 @@ function weekStart(): Date {
   const now = new Date();
   const day = now.getUTCDay();
   const diff = day === 0 ? 6 : day - 1;
-  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - diff));
+  return new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - diff),
+  );
 }
 
 function fmtDate(iso: string) {
-  return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  return new Date(iso).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+  });
 }
 
 const CLASS_COLORS: Record<string, string> = {
@@ -36,7 +41,11 @@ const CLASS_COLORS: Record<string, string> = {
   log: "bg-yellow-100 text-yellow-700",
 };
 
-const STATUS_OPTIONS: TaskUpdateInputBodyStatus[] = ["todo", "in_progress", "done"];
+const STATUS_OPTIONS: TaskUpdateInputBodyStatus[] = [
+  "todo",
+  "in_progress",
+  "done",
+];
 
 function Dashboard() {
   const { t } = useTranslation("dashboard");
@@ -45,17 +54,28 @@ function Dashboard() {
 
   const { data: me } = useGetMe();
   const { data: tasks } = useListTasks(undefined, { query: { enabled: !!me } });
-  const { data: captures } = useListCaptures(undefined, { query: { enabled: !!me } });
-  const { data: blocks } = useListTimeBlocks(undefined, { query: { enabled: !!me } });
-  const { data: entries } = useListLogEntries(undefined, { query: { enabled: !!me } });
+  const { data: captures } = useListCaptures(undefined, {
+    query: { enabled: !!me },
+  });
+  const { data: blocks } = useListTimeBlocks(undefined, {
+    query: { enabled: !!me },
+  });
+  const { data: entries } = useListLogEntries(undefined, {
+    query: { enabled: !!me },
+  });
 
-  const invalidateTasks = () => queryClient.invalidateQueries({ queryKey: getListTasksQueryKey() });
-  const updateTask = useUpdateTask({ mutation: { onSuccess: invalidateTasks } });
+  const invalidateTasks = () =>
+    queryClient.invalidateQueries({ queryKey: getListTasksQueryKey() });
+  const updateTask = useUpdateTask({
+    mutation: { onSuccess: invalidateTasks },
+  });
 
   const ws = weekStart();
 
   const allTasks = tasks ?? [];
-  const activeTasks = allTasks.filter((t: TaskBody) => t.status === "todo" || t.status === "in_progress");
+  const activeTasks = allTasks.filter(
+    (t: TaskBody) => t.status === "todo" || t.status === "in_progress",
+  );
   const doneTasks = allTasks.filter((t: TaskBody) => t.status === "done");
 
   const allCaptures = captures ?? [];
@@ -80,9 +100,16 @@ function Dashboard() {
         </div>
 
         <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-5">
-          <p className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-4">{t("thisWeek")}</p>
+          <p className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-4">
+            {t("thisWeek")}
+          </p>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-            <Stat label={t("tasksDone", { done: doneTasks.length, total: allTasks.length })} />
+            <Stat
+              label={t("tasksDone", {
+                done: doneTasks.length,
+                total: allTasks.length,
+              })}
+            />
             <Stat label={t("capturesCreated", { count: allCaptures.length })} />
             <Stat label={t("logEntries", { count: entryCount })} />
             <Stat label={t("timeTracked", { h: hours, m: minutes })} />
@@ -90,7 +117,9 @@ function Dashboard() {
         </div>
 
         <section className="flex flex-col gap-3">
-          <h2 className="text-sm font-semibold text-gray-700">{t("recentCaptures")}</h2>
+          <h2 className="text-sm font-semibold text-gray-700">
+            {t("recentCaptures")}
+          </h2>
           {recentCaptures.length === 0 ? (
             <p className="text-sm text-gray-400">{t("noCaptures")}</p>
           ) : (
@@ -101,11 +130,17 @@ function Dashboard() {
                     to="/captures"
                     className="bg-white rounded-lg border border-gray-200 px-4 py-3 flex items-center gap-3 hover:bg-gray-50 transition-colors"
                   >
-                    <p className="text-sm flex-1 truncate">{c.rawText ?? "—"}</p>
-                    <span className={`text-xs px-2 py-0.5 rounded-full flex-shrink-0 ${CLASS_COLORS[c.classifiedAs] ?? "bg-gray-100 text-gray-500"}`}>
+                    <p className="text-sm flex-1 truncate">
+                      {c.rawText ?? "—"}
+                    </p>
+                    <span
+                      className={`text-xs px-2 py-0.5 rounded-full flex-shrink-0 ${CLASS_COLORS[c.classifiedAs] ?? "bg-gray-100 text-gray-500"}`}
+                    >
                       {tc(`classification.${c.classifiedAs}`)}
                     </span>
-                    <span className="text-xs text-gray-400 flex-shrink-0">{fmtDate(c.createdAt)}</span>
+                    <span className="text-xs text-gray-400 flex-shrink-0">
+                      {fmtDate(c.createdAt)}
+                    </span>
                   </Link>
                 </li>
               ))}
@@ -114,13 +149,18 @@ function Dashboard() {
         </section>
 
         <section className="flex flex-col gap-3">
-          <h2 className="text-sm font-semibold text-gray-700">{t("activeTasks")}</h2>
+          <h2 className="text-sm font-semibold text-gray-700">
+            {t("activeTasks")}
+          </h2>
           {activeTasks.length === 0 ? (
             <p className="text-sm text-gray-400">{t("noTasks")}</p>
           ) : (
             <ul className="flex flex-col gap-2">
               {activeTasks.slice(0, 10).map((task: TaskBody) => (
-                <li key={task.id} className="bg-white rounded-lg border border-gray-200 px-4 py-3 flex items-center gap-3">
+                <li
+                  key={task.id}
+                  className="bg-white rounded-lg border border-gray-200 px-4 py-3 flex items-center gap-3"
+                >
                   <Link
                     to="/tasks/$taskId"
                     params={{ taskId: task.id }}
@@ -131,13 +171,20 @@ function Dashboard() {
                   <select
                     value={task.status}
                     onChange={(e) =>
-                      updateTask.mutate({ id: task.id, data: { status: e.target.value as TaskUpdateInputBodyStatus } })
+                      updateTask.mutate({
+                        id: task.id,
+                        data: {
+                          status: e.target.value as TaskUpdateInputBodyStatus,
+                        },
+                      })
                     }
                     onClick={(e) => e.stopPropagation()}
                     className={`text-xs px-2 py-0.5 rounded-full border-0 cursor-pointer flex-shrink-0 ${task.status === "in_progress" ? "bg-blue-100 text-blue-700" : "bg-gray-100 text-gray-500"}`}
                   >
                     {STATUS_OPTIONS.map((s) => (
-                      <option key={s} value={s}>{tc(`status.${s}`)}</option>
+                      <option key={s} value={s}>
+                        {tc(`status.${s}`)}
+                      </option>
                     ))}
                   </select>
                 </li>
@@ -151,9 +198,7 @@ function Dashboard() {
 }
 
 function Stat({ label }: { label: string }) {
-  return (
-    <div className="text-sm text-gray-700 font-medium">{label}</div>
-  );
+  return <div className="text-sm text-gray-700 font-medium">{label}</div>;
 }
 
 function Landing() {

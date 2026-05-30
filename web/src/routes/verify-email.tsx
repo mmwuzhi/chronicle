@@ -30,7 +30,9 @@ function VerifyEmail() {
         )}
         {mutation.isSuccess && (
           <>
-            <h1 className="text-xl font-semibold">{t("verifyEmail.verified")}</h1>
+            <h1 className="text-xl font-semibold">
+              {t("verifyEmail.verified")}
+            </h1>
             <p className="text-sm text-gray-600">
               {t("verifyEmail.verifiedDescription")}
             </p>
@@ -44,7 +46,9 @@ function VerifyEmail() {
         )}
         {mutation.isError && (
           <>
-            <h1 className="text-xl font-semibold">{t("verifyEmail.linkInvalid")}</h1>
+            <h1 className="text-xl font-semibold">
+              {t("verifyEmail.linkInvalid")}
+            </h1>
             <p className="text-sm text-gray-600">
               {t("verifyEmail.linkExpiredOrUsed")}
             </p>
@@ -58,7 +62,9 @@ function VerifyEmail() {
         )}
         {!token && (
           <>
-            <h1 className="text-xl font-semibold">{t("verifyEmail.missingToken")}</h1>
+            <h1 className="text-xl font-semibold">
+              {t("verifyEmail.missingToken")}
+            </h1>
             <p className="text-sm text-gray-600">
               {t("verifyEmail.useVerificationLink")}
             </p>
