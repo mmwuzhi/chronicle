@@ -5,6 +5,9 @@
   "filterProject": "Project:",
   "allProjects": "All projects",
   "noTasks": "No tasks yet.",
+  "dueDate": "Due date",
+  "overdue": "Overdue",
+  "dueToday": "Today",
   "failedToLoad": "Failed to load tasks",
   "detail": {
     "breadcrumb": "Detail",

@@ -5,6 +5,9 @@
   "filterProject": "项目：",
   "allProjects": "所有项目",
   "noTasks": "还没有任务。",
+  "dueDate": "截止日期",
+  "overdue": "已逾期",
+  "dueToday": "今天",
   "failedToLoad": "加载任务失败",
   "detail": {
     "breadcrumb": "详情",

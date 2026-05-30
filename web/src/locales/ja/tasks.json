@@ -5,6 +5,9 @@
   "filterProject": "プロジェクト：",
   "allProjects": "すべてのプロジェクト",
   "noTasks": "タスクはまだありません。",
+  "dueDate": "期限",
+  "overdue": "期限超過",
+  "dueToday": "今日",
   "failedToLoad": "タスクの読み込みに失敗しました",
   "detail": {
     "breadcrumb": "詳細",

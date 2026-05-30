@@ -13,6 +13,7 @@ import {
   useUpdateTimeBlock,
   useListProjects,
   getListTasksQueryKey,
+  getGetTaskQueryKey,
 } from "../api";
 import type {
   LogEntryBody,
@@ -195,8 +196,10 @@ function TaskDetail() {
     ? activeProjects.find((p) => p.id === task.projectId)
     : null;
 
-  const invalidateTasks = () =>
+  const invalidateTasks = () => {
     queryClient.invalidateQueries({ queryKey: getListTasksQueryKey() });
+    queryClient.invalidateQueries({ queryKey: getGetTaskQueryKey(taskId) });
+  };
 
   const update = useUpdateTask({ mutation: { onSuccess: invalidateTasks } });
   const createEntry = useCreateLogEntry();
@@ -309,6 +312,23 @@ function TaskDetail() {
                   </option>
                 ))}
               </select>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <span className="text-sm text-gray-500">{t("dueDate")}</span>
+              <input
+                type="date"
+                value={task.dueAt ? task.dueAt.slice(0, 10) : ""}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  if (!val) return;
+                  update.mutate({
+                    id: taskId,
+                    data: { dueAt: new Date(val + "T00:00:00").toISOString() },
+                  });
+                }}
+                className="border border-gray-300 rounded-md px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
+              />
             </div>
 
             <Timer taskId={taskId} />
