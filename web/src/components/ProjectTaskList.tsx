@@ -22,8 +22,33 @@ export function ProjectTaskList({ projectId }: { projectId: string }) {
   const invalidateTasks = () =>
     queryClient.invalidateQueries({ queryKey: getListTasksQueryKey() });
 
-  const updateTask = useUpdateTask({ mutation: { onSuccess: invalidateTasks } });
-  const deleteTask = useDeleteTask({ mutation: { onSuccess: invalidateTasks } });
+  const updateTask = useUpdateTask({
+    mutation: {
+      onMutate: async ({ id, data }) => {
+        await queryClient.cancelQueries({ queryKey: getListTasksQueryKey() });
+        const previous = queryClient.getQueriesData<TaskBody[]>({
+          queryKey: getListTasksQueryKey(),
+        });
+        queryClient.setQueriesData<TaskBody[]>(
+          { queryKey: getListTasksQueryKey() },
+          (old) =>
+            old == null
+              ? old
+              : old.map((t) => (t.id === id ? { ...t, ...data } : t)),
+        );
+        return { previous };
+      },
+      onError: (_err, _vars, context) => {
+        context?.previous.forEach(([key, val]) =>
+          queryClient.setQueryData(key, val),
+        );
+      },
+      onSettled: invalidateTasks,
+    },
+  });
+  const deleteTask = useDeleteTask({
+    mutation: { onSuccess: invalidateTasks },
+  });
 
   if (isLoading) {
     return <div className="text-gray-400 text-sm">{tc("loading")}</div>;

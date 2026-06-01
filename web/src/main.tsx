@@ -4,6 +4,7 @@ import { RouterProvider, createRouter } from "@tanstack/react-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
 import { routeTree } from "./routeTree.gen";
+import { initAuth } from "./lib/initAuth";
 import "./i18n";
 import "./index.css";
 
@@ -24,11 +25,13 @@ declare module "@tanstack/react-router" {
   }
 }
 
-createRoot(document.getElementById("root")!).render(
-  <StrictMode>
-    <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
-      <ReactQueryDevtools initialIsOpen={false} />
-    </QueryClientProvider>
-  </StrictMode>,
-);
+initAuth().then(() => {
+  createRoot(document.getElementById("root")!).render(
+    <StrictMode>
+      <QueryClientProvider client={queryClient}>
+        <RouterProvider router={router} />
+        <ReactQueryDevtools initialIsOpen={false} />
+      </QueryClientProvider>
+    </StrictMode>,
+  );
+});

@@ -12,7 +12,9 @@ export function TaskComposer({ projectId }: { projectId: string }) {
   const invalidateTasks = () =>
     queryClient.invalidateQueries({ queryKey: getListTasksQueryKey() });
 
-  const createTask = useCreateTask({ mutation: { onSuccess: invalidateTasks } });
+  const createTask = useCreateTask({
+    mutation: { onSuccess: invalidateTasks },
+  });
 
   const handleAdd = () => {
     const trimmed = title.trim();

@@ -42,7 +42,30 @@ function Tasks() {
     queryClient.invalidateQueries({ queryKey: getListTasksQueryKey() });
 
   const create = useCreateTask({ mutation: { onSuccess: invalidate } });
-  const update = useUpdateTask({ mutation: { onSuccess: invalidate } });
+  const update = useUpdateTask({
+    mutation: {
+      onMutate: async ({ id, data }) => {
+        await queryClient.cancelQueries({ queryKey: getListTasksQueryKey() });
+        const previous = queryClient.getQueriesData<TaskBody[]>({
+          queryKey: getListTasksQueryKey(),
+        });
+        queryClient.setQueriesData<TaskBody[]>(
+          { queryKey: getListTasksQueryKey() },
+          (old) =>
+            old == null
+              ? old
+              : old.map((t) => (t.id === id ? { ...t, ...data } : t)),
+        );
+        return { previous };
+      },
+      onError: (_err, _vars, context) => {
+        context?.previous.forEach(([key, val]) =>
+          queryClient.setQueryData(key, val),
+        );
+      },
+      onSettled: invalidate,
+    },
+  });
   const del = useDeleteTask({ mutation: { onSuccess: invalidate } });
 
   if (error) {
@@ -164,8 +187,7 @@ function Tasks() {
               <span
                 className="w-2 h-2 rounded-full shrink-0"
                 style={{
-                  backgroundColor:
-                    filterProjectId === p.id ? "white" : p.color,
+                  backgroundColor: filterProjectId === p.id ? "white" : p.color,
                 }}
               />
               {p.name}

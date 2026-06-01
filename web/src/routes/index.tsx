@@ -67,7 +67,28 @@ function Dashboard() {
   const invalidateTasks = () =>
     queryClient.invalidateQueries({ queryKey: getListTasksQueryKey() });
   const updateTask = useUpdateTask({
-    mutation: { onSuccess: invalidateTasks },
+    mutation: {
+      onMutate: async ({ id, data }) => {
+        await queryClient.cancelQueries({ queryKey: getListTasksQueryKey() });
+        const previous = queryClient.getQueriesData<TaskBody[]>({
+          queryKey: getListTasksQueryKey(),
+        });
+        queryClient.setQueriesData<TaskBody[]>(
+          { queryKey: getListTasksQueryKey() },
+          (old) =>
+            old == null
+              ? old
+              : old.map((t) => (t.id === id ? { ...t, ...data } : t)),
+        );
+        return { previous };
+      },
+      onError: (_err, _vars, context) => {
+        context?.previous.forEach(([key, val]) =>
+          queryClient.setQueryData(key, val),
+        );
+      },
+      onSettled: invalidateTasks,
+    },
   });
 
   const ws = weekStart();

@@ -12,7 +12,7 @@ import {
   getListTasksQueryKey,
   getGetTaskQueryKey,
 } from "../api";
-import type { LogEntryBody } from "../api";
+import type { LogEntryBody, TaskBody } from "../api";
 import { Nav } from "../components/nav";
 import { Timer } from "../components/Timer";
 import { STATUS_CYCLE, STATUS_COLORS } from "../constants/status";
@@ -51,7 +51,38 @@ function TaskDetail() {
     queryClient.invalidateQueries({ queryKey: getGetTaskQueryKey(taskId) });
   };
 
-  const update = useUpdateTask({ mutation: { onSuccess: invalidateTasks } });
+  const update = useUpdateTask({
+    mutation: {
+      onMutate: async ({ id, data }) => {
+        await queryClient.cancelQueries({ queryKey: getGetTaskQueryKey(id) });
+        await queryClient.cancelQueries({ queryKey: getListTasksQueryKey() });
+        const previousTask = queryClient.getQueryData<TaskBody>(
+          getGetTaskQueryKey(id),
+        );
+        const previousLists = queryClient.getQueriesData<TaskBody[]>({
+          queryKey: getListTasksQueryKey(),
+        });
+        queryClient.setQueryData<TaskBody>(getGetTaskQueryKey(id), (old) =>
+          old ? { ...old, ...data } : old,
+        );
+        queryClient.setQueriesData<TaskBody[]>(
+          { queryKey: getListTasksQueryKey() },
+          (old) =>
+            old == null
+              ? old
+              : old.map((t) => (t.id === id ? { ...t, ...data } : t)),
+        );
+        return { previousTask, previousLists };
+      },
+      onError: (_err, { id }, context) => {
+        queryClient.setQueryData(getGetTaskQueryKey(id), context?.previousTask);
+        context?.previousLists.forEach(([key, val]) =>
+          queryClient.setQueryData(key, val),
+        );
+      },
+      onSettled: invalidateTasks,
+    },
+  });
   const createEntry = useCreateLogEntry();
   const deleteEntry = useDeleteLogEntry();
 

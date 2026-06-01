@@ -53,7 +53,10 @@ function ProjectDetail() {
         <Nav />
         <div className="max-w-3xl mx-auto px-4 md:px-8 py-6 md:py-8 flex flex-col gap-4">
           <p className="text-gray-500 text-sm">{t("detail.notFound")}</p>
-          <a href="/projects" className="text-sm text-gray-900 font-medium hover:underline">
+          <a
+            href="/projects"
+            className="text-sm text-gray-900 font-medium hover:underline"
+          >
             {t("detail.backToProjects")}
           </a>
         </div>
