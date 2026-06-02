@@ -216,15 +216,7 @@ function Login() {
         </div>
 
         <div className="flex flex-col gap-1">
-          <div className="flex items-center justify-between">
-            <label className="text-sm font-medium">{t("login.password")}</label>
-            <Link
-              to="/forgot-password"
-              className="text-xs text-gray-500 hover:text-gray-900 hover:underline"
-            >
-              {t("login.forgotPassword")}
-            </Link>
-          </div>
+          <label className="text-sm font-medium">{t("login.password")}</label>
           <input
             type="password"
             autoComplete="current-password"
@@ -234,6 +226,15 @@ function Login() {
           {errors.password && (
             <p className="text-red-500 text-xs">{errors.password.message}</p>
           )}
+        </div>
+
+        <div className="flex justify-end">
+          <Link
+            to="/forgot-password"
+            className="text-xs text-gray-500 hover:text-gray-900 hover:underline"
+          >
+            {t("login.forgotPassword")}
+          </Link>
         </div>
 
         {login.error && (

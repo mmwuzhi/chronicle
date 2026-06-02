@@ -12,7 +12,7 @@ export const Route = createFileRoute("/reset-password")({
 });
 
 const resetPassword = (token: string, password: string) =>
-  api<void>({
+  api<{ accessToken: string }>({
     url: "/auth/reset-password",
     method: "POST",
     data: { token, password },
@@ -24,7 +24,10 @@ function ResetPassword() {
   const navigate = useNavigate();
   const mutation = useMutation({
     mutationFn: (password: string) => resetPassword(token, password),
-    onSuccess: () => navigate({ to: "/login" }),
+    onSuccess: (data) => {
+      localStorage.setItem("access_token", data.accessToken);
+      navigate({ to: "/projects" });
+    },
   });
 
   const schema = z

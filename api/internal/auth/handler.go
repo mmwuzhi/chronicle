@@ -479,7 +479,13 @@ type ResetPasswordInput struct {
 	}
 }
 
-func (h *handler) resetPassword(ctx context.Context, input *ResetPasswordInput) (*struct{}, error) {
+type ResetPasswordOutput struct {
+	Body struct {
+		AccessToken string `json:"accessToken"`
+	}
+}
+
+func (h *handler) resetPassword(ctx context.Context, input *ResetPasswordInput) (*ResetPasswordOutput, error) {
 	traceID := middleware.GetTraceID(ctx)
 
 	user, err := h.q.GetUserByPasswordResetToken(ctx, pgtype.Text{String: input.Body.Token, Valid: true})
@@ -501,7 +507,32 @@ func (h *handler) resetPassword(ctx context.Context, input *ResetPasswordInput) 
 		return nil, huma.Error500InternalServerError("internal error")
 	}
 
-	return nil, nil
+	accessToken, err := NewAccessToken(user.ID.String(), h.secret)
+	if err != nil {
+		slog.ErrorContext(ctx, "access token generation failed", "traceId", traceID, "err", err)
+		return nil, huma.Error500InternalServerError("internal error")
+	}
+
+	rawRefresh, hashedRefresh, err := NewRefreshToken()
+	if err != nil {
+		slog.ErrorContext(ctx, "refresh token generation failed", "traceId", traceID, "err", err)
+		return nil, huma.Error500InternalServerError("internal error")
+	}
+
+	if _, err := h.q.CreateRefreshToken(ctx, db.CreateRefreshTokenParams{
+		UserID:    user.ID,
+		TokenHash: hashedRefresh,
+		ExpiresAt: pgtype.Timestamptz{Time: time.Now().Add(RefreshTokenTTL), Valid: true},
+	}); err != nil {
+		slog.ErrorContext(ctx, "failed to store refresh token", "traceId", traceID, "err", err)
+		return nil, huma.Error500InternalServerError("internal error")
+	}
+
+	setRefreshCookie(ctx, rawRefresh, RefreshTokenTTL)
+
+	out := &ResetPasswordOutput{}
+	out.Body.AccessToken = accessToken
+	return out, nil
 }
 
 func randomHex(n int) (string, error) {
