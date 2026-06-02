@@ -1,6 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { useConfirm } from "../components/confirm-dialog";
 import {
   useListTasks,
   useCreateTask,
@@ -24,6 +25,7 @@ function Tasks() {
   const { t: tc } = useTranslation("common");
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const confirm = useConfirm();
   const [title, setTitle] = useState("");
   const [filterProjectId, setFilterProjectId] = useState("");
   const [newTaskProjectId, setNewTaskProjectId] = useState("");
@@ -252,7 +254,15 @@ function Tasks() {
                     {tc("actions.archive")}
                   </button>
                   <button
-                    onClick={() => del.mutate({ id: task.id })}
+                    onClick={async () => {
+                      const ok = await confirm({
+                        title: "Delete task?",
+                        description: "This cannot be undone.",
+                        confirmLabel: "Delete",
+                        variant: "danger",
+                      });
+                      if (ok) del.mutate({ id: task.id });
+                    }}
                     className="text-xs text-gray-400 hover:text-red-500 transition-colors"
                   >
                     {tc("actions.delete")}
@@ -295,7 +305,15 @@ function Tasks() {
                           {t("unarchive")}
                         </button>
                         <button
-                          onClick={() => del.mutate({ id: task.id })}
+                          onClick={async () => {
+                            const ok = await confirm({
+                              title: "Delete task?",
+                              description: "This cannot be undone.",
+                              confirmLabel: "Delete",
+                              variant: "danger",
+                            });
+                            if (ok) del.mutate({ id: task.id });
+                          }}
                           className="text-xs text-gray-400 hover:text-red-500 transition-colors"
                         >
                           {tc("actions.delete")}

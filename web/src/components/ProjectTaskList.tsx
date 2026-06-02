@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
+import { useConfirm } from "./confirm-dialog";
 import {
   useListTasks,
   useUpdateTask,
@@ -15,6 +16,7 @@ export function ProjectTaskList({ projectId }: { projectId: string }) {
   const { t } = useTranslation("projects");
   const { t: tc } = useTranslation("common");
   const queryClient = useQueryClient();
+  const confirm = useConfirm();
   const [showArchived, setShowArchived] = useState(false);
 
   const { data: tasks, isLoading } = useListTasks({ projectId });
@@ -94,7 +96,15 @@ export function ProjectTaskList({ projectId }: { projectId: string }) {
               {tc("actions.archive")}
             </button>
             <button
-              onClick={() => deleteTask.mutate({ id: task.id })}
+              onClick={async () => {
+                const ok = await confirm({
+                  title: "Delete task?",
+                  description: "This cannot be undone.",
+                  confirmLabel: "Delete",
+                  variant: "danger",
+                });
+                if (ok) deleteTask.mutate({ id: task.id });
+              }}
               className="text-xs text-gray-400 hover:text-red-500 transition-colors"
             >
               {tc("actions.delete")}

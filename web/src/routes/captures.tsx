@@ -2,6 +2,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "../lib/axios";
+import { useConfirm } from "../components/confirm-dialog";
 import {
   useListCaptures,
   useCreateCapture,
@@ -9,6 +10,8 @@ import {
   useDeleteCapture,
   getListCapturesQueryKey,
   useCreateTask,
+  useCreateLogEntry,
+  useListProjects,
   getListTasksQueryKey,
 } from "../api";
 import type {
@@ -39,6 +42,7 @@ function Captures() {
   const { t: tc } = useTranslation("common");
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const confirm = useConfirm();
   const [tab, setTab] = useState<Tab>("all");
   const [text, setText] = useState("");
   const [polishedText, setPolishedText] = useState<string | null>(null);
@@ -47,6 +51,11 @@ function Captures() {
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState(false);
   const [recording, setRecording] = useState(false);
+  const [pendingPromote, setPendingPromote] = useState<{
+    rawText: string;
+    captureId: string;
+  } | null>(null);
+  const [promoteProjectId, setPromoteProjectId] = useState("");
   const imageInputRef = useRef<HTMLInputElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -62,9 +71,10 @@ function Captures() {
   const create = useCreateCapture({ mutation: { onSuccess: invalidate } });
   const update = useUpdateCapture({ mutation: { onSuccess: invalidate } });
   const del = useDeleteCapture({ mutation: { onSuccess: invalidate } });
-  const createTask = useCreateTask({
-    mutation: { onSuccess: invalidateTasks },
-  });
+  const createTask = useCreateTask({ mutation: { onSuccess: invalidateTasks } });
+  const createLogEntry = useCreateLogEntry();
+  const { data: projects } = useListProjects();
+  const activeProjects = (projects ?? []).filter((p) => !p.archived);
 
   if (error) {
     const status = (error as { status?: number }).status;
@@ -192,8 +202,34 @@ function Captures() {
       .catch(() => invalidate());
   };
 
-  const handlePromoteToTask = (rawText: string) => {
-    createTask.mutate({ data: { title: rawText, type: "task" } });
+  const handlePromoteToTask = (rawText: string, captureId: string) => {
+    setPendingPromote({ rawText, captureId });
+    setPromoteProjectId("");
+  };
+
+  const handleConfirmPromote = () => {
+    if (!pendingPromote) return;
+    const lines = pendingPromote.rawText.split("\n");
+    const title = lines[0].trim();
+    const body = lines.slice(1).join("\n").trim();
+    createTask.mutate(
+      {
+        data: {
+          title,
+          type: "task",
+          ...(promoteProjectId ? { projectId: promoteProjectId } : {}),
+        },
+      },
+      {
+        onSuccess: (task) => {
+          if (body) {
+            createLogEntry.mutate({ data: { taskId: task.id, body } });
+          }
+          del.mutate({ id: pendingPromote.captureId }, { onSuccess: invalidate });
+          setPendingPromote(null);
+        },
+      },
+    );
   };
 
   return (
@@ -353,7 +389,15 @@ function Captures() {
                 key={c.id}
                 c={c}
                 onReclassify={handleReclassify}
-                onDelete={(id) => del.mutate({ id })}
+                onDelete={async (id) => {
+                  const ok = await confirm({
+                    title: "Delete capture?",
+                    description: "This cannot be undone.",
+                    confirmLabel: "Delete",
+                    variant: "danger",
+                  });
+                  if (ok) del.mutate({ id });
+                }}
                 onSaveText={handleSaveText}
                 onPromoteToTask={handlePromoteToTask}
               />
@@ -364,6 +408,49 @@ function Captures() {
           </ul>
         )}
       </div>
+
+      {pendingPromote && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-xl border border-gray-200 shadow-lg p-6 w-full max-w-sm flex flex-col gap-4 mx-4">
+            <h2 className="text-base font-semibold">{t("promoteDialog.title")}</h2>
+            <p className="text-sm text-gray-500 line-clamp-3 whitespace-pre-wrap">
+              {pendingPromote.rawText}
+            </p>
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-medium text-gray-600">
+                {t("promoteDialog.project")}
+              </label>
+              <select
+                value={promoteProjectId}
+                onChange={(e) => setPromoteProjectId(e.target.value)}
+                className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
+              >
+                <option value="">{tc("noProject")}</option>
+                {activeProjects.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="flex gap-2 justify-end">
+              <button
+                onClick={() => setPendingPromote(null)}
+                className="px-4 py-2 text-sm rounded-md border border-gray-300 hover:bg-gray-50 transition-colors"
+              >
+                {tc("actions.cancel")}
+              </button>
+              <button
+                onClick={handleConfirmPromote}
+                disabled={createTask.isPending}
+                className="px-4 py-2 text-sm rounded-md bg-gray-900 text-white hover:bg-gray-700 transition-colors disabled:opacity-50"
+              >
+                {t("promoteDialog.confirm")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

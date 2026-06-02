@@ -1,7 +1,8 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { apiClient } from "../lib/axios";
 import { useQueryClient } from "@tanstack/react-query";
+import { useConfirm } from "../components/confirm-dialog";
 import {
   useGetTask,
   useUpdateTask,
@@ -13,6 +14,8 @@ import {
   getGetTaskQueryKey,
 } from "../api";
 import type { LogEntryBody, TaskBody } from "../api";
+
+type TaskWithMedia = TaskBody & { mediaUrl?: string; mediaType?: string };
 import { Nav } from "../components/nav";
 import { Timer } from "../components/Timer";
 import { STATUS_CYCLE, STATUS_COLORS } from "../constants/status";
@@ -28,15 +31,23 @@ function TaskDetail() {
   const { taskId } = Route.useParams();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const confirm = useConfirm();
   const [body, setBody] = useState("");
   const [polishing, setPolishing] = useState(false);
   const [polishError, setPolishError] = useState(false);
+  const [titleEditing, setTitleEditing] = useState(false);
+  const [titleDraft, setTitleDraft] = useState("");
+  const [polishingTitle, setPolishingTitle] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const {
-    data: task,
+    data: taskRaw,
     error: taskError,
     isLoading: taskLoading,
   } = useGetTask(taskId);
+  const task = taskRaw as TaskWithMedia | undefined;
   const { data: entries, isLoading: entriesLoading } = useListLogEntries({
     taskId,
   });
@@ -128,6 +139,65 @@ function TaskDetail() {
     );
   };
 
+  const handleStartTitleEdit = () => {
+    setTitleDraft(task?.title ?? "");
+    setTitleEditing(true);
+  };
+
+  const handleSaveTitle = () => {
+    const trimmed = titleDraft.trim();
+    if (!trimmed || !task || trimmed === task.title) {
+      setTitleEditing(false);
+      return;
+    }
+    update.mutate(
+      { id: taskId, data: { title: trimmed } },
+      { onSuccess: () => setTitleEditing(false) },
+    );
+  };
+
+  const handlePolishTitle = async () => {
+    const trimmed = titleDraft.trim();
+    if (!trimmed) return;
+    setPolishingTitle(true);
+    try {
+      const res = await apiClient.post<{ polished: string }>("/ai/polish", {
+        text: trimmed,
+      });
+      setTitleDraft(res.data.polished);
+    } catch {
+      // silently ignore, title stays as-is
+    } finally {
+      setPolishingTitle(false);
+    }
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !task) return;
+    e.target.value = "";
+    setUploadError(false);
+    setUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file, file.name);
+      const res = await apiClient.post<{ mediaUrl: string; mediaType: string }>(
+        "/captures/upload",
+        fd,
+      );
+      await apiClient.patch(`/tasks/${taskId}`, {
+        mediaUrl: res.data.mediaUrl,
+        mediaType: res.data.mediaType,
+      });
+      invalidateTasks();
+    } catch {
+      setUploadError(true);
+      setTimeout(() => setUploadError(false), 3000);
+    } finally {
+      setUploading(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
       <Nav />
@@ -145,11 +215,53 @@ function TaskDetail() {
         ) : task ? (
           <>
             <div className="flex items-start gap-3">
-              <h1
-                className={`text-2xl font-semibold tracking-tight flex-1 ${task.status === "done" ? "line-through text-gray-400" : ""}`}
-              >
-                {task.title}
-              </h1>
+              {titleEditing ? (
+                <div className="flex-1 flex flex-col gap-2">
+                  <div className="flex items-center gap-2">
+                    <input
+                      autoFocus
+                      value={titleDraft}
+                      onChange={(e) => setTitleDraft(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") handleSaveTitle();
+                        if (e.key === "Escape") setTitleEditing(false);
+                      }}
+                      className="flex-1 text-2xl font-semibold border-b-2 border-gray-900 focus:outline-none bg-transparent"
+                    />
+                    <button
+                      onClick={handlePolishTitle}
+                      disabled={polishingTitle || !titleDraft.trim()}
+                      className="text-sm border border-gray-300 rounded-md px-2 py-1 hover:bg-gray-50 transition-colors disabled:opacity-50"
+                      title={tc("actions.polish")}
+                    >
+                      {polishingTitle ? "…" : "✨"}
+                    </button>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={handleSaveTitle}
+                      disabled={update.isPending}
+                      className="text-sm bg-gray-900 text-white rounded-md px-3 py-1 hover:bg-gray-700 transition-colors disabled:opacity-50"
+                    >
+                      {tc("actions.save")}
+                    </button>
+                    <button
+                      onClick={() => setTitleEditing(false)}
+                      className="text-sm border border-gray-300 rounded-md px-3 py-1 hover:bg-gray-50 transition-colors"
+                    >
+                      {tc("actions.cancel")}
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <h1
+                  onClick={handleStartTitleEdit}
+                  className={`text-2xl font-semibold tracking-tight flex-1 cursor-pointer hover:opacity-70 transition-opacity ${task.status === "done" ? "line-through text-gray-400" : ""}`}
+                  title={t("detail.clickToEdit")}
+                >
+                  {task.title}
+                </h1>
+              )}
               <button
                 onClick={handleCycleStatus}
                 className={`text-xs font-medium px-3 py-1.5 rounded-full whitespace-nowrap transition-colors hover:opacity-80 mt-1 ${STATUS_COLORS[task.status] ?? "bg-gray-100 text-gray-600"}`}
@@ -209,6 +321,54 @@ function TaskDetail() {
                   });
                 }}
                 className="border border-gray-300 rounded-md px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
+              />
+            </div>
+
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploading}
+                className="border border-gray-300 rounded-md px-3 py-1.5 text-sm font-medium hover:bg-gray-50 transition-colors disabled:opacity-50"
+                title={t("detail.uploadAttachment")}
+              >
+                {uploading ? "…" : "📎"}
+              </button>
+              {uploadError && (
+                <span className="text-xs text-red-500">
+                  {t("detail.uploadFailed")}
+                </span>
+              )}
+              {task.mediaUrl && (
+                task.mediaType === "image" ? (
+                  <a
+                    href={task.mediaUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="block"
+                  >
+                    <img
+                      src={task.mediaUrl}
+                      alt="attachment"
+                      className="max-h-48 rounded-lg border border-gray-200 object-contain"
+                    />
+                  </a>
+                ) : (
+                  <a
+                    href={task.mediaUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-sm text-blue-600 hover:underline"
+                  >
+                    {t("detail.viewAttachment")}
+                  </a>
+                )
+              )}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*,audio/*"
+                className="hidden"
+                onChange={handleFileUpload}
               />
             </div>
 
@@ -275,7 +435,15 @@ function TaskDetail() {
                         </span>
                         <span className="flex-1" />
                         <button
-                          onClick={() => deleteEntry.mutate({ id: e.id })}
+                          onClick={async () => {
+                            const ok = await confirm({
+                              title: "Delete log entry?",
+                              description: "This cannot be undone.",
+                              confirmLabel: "Delete",
+                              variant: "danger",
+                            });
+                            if (ok) deleteEntry.mutate({ id: e.id });
+                          }}
                           className="text-xs text-gray-400 hover:text-red-500 transition-colors"
                         >
                           {tc("actions.delete")}
