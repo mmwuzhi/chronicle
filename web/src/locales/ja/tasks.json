@@ -14,7 +14,11 @@
   "unarchive": "アーカイブ解除",
   "detail": {
     "breadcrumb": "詳細",
-    "failedToLoad": "タスクの読み込みに失敗しました"
+    "failedToLoad": "タスクの読み込みに失敗しました",
+    "clickToEdit": "クリックしてタイトルを編集",
+    "uploadAttachment": "添付ファイル",
+    "uploadFailed": "アップロード失敗",
+    "viewAttachment": "添付ファイルを表示"
   },
   "time": {
     "title": "時間",

@@ -15,7 +15,7 @@ import (
 const createTask = `-- name: CreateTask :one
 INSERT INTO tasks (user_id, project_id, title, type, due_at)
 VALUES ($1, $2, $3, $4, $5)
-RETURNING id, user_id, project_id, title, type, status, due_at, created_at, deleted_at
+RETURNING id, user_id, project_id, title, type, status, due_at, created_at, deleted_at, media_url, media_type
 `
 
 type CreateTaskParams struct {
@@ -45,6 +45,8 @@ func (q *Queries) CreateTask(ctx context.Context, arg CreateTaskParams) (Task, e
 		&i.DueAt,
 		&i.CreatedAt,
 		&i.DeletedAt,
+		&i.MediaUrl,
+		&i.MediaType,
 	)
 	return i, err
 }
@@ -69,7 +71,7 @@ func (q *Queries) DeleteTask(ctx context.Context, arg DeleteTaskParams) (uuid.UU
 }
 
 const getTask = `-- name: GetTask :one
-SELECT id, user_id, project_id, title, type, status, due_at, created_at, deleted_at FROM tasks
+SELECT id, user_id, project_id, title, type, status, due_at, created_at, deleted_at, media_url, media_type FROM tasks
 WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL
 `
 
@@ -91,12 +93,14 @@ func (q *Queries) GetTask(ctx context.Context, arg GetTaskParams) (Task, error) 
 		&i.DueAt,
 		&i.CreatedAt,
 		&i.DeletedAt,
+		&i.MediaUrl,
+		&i.MediaType,
 	)
 	return i, err
 }
 
 const listTasks = `-- name: ListTasks :many
-SELECT id, user_id, project_id, title, type, status, due_at, created_at, deleted_at FROM tasks
+SELECT id, user_id, project_id, title, type, status, due_at, created_at, deleted_at, media_url, media_type FROM tasks
 WHERE user_id = $1
   AND deleted_at IS NULL
   AND ($2::uuid IS NULL OR project_id = $2::uuid)
@@ -136,6 +140,8 @@ func (q *Queries) ListTasks(ctx context.Context, arg ListTasksParams) ([]Task, e
 			&i.DueAt,
 			&i.CreatedAt,
 			&i.DeletedAt,
+			&i.MediaUrl,
+			&i.MediaType,
 		); err != nil {
 			return nil, err
 		}
@@ -148,7 +154,7 @@ func (q *Queries) ListTasks(ctx context.Context, arg ListTasksParams) ([]Task, e
 }
 
 const listTasksInRange = `-- name: ListTasksInRange :many
-SELECT id, user_id, project_id, title, type, status, due_at, created_at, deleted_at FROM tasks
+SELECT id, user_id, project_id, title, type, status, due_at, created_at, deleted_at, media_url, media_type FROM tasks
 WHERE user_id = $1
   AND deleted_at IS NULL
   AND created_at >= $2
@@ -181,6 +187,8 @@ func (q *Queries) ListTasksInRange(ctx context.Context, arg ListTasksInRangePara
 			&i.DueAt,
 			&i.CreatedAt,
 			&i.DeletedAt,
+			&i.MediaUrl,
+			&i.MediaType,
 		); err != nil {
 			return nil, err
 		}
@@ -203,9 +211,11 @@ SET
                THEN $3::task_type
                ELSE type END,
   project_id = COALESCE($4::uuid, project_id),
-  due_at     = COALESCE($5::timestamptz, due_at)
-WHERE id = $6 AND user_id = $7 AND deleted_at IS NULL
-RETURNING id, user_id, project_id, title, type, status, due_at, created_at, deleted_at
+  due_at     = COALESCE($5::timestamptz, due_at),
+  media_url  = COALESCE($6, media_url),
+  media_type = COALESCE($7, media_type)
+WHERE id = $8 AND user_id = $9 AND deleted_at IS NULL
+RETURNING id, user_id, project_id, title, type, status, due_at, created_at, deleted_at, media_url, media_type
 `
 
 type UpdateTaskParams struct {
@@ -214,6 +224,8 @@ type UpdateTaskParams struct {
 	Type      pgtype.Text        `json:"type"`
 	ProjectID pgtype.UUID        `json:"project_id"`
 	DueAt     pgtype.Timestamptz `json:"due_at"`
+	MediaUrl  pgtype.Text        `json:"media_url"`
+	MediaType pgtype.Text        `json:"media_type"`
 	ID        uuid.UUID          `json:"id"`
 	UserID    uuid.UUID          `json:"user_id"`
 }
@@ -225,6 +237,8 @@ func (q *Queries) UpdateTask(ctx context.Context, arg UpdateTaskParams) (Task, e
 		arg.Type,
 		arg.ProjectID,
 		arg.DueAt,
+		arg.MediaUrl,
+		arg.MediaType,
 		arg.ID,
 		arg.UserID,
 	)
@@ -239,6 +253,8 @@ func (q *Queries) UpdateTask(ctx context.Context, arg UpdateTaskParams) (Task, e
 		&i.DueAt,
 		&i.CreatedAt,
 		&i.DeletedAt,
+		&i.MediaUrl,
+		&i.MediaType,
 	)
 	return i, err
 }

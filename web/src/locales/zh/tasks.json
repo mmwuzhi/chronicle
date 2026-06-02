@@ -14,7 +14,11 @@
   "unarchive": "取消归档",
   "detail": {
     "breadcrumb": "详情",
-    "failedToLoad": "加载任务失败"
+    "failedToLoad": "加载任务失败",
+    "clickToEdit": "点击编辑标题",
+    "uploadAttachment": "添加附件",
+    "uploadFailed": "上传失败",
+    "viewAttachment": "查看附件"
   },
   "time": {
     "title": "时间",

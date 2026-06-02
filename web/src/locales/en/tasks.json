@@ -14,7 +14,11 @@
   "unarchive": "Unarchive",
   "detail": {
     "breadcrumb": "Detail",
-    "failedToLoad": "Failed to load task"
+    "failedToLoad": "Failed to load task",
+    "clickToEdit": "Click to edit title",
+    "uploadAttachment": "Attach file",
+    "uploadFailed": "Upload failed",
+    "viewAttachment": "View attachment"
   },
   "time": {
     "title": "Time",

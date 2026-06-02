@@ -269,6 +269,8 @@ type Task struct {
 	DueAt     pgtype.Timestamptz `json:"due_at"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 	DeletedAt pgtype.Timestamptz `json:"deleted_at"`
+	MediaUrl  pgtype.Text        `json:"media_url"`
+	MediaType pgtype.Text        `json:"media_type"`
 }
 
 type TimeBlock struct {

@@ -51,6 +51,8 @@ type TaskBody struct {
 	Status    string  `json:"status"`
 	DueAt     *string `json:"dueAt"`
 	CreatedAt string  `json:"createdAt"`
+	MediaUrl  *string `json:"mediaUrl"`
+	MediaType *string `json:"mediaType"`
 }
 
 func toBody(t db.Task) TaskBody {
@@ -68,6 +70,12 @@ func toBody(t db.Task) TaskBody {
 	if t.DueAt.Valid {
 		s := t.DueAt.Time.UTC().Format(time.RFC3339)
 		b.DueAt = &s
+	}
+	if t.MediaUrl.Valid {
+		b.MediaUrl = &t.MediaUrl.String
+	}
+	if t.MediaType.Valid {
+		b.MediaType = &t.MediaType.String
 	}
 	return b
 }
@@ -181,6 +189,8 @@ type TaskUpdateInput struct {
 		Type      *string    `json:"type,omitempty" enum:"task,idea,routine,log"`
 		ProjectID *string    `json:"projectId,omitempty" format:"uuid"`
 		DueAt     *time.Time `json:"dueAt,omitempty"`
+		MediaUrl  *string    `json:"mediaUrl,omitempty"`
+		MediaType *string    `json:"mediaType,omitempty"`
 	}
 }
 
@@ -205,6 +215,8 @@ func (h *handler) update(ctx context.Context, input *TaskUpdateInput) (*UpdateOu
 		Type:      nullText(input.Body.Type),
 		ProjectID: nullUUID(input.Body.ProjectID),
 		DueAt:     nullTime(input.Body.DueAt),
+		MediaUrl:  nullText(input.Body.MediaUrl),
+		MediaType: nullText(input.Body.MediaType),
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {

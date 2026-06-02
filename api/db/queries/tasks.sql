@@ -27,7 +27,9 @@ SET
                THEN sqlc.narg('type')::task_type
                ELSE type END,
   project_id = COALESCE(sqlc.narg('project_id')::uuid, project_id),
-  due_at     = COALESCE(sqlc.narg('due_at')::timestamptz, due_at)
+  due_at     = COALESCE(sqlc.narg('due_at')::timestamptz, due_at),
+  media_url  = COALESCE(sqlc.narg('media_url'), media_url),
+  media_type = COALESCE(sqlc.narg('media_type'), media_type)
 WHERE id = sqlc.arg('id') AND user_id = sqlc.arg('user_id') AND deleted_at IS NULL
 RETURNING *;
 
