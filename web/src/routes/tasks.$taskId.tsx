@@ -14,8 +14,6 @@ import {
   getGetTaskQueryKey,
 } from "../api";
 import type { LogEntryBody, TaskBody } from "../api";
-
-type TaskWithMedia = TaskBody & { mediaUrl?: string; mediaType?: string };
 import { Nav } from "../components/nav";
 import { Timer } from "../components/Timer";
 import { STATUS_CYCLE, STATUS_COLORS } from "../constants/status";
@@ -43,11 +41,10 @@ function TaskDetail() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const {
-    data: taskRaw,
+    data: task,
     error: taskError,
     isLoading: taskLoading,
   } = useGetTask(taskId);
-  const task = taskRaw as TaskWithMedia | undefined;
   const { data: entries, isLoading: entriesLoading } = useListLogEntries({
     taskId,
   });
