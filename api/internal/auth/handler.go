@@ -461,6 +461,10 @@ func (h *handler) forgotPassword(ctx context.Context, input *ForgotPasswordInput
 		if err := sendPasswordResetEmail(h.resendKey, h.frontendURL, user.Email, token); err != nil {
 			slog.ErrorContext(ctx, "failed to send reset email", "traceId", traceID, "err", err)
 		}
+	} else {
+		slog.WarnContext(ctx, "RESEND_API_KEY not configured — password reset email not sent",
+			"traceId", traceID,
+		)
 	}
 
 	return nil, nil
