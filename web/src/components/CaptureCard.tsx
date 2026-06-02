@@ -87,7 +87,7 @@ export function CaptureCard({
   onReclassify: (id: string, v: CaptureUpdateInputBodyClassifiedAs) => void;
   onDelete: (id: string) => void;
   onSaveText: (id: string, text: string) => void;
-  onPromoteToTask: (rawText: string) => void;
+  onPromoteToTask: (rawText: string, captureId: string) => void;
 }) {
   const { t } = useTranslation("captures");
   const { t: tc } = useTranslation("common");
@@ -188,7 +188,7 @@ export function CaptureCard({
             )}
             {c.classifiedAs === "task" && c.rawText && (
               <button
-                onClick={() => onPromoteToTask(c.rawText!)}
+                onClick={() => onPromoteToTask(c.rawText!, c.id)}
                 className="text-xs text-blue-600 hover:text-blue-800 font-medium transition-colors"
               >
                 {t("promoteToTask")}

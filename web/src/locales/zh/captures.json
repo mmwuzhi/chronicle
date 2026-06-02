@@ -14,5 +14,10 @@
   "recording": "录音中…",
   "transcribing": "转写中…",
   "uploadFailed": "上传失败",
-  "promoteToTask": "→ 任务"
+  "promoteToTask": "→ 任务",
+  "promoteDialog": {
+    "title": "转换为任务",
+    "project": "所属项目（可选）",
+    "confirm": "确认转换"
+  }
 }

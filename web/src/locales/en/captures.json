@@ -14,5 +14,10 @@
   "recording": "Recording…",
   "transcribing": "Transcribing…",
   "uploadFailed": "Upload failed",
-  "promoteToTask": "→ Task"
+  "promoteToTask": "→ Task",
+  "promoteDialog": {
+    "title": "Promote to Task",
+    "project": "Project (optional)",
+    "confirm": "Promote"
+  }
 }

@@ -14,5 +14,10 @@
   "recording": "録音中…",
   "transcribing": "文字起こし中…",
   "uploadFailed": "アップロード失敗",
-  "promoteToTask": "→ タスク"
+  "promoteToTask": "→ タスク",
+  "promoteDialog": {
+    "title": "タスクに変換",
+    "project": "プロジェクト（任意）",
+    "confirm": "変換する"
+  }
 }
