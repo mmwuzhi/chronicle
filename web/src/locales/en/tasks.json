@@ -22,8 +22,7 @@
   },
   "time": {
     "title": "Time",
-    "stop": "Stop",
-    "startTimer": "Start timer",
+    "minutesPlaceholder": "min",
     "noTimeLogged": "No time logged yet",
     "total": "Total: {{duration}}"
   },

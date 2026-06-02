@@ -22,8 +22,7 @@
   },
   "time": {
     "title": "时间",
-    "stop": "停止",
-    "startTimer": "开始计时",
+    "minutesPlaceholder": "分钟",
     "noTimeLogged": "还没有记录",
     "total": "总计：{{duration}}"
   },

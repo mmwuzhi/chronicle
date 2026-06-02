@@ -8,10 +8,12 @@ import {
   useUpdateTask,
   useListLogEntries,
   useCreateLogEntry,
+  useUpdateLogEntry,
   useDeleteLogEntry,
   useListProjects,
   getListTasksQueryKey,
   getGetTaskQueryKey,
+  getListLogEntriesQueryKey,
 } from "../api";
 import type { LogEntryBody, TaskBody } from "../api";
 import { Nav } from "../components/nav";
@@ -39,6 +41,8 @@ function TaskDetail() {
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [editingEntryId, setEditingEntryId] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState("");
 
   const {
     data: task,
@@ -91,7 +95,13 @@ function TaskDetail() {
       onSettled: invalidateTasks,
     },
   });
+  const invalidateEntries = () =>
+    queryClient.invalidateQueries({
+      queryKey: getListLogEntriesQueryKey({ taskId }),
+    });
+
   const createEntry = useCreateLogEntry();
+  const updateEntry = useUpdateLogEntry();
   const deleteEntry = useDeleteLogEntry();
 
   if (taskError) {
@@ -132,7 +142,12 @@ function TaskDetail() {
     if (!trimmed) return;
     createEntry.mutate(
       { data: { body: trimmed, taskId } },
-      { onSuccess: () => setBody("") },
+      {
+        onSuccess: () => {
+          invalidateEntries();
+          setBody("");
+        },
+      },
     );
   };
 
@@ -425,27 +440,83 @@ function TaskDetail() {
                       key={e.id}
                       className="bg-white rounded-lg border border-gray-200 shadow-sm p-4 flex flex-col gap-2"
                     >
-                      <p className="text-sm whitespace-pre-wrap">{e.body}</p>
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs text-gray-400">
-                          {new Date(e.createdAt).toLocaleString()}
-                        </span>
-                        <span className="flex-1" />
-                        <button
-                          onClick={async () => {
-                            const ok = await confirm({
-                              title: "Delete log entry?",
-                              description: "This cannot be undone.",
-                              confirmLabel: "Delete",
-                              variant: "danger",
-                            });
-                            if (ok) deleteEntry.mutate({ id: e.id });
-                          }}
-                          className="text-xs text-gray-400 hover:text-red-500 transition-colors"
-                        >
-                          {tc("actions.delete")}
-                        </button>
-                      </div>
+                      {editingEntryId === e.id ? (
+                        <>
+                          <textarea
+                            autoFocus
+                            value={editDraft}
+                            onChange={(ev) => setEditDraft(ev.target.value)}
+                            onKeyDown={(ev) => {
+                              if (ev.key === "Escape") setEditingEntryId(null);
+                            }}
+                            rows={3}
+                            className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900 resize-none w-full"
+                          />
+                          <div className="flex gap-2 justify-end">
+                            <button
+                              onClick={() => {
+                                const trimmed = editDraft.trim();
+                                if (!trimmed) return;
+                                updateEntry.mutate(
+                                  { id: e.id, data: { body: trimmed } },
+                                  {
+                                    onSuccess: () => {
+                                      invalidateEntries();
+                                      setEditingEntryId(null);
+                                    },
+                                  },
+                                );
+                              }}
+                              disabled={updateEntry.isPending}
+                              className="text-xs bg-gray-900 text-white rounded-md px-3 py-1.5 hover:bg-gray-700 transition-colors disabled:opacity-50"
+                            >
+                              {tc("actions.save")}
+                            </button>
+                            <button
+                              onClick={() => setEditingEntryId(null)}
+                              className="text-xs border border-gray-300 rounded-md px-3 py-1.5 hover:bg-gray-50 transition-colors"
+                            >
+                              {tc("actions.cancel")}
+                            </button>
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <p
+                            className="text-sm whitespace-pre-wrap cursor-pointer hover:opacity-70 transition-opacity"
+                            onClick={() => {
+                              setEditingEntryId(e.id);
+                              setEditDraft(e.body);
+                            }}
+                          >
+                            {e.body}
+                          </p>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs text-gray-400">
+                              {new Date(e.createdAt).toLocaleString()}
+                            </span>
+                            <span className="flex-1" />
+                            <button
+                              onClick={async () => {
+                                const ok = await confirm({
+                                  title: tc("confirm.deleteLogEntry"),
+                                  description: tc("confirm.cannotUndo"),
+                                  confirmLabel: tc("actions.delete"),
+                                  variant: "danger",
+                                });
+                                if (ok)
+                                  deleteEntry.mutate(
+                                    { id: e.id },
+                                    { onSuccess: invalidateEntries },
+                                  );
+                              }}
+                              className="text-xs text-gray-400 hover:text-red-500 transition-colors"
+                            >
+                              {tc("actions.delete")}
+                            </button>
+                          </div>
+                        </>
+                      )}
                     </li>
                   ))}
                   {(entries ?? []).length === 0 && (

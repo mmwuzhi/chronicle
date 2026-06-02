@@ -51,10 +51,6 @@ function AccountSection() {
 
   if (!me) return null;
 
-  const linked =
-    (me as unknown as { oauthAccounts?: { id: string; provider: string }[] })
-      .oauthAccounts ?? [];
-
   return (
     <>
       <h2 className="text-lg font-semibold">{t("account.title")}</h2>
@@ -93,16 +89,6 @@ function AccountSection() {
         <div className="flex items-center justify-between py-4">
           <span className="text-sm text-gray-500">{t("profile.email")}</span>
           <span className="text-sm">{me.email}</span>
-        </div>
-        <div className="flex items-center justify-between py-4">
-          <span className="text-sm text-gray-500">
-            {t("profile.authMethod")}
-          </span>
-          <span className="text-sm">
-            {linked.length > 0
-              ? linked.map((a) => capitalize(a.provider)).join(", ")
-              : "Email"}
-          </span>
         </div>
         <div className="flex items-center justify-between py-4">
           <span className="text-sm text-gray-500">{t("password.label")}</span>

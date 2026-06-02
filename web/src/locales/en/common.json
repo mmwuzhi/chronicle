@@ -51,5 +51,11 @@
     "tasks": "Tasks",
     "logEntries": "Log entries",
     "noResults": "No results"
+  },
+  "confirm": {
+    "cannotUndo": "This cannot be undone.",
+    "deleteTask": "Delete task?",
+    "deleteCapture": "Delete capture?",
+    "deleteLogEntry": "Delete log entry?"
   }
 }

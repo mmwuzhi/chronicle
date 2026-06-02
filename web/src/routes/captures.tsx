@@ -391,9 +391,9 @@ function Captures() {
                 onReclassify={handleReclassify}
                 onDelete={async (id) => {
                   const ok = await confirm({
-                    title: "Delete capture?",
-                    description: "This cannot be undone.",
-                    confirmLabel: "Delete",
+                    title: tc("confirm.deleteCapture"),
+                    description: tc("confirm.cannotUndo"),
+                    confirmLabel: tc("actions.delete"),
                     variant: "danger",
                   });
                   if (ok) del.mutate({ id });

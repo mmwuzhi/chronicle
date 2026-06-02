@@ -51,5 +51,11 @@
     "tasks": "任务",
     "logEntries": "日志",
     "noResults": "无结果"
+  },
+  "confirm": {
+    "cannotUndo": "此操作无法撤销。",
+    "deleteTask": "删除任务？",
+    "deleteCapture": "删除捕获？",
+    "deleteLogEntry": "删除笔记？"
   }
 }

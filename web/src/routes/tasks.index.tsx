@@ -256,9 +256,9 @@ function Tasks() {
                   <button
                     onClick={async () => {
                       const ok = await confirm({
-                        title: "Delete task?",
-                        description: "This cannot be undone.",
-                        confirmLabel: "Delete",
+                        title: tc("confirm.deleteTask"),
+                        description: tc("confirm.cannotUndo"),
+                        confirmLabel: tc("actions.delete"),
                         variant: "danger",
                       });
                       if (ok) del.mutate({ id: task.id });
@@ -307,9 +307,9 @@ function Tasks() {
                         <button
                           onClick={async () => {
                             const ok = await confirm({
-                              title: "Delete task?",
-                              description: "This cannot be undone.",
-                              confirmLabel: "Delete",
+                              title: tc("confirm.deleteTask"),
+                              description: tc("confirm.cannotUndo"),
+                              confirmLabel: tc("actions.delete"),
                               variant: "danger",
                             });
                             if (ok) del.mutate({ id: task.id });

@@ -98,9 +98,9 @@ export function ProjectTaskList({ projectId }: { projectId: string }) {
             <button
               onClick={async () => {
                 const ok = await confirm({
-                  title: "Delete task?",
-                  description: "This cannot be undone.",
-                  confirmLabel: "Delete",
+                  title: tc("confirm.deleteTask"),
+                  description: tc("confirm.cannotUndo"),
+                  confirmLabel: tc("actions.delete"),
                   variant: "danger",
                 });
                 if (ok) deleteTask.mutate({ id: task.id });
@@ -147,7 +147,15 @@ export function ProjectTaskList({ projectId }: { projectId: string }) {
                     {t("unarchive")}
                   </button>
                   <button
-                    onClick={() => deleteTask.mutate({ id: task.id })}
+                    onClick={async () => {
+                      const ok = await confirm({
+                        title: tc("confirm.deleteTask"),
+                        description: tc("confirm.cannotUndo"),
+                        confirmLabel: tc("actions.delete"),
+                        variant: "danger",
+                      });
+                      if (ok) deleteTask.mutate({ id: task.id });
+                    }}
                     className="text-xs text-gray-400 hover:text-red-500 transition-colors"
                   >
                     {tc("actions.delete")}

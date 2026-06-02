@@ -51,5 +51,11 @@
     "tasks": "タスク",
     "logEntries": "ログエントリ",
     "noResults": "結果なし"
+  },
+  "confirm": {
+    "cannotUndo": "この操作は取り消せません。",
+    "deleteTask": "タスクを削除しますか？",
+    "deleteCapture": "キャプチャを削除しますか？",
+    "deleteLogEntry": "ログを削除しますか？"
   }
 }

@@ -1,9 +1,5 @@
-import { useEffect, useRef, useState } from "react";
-import {
-  useListTimeBlocks,
-  useCreateTimeBlock,
-  useUpdateTimeBlock,
-} from "../api";
+import { useState } from "react";
+import { useListTimeBlocks, useCreateTimeBlock } from "../api";
 import type { TimeBlockBody } from "../api";
 import { useTranslation } from "react-i18next";
 
@@ -21,59 +17,26 @@ function useFormatDuration() {
 
 export function Timer({ taskId }: { taskId: string }) {
   const { t } = useTranslation("tasks");
+  const { t: tc } = useTranslation("common");
   const formatDuration = useFormatDuration();
   const { data: blocks, refetch } = useListTimeBlocks({ taskId });
   const createBlock = useCreateTimeBlock();
-  const updateBlock = useUpdateTimeBlock();
 
-  const running = (blocks ?? []).find((b: TimeBlockBody) => b.endedAt === null);
+  const [minutes, setMinutes] = useState("");
 
-  const [elapsed, setElapsed] = useState(0);
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  const runningId = running?.id;
-  const runningStartedAt = running?.startedAt;
-
-  useEffect(() => {
-    if (intervalRef.current) clearInterval(intervalRef.current);
-
-    if (!runningId || !runningStartedAt) return;
-
-    const startMs = new Date(runningStartedAt).getTime();
-    const update = () => setElapsed(Math.floor((Date.now() - startMs) / 1000));
-
-    const timeout = setTimeout(update, 0);
-    intervalRef.current = setInterval(update, 1000);
-
-    return () => {
-      clearTimeout(timeout);
-      if (intervalRef.current) clearInterval(intervalRef.current);
-    };
-  }, [runningId, runningStartedAt]);
-
-  const handleStart = () => {
+  const handleAdd = () => {
+    const parsed = parseFloat(minutes);
+    if (!parsed || parsed <= 0) return;
+    const durationSec = Math.round(parsed * 60);
+    const now = new Date();
+    const startedAt = new Date(now.getTime() - durationSec * 1000).toISOString();
     createBlock.mutate(
-      { data: { taskId, startedAt: new Date().toISOString() } },
-      { onSuccess: () => refetch() },
+      { data: { taskId, startedAt, endedAt: now.toISOString(), durationSec } },
+      { onSuccess: () => { refetch(); setMinutes(""); } },
     );
   };
 
-  const handleStop = () => {
-    if (!running) return;
-    const endedAt = new Date().toISOString();
-    const durationSec = Math.floor(
-      (new Date(endedAt).getTime() - new Date(running.startedAt).getTime()) /
-        1000,
-    );
-    updateBlock.mutate(
-      { id: running.id, data: { endedAt, durationSec } },
-      { onSuccess: () => refetch() },
-    );
-  };
-
-  const completed = (blocks ?? []).filter(
-    (b: TimeBlockBody) => b.endedAt !== null,
-  );
+  const completed = (blocks ?? []).filter((b: TimeBlockBody) => b.endedAt !== null);
   const totalSec = completed.reduce(
     (sum: number, b: TimeBlockBody) => sum + (b.durationSec ?? 0),
     0,
@@ -85,38 +48,35 @@ export function Timer({ taskId }: { taskId: string }) {
         {t("time.title")}
       </h2>
 
-      <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-4 flex items-center gap-4">
-        {running ? (
-          <>
-            <span className="text-2xl font-mono font-semibold tabular-nums text-gray-900">
-              {formatDuration(elapsed)}
-            </span>
-            <span className="flex-1" />
-            <button
-              onClick={handleStop}
-              disabled={updateBlock.isPending}
-              className="bg-red-500 text-white rounded-md px-4 py-2 text-sm font-medium hover:bg-red-600 transition-colors disabled:opacity-50"
-            >
-              {t("time.stop")}
-            </button>
-          </>
-        ) : (
-          <>
-            <span className="text-sm text-gray-400">
-              {totalSec > 0
-                ? t("time.total", { duration: formatDuration(totalSec) })
-                : t("time.noTimeLogged")}
-            </span>
-            <span className="flex-1" />
-            <button
-              onClick={handleStart}
-              disabled={createBlock.isPending}
-              className="bg-gray-900 text-white rounded-md px-4 py-2 text-sm font-medium hover:bg-gray-700 transition-colors disabled:opacity-50"
-            >
-              {t("time.startTimer")}
-            </button>
-          </>
-        )}
+      <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-4 flex items-center gap-3">
+        <span className="text-sm text-gray-400 shrink-0">
+          {totalSec > 0
+            ? t("time.total", { duration: formatDuration(totalSec) })
+            : t("time.noTimeLogged")}
+        </span>
+        <span className="flex-1" />
+        <input
+          type="number"
+          min="0.5"
+          step="0.5"
+          value={minutes}
+          onChange={(e) => setMinutes(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              handleAdd();
+            }
+          }}
+          placeholder={t("time.minutesPlaceholder")}
+          className="w-20 border border-gray-300 rounded-md px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900 text-right"
+        />
+        <button
+          onClick={handleAdd}
+          disabled={createBlock.isPending || !minutes || parseFloat(minutes) <= 0}
+          className="bg-gray-900 text-white rounded-md px-4 py-1.5 text-sm font-medium hover:bg-gray-700 transition-colors disabled:opacity-50 shrink-0"
+        >
+          {tc("actions.add")}
+        </button>
       </div>
 
       {completed.length > 0 && (

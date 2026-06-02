@@ -22,8 +22,7 @@
   },
   "time": {
     "title": "時間",
-    "stop": "停止",
-    "startTimer": "タイマー開始",
+    "minutesPlaceholder": "分",
     "noTimeLogged": "まだ記録はありません",
     "total": "合計：{{duration}}"
   },
