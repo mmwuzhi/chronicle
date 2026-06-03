@@ -23,3 +23,8 @@ dist-ssr
 *.sln
 *.sw?
 .tanstack/
+
+# Playwright
+e2e/.auth.json
+playwright-report/
+test-results/

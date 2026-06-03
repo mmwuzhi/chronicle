@@ -48,7 +48,7 @@
   "signIn": "Sign in",
   "createAccount": "Create account",
   "search": {
-    "placeholder": "Search captures, tasks, logs…",
+    "placeholder": "Search…",
     "captures": "Captures",
     "tasks": "Tasks",
     "logEntries": "Log entries",

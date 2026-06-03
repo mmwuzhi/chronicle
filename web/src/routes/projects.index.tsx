@@ -4,6 +4,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod/v3";
 import { useQueryClient } from "@tanstack/react-query";
+import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import {
   useListProjects,
   useCreateProject,
@@ -40,6 +41,7 @@ function Projects() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [showArchived, setShowArchived] = useState(false);
+  const [showColors, setShowColors] = useState(false);
 
   const { data: projects, isLoading, error } = useListProjects();
   const { data: allTasks } = useListTasks({});
@@ -92,6 +94,15 @@ function Projects() {
       <div style={{ maxWidth: 640, margin: "0 auto", padding: "0 18px" }}>
         <div className="ch-page-head">
           <h1 className="ch-title">{t("title")}</h1>
+          <p
+            style={{
+              margin: "4px 0 0",
+              fontSize: "var(--fs-sm)",
+              color: "var(--text-muted)",
+            }}
+          >
+            {t("subtitle")}
+          </p>
         </div>
 
         {/* Create form */}
@@ -101,71 +112,32 @@ function Projects() {
         >
           <form
             onSubmit={handleSubmit((data) =>
-              create.mutate({ data }, { onSuccess: () => reset() }),
+              create.mutate({ data }, { onSuccess: () => { reset(); setShowColors(false); } }),
             )}
-            style={{ display: "flex", flexDirection: "column", gap: 12 }}
+            style={{ display: "flex", flexDirection: "column", gap: 10 }}
           >
-            <input
-              {...register("name")}
-              placeholder={t("newProjectName")}
-              className="ch-input"
-            />
-            {errors.name && (
-              <p
+            {/* Inline row: color dot trigger + input + button */}
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <button
+                type="button"
+                onClick={() => setShowColors((v) => !v)}
                 style={{
-                  fontSize: "var(--fs-xs)",
-                  color: "#c2410c",
-                  margin: 0,
-                }}
-              >
-                {errors.name.message}
-              </p>
-            )}
-
-            {/* Color presets */}
-            <div
-              style={{
-                display: "flex",
-                gap: 8,
-                alignItems: "center",
-                flexWrap: "wrap",
-              }}
-            >
-              {PRESET_COLORS.map((c) => (
-                <button
-                  key={c}
-                  type="button"
-                  onClick={() => setValue("color", c)}
-                  style={{
-                    width: 22,
-                    height: 22,
-                    borderRadius: "50%",
-                    background: c,
-                    border:
-                      watchedColor === c
-                        ? "2px solid var(--text)"
-                        : "2px solid transparent",
-                    cursor: "pointer",
-                    flexShrink: 0,
-                  }}
-                />
-              ))}
-              <input
-                type="color"
-                {...register("color")}
-                style={{
-                  width: 22,
-                  height: 22,
+                  width: 28,
+                  height: 28,
                   borderRadius: "50%",
-                  border: "none",
-                  padding: 0,
+                  background: watchedColor,
+                  border: "2px solid var(--border-strong)",
+                  flexShrink: 0,
                   cursor: "pointer",
                 }}
-                title="Custom color"
+                title="Choose color"
               />
-            </div>
-
-            <div style={{ display: "flex", justifyContent: "flex-end" }}>
+              <input
+                {...register("name")}
+                placeholder={t("newProjectName")}
+                className="ch-input"
+                style={{ flex: 1 }}
+              />
               <button
                 type="submit"
                 disabled={create.isPending}
@@ -174,6 +146,40 @@ function Projects() {
                 {t("addProject")}
               </button>
             </div>
+
+            {errors.name && (
+              <p style={{ fontSize: "var(--fs-xs)", color: "#c2410c", margin: 0 }}>
+                {errors.name.message}
+              </p>
+            )}
+
+            {/* Expandable color palette */}
+            {showColors && (
+              <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                {PRESET_COLORS.map((c) => (
+                  <button
+                    key={c}
+                    type="button"
+                    onClick={() => setValue("color", c)}
+                    style={{
+                      width: 22,
+                      height: 22,
+                      borderRadius: "50%",
+                      background: c,
+                      border: watchedColor === c ? "2px solid var(--text)" : "2px solid transparent",
+                      cursor: "pointer",
+                      flexShrink: 0,
+                    }}
+                  />
+                ))}
+                <input
+                  type="color"
+                  {...register("color")}
+                  style={{ width: 22, height: 22, borderRadius: "50%", border: "none", padding: 0, cursor: "pointer" }}
+                  title="Custom color"
+                />
+              </div>
+            )}
           </form>
         </div>
 
@@ -260,14 +266,33 @@ function Projects() {
                         )}
                       </span>
                     </Link>
-                    <button
-                      className="ch-btn ch-btn-ghost ch-btn-sm"
-                      onClick={() =>
-                        update.mutate({ id: p.id, data: { archived: true } })
-                      }
-                    >
-                      {tc("actions.archive")}
-                    </button>
+                    <DropdownMenu.Root>
+                      <DropdownMenu.Trigger asChild>
+                        <button
+                          className="ch-iconbtn"
+                          style={{ width: 28, height: 28, fontSize: 16 }}
+                          aria-label="More options"
+                        >
+                          ···
+                        </button>
+                      </DropdownMenu.Trigger>
+                      <DropdownMenu.Portal>
+                        <DropdownMenu.Content
+                          className="ch-dropdown"
+                          align="end"
+                          sideOffset={4}
+                        >
+                          <DropdownMenu.Item
+                            className="ch-dropdown-item"
+                            onSelect={() =>
+                              update.mutate({ id: p.id, data: { archived: true } })
+                            }
+                          >
+                            {tc("actions.archive")}
+                          </DropdownMenu.Item>
+                        </DropdownMenu.Content>
+                      </DropdownMenu.Portal>
+                    </DropdownMenu.Root>
                   </div>
                 );
               })}

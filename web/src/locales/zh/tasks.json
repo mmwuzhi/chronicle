@@ -6,6 +6,7 @@
   "allProjects": "所有项目",
   "noTasks": "还没有任务。",
   "dueDate": "截止日期",
+  "startDate": "开始",
   "overdue": "已逾期",
   "dueToday": "今天",
   "failedToLoad": "加载任务失败",
@@ -28,7 +29,7 @@
   },
   "log": {
     "title": "日志",
-    "placeholder": "添加笔记… (Enter 保存，Shift+Enter 换行)",
+    "placeholder": "添加笔记… (⌘↵ 保存)",
     "addNote": "添加笔记",
     "noNotes": "还没有笔记。"
   },

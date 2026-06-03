@@ -987,3 +987,65 @@ body {
 .ch-spin {
   animation: ch-spin 0.8s linear infinite;
 }
+
+/* ── Settings nav ─────────────────────────────────────────────────────── */
+.ch-settings-icon {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  text-decoration: none;
+  transition: background 0.14s, color 0.14s;
+}
+.ch-settings-icon:hover {
+  background: var(--bg-tint);
+  color: var(--text);
+}
+.ch-settings-text {
+  display: none;
+}
+@media (min-width: 768px) {
+  .ch-settings-icon {
+    display: none;
+  }
+  .ch-settings-text {
+    display: inline-flex;
+  }
+}
+
+/* ── Dropdown menu (Radix) ────────────────────────────────────────────── */
+.ch-dropdown {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-lg);
+  padding: 4px;
+  min-width: 140px;
+  z-index: 100;
+  animation: ch-fade 0.1s ease;
+}
+.ch-dropdown-item {
+  display: flex;
+  align-items: center;
+  padding: 8px 12px;
+  font-size: var(--fs-sm);
+  color: var(--text);
+  border-radius: 6px;
+  cursor: pointer;
+  outline: none;
+  transition: background 0.1s;
+  user-select: none;
+}
+.ch-dropdown-item:hover,
+.ch-dropdown-item[data-highlighted] {
+  background: var(--bg-tint);
+}
+.ch-dropdown-item.danger {
+  color: #c2410c;
+}
+.ch-dropdown-item.danger:hover,
+.ch-dropdown-item.danger[data-highlighted] {
+  background: color-mix(in srgb, #c2410c 8%, transparent);
+}

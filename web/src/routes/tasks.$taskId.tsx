@@ -18,8 +18,28 @@ import {
 import type { LogEntryBody, TaskBody } from "../api";
 import { Nav } from "../components/nav";
 import { Timer } from "../components/Timer";
+import { ProjectDropdown } from "../components/ProjectDropdown";
 import { STATUS_CYCLE } from "../constants/status";
+import { timeAgo } from "../utils/format";
 import { useTranslation } from "react-i18next";
+
+const CalendarIcon = () => (
+  <svg
+    width="14"
+    height="14"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={1.75}
+    viewBox="0 0 24 24"
+    style={{ flexShrink: 0 }}
+  >
+    <path
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 0 1 2.25-2.25h13.5A2.25 2.25 0 0 1 21 7.5v11.25m-18 0A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75m-18 0v-7.5A2.25 2.25 0 0 1 5.25 9h13.5A2.25 2.25 0 0 1 21 11.25v7.5"
+    />
+  </svg>
+);
 
 export const Route = createFileRoute("/tasks/$taskId")({
   component: TaskDetail,
@@ -33,7 +53,7 @@ const ST_CLASS: Record<string, string> = {
 };
 
 function TaskDetail() {
-  const { t } = useTranslation("tasks");
+  const { t, i18n } = useTranslation("tasks");
   const { t: tc } = useTranslation("common");
   const { taskId } = Route.useParams();
   const navigate = useNavigate();
@@ -47,6 +67,7 @@ function TaskDetail() {
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const dateInputRef = useRef<HTMLInputElement>(null);
   const [editingEntryId, setEditingEntryId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState("");
 
@@ -60,9 +81,6 @@ function TaskDetail() {
   });
   const { data: projects } = useListProjects();
   const activeProjects = (projects ?? []).filter((p) => !p.archived);
-  const currentProject = task?.projectId
-    ? activeProjects.find((p) => p.id === task.projectId)
-    : null;
 
   const invalidateTasks = () => {
     queryClient.invalidateQueries({ queryKey: getListTasksQueryKey() });
@@ -310,40 +328,46 @@ function TaskDetail() {
                 >
                   {t("filterProject")}
                 </span>
-                <select
-                  value={task.projectId ?? ""}
-                  onChange={(e) => {
-                    const val = e.target.value;
+                <ProjectDropdown
+                  value={task.projectId ?? null}
+                  projects={activeProjects}
+                  onChange={(id) =>
                     update.mutate({
                       id: taskId,
-                      data: { projectId: val || undefined },
-                    });
-                  }}
-                  className="ch-input"
+                      data: { projectId: id ?? undefined },
+                    })
+                  }
+                />
+              </div>
+              {/* Start date (read-only, shows createdAt) */}
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 12,
+                  padding: "12px 0",
+                }}
+              >
+                <span
                   style={{
-                    flex: 1,
-                    padding: "5px 10px",
+                    width: 78,
                     fontSize: "var(--fs-sm)",
+                    color: "var(--text-muted)",
+                    flexShrink: 0,
                   }}
                 >
-                  <option value="">{tc("noProject")}</option>
-                  {activeProjects.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name}
-                    </option>
-                  ))}
-                </select>
-                {currentProject && (
-                  <span
-                    style={{
-                      width: 10,
-                      height: 10,
-                      borderRadius: "50%",
-                      background: currentProject.color,
-                      flexShrink: 0,
-                    }}
-                  />
-                )}
+                  {t("startDate")}
+                </span>
+                <span
+                  className="ch-datebtn"
+                  style={{ pointerEvents: "none", opacity: 0.7, cursor: "default" }}
+                >
+                  <CalendarIcon />
+                  {new Date(task.createdAt).toLocaleDateString(undefined, {
+                    month: "short",
+                    day: "numeric",
+                  })}
+                </span>
               </div>
               {/* Due date */}
               <div
@@ -364,21 +388,31 @@ function TaskDetail() {
                 >
                   {t("dueDate")}
                 </span>
+                <button
+                  className={`ch-datebtn${task.dueAt ? "" : " empty"}`}
+                  onClick={() => dateInputRef.current?.click()}
+                >
+                  <CalendarIcon />
+                  {task.dueAt
+                    ? new Date(task.dueAt).toLocaleDateString(undefined, {
+                        month: "short",
+                        day: "numeric",
+                      })
+                    : "—"}
+                </button>
                 <input
+                  ref={dateInputRef}
                   type="date"
+                  style={{ display: "none" }}
                   value={task.dueAt ? task.dueAt.slice(0, 10) : ""}
                   onChange={(e) => {
                     const val = e.target.value;
                     if (!val) return;
                     update.mutate({
                       id: taskId,
-                      data: {
-                        dueAt: new Date(val + "T00:00:00").toISOString(),
-                      },
+                      data: { dueAt: new Date(val + "T00:00:00").toISOString() },
                     });
                   }}
-                  className="ch-datebtn"
-                  style={{ fontFamily: "var(--font-mono)", fontSize: 12 }}
                 />
               </div>
               {/* Files */}
@@ -468,7 +502,7 @@ function TaskDetail() {
                 value={body}
                 onChange={(e) => setBody(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey) {
+                  if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
                     e.preventDefault();
                     handleAddEntry();
                   }
@@ -500,7 +534,7 @@ function TaskDetail() {
                   onClick={handlePolish}
                   disabled={polishing || !body.trim()}
                 >
-                  {polishing ? "…" : "✨"} {tc("actions.polish")}
+                  {polishing ? "…" : "✦"} {tc("actions.polish")}
                 </button>
                 <button
                   className="ch-btn ch-btn-primary ch-btn-sm"
@@ -596,7 +630,7 @@ function TaskDetail() {
                             }}
                           >
                             <span className="ch-meta">
-                              {new Date(e.createdAt).toLocaleString()}
+                              {timeAgo(e.createdAt, i18n.language)}
                             </span>
                             <div style={{ flex: 1 }} />
                             <button

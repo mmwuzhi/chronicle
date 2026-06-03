@@ -6,6 +6,7 @@
   "allProjects": "All projects",
   "noTasks": "No tasks yet.",
   "dueDate": "Due date",
+  "startDate": "Start",
   "overdue": "Overdue",
   "dueToday": "Today",
   "failedToLoad": "Failed to load tasks",
@@ -28,7 +29,7 @@
   },
   "log": {
     "title": "Log",
-    "placeholder": "Add a note… (Enter to save, Shift+Enter for newline)",
+    "placeholder": "Add a note… (⌘↵ to save)",
     "addNote": "Add note",
     "noNotes": "No notes yet."
   },
