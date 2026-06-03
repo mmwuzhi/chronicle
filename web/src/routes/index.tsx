@@ -13,6 +13,7 @@ import {
 import type { CaptureBody, TaskBody, TaskUpdateInputBodyStatus } from "../api";
 
 import { Nav } from "../components/nav";
+import { DueBadge } from "../components/DueBadge";
 
 export const Route = createFileRoute("/")({ component: Index });
 
@@ -39,9 +40,34 @@ const STATUS_CYCLE: Record<string, TaskUpdateInputBodyStatus> = {
   done: "todo",
 };
 
+function timeAgo(iso: string, locale: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const rtf = new Intl.RelativeTimeFormat(locale, { numeric: "auto" });
+  const m = Math.floor(diff / 60000);
+  if (m < 60) return rtf.format(-m, "minute");
+  const h = Math.floor(m / 60);
+  if (h < 24) return rtf.format(-h, "hour");
+  return rtf.format(-Math.floor(h / 24), "day");
+}
+
+const ChevronRight = () => (
+  <svg
+    width="16"
+    height="16"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={2}
+    viewBox="0 0 24 24"
+    style={{ flexShrink: 0, color: "var(--text-faint)" }}
+  >
+    <path strokeLinecap="round" strokeLinejoin="round" d="m9 18 6-6-6-6" />
+  </svg>
+);
+
 function Dashboard() {
-  const { t } = useTranslation("dashboard");
+  const { t, i18n } = useTranslation("dashboard");
   const { t: tc } = useTranslation("common");
+  const { t: tt } = useTranslation("tasks");
   const queryClient = useQueryClient();
 
   const { data: me } = useGetMe();
@@ -83,6 +109,21 @@ function Dashboard() {
     },
   });
 
+  // Date eyebrow: "TUESDAY · JUN 3"
+  const now = new Date();
+  const dayName = now
+    .toLocaleDateString(undefined, { weekday: "long" })
+    .toUpperCase();
+  const monthDay = now
+    .toLocaleDateString(undefined, { month: "short", day: "numeric" })
+    .toUpperCase();
+  const dateEyebrow = `${dayName} · ${monthDay}`;
+
+  // Time-aware greeting
+  const hour = now.getHours();
+  const greetingKey =
+    hour < 12 ? "goodMorning" : hour < 17 ? "goodAfternoon" : "goodEvening";
+
   const ws = weekStart();
   const allTasks = tasks ?? [];
   const activeTasks = allTasks.filter(
@@ -99,11 +140,12 @@ function Dashboard() {
 
   const stats = [
     {
-      label: t("tasksDone", { done: doneTasks.length, total: allTasks.length }),
+      value: `${doneTasks.length}/${allTasks.length}`,
+      label: t("tasksDoneLabel"),
     },
-    { label: t("capturesCreated", { count: (captures ?? []).length }) },
-    { label: t("logEntries", { count: entryCount }) },
-    { label: t("timeTracked", { h: hours, m: minutes }) },
+    { value: String((captures ?? []).length), label: t("capturesLabel") },
+    { value: String(entryCount), label: t("logsLabel") },
+    { value: `${hours}h ${minutes}m`, label: t("trackedLabel") },
   ];
 
   return (
@@ -111,8 +153,10 @@ function Dashboard() {
       <Nav />
       <div style={{ maxWidth: 768, margin: "0 auto", padding: "0 18px" }}>
         <div className="ch-page-head">
-          <p className="ch-eyebrow">{t("greeting")}</p>
-          <h1 className="ch-title">{name}</h1>
+          <p className="ch-eyebrow">{dateEyebrow}</p>
+          <h1 className="ch-title">
+            {t(greetingKey)} {name}
+          </h1>
         </div>
 
         {/* Week stats card */}
@@ -125,77 +169,22 @@ function Dashboard() {
             marginBottom: 24,
           }}
         >
-          <p className="ch-eyebrow" style={{ marginBottom: 12 }}>
+          <p
+            className="ch-eyebrow"
+            style={{ marginBottom: 14, color: "var(--accent-strong)" }}
+          >
+            <span style={{ marginRight: 4 }}>🌿</span>
             {t("thisWeek")}
           </p>
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(2, 1fr)",
-              gap: "var(--gap)",
-            }}
-          >
+          <div className="ch-stats-grid">
             {stats.map((s, i) => (
-              <div
-                key={i}
-                style={{
-                  fontSize: "var(--fs-sm)",
-                  fontWeight: 600,
-                  color: "var(--text)",
-                }}
-              >
-                {s.label}
+              <div key={i} className="ch-stat-cell">
+                <span className="ch-stat-value">{s.value}</span>
+                <span className="ch-stat-label">{s.label}</span>
               </div>
             ))}
           </div>
         </div>
-
-        {/* Recent captures */}
-        <div className="ch-section">
-          <span className="bar" />
-          <span className="ch-sectlabel">{t("recentCaptures")}</span>
-          <span className="ch-sectcount">{recentCaptures.length}</span>
-          <span className="rule" />
-        </div>
-        {recentCaptures.length === 0 ? (
-          <div className="ch-empty">
-            <p>{t("noCaptures")}</p>
-          </div>
-        ) : (
-          <div className="ch-list">
-            {recentCaptures.map((c: CaptureBody) => (
-              <Link
-                key={c.id}
-                to="/captures"
-                className="ch-row clickable"
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 12,
-                  textDecoration: "none",
-                }}
-              >
-                <p
-                  style={{
-                    flex: 1,
-                    fontSize: "var(--fs-sm)",
-                    margin: 0,
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  {c.rawText ?? "—"}
-                </p>
-                <span
-                  className={`ch-pill ${CL_CLASS[c.classifiedAs] ?? "cl-unclassified"}`}
-                >
-                  {tc(`classification.${c.classifiedAs}`)}
-                </span>
-              </Link>
-            ))}
-          </div>
-        )}
 
         {/* Active tasks */}
         <div className="ch-section">
@@ -214,7 +203,7 @@ function Dashboard() {
               <div
                 key={task.id}
                 className="ch-row"
-                style={{ display: "flex", alignItems: "center", gap: 12 }}
+                style={{ display: "flex", alignItems: "center", gap: 10 }}
               >
                 <button
                   className={`ch-pill ch-status st-${task.status}`}
@@ -229,7 +218,9 @@ function Dashboard() {
                     })
                   }
                   title={tc(`status.${task.status}`)}
+                  style={{ flexShrink: 0 }}
                 >
+                  <span className="pdot" />
                   {tc(`status.${task.status}`)}
                 </button>
                 <Link
@@ -248,7 +239,72 @@ function Dashboard() {
                 >
                   {task.title}
                 </Link>
+                {task.dueAt && task.status !== "done" && (
+                  <DueBadge dueAt={task.dueAt} t={tt} />
+                )}
+                <ChevronRight />
               </div>
+            ))}
+          </div>
+        )}
+
+        {/* Recent captures */}
+        <div className="ch-section">
+          <span className="bar" />
+          <span className="ch-sectlabel">{t("recentCaptures")}</span>
+          <span className="ch-sectcount">{recentCaptures.length}</span>
+          <span className="rule" />
+          <Link to="/captures" className="ch-sectall">
+            {t("viewAll")} →
+          </Link>
+        </div>
+        {recentCaptures.length === 0 ? (
+          <div className="ch-empty">
+            <p>{t("noCaptures")}</p>
+          </div>
+        ) : (
+          <div className="ch-list">
+            {recentCaptures.map((c: CaptureBody) => (
+              <Link
+                key={c.id}
+                to="/captures"
+                className="ch-row clickable"
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 8,
+                  textDecoration: "none",
+                }}
+              >
+                <p
+                  style={
+                    {
+                      fontSize: "var(--fs-sm)",
+                      margin: 0,
+                      color: "var(--text)",
+                      lineHeight: 1.55,
+                      display: "-webkit-box",
+                      WebkitLineClamp: 2,
+                      WebkitBoxOrient: "vertical",
+                      overflow: "hidden",
+                    } as React.CSSProperties
+                  }
+                >
+                  {c.rawText ?? "—"}
+                </p>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span
+                    className={`ch-pill ${CL_CLASS[c.classifiedAs] ?? "cl-unclassified"}`}
+                  >
+                    {tc(`classification.${c.classifiedAs}`)}
+                  </span>
+                  {c.createdAt && (
+                    <span className="ch-meta" style={{ marginLeft: "auto" }}>
+                      {timeAgo(c.createdAt, i18n.language)}
+                    </span>
+                  )}
+                </div>
+              </Link>
             ))}
           </div>
         )}

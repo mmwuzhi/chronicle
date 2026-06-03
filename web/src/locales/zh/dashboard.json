@@ -1,12 +1,15 @@
 {
-  "greeting": "欢迎回来",
+  "goodMorning": "早上好，",
+  "goodAfternoon": "下午好，",
+  "goodEvening": "晚上好，",
   "thisWeek": "本周",
-  "tasksDone": "任务 {{done}} / {{total}} 已完成",
-  "capturesCreated": "{{count}} 条捕获",
-  "logEntries": "{{count}} 条日志",
-  "timeTracked": "已记录 {{h}}h {{m}}m",
+  "tasksDoneLabel": "任务完成",
+  "capturesLabel": "捕获",
+  "logsLabel": "日志",
+  "trackedLabel": "已追踪",
   "recentCaptures": "最近捕获",
   "activeTasks": "进行中的任务",
+  "viewAll": "全部",
   "noCaptures": "暂无捕获",
   "noTasks": "没有进行中的任务"
 }

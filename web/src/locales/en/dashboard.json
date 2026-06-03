@@ -1,12 +1,15 @@
 {
-  "greeting": "Welcome back",
+  "goodMorning": "Good morning,",
+  "goodAfternoon": "Good afternoon,",
+  "goodEvening": "Good evening,",
   "thisWeek": "This week",
-  "tasksDone": "{{done}} / {{total}} tasks done",
-  "capturesCreated": "{{count}} captures",
-  "logEntries": "{{count}} log entries",
-  "timeTracked": "{{h}}h {{m}}m tracked",
+  "tasksDoneLabel": "Tasks done",
+  "capturesLabel": "Captures",
+  "logsLabel": "Logs",
+  "trackedLabel": "Tracked",
   "recentCaptures": "Recent captures",
   "activeTasks": "Active tasks",
+  "viewAll": "All",
   "noCaptures": "No captures yet",
   "noTasks": "No active tasks"
 }

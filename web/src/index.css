@@ -201,7 +201,7 @@ body {
   display: flex;
 }
 @media (min-width: 768px) {
-  .ch-search-mobile {
+  .ch-iconbtn.ch-search-mobile {
     display: none;
   }
 }
@@ -466,6 +466,10 @@ body {
   background: var(--bg-tint);
   color: var(--text-muted);
 }
+.st-todo .pdot {
+  border: 1.5px solid var(--text-muted);
+  background: transparent;
+}
 .st-in_progress {
   background: var(--accent-weak);
   color: var(--accent-strong);
@@ -599,6 +603,45 @@ body {
   flex: 1;
   height: 1px;
   background: var(--hairline);
+}
+.ch-sectall {
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--text-muted);
+  text-decoration: none;
+  white-space: nowrap;
+  transition: color 0.14s;
+}
+.ch-sectall:hover {
+  color: var(--accent-strong);
+}
+
+/* Stats grid: 2-col mobile, 4-col desktop */
+.ch-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--gap);
+}
+@media (min-width: 640px) {
+  .ch-stats-grid {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+.ch-stat-cell {
+  display: flex;
+  flex-direction: column;
+}
+.ch-stat-value {
+  font-family: var(--font-display);
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1.1;
+}
+.ch-stat-label {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  margin-top: 3px;
 }
 
 /* ── Segmented control ────────────────────────────────────────────────── */
