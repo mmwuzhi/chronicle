@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import type { CaptureBody, CaptureUpdateInputBodyClassifiedAs } from "../api";
 import { fmtShortDateTime } from "../utils/format";
+import { Markdown } from "./Markdown";
 
 const CL_CLASS: Record<string, string> = {
   unclassified: "cl-unclassified",
@@ -167,22 +168,15 @@ export function CaptureCard({
           }}
         />
       ) : (
-        <p
-          style={{
-            fontSize: "var(--fs-sm)",
-            whiteSpace: "pre-wrap",
-            cursor: "text",
-            margin: 0,
-            color: "var(--text)",
-            lineHeight: 1.55,
-          }}
+        <div
+          style={{ cursor: "text" }}
           onClick={() => {
             setDraft(c.rawText ?? "");
             setEditing(true);
           }}
         >
-          {c.rawText}
-        </p>
+          <Markdown>{c.rawText ?? ""}</Markdown>
+        </div>
       )}
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
         <select

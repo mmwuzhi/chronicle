@@ -172,3 +172,12 @@ test("captures: timestamp uses Jun 3 · 8:51am format", async ({ page }) => {
     expect(text).toMatch(/am|pm/i);
   }
 });
+
+// ── Markdown rendering ────────────────────────────────────────────────────
+
+test("markdown: capture display uses ch-prose renderer", async ({ page }) => {
+  await page.goto("/captures");
+  const rows = page.locator(".ch-row");
+  if ((await rows.count()) === 0) return test.skip();
+  await expect(page.locator(".ch-prose").first()).toBeVisible();
+});

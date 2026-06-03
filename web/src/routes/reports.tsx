@@ -3,6 +3,7 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "../lib/axios";
 import { Nav } from "../components/nav";
+import { Markdown } from "../components/Markdown";
 import { fmtDate } from "../utils/format";
 import { useTranslation } from "react-i18next";
 
@@ -185,17 +186,7 @@ function ReportCard({ report }: { report: ReportBody }) {
       </div>
 
       {summary ? (
-        <p
-          style={{
-            fontSize: "var(--fs-sm)",
-            lineHeight: 1.6,
-            color: "var(--text)",
-            margin: 0,
-            whiteSpace: "pre-line",
-          }}
-        >
-          {summary}
-        </p>
+        <Markdown>{summary}</Markdown>
       ) : (
         <p
           style={{

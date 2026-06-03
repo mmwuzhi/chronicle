@@ -17,6 +17,7 @@ import {
 import type { CaptureBody, CaptureCreateInputBodyMediaType } from "../api";
 import { Nav } from "../components/nav";
 import { CaptureCard, AutoTextarea } from "../components/CaptureCard";
+import { Markdown } from "../components/Markdown";
 import { useTranslation } from "react-i18next";
 
 interface UploadResult {
@@ -532,16 +533,9 @@ function Captures() {
             >
               {t("promoteDialog.title")}
             </h2>
-            <p
-              style={{
-                margin: 0,
-                fontSize: "var(--fs-sm)",
-                color: "var(--text-muted)",
-                whiteSpace: "pre-wrap",
-              }}
-            >
-              {pendingPromote.rawText}
-            </p>
+            <div style={{ color: "var(--text-muted)" }}>
+              <Markdown>{pendingPromote.rawText}</Markdown>
+            </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               <label
                 style={{

@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { apiClient } from "../lib/axios";
+import { Markdown } from "../components/Markdown";
 
 export const Route = createFileRoute("/share/$slug")({
   component: SharedReport,
@@ -121,11 +122,7 @@ function SharedReport() {
           />
         </div>
 
-        {summary ? (
-          <div className="text-sm text-gray-700 leading-relaxed whitespace-pre-line">
-            {summary}
-          </div>
-        ) : null}
+        {summary ? <Markdown>{summary}</Markdown> : null}
 
         {tasks.length > 0 && (
           <div className="flex flex-col gap-2">

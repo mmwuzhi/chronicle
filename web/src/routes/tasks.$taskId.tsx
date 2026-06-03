@@ -19,6 +19,7 @@ import type { LogEntryBody, TaskBody } from "../api";
 import { Nav } from "../components/nav";
 import { Timer } from "../components/Timer";
 import { ProjectDropdown } from "../components/ProjectDropdown";
+import { Markdown } from "../components/Markdown";
 import { STATUS_CYCLE } from "../constants/status";
 import { timeAgo } from "../utils/format";
 import { useTranslation } from "react-i18next";
@@ -613,21 +614,15 @@ function TaskDetail() {
                         </>
                       ) : (
                         <>
-                          <p
-                            style={{
-                              fontSize: "var(--fs-sm)",
-                              lineHeight: 1.55,
-                              margin: "0 0 10px",
-                              whiteSpace: "pre-wrap",
-                              cursor: "text",
-                            }}
+                          <div
+                            style={{ cursor: "text", marginBottom: 10 }}
                             onClick={() => {
                               setEditingEntryId(e.id);
                               setEditDraft(e.body);
                             }}
                           >
-                            {e.body}
-                          </p>
+                            <Markdown>{e.body}</Markdown>
+                          </div>
                           <div
                             style={{
                               display: "flex",
