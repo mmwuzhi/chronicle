@@ -10,6 +10,8 @@
     "settings": "Settings"
   },
   "status": {
+    "all": "All",
+    "active": "Active",
     "todo": "To Do",
     "in_progress": "In Progress",
     "done": "Done",
@@ -50,7 +52,8 @@
     "captures": "Captures",
     "tasks": "Tasks",
     "logEntries": "Log entries",
-    "noResults": "No results"
+    "noResults": "No results",
+    "typeToSearch": "Type to search…"
   },
   "confirm": {
     "cannotUndo": "This cannot be undone.",

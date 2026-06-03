@@ -10,6 +10,8 @@
     "settings": "设置"
   },
   "status": {
+    "all": "全部",
+    "active": "进行中",
     "todo": "待办",
     "in_progress": "进行中",
     "done": "已完成",
@@ -50,7 +52,8 @@
     "captures": "捕获",
     "tasks": "任务",
     "logEntries": "日志",
-    "noResults": "无结果"
+    "noResults": "无结果",
+    "typeToSearch": "输入搜索内容…"
   },
   "confirm": {
     "cannotUndo": "此操作无法撤销。",

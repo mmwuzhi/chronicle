@@ -13,12 +13,12 @@ import {
 import type { TaskBody } from "../api";
 import { Nav } from "../components/nav";
 import { DueBadge } from "../components/DueBadge";
-import { STATUS_CYCLE, STATUS_COLORS } from "../constants/status";
+import { STATUS_CYCLE } from "../constants/status";
 import { useTranslation } from "react-i18next";
 
-export const Route = createFileRoute("/tasks/")({
-  component: Tasks,
-});
+export const Route = createFileRoute("/tasks/")({ component: Tasks });
+
+type StatusFilter = "all" | "active" | "done";
 
 function Tasks() {
   const { t } = useTranslation("tasks");
@@ -29,41 +29,32 @@ function Tasks() {
   const [title, setTitle] = useState("");
   const [filterProjectId, setFilterProjectId] = useState("");
   const [newTaskProjectId, setNewTaskProjectId] = useState("");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [showArchived, setShowArchived] = useState(false);
 
   const { data: projects } = useListProjects();
   const activeProjects = (projects ?? []).filter((p) => !p.archived);
   const projectMap = new Map(activeProjects.map((p) => [p.id, p]));
 
-  const taskParams = filterProjectId
-    ? { projectId: filterProjectId }
-    : undefined;
+  const taskParams = filterProjectId ? { projectId: filterProjectId } : undefined;
   const { data: tasks, error, isLoading } = useListTasks(taskParams);
 
-  const invalidate = () =>
-    queryClient.invalidateQueries({ queryKey: getListTasksQueryKey() });
+  const invalidate = () => queryClient.invalidateQueries({ queryKey: getListTasksQueryKey() });
 
   const create = useCreateTask({ mutation: { onSuccess: invalidate } });
   const update = useUpdateTask({
     mutation: {
       onMutate: async ({ id, data }) => {
         await queryClient.cancelQueries({ queryKey: getListTasksQueryKey() });
-        const previous = queryClient.getQueriesData<TaskBody[]>({
-          queryKey: getListTasksQueryKey(),
-        });
+        const previous = queryClient.getQueriesData<TaskBody[]>({ queryKey: getListTasksQueryKey() });
         queryClient.setQueriesData<TaskBody[]>(
           { queryKey: getListTasksQueryKey() },
-          (old) =>
-            old == null
-              ? old
-              : old.map((t) => (t.id === id ? { ...t, ...data } : t)),
+          (old) => old == null ? old : old.map((t) => (t.id === id ? { ...t, ...data } : t)),
         );
         return { previous };
       },
       onError: (_err, _vars, context) => {
-        context?.previous.forEach(([key, val]) =>
-          queryClient.setQueryData(key, val),
-        );
+        context?.previous.forEach(([key, val]) => queryClient.setQueryData(key, val));
       },
       onSettled: invalidate,
     },
@@ -72,24 +63,15 @@ function Tasks() {
 
   if (error) {
     const status = (error as { status?: number }).status;
-    if (status === 401) {
-      navigate({ to: "/login" });
-      return null;
-    }
-    return <div className="p-8 text-red-500">{t("failedToLoad")}</div>;
+    if (status === 401) { navigate({ to: "/login" }); return null; }
+    return <div style={{ padding: 32, color: "#c2410c" }}>{t("failedToLoad")}</div>;
   }
 
   const handleAdd = () => {
     const trimmed = title.trim();
     if (!trimmed) return;
     create.mutate(
-      {
-        data: {
-          title: trimmed,
-          type: "task",
-          ...(newTaskProjectId ? { projectId: newTaskProjectId } : {}),
-        },
-      },
+      { data: { title: trimmed, type: "task", ...(newTaskProjectId ? { projectId: newTaskProjectId } : {}) } },
       { onSuccess: () => setTitle("") },
     );
   };
@@ -99,161 +81,166 @@ function Tasks() {
     update.mutate({ id: task.id, data: { status: next } });
   };
 
-  const active = (tasks ?? []).filter(
-    (task: TaskBody) => task.status !== "archived",
-  );
-  const archived = (tasks ?? []).filter(
-    (task: TaskBody) => task.status === "archived",
-  );
+  const allActive = (tasks ?? []).filter((task: TaskBody) => task.status !== "archived");
+  const archived = (tasks ?? []).filter((task: TaskBody) => task.status === "archived");
+
+  const filtered = statusFilter === "active"
+    ? allActive.filter((t: TaskBody) => t.status !== "done")
+    : statusFilter === "done"
+      ? allActive.filter((t: TaskBody) => t.status === "done")
+      : allActive;
+
+  const STATUS_LABEL: Record<string, string> = {
+    todo: "·",
+    in_progress: "▶",
+    done: "✓",
+  };
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <>
       <Nav />
-      <div className="max-w-3xl mx-auto px-4 md:px-8 py-6 md:py-8 flex flex-col gap-6">
-        <h1 className="text-2xl font-semibold tracking-tight">{t("title")}</h1>
+      <div style={{ maxWidth: 768, margin: "0 auto", padding: "0 18px" }}>
+        <div className="ch-page-head">
+          <h1 className="ch-title">{t("title")}</h1>
+        </div>
 
-        <div className="bg-white border border-gray-200 rounded-xl p-3 flex flex-col gap-2.5 shadow-sm">
-          <input
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                handleAdd();
-              }
-            }}
-            placeholder={t("addPlaceholder")}
-            className="w-full text-sm focus:outline-none placeholder:text-gray-400 bg-transparent"
-          />
-          <div className="flex items-center gap-2">
-            <div className="flex gap-1 flex-1 overflow-x-auto">
+        {/* Quick-add bar */}
+        <div className="ch-card" style={{ padding: "var(--pad)", marginBottom: 16 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <input
+              className="ch-input"
+              style={{ flex: 1, padding: "8px 12px" }}
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handleAdd(); } }}
+              placeholder={t("addPlaceholder")}
+            />
+            <button
+              className="ch-btn ch-btn-primary ch-btn-sm"
+              onClick={handleAdd}
+              disabled={create.isPending || !title.trim()}
+            >
+              {t("add")}
+            </button>
+          </div>
+          {/* Project selector for new tasks */}
+          {activeProjects.length > 0 && (
+            <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
               <button
+                className={`ch-pill ${newTaskProjectId === "" ? "cl-task" : "cl-unclassified"}`}
+                style={{ cursor: "pointer", border: "none" }}
                 onClick={() => setNewTaskProjectId("")}
-                className={`text-xs px-2.5 py-1 rounded-full whitespace-nowrap transition-colors ${
-                  newTaskProjectId === ""
-                    ? "bg-gray-100 ring-1 ring-gray-300 text-gray-700"
-                    : "text-gray-400 hover:text-gray-600 hover:bg-gray-50"
-                }`}
               >
                 {tc("noProject")}
               </button>
               {activeProjects.map((p) => (
                 <button
                   key={p.id}
+                  className={`ch-pill ${newTaskProjectId === p.id ? "cl-task" : "cl-unclassified"}`}
+                  style={{ cursor: "pointer", border: "none" }}
                   onClick={() => setNewTaskProjectId(p.id)}
-                  className={`flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full whitespace-nowrap transition-colors ${
-                    newTaskProjectId === p.id
-                      ? "bg-gray-100 ring-1 ring-gray-300 text-gray-700"
-                      : "text-gray-400 hover:text-gray-600 hover:bg-gray-50"
-                  }`}
                 >
-                  <span
-                    className="w-1.5 h-1.5 rounded-full shrink-0"
-                    style={{ backgroundColor: p.color }}
-                  />
+                  <span style={{ width: 6, height: 6, borderRadius: "50%", background: p.color, display: "inline-block" }} />
                   {p.name}
                 </button>
               ))}
             </div>
-            <button
-              onClick={handleAdd}
-              disabled={create.isPending || !title.trim()}
-              className="bg-gray-900 text-white rounded-md px-4 py-1.5 text-sm font-medium hover:bg-gray-700 transition-colors disabled:opacity-50 shrink-0"
+          )}
+        </div>
+
+        {/* Filters row */}
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16, flexWrap: "wrap" }}>
+          {/* Project filter */}
+          {activeProjects.length > 0 && (
+            <select
+              value={filterProjectId}
+              onChange={(e) => setFilterProjectId(e.target.value)}
+              className="ch-input"
+              style={{ width: "auto", padding: "6px 10px", fontSize: "var(--fs-sm)" }}
             >
-              {t("add")}
-            </button>
+              <option value="">{t("allProjects")}</option>
+              {activeProjects.map((p) => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </select>
+          )}
+          {/* Status segment */}
+          <div className="ch-seg" style={{ marginLeft: "auto" }}>
+            {(["all", "active", "done"] as StatusFilter[]).map((s) => (
+              <button
+                key={s}
+                className={`ch-seg-btn${statusFilter === s ? " active" : ""}`}
+                onClick={() => setStatusFilter(s)}
+              >
+                {s === "all" ? tc("status.all") : s === "active" ? tc("status.active") : tc("status.done")}
+              </button>
+            ))}
           </div>
         </div>
 
-        <div className="flex gap-1 overflow-x-auto">
-          <button
-            onClick={() => setFilterProjectId("")}
-            className={`px-3 py-1.5 rounded-md text-sm font-medium whitespace-nowrap transition-colors ${
-              filterProjectId === ""
-                ? "bg-gray-900 text-white"
-                : "text-gray-500 hover:text-gray-900 hover:bg-gray-100"
-            }`}
-          >
-            {t("allProjects")}
-          </button>
-          {activeProjects.map((p) => (
-            <button
-              key={p.id}
-              onClick={() => setFilterProjectId(p.id)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium whitespace-nowrap transition-colors ${
-                filterProjectId === p.id
-                  ? "bg-gray-900 text-white"
-                  : "text-gray-500 hover:text-gray-900 hover:bg-gray-100"
-              }`}
-            >
-              <span
-                className="w-2 h-2 rounded-full shrink-0"
-                style={{
-                  backgroundColor: filterProjectId === p.id ? "white" : p.color,
-                }}
-              />
-              {p.name}
-            </button>
-          ))}
-        </div>
-
         {isLoading ? (
-          <div className="text-gray-400 text-sm">{tc("loading")}</div>
+          <div className="ch-meta">{tc("loading")}</div>
         ) : (
           <>
-            <ul className="flex flex-col gap-2">
-              {active.map((task: TaskBody) => (
-                <li
+            <div className="ch-list">
+              {filtered.map((task: TaskBody) => (
+                <div
                   key={task.id}
-                  className="bg-white rounded-lg border border-gray-200 shadow-sm p-4 flex items-center gap-3"
+                  className="ch-row"
+                  style={{ display: "flex", alignItems: "center", gap: 10 }}
                 >
                   <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleCycleStatus(task);
+                    onClick={(e) => { e.stopPropagation(); handleCycleStatus(task); }}
+                    title={tc(`status.${task.status}`)}
+                    style={{
+                      width: 28, height: 28, borderRadius: "50%", border: "1.5px solid var(--border-strong)",
+                      background: task.status === "in_progress" ? "var(--accent-weak)" : task.status === "done" ? "color-mix(in srgb, var(--text-faint) 16%, transparent)" : "transparent",
+                      color: task.status === "in_progress" ? "var(--accent-strong)" : "var(--text-faint)",
+                      display: "grid", placeItems: "center", cursor: "pointer", flexShrink: 0,
+                      fontSize: 12, fontWeight: 700, transition: "background .12s",
                     }}
-                    className={`text-xs font-medium px-2 py-1 rounded-full whitespace-nowrap transition-colors hover:opacity-80 ${STATUS_COLORS[task.status] ?? "bg-gray-100 text-gray-600"}`}
                   >
-                    {tc(`status.${task.status}`)}
+                    {STATUS_LABEL[task.status] ?? "·"}
                   </button>
+
                   {task.projectId && projectMap.get(task.projectId) && (
                     <Link
                       to="/projects/$projectId"
                       params={{ projectId: task.projectId }}
-                      className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-600 transition-colors shrink-0"
+                      style={{ display: "flex", alignItems: "center", gap: 5, textDecoration: "none", flexShrink: 0 }}
+                      onClick={(e) => e.stopPropagation()}
                     >
-                      <span
-                        className="w-2 h-2 rounded-full"
-                        style={{
-                          backgroundColor: projectMap.get(task.projectId)!
-                            .color,
-                        }}
-                      />
-                      {projectMap.get(task.projectId)!.name}
+                      <span style={{ width: 7, height: 7, borderRadius: "50%", background: projectMap.get(task.projectId)!.color }} />
                     </Link>
                   )}
+
                   <Link
                     to="/tasks/$taskId"
                     params={{ taskId: task.id }}
-                    className={`flex-1 text-sm hover:underline ${task.status === "done" ? "line-through text-gray-400" : ""}`}
+                    style={{
+                      flex: 1, fontSize: "var(--fs-sm)", textDecoration: "none",
+                      color: task.status === "done" ? "var(--text-faint)" : "var(--text)",
+                      textDecorationLine: task.status === "done" ? "line-through" : "none",
+                      overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                    }}
                   >
                     {task.title}
                   </Link>
+
                   {task.dueAt && task.status !== "done" && (
                     <DueBadge dueAt={task.dueAt} t={t} />
                   )}
+
                   <button
-                    onClick={() =>
-                      update.mutate({
-                        id: task.id,
-                        data: { status: "archived" },
-                      })
-                    }
-                    className="text-xs text-gray-400 hover:text-gray-600 transition-colors"
+                    className="ch-btn ch-btn-ghost ch-btn-sm"
+                    onClick={() => update.mutate({ id: task.id, data: { status: "archived" } })}
+                    style={{ fontSize: "var(--fs-xs)", padding: "4px 8px" }}
                   >
                     {tc("actions.archive")}
                   </button>
                   <button
+                    className="ch-btn ch-btn-ghost ch-btn-sm"
+                    style={{ color: "var(--text-faint)", fontSize: "var(--fs-xs)", padding: "4px 8px" }}
                     onClick={async () => {
                       const ok = await confirm({
                         title: tc("confirm.deleteTask"),
@@ -263,48 +250,42 @@ function Tasks() {
                       });
                       if (ok) del.mutate({ id: task.id });
                     }}
-                    className="text-xs text-gray-400 hover:text-red-500 transition-colors"
                   >
                     {tc("actions.delete")}
                   </button>
-                </li>
+                </div>
               ))}
-              {active.length === 0 && (
-                <p className="text-gray-400 text-sm">{t("noTasks")}</p>
+              {filtered.length === 0 && (
+                <div className="ch-empty">
+                  <p>{t("noTasks")}</p>
+                </div>
               )}
-            </ul>
+            </div>
 
             {archived.length > 0 && (
-              <div className="flex flex-col gap-2">
+              <div style={{ marginTop: 24 }}>
                 <button
+                  className="ch-btn ch-btn-ghost ch-btn-sm"
                   onClick={() => setShowArchived((v) => !v)}
-                  className="text-xs text-gray-400 hover:text-gray-600 transition-colors self-start"
                 >
-                  {showArchived ? t("hideArchived") : t("showArchived")} (
-                  {archived.length})
+                  {showArchived ? t("hideArchived") : t("showArchived")} ({archived.length})
                 </button>
                 {showArchived && (
-                  <ul className="flex flex-col gap-2">
+                  <div className="ch-list" style={{ marginTop: 12, opacity: 0.6 }}>
                     {archived.map((task: TaskBody) => (
-                      <li
-                        key={task.id}
-                        className="bg-white rounded-lg border border-gray-200 shadow-sm p-4 flex items-center gap-3 opacity-60"
-                      >
-                        <span className="flex-1 text-sm line-through text-gray-400">
+                      <div key={task.id} className="ch-row" style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        <span style={{ flex: 1, fontSize: "var(--fs-sm)", textDecoration: "line-through", color: "var(--text-faint)" }}>
                           {task.title}
                         </span>
                         <button
-                          onClick={() =>
-                            update.mutate({
-                              id: task.id,
-                              data: { status: "todo" },
-                            })
-                          }
-                          className="text-xs text-gray-400 hover:text-gray-600 transition-colors"
+                          className="ch-btn ch-btn-ghost ch-btn-sm"
+                          onClick={() => update.mutate({ id: task.id, data: { status: "todo" } })}
                         >
                           {t("unarchive")}
                         </button>
                         <button
+                          className="ch-btn ch-btn-ghost ch-btn-sm"
+                          style={{ color: "var(--text-faint)" }}
                           onClick={async () => {
                             const ok = await confirm({
                               title: tc("confirm.deleteTask"),
@@ -314,19 +295,18 @@ function Tasks() {
                             });
                             if (ok) del.mutate({ id: task.id });
                           }}
-                          className="text-xs text-gray-400 hover:text-red-500 transition-colors"
                         >
                           {tc("actions.delete")}
                         </button>
-                      </li>
+                      </div>
                     ))}
-                  </ul>
+                  </div>
                 )}
               </div>
             )}
           </>
         )}
       </div>
-    </div>
+    </>
   );
 }

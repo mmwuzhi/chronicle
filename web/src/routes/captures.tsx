@@ -16,7 +16,6 @@ import {
 } from "../api";
 import type {
   CaptureBody,
-  CaptureUpdateInputBodyClassifiedAs,
   CaptureCreateInputBodyMediaType,
 } from "../api";
 import { Nav } from "../components/nav";
@@ -29,13 +28,17 @@ interface UploadResult {
   rawText?: string;
 }
 
-export const Route = createFileRoute("/captures")({
-  component: Captures,
-});
+export const Route = createFileRoute("/captures")({ component: Captures });
 
 type Tab = "all" | "unclassified" | "idea" | "task";
-
 const TAB_IDS: Tab[] = ["all", "unclassified", "idea", "task"];
+
+const CL_CLASS: Record<Tab, string> = {
+  all: "cl-unclassified",
+  unclassified: "cl-unclassified",
+  idea: "cl-idea",
+  task: "cl-task",
+};
 
 function Captures() {
   const { t } = useTranslation("captures");
@@ -51,10 +54,7 @@ function Captures() {
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState(false);
   const [recording, setRecording] = useState(false);
-  const [pendingPromote, setPendingPromote] = useState<{
-    rawText: string;
-    captureId: string;
-  } | null>(null);
+  const [pendingPromote, setPendingPromote] = useState<{ rawText: string; captureId: string } | null>(null);
   const [promoteProjectId, setPromoteProjectId] = useState("");
   const imageInputRef = useRef<HTMLInputElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -63,10 +63,8 @@ function Captures() {
   const params = tab === "all" ? undefined : { classifiedAs: tab };
   const { data: captures, error, isLoading } = useListCaptures(params);
 
-  const invalidate = () =>
-    queryClient.invalidateQueries({ queryKey: getListCapturesQueryKey() });
-  const invalidateTasks = () =>
-    queryClient.invalidateQueries({ queryKey: getListTasksQueryKey() });
+  const invalidate = () => queryClient.invalidateQueries({ queryKey: getListCapturesQueryKey() });
+  const invalidateTasks = () => queryClient.invalidateQueries({ queryKey: getListTasksQueryKey() });
 
   const create = useCreateCapture({ mutation: { onSuccess: invalidate } });
   const update = useUpdateCapture({ mutation: { onSuccess: invalidate } });
@@ -78,11 +76,8 @@ function Captures() {
 
   if (error) {
     const status = (error as { status?: number }).status;
-    if (status === 401) {
-      navigate({ to: "/login" });
-      return null;
-    }
-    return <div className="p-8 text-red-500">{t("failedToLoad")}</div>;
+    if (status === 401) { navigate({ to: "/login" }); return null; }
+    return <div style={{ padding: 32, color: "#c2410c" }}>{t("failedToLoad")}</div>;
   }
 
   const uploadAndCreate = async (file: File | Blob, filename?: string) => {
@@ -90,28 +85,13 @@ function Captures() {
     setUploading(true);
     try {
       const fd = new FormData();
-      fd.append(
-        "file",
-        file,
-        filename ?? (file instanceof File ? file.name : "recording.webm"),
-      );
+      fd.append("file", file, filename ?? (file instanceof File ? file.name : "recording.webm"));
       const res = await apiClient.post<UploadResult>("/captures/upload", fd);
       const { mediaUrl, mediaType, rawText } = res.data;
       if (rawText) setText(rawText);
       create.mutate(
-        {
-          data: {
-            mediaUrl,
-            mediaType: mediaType as CaptureCreateInputBodyMediaType,
-            rawText: rawText ?? undefined,
-            classifiedAs: "unclassified",
-          },
-        },
-        {
-          onSuccess: () => {
-            if (!rawText) setText("");
-          },
-        },
+        { data: { mediaUrl, mediaType: mediaType as CaptureCreateInputBodyMediaType, rawText: rawText ?? undefined, classifiedAs: "unclassified" } },
+        { onSuccess: () => { if (!rawText) setText(""); } },
       );
     } catch {
       setUploadError(true);
@@ -129,17 +109,12 @@ function Captures() {
   };
 
   const handleAudioToggle = async () => {
-    if (recording) {
-      mediaRecorderRef.current?.stop();
-      return;
-    }
+    if (recording) { mediaRecorderRef.current?.stop(); return; }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const mr = new MediaRecorder(stream);
       audioChunksRef.current = [];
-      mr.ondataavailable = (e) => {
-        audioChunksRef.current.push(e.data);
-      };
+      mr.ondataavailable = (e) => { audioChunksRef.current.push(e.data); };
       mr.onstop = () => {
         stream.getTracks().forEach((t) => t.stop());
         setRecording(false);
@@ -161,9 +136,7 @@ function Captures() {
     setPolishError(false);
     setPolishing(true);
     try {
-      const res = await apiClient.post<{ polished: string }>("/ai/polish", {
-        text: trimmed,
-      });
+      const res = await apiClient.post<{ polished: string }>("/ai/polish", { text: trimmed });
       setPolishedText(res.data.polished);
     } catch {
       setPolishError(true);
@@ -177,29 +150,9 @@ function Captures() {
     const trimmed = text.trim();
     if (!trimmed) return;
     create.mutate(
-      {
-        data: {
-          rawText: trimmed,
-          mediaType: "text",
-          classifiedAs: "unclassified",
-        },
-      },
+      { data: { rawText: trimmed, mediaType: "text", classifiedAs: "unclassified" } },
       { onSuccess: () => setText("") },
     );
-  };
-
-  const handleReclassify = (
-    id: string,
-    classifiedAs: CaptureUpdateInputBodyClassifiedAs,
-  ) => {
-    update.mutate({ id, data: { classifiedAs } });
-  };
-
-  const handleSaveText = (id: string, rawText: string) => {
-    apiClient
-      .patch(`/captures/${id}`, { rawText })
-      .then(() => invalidate())
-      .catch(() => invalidate());
   };
 
   const handlePromoteToTask = (rawText: string, captureId: string) => {
@@ -213,18 +166,10 @@ function Captures() {
     const title = lines[0].trim();
     const body = lines.slice(1).join("\n").trim();
     createTask.mutate(
-      {
-        data: {
-          title,
-          type: "task",
-          ...(promoteProjectId ? { projectId: promoteProjectId } : {}),
-        },
-      },
+      { data: { title, type: "task", ...(promoteProjectId ? { projectId: promoteProjectId } : {}) } },
       {
         onSuccess: (task) => {
-          if (body) {
-            createLogEntry.mutate({ data: { taskId: task.id, body } });
-          }
+          if (body) createLogEntry.mutate({ data: { taskId: task.id, body } });
           del.mutate({ id: pendingPromote.captureId }, { onSuccess: invalidate });
           setPendingPromote(null);
         },
@@ -232,19 +177,21 @@ function Captures() {
     );
   };
 
-  return (
-    <div className="min-h-screen bg-gray-50">
-      <Nav />
-      <div className="max-w-3xl mx-auto px-4 md:px-8 py-6 md:py-8 flex flex-col gap-6">
-        <h1 className="text-2xl font-semibold tracking-tight">{t("title")}</h1>
+  const displayText = polishedText !== null ? polishedText : text;
 
-        <div className="flex flex-col gap-2">
+  return (
+    <>
+      <Nav />
+      <div style={{ maxWidth: 768, margin: "0 auto", padding: "0 18px" }}>
+        <div className="ch-page-head">
+          <h1 className="ch-title">{t("title")}</h1>
+        </div>
+
+        {/* Composer */}
+        <div className="ch-card" style={{ padding: "var(--pad)", marginBottom: 16 }}>
           <AutoTextarea
-            value={polishedText !== null ? polishedText : text}
-            onChange={(v) => {
-              if (polishedText !== null) setPolishedText(v);
-              else setText(v);
-            }}
+            value={displayText}
+            onChange={(v) => { if (polishedText !== null) setPolishedText(v); else setText(v); }}
             onKeyDown={(e) => {
               if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
                 e.preventDefault();
@@ -252,19 +199,8 @@ function Captures() {
                   const trimmed = polishedText.trim();
                   if (!trimmed) return;
                   create.mutate(
-                    {
-                      data: {
-                        rawText: trimmed,
-                        mediaType: "text",
-                        classifiedAs: "unclassified",
-                      },
-                    },
-                    {
-                      onSuccess: () => {
-                        setText("");
-                        setPolishedText(null);
-                      },
-                    },
+                    { data: { rawText: trimmed, mediaType: "text", classifiedAs: "unclassified" } },
+                    { onSuccess: () => { setText(""); setPolishedText(null); } },
                   );
                 } else {
                   handleAdd();
@@ -272,108 +208,85 @@ function Captures() {
               }
             }}
             placeholder={t("placeholder")}
-            className={`w-full border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900 resize-none min-h-[40px] ${polishedText !== null ? "border-purple-300 bg-purple-50 ring-1 ring-purple-200" : "border-gray-300"}`}
+            className="ch-textarea"
+            style={{
+              border: "none", boxShadow: "none", padding: 0, marginBottom: 10,
+              ...(polishedText !== null ? { color: "var(--accent-strong)" } : {}),
+            } as React.CSSProperties}
           />
+
           {polishedText !== null && (
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-purple-600 font-medium">
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+              <span style={{ fontSize: "var(--fs-xs)", color: "var(--accent-strong)", fontWeight: 600 }}>
                 ✨ {tc("actions.polishResult")}
               </span>
-              <div className="flex gap-2 ml-auto">
-                <button
-                  onClick={() => {
-                    setText(polishedText);
-                    setPolishedText(null);
-                  }}
-                  className="text-xs px-2.5 py-1 rounded-md bg-purple-600 text-white hover:bg-purple-700 transition-colors"
-                >
-                  {tc("actions.accept")}
-                </button>
-                <button
-                  onClick={() => navigator.clipboard.writeText(polishedText)}
-                  className="text-xs px-2.5 py-1 rounded-md border border-gray-300 hover:bg-gray-50 transition-colors"
-                >
-                  {tc("actions.copy")}
-                </button>
-                <button
-                  onClick={() => setPolishedText(null)}
-                  className="text-xs px-2.5 py-1 rounded-md border border-gray-300 hover:bg-gray-50 transition-colors"
-                >
-                  {tc("actions.dismiss")}
-                </button>
-              </div>
+              <div style={{ flex: 1 }} />
+              <button
+                className="ch-btn ch-btn-ai ch-btn-sm"
+                onClick={() => { setText(polishedText); setPolishedText(null); }}
+              >
+                {tc("actions.accept")}
+              </button>
+              <button className="ch-btn ch-btn-sm" onClick={() => setPolishedText(null)}>
+                {tc("actions.dismiss")}
+              </button>
             </div>
           )}
-          <div className="flex items-center gap-2">
+
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <button
+              className="ch-btn ch-btn-sm"
               onClick={() => imageInputRef.current?.click()}
               disabled={uploading || recording}
-              className="border border-gray-300 rounded-md px-3 py-2 text-sm font-medium hover:bg-gray-50 transition-colors disabled:opacity-50"
               title={t("uploadImage")}
             >
               📎
             </button>
             <button
+              className={`ch-btn ch-btn-sm${recording ? "" : ""}`}
+              style={recording ? { borderColor: "#c2410c", color: "#c2410c" } : undefined}
               onClick={handleAudioToggle}
               disabled={uploading}
-              className={`border rounded-md px-3 py-2 text-sm font-medium transition-colors disabled:opacity-50 ${recording ? "border-red-400 bg-red-50 text-red-600 hover:bg-red-100" : "border-gray-300 hover:bg-gray-50"}`}
               title={t("uploadAudio")}
             >
               {recording ? "⏹" : "🎙"}
             </button>
             <button
+              className="ch-btn ch-btn-ai ch-btn-sm"
               onClick={handlePolish}
               disabled={polishing || !text.trim() || polishedText !== null}
-              className="border border-gray-300 rounded-md px-3 py-2 text-sm font-medium hover:bg-gray-50 transition-colors disabled:opacity-50"
               title={tc("actions.polish")}
             >
               {polishing ? "…" : "✨"}
             </button>
-            <div className="flex-1" />
-            {(polishError || uploadError || uploading) && (
-              <span className="text-xs text-gray-400">
-                {polishError ? (
-                  <span className="text-red-500">
-                    {tc("errors.polishFailed")}
-                  </span>
-                ) : uploadError ? (
-                  <span className="text-red-500">{t("uploadFailed")}</span>
-                ) : recording ? (
-                  t("recording")
-                ) : (
-                  t("transcribing")
-                )}
+            <div style={{ flex: 1 }} />
+            {(polishError || uploadError) && (
+              <span style={{ fontSize: "var(--fs-xs)", color: "#c2410c" }}>
+                {polishError ? tc("errors.polishFailed") : t("uploadFailed")}
               </span>
             )}
+            {(uploading || recording) && (
+              <span className="ch-meta">{recording ? t("recording") : t("transcribing")}</span>
+            )}
             <button
+              className="ch-btn ch-btn-primary ch-btn-sm"
               onClick={handleAdd}
-              disabled={
-                create.isPending || !text.trim() || polishedText !== null
-              }
-              className="bg-gray-900 text-white rounded-md px-4 py-2 text-sm font-medium hover:bg-gray-700 transition-colors disabled:opacity-50"
+              disabled={create.isPending || !text.trim() || polishedText !== null}
             >
               {tc("actions.save")}
             </button>
           </div>
-          <input
-            ref={imageInputRef}
-            type="file"
-            accept="image/*"
-            className="hidden"
-            onChange={handleImageUpload}
-          />
+          <input ref={imageInputRef} type="file" accept="image/*" style={{ display: "none" }} onChange={handleImageUpload} />
         </div>
 
-        <div className="flex gap-1">
+        {/* Filter tabs */}
+        <div style={{ display: "flex", gap: 6, marginBottom: 16, flexWrap: "wrap" }}>
           {TAB_IDS.map((id) => (
             <button
               key={id}
+              className={`ch-pill ${tab === id ? CL_CLASS[id] : "cl-unclassified"}`}
+              style={{ cursor: "pointer", border: "none" }}
               onClick={() => setTab(id)}
-              className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
-                tab === id
-                  ? "bg-gray-900 text-white"
-                  : "text-gray-500 hover:text-gray-900 hover:bg-gray-100"
-              }`}
             >
               {t(`tabs.${id}`)}
             </button>
@@ -381,76 +294,68 @@ function Captures() {
         </div>
 
         {isLoading ? (
-          <div className="text-gray-400 text-sm">{tc("loading")}</div>
+          <p className="ch-meta">{tc("loading")}</p>
         ) : (
-          <ul className="flex flex-col gap-2">
-            {(captures ?? []).map((c: CaptureBody) => (
-              <CaptureCard
-                key={c.id}
-                c={c}
-                onReclassify={handleReclassify}
-                onDelete={async (id) => {
-                  const ok = await confirm({
-                    title: tc("confirm.deleteCapture"),
-                    description: tc("confirm.cannotUndo"),
-                    confirmLabel: tc("actions.delete"),
-                    variant: "danger",
-                  });
-                  if (ok) del.mutate({ id });
-                }}
-                onSaveText={handleSaveText}
-                onPromoteToTask={handlePromoteToTask}
-              />
-            ))}
-            {(captures ?? []).length === 0 && (
-              <p className="text-gray-400 text-sm">{t("nothingHere")}</p>
+          <div className="ch-list">
+            {(captures ?? []).length === 0 ? (
+              <div className="ch-empty">
+                <p>{t("nothingHere")}</p>
+              </div>
+            ) : (
+              (captures ?? []).map((c: CaptureBody) => (
+                <CaptureCard
+                  key={c.id}
+                  c={c}
+                  onReclassify={(id, cls) => update.mutate({ id, data: { classifiedAs: cls } })}
+                  onDelete={async (id) => {
+                    const ok = await confirm({
+                      title: tc("confirm.deleteCapture"),
+                      description: tc("confirm.cannotUndo"),
+                      confirmLabel: tc("actions.delete"),
+                      variant: "danger",
+                    });
+                    if (ok) del.mutate({ id });
+                  }}
+                  onSaveText={(id, rawText) => {
+                    apiClient.patch(`/captures/${id}`, { rawText }).then(() => invalidate()).catch(() => invalidate());
+                  }}
+                  onPromoteToTask={handlePromoteToTask}
+                />
+              ))
             )}
-          </ul>
+          </div>
         )}
       </div>
 
+      {/* Promote dialog */}
       {pendingPromote && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="bg-white rounded-xl border border-gray-200 shadow-lg p-6 w-full max-w-sm flex flex-col gap-4 mx-4">
-            <h2 className="text-base font-semibold">{t("promoteDialog.title")}</h2>
-            <p className="text-sm text-gray-500 line-clamp-3 whitespace-pre-wrap">
-              {pendingPromote.rawText}
-            </p>
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-medium text-gray-600">
-                {t("promoteDialog.project")}
-              </label>
+        <div style={{ position: "fixed", inset: 0, zIndex: 50, display: "flex", alignItems: "center", justifyContent: "center", background: "color-mix(in srgb, var(--text) 22%, transparent)" }}>
+          <div className="ch-card" style={{ padding: 24, width: "calc(100% - 32px)", maxWidth: 360, display: "flex", flexDirection: "column", gap: 16 }}>
+            <h2 style={{ margin: 0, fontFamily: "var(--font-display)", fontSize: 16, fontWeight: 700 }}>{t("promoteDialog.title")}</h2>
+            <p style={{ margin: 0, fontSize: "var(--fs-sm)", color: "var(--text-muted)", whiteSpace: "pre-wrap" }}>{pendingPromote.rawText}</p>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <label style={{ fontSize: "var(--fs-xs)", fontWeight: 600, color: "var(--text-muted)" }}>{t("promoteDialog.project")}</label>
               <select
                 value={promoteProjectId}
                 onChange={(e) => setPromoteProjectId(e.target.value)}
-                className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
+                className="ch-input"
+                style={{ padding: "8px 12px", fontSize: "var(--fs-sm)" }}
               >
                 <option value="">{tc("noProject")}</option>
                 {activeProjects.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
+                  <option key={p.id} value={p.id}>{p.name}</option>
                 ))}
               </select>
             </div>
-            <div className="flex gap-2 justify-end">
-              <button
-                onClick={() => setPendingPromote(null)}
-                className="px-4 py-2 text-sm rounded-md border border-gray-300 hover:bg-gray-50 transition-colors"
-              >
-                {tc("actions.cancel")}
-              </button>
-              <button
-                onClick={handleConfirmPromote}
-                disabled={createTask.isPending}
-                className="px-4 py-2 text-sm rounded-md bg-gray-900 text-white hover:bg-gray-700 transition-colors disabled:opacity-50"
-              >
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <button className="ch-btn ch-btn-sm" onClick={() => setPendingPromote(null)}>{tc("actions.cancel")}</button>
+              <button className="ch-btn ch-btn-primary ch-btn-sm" onClick={handleConfirmPromote} disabled={createTask.isPending}>
                 {t("promoteDialog.confirm")}
               </button>
             </div>
           </div>
         </div>
       )}
-    </div>
+    </>
   );
 }

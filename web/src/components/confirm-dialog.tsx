@@ -18,7 +18,6 @@ interface ConfirmOptions {
 }
 
 type ConfirmFn = (options: ConfirmOptions) => Promise<boolean>;
-
 const ConfirmContext = createContext<ConfirmFn | null>(null);
 
 export function useConfirm(): ConfirmFn {
@@ -33,11 +32,7 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
   const resolveRef = useRef<((value: boolean) => void) | null>(null);
 
   const confirm = useCallback<ConfirmFn>(
-    (opts) =>
-      new Promise<boolean>((resolve) => {
-        resolveRef.current = resolve;
-        setOptions(opts);
-      }),
+    (opts) => new Promise<boolean>((resolve) => { resolveRef.current = resolve; setOptions(opts); }),
     [],
   );
 
@@ -47,40 +42,41 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
     setOptions(null);
   }, []);
 
-  const variant = options?.variant ?? "default";
+  const isDanger = options?.variant === "danger";
 
   return (
     <ConfirmContext.Provider value={confirm}>
       {children}
-      <Dialog.Root
-        open={options !== null}
-        onOpenChange={(open) => {
-          if (!open) handleClose(false);
-        }}
-      >
+      <Dialog.Root open={options !== null} onOpenChange={(open) => { if (!open) handleClose(false); }}>
         <Dialog.Portal>
-          <Dialog.Overlay className="fixed inset-0 bg-black/40" />
-          <Dialog.Content className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-white rounded-xl shadow-lg p-6 w-full max-w-sm flex flex-col gap-4">
-            <Dialog.Title className="text-lg font-semibold">
+          <Dialog.Overlay style={{
+            position: "fixed", inset: 0,
+            background: "color-mix(in srgb, var(--text) 22%, transparent)",
+            backdropFilter: "blur(2px)",
+          }} />
+          <Dialog.Content
+            className="ch-card"
+            style={{
+              position: "fixed", top: "50%", left: "50%",
+              transform: "translate(-50%, -50%)",
+              width: "calc(100% - 32px)", maxWidth: 360,
+              padding: 24, display: "flex", flexDirection: "column", gap: 16,
+            }}
+          >
+            <Dialog.Title style={{ margin: 0, fontFamily: "var(--font-display)", fontSize: 17, fontWeight: 700, color: "var(--text)" }}>
               {options?.title}
             </Dialog.Title>
-            <Dialog.Description className="text-sm text-gray-600">
+            <Dialog.Description style={{ margin: 0, fontSize: "var(--fs-sm)", color: "var(--text-muted)", lineHeight: 1.5 }}>
               {options?.description}
             </Dialog.Description>
-            <div className="flex justify-end gap-3 mt-2">
-              <button
-                onClick={() => handleClose(false)}
-                className="text-sm px-4 py-2 rounded-md border border-gray-300 hover:bg-gray-50 transition-colors"
-              >
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 4 }}>
+              <button className="ch-btn ch-btn-ghost ch-btn-sm" onClick={() => handleClose(false)}>
                 {options?.cancelLabel ?? t("actions.cancel")}
               </button>
               <button
+                className={`ch-btn ch-btn-sm ${isDanger ? "" : "ch-btn-primary"}`}
+                style={isDanger ? { background: "#dc2626", borderColor: "#dc2626", color: "#fff" } : undefined}
                 onClick={() => handleClose(true)}
-                className={`text-sm px-4 py-2 rounded-md transition-colors ${
-                  variant === "danger"
-                    ? "bg-red-600 text-white hover:bg-red-700"
-                    : "bg-gray-900 text-white hover:bg-gray-700"
-                }`}
               >
                 {options?.confirmLabel ?? t("actions.confirm")}
               </button>
