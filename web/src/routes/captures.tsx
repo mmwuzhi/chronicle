@@ -27,15 +27,60 @@ interface UploadResult {
 
 export const Route = createFileRoute("/captures")({ component: Captures });
 
-type Tab = "all" | "unclassified" | "idea" | "task";
-const TAB_IDS: Tab[] = ["all", "unclassified", "idea", "task"];
+type Tab = "all" | "unclassified" | "idea" | "task" | "routine" | "log";
+const TAB_IDS: Tab[] = [
+  "all",
+  "unclassified",
+  "idea",
+  "task",
+  "routine",
+  "log",
+];
 
 const CL_CLASS: Record<Tab, string> = {
   all: "cl-unclassified",
   unclassified: "cl-unclassified",
   idea: "cl-idea",
   task: "cl-task",
+  routine: "cl-routine",
+  log: "cl-log",
 };
+
+const AttachIcon = () => (
+  <svg
+    width="14"
+    height="14"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={1.75}
+    viewBox="0 0 24 24"
+    style={{ flexShrink: 0 }}
+  >
+    <path
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      d="m18.375 12.739-7.693 7.693a4.5 4.5 0 0 1-6.364-6.364l10.94-10.94A3 3 0 1 1 19.5 7.372L8.552 18.32m.009-.01-.01.01m5.699-9.941-7.81 7.81a1.5 1.5 0 0 0 2.112 2.13"
+    />
+  </svg>
+);
+
+const MicIcon = () => (
+  <svg
+    width="14"
+    height="14"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={1.75}
+    viewBox="0 0 24 24"
+    style={{ flexShrink: 0 }}
+  >
+    <path
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      d="M12 18.75a6 6 0 0 0 6-6v-1.5m-6 7.5a6 6 0 0 1-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 0 1-3-3V4.5a3 3 0 1 1 6 0v8.25a3 3 0 0 1-3 3Z"
+    />
+  </svg>
+);
 
 function Captures() {
   const { t } = useTranslation("captures");
@@ -231,6 +276,15 @@ function Captures() {
       <div style={{ maxWidth: 768, margin: "0 auto", padding: "0 18px" }}>
         <div className="ch-page-head">
           <h1 className="ch-title">{t("title")}</h1>
+          <p
+            style={{
+              margin: "4px 0 0",
+              fontSize: "var(--fs-sm)",
+              color: "var(--text-muted)",
+            }}
+          >
+            {t("subtitle")}
+          </p>
         </div>
 
         {/* Composer */}
@@ -301,7 +355,7 @@ function Captures() {
                   fontWeight: 600,
                 }}
               >
-                ✨ {tc("actions.polishResult")}
+                ✦ {tc("actions.polishResult")}
               </span>
               <div style={{ flex: 1 }} />
               <button
@@ -327,30 +381,32 @@ function Captures() {
               className="ch-btn ch-btn-sm"
               onClick={() => imageInputRef.current?.click()}
               disabled={uploading || recording}
-              title={t("uploadImage")}
+              style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
             >
-              📎
+              <AttachIcon /> {t("attach")}
             </button>
             <button
-              className={`ch-btn ch-btn-sm${recording ? "" : ""}`}
-              style={
-                recording
+              className="ch-btn ch-btn-sm"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                ...(recording
                   ? { borderColor: "#c2410c", color: "#c2410c" }
-                  : undefined
-              }
+                  : {}),
+              }}
               onClick={handleAudioToggle}
               disabled={uploading}
-              title={t("uploadAudio")}
             >
-              {recording ? "⏹" : "🎙"}
+              {recording ? "⏹" : <MicIcon />} {t("record")}
             </button>
             <button
               className="ch-btn ch-btn-ai ch-btn-sm"
               onClick={handlePolish}
               disabled={polishing || !text.trim() || polishedText !== null}
-              title={tc("actions.polish")}
+              style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
             >
-              {polishing ? "…" : "✨"}
+              {polishing ? "…" : "✦"} {tc("actions.polish")}
             </button>
             <div style={{ flex: 1 }} />
             {(polishError || uploadError) && (

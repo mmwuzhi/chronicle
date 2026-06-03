@@ -15,6 +15,23 @@ export function fmtDate(iso: string): string {
   });
 }
 
+export function fmtShortDateTime(iso: string): string {
+  const d = new Date(iso);
+  const date = d.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+  });
+  const time = d
+    .toLocaleTimeString(undefined, {
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    })
+    .toLowerCase()
+    .replace(/\s/g, "");
+  return `${date} · ${time}`;
+}
+
 export function timeAgo(iso: string, locale: string): string {
   const diff = Date.now() - new Date(iso).getTime();
   const rtf = new Intl.RelativeTimeFormat(locale, { numeric: "auto" });

@@ -1,20 +1,25 @@
 {
   "title": "Captures",
-  "placeholder": "Capture a thought… (⌘ Enter to save)",
+  "subtitle": "Dump a thought now, classify it later.",
+  "placeholder": "What's on your mind?",
   "tabs": {
     "all": "All",
     "unclassified": "Unclassified",
-    "idea": "Ideas",
-    "task": "Tasks"
+    "idea": "Idea",
+    "task": "Task",
+    "routine": "Routine",
+    "log": "Log"
   },
   "nothingHere": "Nothing here yet.",
   "failedToLoad": "Failed to load captures",
+  "attach": "Attach",
+  "record": "Record",
   "uploadImage": "Image",
   "uploadAudio": "Record",
   "recording": "Recording…",
   "transcribing": "Transcribing…",
   "uploadFailed": "Upload failed",
-  "promoteToTask": "→ Task",
+  "promoteToTask": "Turn into task",
   "promoteDialog": {
     "title": "Promote to Task",
     "project": "Project (optional)",

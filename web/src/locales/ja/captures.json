@@ -1,20 +1,25 @@
 {
   "title": "キャプチャ",
-  "placeholder": "思いついたことを書く… (⌘ Enterで保存)",
+  "subtitle": "まず書き留めて、あとで分類しよう。",
+  "placeholder": "何を考えていますか？",
   "tabs": {
     "all": "すべて",
     "unclassified": "未分類",
     "idea": "アイデア",
-    "task": "タスク"
+    "task": "タスク",
+    "routine": "ルーティン",
+    "log": "ログ"
   },
   "nothingHere": "まだ何もありません。",
   "failedToLoad": "キャプチャの読み込みに失敗しました",
+  "attach": "添付",
+  "record": "録音",
   "uploadImage": "画像",
   "uploadAudio": "録音",
   "recording": "録音中…",
   "transcribing": "文字起こし中…",
   "uploadFailed": "アップロード失敗",
-  "promoteToTask": "→ タスク",
+  "promoteToTask": "タスクに変換",
   "promoteDialog": {
     "title": "タスクに変換",
     "project": "プロジェクト（任意）",

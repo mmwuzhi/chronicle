@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useListTimeBlocks, useCreateTimeBlock } from "../api";
 import type { TimeBlockBody } from "../api";
 import { useTranslation } from "react-i18next";
+import { fmtShortDateTime } from "../utils/format";
 
 const ClockIcon = () => (
   <svg
@@ -31,19 +32,6 @@ function useFormatDuration() {
     if (m > 0) return t("duration.minutesSeconds", { m, s });
     return t("duration.seconds", { s });
   };
-}
-
-function formatBlockDate(iso: string): string {
-  const d = new Date(iso);
-  const date = d.toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-  });
-  const time = d.toLocaleTimeString(undefined, {
-    hour: "numeric",
-    minute: "2-digit",
-  });
-  return `${date} · ${time}`;
 }
 
 export function Timer({ taskId }: { taskId: string }) {
@@ -138,7 +126,7 @@ export function Timer({ taskId }: { taskId: string }) {
               key={b.id}
               style={{ display: "flex", alignItems: "center", gap: 10 }}
             >
-              <span className="ch-meta">{formatBlockDate(b.startedAt)}</span>
+              <span className="ch-meta">{fmtShortDateTime(b.startedAt)}</span>
               <span
                 className="ch-meta"
                 style={{ color: "var(--accent)", fontWeight: 600 }}

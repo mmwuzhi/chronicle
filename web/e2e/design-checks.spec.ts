@@ -127,3 +127,48 @@ test("task detail: timer has no Tailwind classes", async ({ page }) => {
     /class="[^"]*(?:text-gray|bg-white|rounded-lg|flex-col)/,
   );
 });
+
+// ── Captures ──────────────────────────────────────────────────────────────
+
+test("captures: subtitle is visible", async ({ page }) => {
+  await page.goto("/captures");
+  await expect(page.getByText(/dump a thought/i)).toBeVisible();
+});
+
+test("captures: composer placeholder is short", async ({ page }) => {
+  await page.goto("/captures");
+  const ta = page.locator(".ch-textarea").first();
+  const ph = await ta.getAttribute("placeholder");
+  expect(ph).toMatch(/what's on your mind/i);
+  expect(ph).not.toContain("⌘");
+});
+
+test("captures: composer buttons have text labels", async ({ page }) => {
+  await page.goto("/captures");
+  await expect(page.getByRole("button", { name: /attach/i })).toBeVisible();
+  await expect(page.getByRole("button", { name: /record/i })).toBeVisible();
+  await expect(page.getByRole("button", { name: /polish/i })).toBeVisible();
+});
+
+test("captures: filter tabs include routine and log", async ({ page }) => {
+  await page.goto("/captures");
+  await expect(page.getByRole("button", { name: /^routine$/i })).toBeVisible();
+  await expect(page.getByRole("button", { name: /^log$/i })).toBeVisible();
+});
+
+test("captures: no direct Delete button on rows", async ({ page }) => {
+  await page.goto("/captures");
+  await expect(
+    page.getByRole("button", { name: /^delete$/i }).first(),
+  ).not.toBeVisible();
+});
+
+test("captures: timestamp uses Jun 3 · 8:51am format", async ({ page }) => {
+  await page.goto("/captures");
+  const meta = page.locator(".ch-meta").first();
+  if ((await meta.count()) > 0) {
+    const text = await meta.textContent();
+    expect(text).toMatch(/·\s*\d/);
+    expect(text).toMatch(/am|pm/i);
+  }
+});
