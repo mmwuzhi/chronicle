@@ -123,5 +123,7 @@ test("task detail: timer has no Tailwind classes", async ({ page }) => {
     .filter({ hasText: /—|h|m/ })
     .first();
   const html = await timerCard.innerHTML();
-  expect(html).not.toMatch(/class="[^"]*(?:text-gray|bg-white|rounded-lg|flex-col)/);
+  expect(html).not.toMatch(
+    /class="[^"]*(?:text-gray|bg-white|rounded-lg|flex-col)/,
+  );
 });

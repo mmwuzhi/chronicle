@@ -13,7 +13,9 @@ export function ProjectDropdown({ value, projects, onChange }: Props) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
-  const selected = value ? projects.find((p) => p.id === value) ?? null : null;
+  const selected = value
+    ? (projects.find((p) => p.id === value) ?? null)
+    : null;
 
   useEffect(() => {
     if (!open) return;
@@ -75,7 +77,10 @@ export function ProjectDropdown({ value, projects, onChange }: Props) {
         >
           <button
             type="button"
-            onClick={() => { onChange(null); setOpen(false); }}
+            onClick={() => {
+              onChange(null);
+              setOpen(false);
+            }}
             style={{
               display: "flex",
               alignItems: "center",
@@ -83,7 +88,8 @@ export function ProjectDropdown({ value, projects, onChange }: Props) {
               width: "100%",
               padding: "8px 12px",
               fontSize: "var(--fs-sm)",
-              color: value === null ? "var(--accent-strong)" : "var(--text-muted)",
+              color:
+                value === null ? "var(--accent-strong)" : "var(--text-muted)",
               background: "transparent",
               border: "none",
               borderRadius: 6,
@@ -107,7 +113,10 @@ export function ProjectDropdown({ value, projects, onChange }: Props) {
             <button
               key={p.id}
               type="button"
-              onClick={() => { onChange(p.id); setOpen(false); }}
+              onClick={() => {
+                onChange(p.id);
+                setOpen(false);
+              }}
               style={{
                 display: "flex",
                 alignItems: "center",

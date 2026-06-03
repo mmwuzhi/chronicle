@@ -360,7 +360,11 @@ function TaskDetail() {
                 </span>
                 <span
                   className="ch-datebtn"
-                  style={{ pointerEvents: "none", opacity: 0.7, cursor: "default" }}
+                  style={{
+                    pointerEvents: "none",
+                    opacity: 0.7,
+                    cursor: "default",
+                  }}
                 >
                   <CalendarIcon />
                   {new Date(task.createdAt).toLocaleDateString(undefined, {
@@ -410,7 +414,9 @@ function TaskDetail() {
                     if (!val) return;
                     update.mutate({
                       id: taskId,
-                      data: { dueAt: new Date(val + "T00:00:00").toISOString() },
+                      data: {
+                        dueAt: new Date(val + "T00:00:00").toISOString(),
+                      },
                     });
                   }}
                 />

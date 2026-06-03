@@ -997,7 +997,9 @@ body {
   border-radius: var(--radius-sm);
   color: var(--text-muted);
   text-decoration: none;
-  transition: background 0.14s, color 0.14s;
+  transition:
+    background 0.14s,
+    color 0.14s;
 }
 .ch-settings-icon:hover {
   background: var(--bg-tint);

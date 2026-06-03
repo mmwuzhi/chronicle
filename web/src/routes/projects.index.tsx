@@ -112,7 +112,15 @@ function Projects() {
         >
           <form
             onSubmit={handleSubmit((data) =>
-              create.mutate({ data }, { onSuccess: () => { reset(); setShowColors(false); } }),
+              create.mutate(
+                { data },
+                {
+                  onSuccess: () => {
+                    reset();
+                    setShowColors(false);
+                  },
+                },
+              ),
             )}
             style={{ display: "flex", flexDirection: "column", gap: 10 }}
           >
@@ -148,14 +156,27 @@ function Projects() {
             </div>
 
             {errors.name && (
-              <p style={{ fontSize: "var(--fs-xs)", color: "#c2410c", margin: 0 }}>
+              <p
+                style={{
+                  fontSize: "var(--fs-xs)",
+                  color: "#c2410c",
+                  margin: 0,
+                }}
+              >
                 {errors.name.message}
               </p>
             )}
 
             {/* Expandable color palette */}
             {showColors && (
-              <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+              <div
+                style={{
+                  display: "flex",
+                  gap: 8,
+                  alignItems: "center",
+                  flexWrap: "wrap",
+                }}
+              >
                 {PRESET_COLORS.map((c) => (
                   <button
                     key={c}
@@ -166,7 +187,10 @@ function Projects() {
                       height: 22,
                       borderRadius: "50%",
                       background: c,
-                      border: watchedColor === c ? "2px solid var(--text)" : "2px solid transparent",
+                      border:
+                        watchedColor === c
+                          ? "2px solid var(--text)"
+                          : "2px solid transparent",
                       cursor: "pointer",
                       flexShrink: 0,
                     }}
@@ -175,7 +199,14 @@ function Projects() {
                 <input
                   type="color"
                   {...register("color")}
-                  style={{ width: 22, height: 22, borderRadius: "50%", border: "none", padding: 0, cursor: "pointer" }}
+                  style={{
+                    width: 22,
+                    height: 22,
+                    borderRadius: "50%",
+                    border: "none",
+                    padding: 0,
+                    cursor: "pointer",
+                  }}
                   title="Custom color"
                 />
               </div>
@@ -285,7 +316,10 @@ function Projects() {
                           <DropdownMenu.Item
                             className="ch-dropdown-item"
                             onSelect={() =>
-                              update.mutate({ id: p.id, data: { archived: true } })
+                              update.mutate({
+                                id: p.id,
+                                data: { archived: true },
+                              })
                             }
                           >
                             {tc("actions.archive")}

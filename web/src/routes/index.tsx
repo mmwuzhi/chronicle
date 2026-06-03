@@ -41,7 +41,6 @@ const STATUS_CYCLE: Record<string, TaskUpdateInputBodyStatus> = {
   done: "todo",
 };
 
-
 const ChevronRight = () => (
   <svg
     width="16"

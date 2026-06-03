@@ -35,8 +35,14 @@ function useFormatDuration() {
 
 function formatBlockDate(iso: string): string {
   const d = new Date(iso);
-  const date = d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
-  const time = d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  const date = d.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+  });
+  const time = d.toLocaleTimeString(undefined, {
+    hour: "numeric",
+    minute: "2-digit",
+  });
   return `${date} · ${time}`;
 }
 
@@ -54,7 +60,9 @@ export function Timer({ taskId }: { taskId: string }) {
     if (!parsed || parsed <= 0) return;
     const durationSec = parsed * 60;
     const now = new Date();
-    const startedAt = new Date(now.getTime() - durationSec * 1000).toISOString();
+    const startedAt = new Date(
+      now.getTime() - durationSec * 1000,
+    ).toISOString();
     createBlock.mutate(
       { data: { taskId, startedAt, endedAt: now.toISOString(), durationSec } },
       {
@@ -109,7 +117,9 @@ export function Timer({ taskId }: { taskId: string }) {
         />
         <button
           onClick={handleAdd}
-          disabled={createBlock.isPending || !minutes || parseInt(minutes, 10) <= 0}
+          disabled={
+            createBlock.isPending || !minutes || parseInt(minutes, 10) <= 0
+          }
           className="ch-btn ch-btn-primary ch-btn-sm"
         >
           + {tc("actions.add")}
@@ -118,7 +128,9 @@ export function Timer({ taskId }: { taskId: string }) {
 
       {/* Time blocks list */}
       {completed.length === 0 ? (
-        <p className="ch-meta" style={{ margin: 0 }}>{t("time.noTimeLogged")}</p>
+        <p className="ch-meta" style={{ margin: 0 }}>
+          {t("time.noTimeLogged")}
+        </p>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           {completed.map((b: TimeBlockBody) => (
