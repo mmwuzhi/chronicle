@@ -29,14 +29,23 @@ export function Timer({ taskId }: { taskId: string }) {
     if (!parsed || parsed <= 0) return;
     const durationSec = Math.round(parsed * 60);
     const now = new Date();
-    const startedAt = new Date(now.getTime() - durationSec * 1000).toISOString();
+    const startedAt = new Date(
+      now.getTime() - durationSec * 1000,
+    ).toISOString();
     createBlock.mutate(
       { data: { taskId, startedAt, endedAt: now.toISOString(), durationSec } },
-      { onSuccess: () => { refetch(); setMinutes(""); } },
+      {
+        onSuccess: () => {
+          refetch();
+          setMinutes("");
+        },
+      },
     );
   };
 
-  const completed = (blocks ?? []).filter((b: TimeBlockBody) => b.endedAt !== null);
+  const completed = (blocks ?? []).filter(
+    (b: TimeBlockBody) => b.endedAt !== null,
+  );
   const totalSec = completed.reduce(
     (sum: number, b: TimeBlockBody) => sum + (b.durationSec ?? 0),
     0,
@@ -72,7 +81,9 @@ export function Timer({ taskId }: { taskId: string }) {
         />
         <button
           onClick={handleAdd}
-          disabled={createBlock.isPending || !minutes || parseFloat(minutes) <= 0}
+          disabled={
+            createBlock.isPending || !minutes || parseFloat(minutes) <= 0
+          }
           className="bg-gray-900 text-white rounded-md px-4 py-1.5 text-sm font-medium hover:bg-gray-700 transition-colors disabled:opacity-50 shrink-0"
         >
           {tc("actions.add")}

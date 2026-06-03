@@ -14,10 +14,7 @@ import {
   useListProjects,
   getListTasksQueryKey,
 } from "../api";
-import type {
-  CaptureBody,
-  CaptureCreateInputBodyMediaType,
-} from "../api";
+import type { CaptureBody, CaptureCreateInputBodyMediaType } from "../api";
 import { Nav } from "../components/nav";
 import { CaptureCard, AutoTextarea } from "../components/CaptureCard";
 import { useTranslation } from "react-i18next";
@@ -54,7 +51,10 @@ function Captures() {
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState(false);
   const [recording, setRecording] = useState(false);
-  const [pendingPromote, setPendingPromote] = useState<{ rawText: string; captureId: string } | null>(null);
+  const [pendingPromote, setPendingPromote] = useState<{
+    rawText: string;
+    captureId: string;
+  } | null>(null);
   const [promoteProjectId, setPromoteProjectId] = useState("");
   const imageInputRef = useRef<HTMLInputElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -63,21 +63,30 @@ function Captures() {
   const params = tab === "all" ? undefined : { classifiedAs: tab };
   const { data: captures, error, isLoading } = useListCaptures(params);
 
-  const invalidate = () => queryClient.invalidateQueries({ queryKey: getListCapturesQueryKey() });
-  const invalidateTasks = () => queryClient.invalidateQueries({ queryKey: getListTasksQueryKey() });
+  const invalidate = () =>
+    queryClient.invalidateQueries({ queryKey: getListCapturesQueryKey() });
+  const invalidateTasks = () =>
+    queryClient.invalidateQueries({ queryKey: getListTasksQueryKey() });
 
   const create = useCreateCapture({ mutation: { onSuccess: invalidate } });
   const update = useUpdateCapture({ mutation: { onSuccess: invalidate } });
   const del = useDeleteCapture({ mutation: { onSuccess: invalidate } });
-  const createTask = useCreateTask({ mutation: { onSuccess: invalidateTasks } });
+  const createTask = useCreateTask({
+    mutation: { onSuccess: invalidateTasks },
+  });
   const createLogEntry = useCreateLogEntry();
   const { data: projects } = useListProjects();
   const activeProjects = (projects ?? []).filter((p) => !p.archived);
 
   if (error) {
     const status = (error as { status?: number }).status;
-    if (status === 401) { navigate({ to: "/login" }); return null; }
-    return <div style={{ padding: 32, color: "#c2410c" }}>{t("failedToLoad")}</div>;
+    if (status === 401) {
+      navigate({ to: "/login" });
+      return null;
+    }
+    return (
+      <div style={{ padding: 32, color: "#c2410c" }}>{t("failedToLoad")}</div>
+    );
   }
 
   const uploadAndCreate = async (file: File | Blob, filename?: string) => {
@@ -85,13 +94,28 @@ function Captures() {
     setUploading(true);
     try {
       const fd = new FormData();
-      fd.append("file", file, filename ?? (file instanceof File ? file.name : "recording.webm"));
+      fd.append(
+        "file",
+        file,
+        filename ?? (file instanceof File ? file.name : "recording.webm"),
+      );
       const res = await apiClient.post<UploadResult>("/captures/upload", fd);
       const { mediaUrl, mediaType, rawText } = res.data;
       if (rawText) setText(rawText);
       create.mutate(
-        { data: { mediaUrl, mediaType: mediaType as CaptureCreateInputBodyMediaType, rawText: rawText ?? undefined, classifiedAs: "unclassified" } },
-        { onSuccess: () => { if (!rawText) setText(""); } },
+        {
+          data: {
+            mediaUrl,
+            mediaType: mediaType as CaptureCreateInputBodyMediaType,
+            rawText: rawText ?? undefined,
+            classifiedAs: "unclassified",
+          },
+        },
+        {
+          onSuccess: () => {
+            if (!rawText) setText("");
+          },
+        },
       );
     } catch {
       setUploadError(true);
@@ -109,12 +133,17 @@ function Captures() {
   };
 
   const handleAudioToggle = async () => {
-    if (recording) { mediaRecorderRef.current?.stop(); return; }
+    if (recording) {
+      mediaRecorderRef.current?.stop();
+      return;
+    }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const mr = new MediaRecorder(stream);
       audioChunksRef.current = [];
-      mr.ondataavailable = (e) => { audioChunksRef.current.push(e.data); };
+      mr.ondataavailable = (e) => {
+        audioChunksRef.current.push(e.data);
+      };
       mr.onstop = () => {
         stream.getTracks().forEach((t) => t.stop());
         setRecording(false);
@@ -136,7 +165,9 @@ function Captures() {
     setPolishError(false);
     setPolishing(true);
     try {
-      const res = await apiClient.post<{ polished: string }>("/ai/polish", { text: trimmed });
+      const res = await apiClient.post<{ polished: string }>("/ai/polish", {
+        text: trimmed,
+      });
       setPolishedText(res.data.polished);
     } catch {
       setPolishError(true);
@@ -150,7 +181,13 @@ function Captures() {
     const trimmed = text.trim();
     if (!trimmed) return;
     create.mutate(
-      { data: { rawText: trimmed, mediaType: "text", classifiedAs: "unclassified" } },
+      {
+        data: {
+          rawText: trimmed,
+          mediaType: "text",
+          classifiedAs: "unclassified",
+        },
+      },
       { onSuccess: () => setText("") },
     );
   };
@@ -166,11 +203,20 @@ function Captures() {
     const title = lines[0].trim();
     const body = lines.slice(1).join("\n").trim();
     createTask.mutate(
-      { data: { title, type: "task", ...(promoteProjectId ? { projectId: promoteProjectId } : {}) } },
+      {
+        data: {
+          title,
+          type: "task",
+          ...(promoteProjectId ? { projectId: promoteProjectId } : {}),
+        },
+      },
       {
         onSuccess: (task) => {
           if (body) createLogEntry.mutate({ data: { taskId: task.id, body } });
-          del.mutate({ id: pendingPromote.captureId }, { onSuccess: invalidate });
+          del.mutate(
+            { id: pendingPromote.captureId },
+            { onSuccess: invalidate },
+          );
           setPendingPromote(null);
         },
       },
@@ -188,10 +234,16 @@ function Captures() {
         </div>
 
         {/* Composer */}
-        <div className="ch-card" style={{ padding: "var(--pad)", marginBottom: 16 }}>
+        <div
+          className="ch-card"
+          style={{ padding: "var(--pad)", marginBottom: 16 }}
+        >
           <AutoTextarea
             value={displayText}
-            onChange={(v) => { if (polishedText !== null) setPolishedText(v); else setText(v); }}
+            onChange={(v) => {
+              if (polishedText !== null) setPolishedText(v);
+              else setText(v);
+            }}
             onKeyDown={(e) => {
               if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
                 e.preventDefault();
@@ -199,8 +251,19 @@ function Captures() {
                   const trimmed = polishedText.trim();
                   if (!trimmed) return;
                   create.mutate(
-                    { data: { rawText: trimmed, mediaType: "text", classifiedAs: "unclassified" } },
-                    { onSuccess: () => { setText(""); setPolishedText(null); } },
+                    {
+                      data: {
+                        rawText: trimmed,
+                        mediaType: "text",
+                        classifiedAs: "unclassified",
+                      },
+                    },
+                    {
+                      onSuccess: () => {
+                        setText("");
+                        setPolishedText(null);
+                      },
+                    },
                   );
                 } else {
                   handleAdd();
@@ -209,25 +272,51 @@ function Captures() {
             }}
             placeholder={t("placeholder")}
             className="ch-textarea"
-            style={{
-              border: "none", boxShadow: "none", padding: 0, marginBottom: 10,
-              ...(polishedText !== null ? { color: "var(--accent-strong)" } : {}),
-            } as React.CSSProperties}
+            style={
+              {
+                border: "none",
+                boxShadow: "none",
+                padding: 0,
+                marginBottom: 10,
+                ...(polishedText !== null
+                  ? { color: "var(--accent-strong)" }
+                  : {}),
+              } as React.CSSProperties
+            }
           />
 
           {polishedText !== null && (
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-              <span style={{ fontSize: "var(--fs-xs)", color: "var(--accent-strong)", fontWeight: 600 }}>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                marginBottom: 10,
+              }}
+            >
+              <span
+                style={{
+                  fontSize: "var(--fs-xs)",
+                  color: "var(--accent-strong)",
+                  fontWeight: 600,
+                }}
+              >
                 ✨ {tc("actions.polishResult")}
               </span>
               <div style={{ flex: 1 }} />
               <button
                 className="ch-btn ch-btn-ai ch-btn-sm"
-                onClick={() => { setText(polishedText); setPolishedText(null); }}
+                onClick={() => {
+                  setText(polishedText);
+                  setPolishedText(null);
+                }}
               >
                 {tc("actions.accept")}
               </button>
-              <button className="ch-btn ch-btn-sm" onClick={() => setPolishedText(null)}>
+              <button
+                className="ch-btn ch-btn-sm"
+                onClick={() => setPolishedText(null)}
+              >
                 {tc("actions.dismiss")}
               </button>
             </div>
@@ -244,7 +333,11 @@ function Captures() {
             </button>
             <button
               className={`ch-btn ch-btn-sm${recording ? "" : ""}`}
-              style={recording ? { borderColor: "#c2410c", color: "#c2410c" } : undefined}
+              style={
+                recording
+                  ? { borderColor: "#c2410c", color: "#c2410c" }
+                  : undefined
+              }
               onClick={handleAudioToggle}
               disabled={uploading}
               title={t("uploadAudio")}
@@ -266,21 +359,38 @@ function Captures() {
               </span>
             )}
             {(uploading || recording) && (
-              <span className="ch-meta">{recording ? t("recording") : t("transcribing")}</span>
+              <span className="ch-meta">
+                {recording ? t("recording") : t("transcribing")}
+              </span>
             )}
             <button
               className="ch-btn ch-btn-primary ch-btn-sm"
               onClick={handleAdd}
-              disabled={create.isPending || !text.trim() || polishedText !== null}
+              disabled={
+                create.isPending || !text.trim() || polishedText !== null
+              }
             >
               {tc("actions.save")}
             </button>
           </div>
-          <input ref={imageInputRef} type="file" accept="image/*" style={{ display: "none" }} onChange={handleImageUpload} />
+          <input
+            ref={imageInputRef}
+            type="file"
+            accept="image/*"
+            style={{ display: "none" }}
+            onChange={handleImageUpload}
+          />
         </div>
 
         {/* Filter tabs */}
-        <div style={{ display: "flex", gap: 6, marginBottom: 16, flexWrap: "wrap" }}>
+        <div
+          style={{
+            display: "flex",
+            gap: 6,
+            marginBottom: 16,
+            flexWrap: "wrap",
+          }}
+        >
           {TAB_IDS.map((id) => (
             <button
               key={id}
@@ -306,7 +416,9 @@ function Captures() {
                 <CaptureCard
                   key={c.id}
                   c={c}
-                  onReclassify={(id, cls) => update.mutate({ id, data: { classifiedAs: cls } })}
+                  onReclassify={(id, cls) =>
+                    update.mutate({ id, data: { classifiedAs: cls } })
+                  }
                   onDelete={async (id) => {
                     const ok = await confirm({
                       title: tc("confirm.deleteCapture"),
@@ -317,7 +429,10 @@ function Captures() {
                     if (ok) del.mutate({ id });
                   }}
                   onSaveText={(id, rawText) => {
-                    apiClient.patch(`/captures/${id}`, { rawText }).then(() => invalidate()).catch(() => invalidate());
+                    apiClient
+                      .patch(`/captures/${id}`, { rawText })
+                      .then(() => invalidate())
+                      .catch(() => invalidate());
                   }}
                   onPromoteToTask={handlePromoteToTask}
                 />
@@ -329,12 +444,58 @@ function Captures() {
 
       {/* Promote dialog */}
       {pendingPromote && (
-        <div style={{ position: "fixed", inset: 0, zIndex: 50, display: "flex", alignItems: "center", justifyContent: "center", background: "color-mix(in srgb, var(--text) 22%, transparent)" }}>
-          <div className="ch-card" style={{ padding: 24, width: "calc(100% - 32px)", maxWidth: 360, display: "flex", flexDirection: "column", gap: 16 }}>
-            <h2 style={{ margin: 0, fontFamily: "var(--font-display)", fontSize: 16, fontWeight: 700 }}>{t("promoteDialog.title")}</h2>
-            <p style={{ margin: 0, fontSize: "var(--fs-sm)", color: "var(--text-muted)", whiteSpace: "pre-wrap" }}>{pendingPromote.rawText}</p>
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 50,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            background: "color-mix(in srgb, var(--text) 22%, transparent)",
+          }}
+        >
+          <div
+            className="ch-card"
+            style={{
+              padding: 24,
+              width: "calc(100% - 32px)",
+              maxWidth: 360,
+              display: "flex",
+              flexDirection: "column",
+              gap: 16,
+            }}
+          >
+            <h2
+              style={{
+                margin: 0,
+                fontFamily: "var(--font-display)",
+                fontSize: 16,
+                fontWeight: 700,
+              }}
+            >
+              {t("promoteDialog.title")}
+            </h2>
+            <p
+              style={{
+                margin: 0,
+                fontSize: "var(--fs-sm)",
+                color: "var(--text-muted)",
+                whiteSpace: "pre-wrap",
+              }}
+            >
+              {pendingPromote.rawText}
+            </p>
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              <label style={{ fontSize: "var(--fs-xs)", fontWeight: 600, color: "var(--text-muted)" }}>{t("promoteDialog.project")}</label>
+              <label
+                style={{
+                  fontSize: "var(--fs-xs)",
+                  fontWeight: 600,
+                  color: "var(--text-muted)",
+                }}
+              >
+                {t("promoteDialog.project")}
+              </label>
               <select
                 value={promoteProjectId}
                 onChange={(e) => setPromoteProjectId(e.target.value)}
@@ -343,13 +504,26 @@ function Captures() {
               >
                 <option value="">{tc("noProject")}</option>
                 {activeProjects.map((p) => (
-                  <option key={p.id} value={p.id}>{p.name}</option>
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
                 ))}
               </select>
             </div>
-            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-              <button className="ch-btn ch-btn-sm" onClick={() => setPendingPromote(null)}>{tc("actions.cancel")}</button>
-              <button className="ch-btn ch-btn-primary ch-btn-sm" onClick={handleConfirmPromote} disabled={createTask.isPending}>
+            <div
+              style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}
+            >
+              <button
+                className="ch-btn ch-btn-sm"
+                onClick={() => setPendingPromote(null)}
+              >
+                {tc("actions.cancel")}
+              </button>
+              <button
+                className="ch-btn ch-btn-primary ch-btn-sm"
+                onClick={handleConfirmPromote}
+                disabled={createTask.isPending}
+              >
                 {t("promoteDialog.confirm")}
               </button>
             </div>

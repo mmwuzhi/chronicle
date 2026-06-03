@@ -105,12 +105,28 @@ export function CaptureCard({
   };
 
   return (
-    <li className="ch-row" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+    <li
+      className="ch-row"
+      style={{ display: "flex", flexDirection: "column", gap: 12 }}
+    >
       {c.mediaType === "image" && c.mediaUrl && (
-        <img src={c.mediaUrl} alt="" style={{ borderRadius: "var(--radius-sm)", maxHeight: 160, objectFit: "contain", width: "100%" }} />
+        <img
+          src={c.mediaUrl}
+          alt=""
+          style={{
+            borderRadius: "var(--radius-sm)",
+            maxHeight: 160,
+            objectFit: "contain",
+            width: "100%",
+          }}
+        />
       )}
       {c.mediaType === "audio" && c.mediaUrl && (
-        <audio controls src={c.mediaUrl} style={{ width: "100%", height: 32 }} />
+        <audio
+          controls
+          src={c.mediaUrl}
+          style={{ width: "100%", height: 32 }}
+        />
       )}
       {editing ? (
         <AutoTextarea
@@ -118,16 +134,41 @@ export function CaptureCard({
           value={draft}
           onChange={setDraft}
           onKeyDown={(e) => {
-            if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); commitEdit(); }
-            if (e.key === "Escape") { setDraft(c.rawText ?? ""); setEditing(false); }
+            if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+              e.preventDefault();
+              commitEdit();
+            }
+            if (e.key === "Escape") {
+              setDraft(c.rawText ?? "");
+              setEditing(false);
+            }
           }}
           onBlur={commitEdit}
-          style={{ border: "none", outline: "none", padding: 0, background: "transparent", resize: "none", fontSize: "var(--fs-sm)", width: "100%", color: "var(--text)" }}
+          style={{
+            border: "none",
+            outline: "none",
+            padding: 0,
+            background: "transparent",
+            resize: "none",
+            fontSize: "var(--fs-sm)",
+            width: "100%",
+            color: "var(--text)",
+          }}
         />
       ) : (
         <p
-          style={{ fontSize: "var(--fs-sm)", whiteSpace: "pre-wrap", cursor: "text", margin: 0, color: "var(--text)", lineHeight: 1.55 }}
-          onClick={() => { setDraft(c.rawText ?? ""); setEditing(true); }}
+          style={{
+            fontSize: "var(--fs-sm)",
+            whiteSpace: "pre-wrap",
+            cursor: "text",
+            margin: 0,
+            color: "var(--text)",
+            lineHeight: 1.55,
+          }}
+          onClick={() => {
+            setDraft(c.rawText ?? "");
+            setEditing(true);
+          }}
         >
           {c.rawText}
         </p>
@@ -135,29 +176,54 @@ export function CaptureCard({
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
         <select
           value={c.classifiedAs}
-          onChange={(e) => onReclassify(c.id, e.target.value as CaptureUpdateInputBodyClassifiedAs)}
+          onChange={(e) =>
+            onReclassify(
+              c.id,
+              e.target.value as CaptureUpdateInputBodyClassifiedAs,
+            )
+          }
           className={`ch-pill ${CL_CLASS[c.classifiedAs] ?? "cl-unclassified"}`}
           style={{ border: "none", cursor: "pointer", appearance: "none" }}
         >
           {RECLASSIFY_OPTIONS.map((opt) => (
-            <option key={opt} value={opt}>{tc(`classification.${opt}`)}</option>
+            <option key={opt} value={opt}>
+              {tc(`classification.${opt}`)}
+            </option>
           ))}
         </select>
         <span style={{ flex: 1 }} />
         {editing ? (
           <>
-            <button className="ch-btn ch-btn-sm" onClick={commitEdit}>{tc("actions.save")}</button>
-            <button className="ch-btn ch-btn-ghost ch-btn-sm" onClick={() => { setDraft(c.rawText ?? ""); setEditing(false); }}>{tc("actions.cancel")}</button>
+            <button className="ch-btn ch-btn-sm" onClick={commitEdit}>
+              {tc("actions.save")}
+            </button>
+            <button
+              className="ch-btn ch-btn-ghost ch-btn-sm"
+              onClick={() => {
+                setDraft(c.rawText ?? "");
+                setEditing(false);
+              }}
+            >
+              {tc("actions.cancel")}
+            </button>
           </>
         ) : (
           <>
-            {c.createdAt && <span className="ch-meta">{fmtDateTime(c.createdAt)}</span>}
+            {c.createdAt && (
+              <span className="ch-meta">{fmtDateTime(c.createdAt)}</span>
+            )}
             {c.classifiedAs === "task" && c.rawText && (
-              <button className="ch-btn ch-btn-ai ch-btn-sm" onClick={() => onPromoteToTask(c.rawText!, c.id)}>
+              <button
+                className="ch-btn ch-btn-ai ch-btn-sm"
+                onClick={() => onPromoteToTask(c.rawText!, c.id)}
+              >
                 {t("promoteToTask")}
               </button>
             )}
-            <button className="ch-btn ch-btn-danger ch-btn-sm" onClick={() => onDelete(c.id)}>
+            <button
+              className="ch-btn ch-btn-danger ch-btn-sm"
+              onClick={() => onDelete(c.id)}
+            >
               {tc("actions.delete")}
             </button>
           </>

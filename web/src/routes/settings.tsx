@@ -32,13 +32,17 @@ const LANGS = [
 
 type Section = "account" | "security";
 
-function capitalize(s: string) { return s.charAt(0).toUpperCase() + s.slice(1); }
+function capitalize(s: string) {
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
 
 function AccountSection() {
   const { t } = useTranslation("settings");
   const { t: tc } = useTranslation("common");
   const [pwModalOpen, setPwModalOpen] = useState(false);
-  const [resendState, setResendState] = useState<"idle" | "loading" | "sent" | "error">("idle");
+  const [resendState, setResendState] = useState<
+    "idle" | "loading" | "sent" | "error"
+  >("idle");
   const { data: me, isLoading } = useGetMe();
 
   if (isLoading) return <p className="ch-meta">{tc("loading")}</p>;
@@ -47,41 +51,70 @@ function AccountSection() {
   return (
     <>
       {!me.emailVerified && (
-        <div style={{
-          borderRadius: "var(--radius-sm)", background: "#fffbeb", border: "1px solid #fcd34d",
-          padding: "12px 16px", fontSize: "var(--fs-sm)", color: "#92400e",
-          display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 8,
-        }}>
+        <div
+          style={{
+            borderRadius: "var(--radius-sm)",
+            background: "#fffbeb",
+            border: "1px solid #fcd34d",
+            padding: "12px 16px",
+            fontSize: "var(--fs-sm)",
+            color: "#92400e",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 12,
+            marginBottom: 8,
+          }}
+        >
           <span>{t("profile.verifyHint")}</span>
           <button
             disabled={resendState !== "idle"}
             onClick={async () => {
               setResendState("loading");
               try {
-                const res = await apiFetch("/auth/resend-verification", { method: "POST" });
+                const res = await apiFetch("/auth/resend-verification", {
+                  method: "POST",
+                });
                 setResendState(res.status === 429 ? "error" : "sent");
-              } catch { setResendState("error"); }
+              } catch {
+                setResendState("error");
+              }
               setTimeout(() => setResendState("idle"), 4000);
             }}
             className="ch-btn ch-btn-sm"
             style={{ flexShrink: 0 }}
           >
-            {resendState === "loading" ? t("profile.verifySending") :
-              resendState === "sent" ? t("profile.verifySent") :
-                resendState === "error" ? t("profile.verifyFailed") : t("profile.verifyResend")}
+            {resendState === "loading"
+              ? t("profile.verifySending")
+              : resendState === "sent"
+                ? t("profile.verifySent")
+                : resendState === "error"
+                  ? t("profile.verifyFailed")
+                  : t("profile.verifyResend")}
           </button>
         </div>
       )}
 
       <div className="ch-divide">
         <div className="ch-setrow">
-          <div className="lbl"><span>{t("profile.email")}</span></div>
-          <span style={{ fontSize: "var(--fs-sm)", color: "var(--text)" }}>{me.email}</span>
+          <div className="lbl">
+            <span>{t("profile.email")}</span>
+          </div>
+          <span style={{ fontSize: "var(--fs-sm)", color: "var(--text)" }}>
+            {me.email}
+          </span>
         </div>
         <div className="ch-setrow">
-          <div className="lbl"><span>{t("password.label")}</span></div>
-          <button className="ch-btn ch-btn-sm" onClick={() => setPwModalOpen(true)}>
-            {me.hasPassword ? t("password.changePassword") : t("password.setPassword")}
+          <div className="lbl">
+            <span>{t("password.label")}</span>
+          </div>
+          <button
+            className="ch-btn ch-btn-sm"
+            onClick={() => setPwModalOpen(true)}
+          >
+            {me.hasPassword
+              ? t("password.changePassword")
+              : t("password.setPassword")}
           </button>
         </div>
         <LanguageRow />
@@ -89,7 +122,11 @@ function AccountSection() {
 
       <LinkedAccountsSection />
 
-      <PasswordModal open={pwModalOpen} onOpenChange={setPwModalOpen} hasPassword={me.hasPassword} />
+      <PasswordModal
+        open={pwModalOpen}
+        onOpenChange={setPwModalOpen}
+        hasPassword={me.hasPassword}
+      />
     </>
   );
 }
@@ -98,14 +135,22 @@ function LanguageRow() {
   const { t, i18n } = useTranslation("settings");
   return (
     <div className="ch-setrow">
-      <div className="lbl"><span>{t("language.title")}</span></div>
+      <div className="lbl">
+        <span>{t("language.title")}</span>
+      </div>
       <select
-        value={LANGS.find((l) => i18n.language.startsWith(l.code))?.code ?? "en"}
+        value={
+          LANGS.find((l) => i18n.language.startsWith(l.code))?.code ?? "en"
+        }
         onChange={(e) => i18n.changeLanguage(e.target.value)}
         className="ch-input"
         style={{ width: "auto", padding: "6px 10px", fontSize: "var(--fs-sm)" }}
       >
-        {LANGS.map((lang) => <option key={lang.code} value={lang.code}>{lang.label}</option>)}
+        {LANGS.map((lang) => (
+          <option key={lang.code} value={lang.code}>
+            {lang.label}
+          </option>
+        ))}
       </select>
     </div>
   );
@@ -116,14 +161,33 @@ function SecuritySection() {
   return (
     <>
       <div className="ch-divide">
-        <div style={{ padding: "16px 0" }}><PasskeysSection /></div>
-        <div style={{ padding: "16px 0" }}><MFASection /></div>
+        <div style={{ padding: "16px 0" }}>
+          <PasskeysSection />
+        </div>
+        <div style={{ padding: "16px 0" }}>
+          <MFASection />
+        </div>
       </div>
 
       {/* Danger zone inside security */}
       <div style={{ marginTop: 32 }}>
-        <div style={{ border: "1px solid #fca5a5", borderRadius: "var(--radius)", padding: "var(--pad)" }}>
-          <p style={{ margin: "0 0 12px", fontSize: "var(--fs-xs)", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "#c2410c" }}>
+        <div
+          style={{
+            border: "1px solid #fca5a5",
+            borderRadius: "var(--radius)",
+            padding: "var(--pad)",
+          }}
+        >
+          <p
+            style={{
+              margin: "0 0 12px",
+              fontSize: "var(--fs-xs)",
+              fontWeight: 700,
+              letterSpacing: "0.08em",
+              textTransform: "uppercase",
+              color: "#c2410c",
+            }}
+          >
             {t("danger.title")}
           </p>
           <DangerSection />
@@ -140,7 +204,10 @@ function Settings() {
   const queryClient = useQueryClient();
   const [section, setSection] = useState<Section>("account");
   const [toast, setToast] = useState<string | null>(() => {
-    if (search.oauth_linked) return t("account.linkSuccess", { provider: capitalize(search.oauth_linked) });
+    if (search.oauth_linked)
+      return t("account.linkSuccess", {
+        provider: capitalize(search.oauth_linked),
+      });
     if (search.oauth_error) return t("account.linkError");
     return null;
   });
@@ -165,7 +232,10 @@ function Settings() {
 
   if (error) {
     const status = (error as { status?: number }).status;
-    if (status === 401) { navigate({ to: "/login" }); return null; }
+    if (status === 401) {
+      navigate({ to: "/login" });
+      return null;
+    }
   }
 
   const tabs: { id: Section; label: string }[] = [
@@ -178,11 +248,21 @@ function Settings() {
       <Nav />
 
       {toast && (
-        <div style={{
-          position: "fixed", top: 66, left: "50%", transform: "translateX(-50%)", zIndex: 50,
-          background: "var(--text)", color: "#fff", fontSize: "var(--fs-sm)",
-          padding: "8px 16px", borderRadius: "var(--radius-pill)", boxShadow: "var(--shadow-lg)",
-        }}>
+        <div
+          style={{
+            position: "fixed",
+            top: 66,
+            left: "50%",
+            transform: "translateX(-50%)",
+            zIndex: 50,
+            background: "var(--text)",
+            color: "#fff",
+            fontSize: "var(--fs-sm)",
+            padding: "8px 16px",
+            borderRadius: "var(--radius-pill)",
+            boxShadow: "var(--shadow-lg)",
+          }}
+        >
           {toast}
         </div>
       )}

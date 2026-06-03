@@ -21,7 +21,9 @@ import { Timer } from "../components/Timer";
 import { STATUS_CYCLE } from "../constants/status";
 import { useTranslation } from "react-i18next";
 
-export const Route = createFileRoute("/tasks/$taskId")({ component: TaskDetail });
+export const Route = createFileRoute("/tasks/$taskId")({
+  component: TaskDetail,
+});
 
 const ST_CLASS: Record<string, string> = {
   todo: "st-todo",
@@ -48,11 +50,19 @@ function TaskDetail() {
   const [editingEntryId, setEditingEntryId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState("");
 
-  const { data: task, error: taskError, isLoading: taskLoading } = useGetTask(taskId);
-  const { data: entries, isLoading: entriesLoading } = useListLogEntries({ taskId });
+  const {
+    data: task,
+    error: taskError,
+    isLoading: taskLoading,
+  } = useGetTask(taskId);
+  const { data: entries, isLoading: entriesLoading } = useListLogEntries({
+    taskId,
+  });
   const { data: projects } = useListProjects();
   const activeProjects = (projects ?? []).filter((p) => !p.archived);
-  const currentProject = task?.projectId ? activeProjects.find((p) => p.id === task.projectId) : null;
+  const currentProject = task?.projectId
+    ? activeProjects.find((p) => p.id === task.projectId)
+    : null;
 
   const invalidateTasks = () => {
     queryClient.invalidateQueries({ queryKey: getListTasksQueryKey() });
@@ -64,25 +74,38 @@ function TaskDetail() {
       onMutate: async ({ id, data }) => {
         await queryClient.cancelQueries({ queryKey: getGetTaskQueryKey(id) });
         await queryClient.cancelQueries({ queryKey: getListTasksQueryKey() });
-        const previousTask = queryClient.getQueryData<TaskBody>(getGetTaskQueryKey(id));
-        const previousLists = queryClient.getQueriesData<TaskBody[]>({ queryKey: getListTasksQueryKey() });
-        queryClient.setQueryData<TaskBody>(getGetTaskQueryKey(id), (old) => old ? { ...old, ...data } : old);
+        const previousTask = queryClient.getQueryData<TaskBody>(
+          getGetTaskQueryKey(id),
+        );
+        const previousLists = queryClient.getQueriesData<TaskBody[]>({
+          queryKey: getListTasksQueryKey(),
+        });
+        queryClient.setQueryData<TaskBody>(getGetTaskQueryKey(id), (old) =>
+          old ? { ...old, ...data } : old,
+        );
         queryClient.setQueriesData<TaskBody[]>(
           { queryKey: getListTasksQueryKey() },
-          (old) => old == null ? old : old.map((t) => (t.id === id ? { ...t, ...data } : t)),
+          (old) =>
+            old == null
+              ? old
+              : old.map((t) => (t.id === id ? { ...t, ...data } : t)),
         );
         return { previousTask, previousLists };
       },
       onError: (_err, { id }, context) => {
         queryClient.setQueryData(getGetTaskQueryKey(id), context?.previousTask);
-        context?.previousLists.forEach(([key, val]) => queryClient.setQueryData(key, val));
+        context?.previousLists.forEach(([key, val]) =>
+          queryClient.setQueryData(key, val),
+        );
       },
       onSettled: invalidateTasks,
     },
   });
 
   const invalidateEntries = () =>
-    queryClient.invalidateQueries({ queryKey: getListLogEntriesQueryKey({ taskId }) });
+    queryClient.invalidateQueries({
+      queryKey: getListLogEntriesQueryKey({ taskId }),
+    });
 
   const createEntry = useCreateLogEntry();
   const updateEntry = useUpdateLogEntry();
@@ -90,8 +113,15 @@ function TaskDetail() {
 
   if (taskError) {
     const status = (taskError as { status?: number }).status;
-    if (status === 401) { navigate({ to: "/login" }); return null; }
-    return <div style={{ padding: 32, color: "#c2410c" }}>{t("detail.failedToLoad")}</div>;
+    if (status === 401) {
+      navigate({ to: "/login" });
+      return null;
+    }
+    return (
+      <div style={{ padding: 32, color: "#c2410c" }}>
+        {t("detail.failedToLoad")}
+      </div>
+    );
   }
 
   const handleCycleStatus = () => {
@@ -106,7 +136,9 @@ function TaskDetail() {
     setPolishError(false);
     setPolishing(true);
     try {
-      const res = await apiClient.post<{ polished: string }>("/ai/polish", { text: trimmed });
+      const res = await apiClient.post<{ polished: string }>("/ai/polish", {
+        text: trimmed,
+      });
       setBody(res.data.polished);
     } catch {
       setPolishError(true);
@@ -121,14 +153,25 @@ function TaskDetail() {
     if (!trimmed) return;
     createEntry.mutate(
       { data: { body: trimmed, taskId } },
-      { onSuccess: () => { invalidateEntries(); setBody(""); } },
+      {
+        onSuccess: () => {
+          invalidateEntries();
+          setBody("");
+        },
+      },
     );
   };
 
   const handleSaveTitle = () => {
     const trimmed = titleDraft.trim();
-    if (!trimmed || !task || trimmed === task.title) { setTitleEditing(false); return; }
-    update.mutate({ id: taskId, data: { title: trimmed } }, { onSuccess: () => setTitleEditing(false) });
+    if (!trimmed || !task || trimmed === task.title) {
+      setTitleEditing(false);
+      return;
+    }
+    update.mutate(
+      { id: taskId, data: { title: trimmed } },
+      { onSuccess: () => setTitleEditing(false) },
+    );
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -140,8 +183,14 @@ function TaskDetail() {
     try {
       const fd = new FormData();
       fd.append("file", file, file.name);
-      const res = await apiClient.post<{ mediaUrl: string; mediaType: string }>("/captures/upload", fd);
-      await apiClient.patch(`/tasks/${taskId}`, { mediaUrl: res.data.mediaUrl, mediaType: res.data.mediaType });
+      const res = await apiClient.post<{ mediaUrl: string; mediaType: string }>(
+        "/captures/upload",
+        fd,
+      );
+      await apiClient.patch(`/tasks/${taskId}`, {
+        mediaUrl: res.data.mediaUrl,
+        mediaType: res.data.mediaType,
+      });
       invalidateTasks();
     } catch {
       setUploadError(true);
@@ -171,23 +220,42 @@ function TaskDetail() {
         ) : task ? (
           <>
             {/* Title + status */}
-            <div style={{ display: "flex", alignItems: "flex-start", gap: 14, marginBottom: 18 }}>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "flex-start",
+                gap: 14,
+                marginBottom: 18,
+              }}
+            >
               <div style={{ flex: 1, minWidth: 0 }}>
                 {titleEditing ? (
-                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  <div
+                    style={{ display: "flex", flexDirection: "column", gap: 8 }}
+                  >
                     <input
                       autoFocus
                       value={titleDraft}
                       onChange={(e) => setTitleDraft(e.target.value)}
-                      onKeyDown={(e) => { if (e.key === "Enter") handleSaveTitle(); if (e.key === "Escape") setTitleEditing(false); }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") handleSaveTitle();
+                        if (e.key === "Escape") setTitleEditing(false);
+                      }}
                       className="ch-input ch-title"
                       style={{ fontSize: "var(--fs-title)" }}
                     />
                     <div style={{ display: "flex", gap: 8 }}>
-                      <button className="ch-btn ch-btn-primary ch-btn-sm" onClick={handleSaveTitle} disabled={update.isPending}>
+                      <button
+                        className="ch-btn ch-btn-primary ch-btn-sm"
+                        onClick={handleSaveTitle}
+                        disabled={update.isPending}
+                      >
                         {tc("actions.save")}
                       </button>
-                      <button className="ch-btn ch-btn-sm" onClick={() => setTitleEditing(false)}>
+                      <button
+                        className="ch-btn ch-btn-sm"
+                        onClick={() => setTitleEditing(false)}
+                      >
                         {tc("actions.cancel")}
                       </button>
                     </div>
@@ -195,8 +263,14 @@ function TaskDetail() {
                 ) : (
                   <h1
                     className="ch-title"
-                    onClick={() => { setTitleDraft(task.title); setTitleEditing(true); }}
-                    style={{ cursor: "text", opacity: task.status === "done" ? 0.5 : 1 }}
+                    onClick={() => {
+                      setTitleDraft(task.title);
+                      setTitleEditing(true);
+                    }}
+                    style={{
+                      cursor: "text",
+                      opacity: task.status === "done" ? 0.5 : 1,
+                    }}
                     title={t("detail.clickToEdit")}
                   >
                     {task.title}
@@ -213,30 +287,81 @@ function TaskDetail() {
             </div>
 
             {/* Meta card */}
-            <div className="ch-card ch-divide" style={{ padding: "0 var(--pad)", marginBottom: 8 }}>
+            <div
+              className="ch-card ch-divide"
+              style={{ padding: "0 var(--pad)", marginBottom: 8 }}
+            >
               {/* Project */}
-              <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 0" }}>
-                <span style={{ width: 78, fontSize: "var(--fs-sm)", color: "var(--text-muted)", flexShrink: 0 }}>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 12,
+                  padding: "12px 0",
+                }}
+              >
+                <span
+                  style={{
+                    width: 78,
+                    fontSize: "var(--fs-sm)",
+                    color: "var(--text-muted)",
+                    flexShrink: 0,
+                  }}
+                >
                   {t("filterProject")}
                 </span>
                 <select
                   value={task.projectId ?? ""}
-                  onChange={(e) => { const val = e.target.value; update.mutate({ id: taskId, data: { projectId: val || undefined } }); }}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    update.mutate({
+                      id: taskId,
+                      data: { projectId: val || undefined },
+                    });
+                  }}
                   className="ch-input"
-                  style={{ flex: 1, padding: "5px 10px", fontSize: "var(--fs-sm)" }}
+                  style={{
+                    flex: 1,
+                    padding: "5px 10px",
+                    fontSize: "var(--fs-sm)",
+                  }}
                 >
                   <option value="">{tc("noProject")}</option>
                   {activeProjects.map((p) => (
-                    <option key={p.id} value={p.id}>{p.name}</option>
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
                   ))}
                 </select>
                 {currentProject && (
-                  <span style={{ width: 10, height: 10, borderRadius: "50%", background: currentProject.color, flexShrink: 0 }} />
+                  <span
+                    style={{
+                      width: 10,
+                      height: 10,
+                      borderRadius: "50%",
+                      background: currentProject.color,
+                      flexShrink: 0,
+                    }}
+                  />
                 )}
               </div>
               {/* Due date */}
-              <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 0" }}>
-                <span style={{ width: 78, fontSize: "var(--fs-sm)", color: "var(--text-muted)", flexShrink: 0 }}>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 12,
+                  padding: "12px 0",
+                }}
+              >
+                <span
+                  style={{
+                    width: 78,
+                    fontSize: "var(--fs-sm)",
+                    color: "var(--text-muted)",
+                    flexShrink: 0,
+                  }}
+                >
                   {t("dueDate")}
                 </span>
                 <input
@@ -245,15 +370,34 @@ function TaskDetail() {
                   onChange={(e) => {
                     const val = e.target.value;
                     if (!val) return;
-                    update.mutate({ id: taskId, data: { dueAt: new Date(val + "T00:00:00").toISOString() } });
+                    update.mutate({
+                      id: taskId,
+                      data: {
+                        dueAt: new Date(val + "T00:00:00").toISOString(),
+                      },
+                    });
                   }}
                   className="ch-datebtn"
                   style={{ fontFamily: "var(--font-mono)", fontSize: 12 }}
                 />
               </div>
               {/* Files */}
-              <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 0" }}>
-                <span style={{ width: 78, fontSize: "var(--fs-sm)", color: "var(--text-muted)", flexShrink: 0 }}>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 12,
+                  padding: "12px 0",
+                }}
+              >
+                <span
+                  style={{
+                    width: 78,
+                    fontSize: "var(--fs-sm)",
+                    color: "var(--text-muted)",
+                    flexShrink: 0,
+                  }}
+                >
                   {t("detail.uploadAttachment") ?? "Files"}
                 </span>
                 <button
@@ -261,15 +405,38 @@ function TaskDetail() {
                   onClick={() => fileInputRef.current?.click()}
                   disabled={uploading}
                 >
-                  {uploading ? "…" : "📎"} {t("detail.uploadAttachment") ?? "Attach"}
+                  {uploading ? "…" : "📎"}{" "}
+                  {t("detail.uploadAttachment") ?? "Attach"}
                 </button>
-                {uploadError && <span style={{ fontSize: "var(--fs-xs)", color: "#c2410c" }}>{t("detail.uploadFailed")}</span>}
+                {uploadError && (
+                  <span style={{ fontSize: "var(--fs-xs)", color: "#c2410c" }}>
+                    {t("detail.uploadFailed")}
+                  </span>
+                )}
                 {task.mediaUrl && task.mediaType === "image" && (
-                  <a href={task.mediaUrl} target="_blank" rel="noopener noreferrer">
-                    <img src={task.mediaUrl} alt="attachment" style={{ maxHeight: 40, borderRadius: "var(--radius-sm)", border: "1px solid var(--border)" }} />
+                  <a
+                    href={task.mediaUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    <img
+                      src={task.mediaUrl}
+                      alt="attachment"
+                      style={{
+                        maxHeight: 40,
+                        borderRadius: "var(--radius-sm)",
+                        border: "1px solid var(--border)",
+                      }}
+                    />
                   </a>
                 )}
-                <input ref={fileInputRef} type="file" accept="image/*,audio/*" style={{ display: "none" }} onChange={handleFileUpload} />
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*,audio/*"
+                  style={{ display: "none" }}
+                  onChange={handleFileUpload}
+                />
               </div>
             </div>
 
@@ -292,20 +459,42 @@ function TaskDetail() {
             </div>
 
             {/* Log composer */}
-            <div className="ch-card" style={{ padding: "var(--pad)", marginBottom: 12 }}>
+            <div
+              className="ch-card"
+              style={{ padding: "var(--pad)", marginBottom: 12 }}
+            >
               <textarea
                 className="ch-textarea"
                 value={body}
                 onChange={(e) => setBody(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleAddEntry(); }
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    handleAddEntry();
+                  }
                 }}
                 placeholder={t("log.placeholder")}
                 rows={2}
-                style={{ border: "none", boxShadow: "none", padding: 0, marginBottom: 10 }}
+                style={{
+                  border: "none",
+                  boxShadow: "none",
+                  padding: 0,
+                  marginBottom: 10,
+                }}
               />
-              <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, alignItems: "center" }}>
-                {polishError && <span style={{ fontSize: "var(--fs-xs)", color: "#c2410c" }}>{tc("errors.polishFailed")}</span>}
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "flex-end",
+                  gap: 8,
+                  alignItems: "center",
+                }}
+              >
+                {polishError && (
+                  <span style={{ fontSize: "var(--fs-xs)", color: "#c2410c" }}>
+                    {tc("errors.polishFailed")}
+                  </span>
+                )}
                 <button
                   className="ch-btn ch-btn-ai ch-btn-sm"
                   onClick={handlePolish}
@@ -341,12 +530,20 @@ function TaskDetail() {
                             autoFocus
                             value={editDraft}
                             onChange={(ev) => setEditDraft(ev.target.value)}
-                            onKeyDown={(ev) => { if (ev.key === "Escape") setEditingEntryId(null); }}
+                            onKeyDown={(ev) => {
+                              if (ev.key === "Escape") setEditingEntryId(null);
+                            }}
                             rows={3}
                             className="ch-textarea"
                             style={{ marginBottom: 10 }}
                           />
-                          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                          <div
+                            style={{
+                              display: "flex",
+                              gap: 8,
+                              justifyContent: "flex-end",
+                            }}
+                          >
                             <button
                               className="ch-btn ch-btn-primary ch-btn-sm"
                               onClick={() => {
@@ -354,14 +551,22 @@ function TaskDetail() {
                                 if (!trimmed) return;
                                 updateEntry.mutate(
                                   { id: e.id, data: { body: trimmed } },
-                                  { onSuccess: () => { invalidateEntries(); setEditingEntryId(null); } },
+                                  {
+                                    onSuccess: () => {
+                                      invalidateEntries();
+                                      setEditingEntryId(null);
+                                    },
+                                  },
                                 );
                               }}
                               disabled={updateEntry.isPending}
                             >
                               {tc("actions.save")}
                             </button>
-                            <button className="ch-btn ch-btn-sm" onClick={() => setEditingEntryId(null)}>
+                            <button
+                              className="ch-btn ch-btn-sm"
+                              onClick={() => setEditingEntryId(null)}
+                            >
                               {tc("actions.cancel")}
                             </button>
                           </div>
@@ -369,17 +574,37 @@ function TaskDetail() {
                       ) : (
                         <>
                           <p
-                            style={{ fontSize: "var(--fs-sm)", lineHeight: 1.55, margin: "0 0 10px", whiteSpace: "pre-wrap", cursor: "text" }}
-                            onClick={() => { setEditingEntryId(e.id); setEditDraft(e.body); }}
+                            style={{
+                              fontSize: "var(--fs-sm)",
+                              lineHeight: 1.55,
+                              margin: "0 0 10px",
+                              whiteSpace: "pre-wrap",
+                              cursor: "text",
+                            }}
+                            onClick={() => {
+                              setEditingEntryId(e.id);
+                              setEditDraft(e.body);
+                            }}
                           >
                             {e.body}
                           </p>
-                          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                            <span className="ch-meta">{new Date(e.createdAt).toLocaleString()}</span>
+                          <div
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 10,
+                            }}
+                          >
+                            <span className="ch-meta">
+                              {new Date(e.createdAt).toLocaleString()}
+                            </span>
                             <div style={{ flex: 1 }} />
                             <button
                               className="ch-btn ch-btn-ghost ch-btn-sm"
-                              onClick={() => { setEditingEntryId(e.id); setEditDraft(e.body); }}
+                              onClick={() => {
+                                setEditingEntryId(e.id);
+                                setEditDraft(e.body);
+                              }}
                             >
                               {tc("actions.edit") ?? "Edit"}
                             </button>
@@ -392,7 +617,11 @@ function TaskDetail() {
                                   confirmLabel: tc("actions.delete"),
                                   variant: "danger",
                                 });
-                                if (ok) deleteEntry.mutate({ id: e.id }, { onSuccess: invalidateEntries });
+                                if (ok)
+                                  deleteEntry.mutate(
+                                    { id: e.id },
+                                    { onSuccess: invalidateEntries },
+                                  );
                               }}
                             >
                               {tc("actions.delete")}
