@@ -142,6 +142,10 @@ function Projects() {
               />
               <input
                 {...register("name")}
+                autoComplete="off"
+                data-1p-ignore
+                data-lpignore="true"
+                data-form-type="other"
                 placeholder={t("newProjectName")}
                 className="ch-input"
                 style={{ flex: 1 }}

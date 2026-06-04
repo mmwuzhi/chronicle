@@ -866,8 +866,12 @@ body {
 .ch-sresult .s-body {
   flex: 1;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
 }
 .ch-sresult .s-title {
+  display: block;
+  max-width: 100%;
   font-size: var(--fs-sm);
   color: var(--text);
   white-space: nowrap;

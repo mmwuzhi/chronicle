@@ -88,9 +88,9 @@ export function Timer({ taskId }: { taskId: string }) {
         </span>
         <span style={{ flex: 1 }} />
         <input
-          type="number"
-          min="1"
-          step="1"
+          type="text"
+          inputMode="numeric"
+          pattern="[0-9]*"
           value={minutes}
           onChange={(e) => setMinutes(e.target.value.replace(/[^0-9]/g, ""))}
           onKeyDown={(e) => {

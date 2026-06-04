@@ -181,3 +181,42 @@ test("markdown: capture display uses ch-prose renderer", async ({ page }) => {
   if ((await rows.count()) === 0) return test.skip();
   await expect(page.locator(".ch-prose").first()).toBeVisible();
 });
+
+// ── Input behavior ────────────────────────────────────────────────────────
+
+test("timer: minutes input has no spinner and rejects non-digits", async ({
+  page,
+}) => {
+  const ok = await goToFirstTask(page);
+  if (!ok) return;
+  const input = page.locator('input[inputmode="numeric"]').first();
+  await expect(input).toHaveAttribute("type", "text");
+  await input.fill("12abc");
+  await expect(input).toHaveValue("12");
+});
+
+// ── Search modal ──────────────────────────────────────────────────────────
+
+test("search: only one close affordance (no X icon)", async ({ page }) => {
+  await page.goto("/");
+  await page.locator(".ch-searchtrigger, .ch-search-mobile").first().click();
+  await expect(page.getByRole("button", { name: /^close$/i })).toHaveCount(0);
+});
+
+test("search: long result titles truncate with ellipsis", async ({ page }) => {
+  await page.goto("/");
+  await page.locator(".ch-searchtrigger, .ch-search-mobile").first().click();
+  await page.locator(".ch-searchbar input").fill("a");
+  await page.waitForTimeout(500);
+  const titles = page.locator(".ch-sresult .s-title");
+  if ((await titles.count()) === 0) return test.skip();
+  const first = titles.first();
+  const overflowProp = await first.evaluate(
+    (el) => getComputedStyle(el).overflow,
+  );
+  expect(overflowProp).toBe("hidden");
+  const displayProp = await first.evaluate(
+    (el) => getComputedStyle(el).display,
+  );
+  expect(displayProp).toBe("block");
+});

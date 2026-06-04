@@ -86,23 +86,6 @@ const SearchIcon = () => (
     <path d="m21 21-4.35-4.35" />
   </svg>
 );
-const XIcon = () => (
-  <svg
-    width="16"
-    height="16"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth={2}
-    viewBox="0 0 24 24"
-  >
-    <path
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      d="M6 18 18 6M6 6l12 12"
-    />
-  </svg>
-);
-
 export function SearchModal({ onClose }: { onClose: () => void }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -166,13 +149,6 @@ export function SearchModal({ onClose }: { onClose: () => void }) {
           <kbd>Esc</kbd>
           <button className="s-cancel" onClick={onClose}>
             {t("actions.cancel")}
-          </button>
-          <button
-            className="ch-iconbtn s-close"
-            onClick={onClose}
-            aria-label="Close"
-          >
-            <XIcon />
           </button>
         </div>
 
