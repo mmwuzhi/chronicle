@@ -1,11 +1,12 @@
 API_DIR := api
 WEB_DIR := web
+DESKTOP_DIR := desktop
 MIGRATIONS := $(API_DIR)/db/migrations
 
 -include .env
 export
 
-.PHONY: help dev dev-data down api web orval test lint migrate migrate-new sqlc setup
+.PHONY: help dev dev-data down api web desktop-capture orval test lint migrate migrate-new sqlc setup
 
 help:
 	@grep -hE '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-16s %s\n", $$1, $$2}'
@@ -31,6 +32,9 @@ api: dev-data ## run API server locally (starts postgres + redis if needed)
 
 web: ## run Vite dev server
 	cd $(WEB_DIR) && pnpm dev
+
+desktop-capture: ## run the macOS menu bar quick-capture app
+	cd $(DESKTOP_DIR) && swift run ChronicleDesktop
 
 orval: ## regenerate typed API hooks (API server must be running)
 	cd $(WEB_DIR) && pnpm orval

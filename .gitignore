@@ -12,5 +12,9 @@ web/node_modules/
 web/dist/
 web/.pnpm-store/
 
+# Swift
+.build/
+desktop/.build/
+
 # OS
 .DS_Store
