@@ -62,6 +62,7 @@ export interface CaptureBody {
   mediaUrl: string | null;
   /** @nullable */
   rawText: string | null;
+  source: string;
   /** @nullable */
   taskId: string | null;
 }
@@ -93,6 +94,8 @@ export interface CaptureCreateInputBody {
   mediaType: CaptureCreateInputBodyMediaType;
   mediaUrl?: string;
   rawText?: string;
+  /** Capture source, for example web or desktop_quick_capture */
+  source?: string;
   taskId?: string;
 }
 

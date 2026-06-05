@@ -13,9 +13,9 @@ import (
 )
 
 const createCapture = `-- name: CreateCapture :one
-INSERT INTO captures (user_id, raw_text, media_url, media_type, classified_as, task_id)
-VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING id, user_id, raw_text, media_url, media_type, classified_as, task_id, created_at
+INSERT INTO captures (user_id, raw_text, media_url, media_type, classified_as, task_id, source)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
+RETURNING id, user_id, raw_text, media_url, media_type, classified_as, task_id, created_at, source
 `
 
 type CreateCaptureParams struct {
@@ -25,6 +25,7 @@ type CreateCaptureParams struct {
 	MediaType    CaptureMediaType    `json:"media_type"`
 	ClassifiedAs CaptureClassifiedAs `json:"classified_as"`
 	TaskID       pgtype.UUID         `json:"task_id"`
+	Source       string              `json:"source"`
 }
 
 func (q *Queries) CreateCapture(ctx context.Context, arg CreateCaptureParams) (Capture, error) {
@@ -35,6 +36,7 @@ func (q *Queries) CreateCapture(ctx context.Context, arg CreateCaptureParams) (C
 		arg.MediaType,
 		arg.ClassifiedAs,
 		arg.TaskID,
+		arg.Source,
 	)
 	var i Capture
 	err := row.Scan(
@@ -46,6 +48,7 @@ func (q *Queries) CreateCapture(ctx context.Context, arg CreateCaptureParams) (C
 		&i.ClassifiedAs,
 		&i.TaskID,
 		&i.CreatedAt,
+		&i.Source,
 	)
 	return i, err
 }
@@ -69,7 +72,7 @@ func (q *Queries) DeleteCapture(ctx context.Context, arg DeleteCaptureParams) (u
 }
 
 const listCaptures = `-- name: ListCaptures :many
-SELECT id, user_id, raw_text, media_url, media_type, classified_as, task_id, created_at FROM captures
+SELECT id, user_id, raw_text, media_url, media_type, classified_as, task_id, created_at, source FROM captures
 WHERE user_id = $1
   AND ($2::text IS NULL OR classified_as::text = $2::text)
 ORDER BY created_at DESC
@@ -98,6 +101,7 @@ func (q *Queries) ListCaptures(ctx context.Context, arg ListCapturesParams) ([]C
 			&i.ClassifiedAs,
 			&i.TaskID,
 			&i.CreatedAt,
+			&i.Source,
 		); err != nil {
 			return nil, err
 		}
@@ -110,7 +114,7 @@ func (q *Queries) ListCaptures(ctx context.Context, arg ListCapturesParams) ([]C
 }
 
 const listCapturesInRange = `-- name: ListCapturesInRange :many
-SELECT id, user_id, raw_text, media_url, media_type, classified_as, task_id, created_at FROM captures
+SELECT id, user_id, raw_text, media_url, media_type, classified_as, task_id, created_at, source FROM captures
 WHERE user_id = $1
   AND created_at >= $2
   AND created_at < $3
@@ -141,6 +145,7 @@ func (q *Queries) ListCapturesInRange(ctx context.Context, arg ListCapturesInRan
 			&i.ClassifiedAs,
 			&i.TaskID,
 			&i.CreatedAt,
+			&i.Source,
 		); err != nil {
 			return nil, err
 		}
@@ -161,7 +166,7 @@ SET
                   ELSE classified_as END,
   task_id       = COALESCE($3::uuid, task_id)
 WHERE id = $4 AND user_id = $5
-RETURNING id, user_id, raw_text, media_url, media_type, classified_as, task_id, created_at
+RETURNING id, user_id, raw_text, media_url, media_type, classified_as, task_id, created_at, source
 `
 
 type UpdateCaptureParams struct {
@@ -190,6 +195,7 @@ func (q *Queries) UpdateCapture(ctx context.Context, arg UpdateCaptureParams) (C
 		&i.ClassifiedAs,
 		&i.TaskID,
 		&i.CreatedAt,
+		&i.Source,
 	)
 	return i, err
 }

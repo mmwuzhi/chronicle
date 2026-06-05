@@ -5,8 +5,8 @@ WHERE user_id = $1
 ORDER BY created_at DESC;
 
 -- name: CreateCapture :one
-INSERT INTO captures (user_id, raw_text, media_url, media_type, classified_as, task_id)
-VALUES ($1, $2, $3, $4, $5, $6)
+INSERT INTO captures (user_id, raw_text, media_url, media_type, classified_as, task_id, source)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
 RETURNING *;
 
 -- name: UpdateCapture :one

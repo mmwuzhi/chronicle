@@ -197,6 +197,7 @@ type Capture struct {
 	ClassifiedAs CaptureClassifiedAs `json:"classified_as"`
 	TaskID       pgtype.UUID         `json:"task_id"`
 	CreatedAt    pgtype.Timestamptz  `json:"created_at"`
+	Source       string              `json:"source"`
 }
 
 type LogEntry struct {

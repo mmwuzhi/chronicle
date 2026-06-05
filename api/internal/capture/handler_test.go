@@ -138,6 +138,7 @@ func TestCreateCapture_TextHappyPath(t *testing.T) {
 		RawText      *string `json:"rawText"`
 		MediaType    string  `json:"mediaType"`
 		ClassifiedAs string  `json:"classifiedAs"`
+		Source       string  `json:"source"`
 	}
 	decodeBody(t, resp, &body)
 
@@ -153,6 +154,34 @@ func TestCreateCapture_TextHappyPath(t *testing.T) {
 	if body.ClassifiedAs != "idea" {
 		t.Fatalf("expected classifiedAs 'idea', got %q", body.ClassifiedAs)
 	}
+	if body.Source != "web" {
+		t.Fatalf("expected default source 'web', got %q", body.Source)
+	}
+}
+
+func TestCreateCapture_DesktopSource(t *testing.T) {
+	srv, pool := newServer(t)
+	_, token := createTestUser(t, pool)
+
+	resp := do(t, srv.Client(), http.MethodPost, srv.URL+"/captures", token, map[string]any{
+		"mediaType":    "text",
+		"classifiedAs": "unclassified",
+		"rawText":      "Captured from a global shortcut",
+		"source":       "desktop_quick_capture",
+	})
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+
+	var body struct {
+		Source string `json:"source"`
+	}
+	decodeBody(t, resp, &body)
+
+	if body.Source != "desktop_quick_capture" {
+		t.Fatalf("expected desktop source, got %q", body.Source)
+	}
 }
 
 func TestCreateCapture_InvalidMediaType(t *testing.T) {
@@ -162,6 +191,22 @@ func TestCreateCapture_InvalidMediaType(t *testing.T) {
 	resp := do(t, srv.Client(), http.MethodPost, srv.URL+"/captures", token, map[string]any{
 		"mediaType":    "video",
 		"classifiedAs": "unclassified",
+	})
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("expected 422, got %d", resp.StatusCode)
+	}
+}
+
+func TestCreateCapture_TextRequiresRawText(t *testing.T) {
+	srv, pool := newServer(t)
+	_, token := createTestUser(t, pool)
+
+	resp := do(t, srv.Client(), http.MethodPost, srv.URL+"/captures", token, map[string]any{
+		"mediaType":    "text",
+		"classifiedAs": "unclassified",
+		"rawText":      "   ",
 	})
 	defer resp.Body.Close()
 

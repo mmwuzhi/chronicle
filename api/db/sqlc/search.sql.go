@@ -12,7 +12,7 @@ import (
 )
 
 const searchCaptures = `-- name: SearchCaptures :many
-SELECT id, user_id, raw_text, media_url, media_type, classified_as, task_id, created_at FROM captures
+SELECT id, user_id, raw_text, media_url, media_type, classified_as, task_id, created_at, source FROM captures
 WHERE user_id = $1
   AND raw_text IS NOT NULL
   AND raw_text ILIKE '%' || $2::text || '%'
@@ -43,6 +43,7 @@ func (q *Queries) SearchCaptures(ctx context.Context, arg SearchCapturesParams) 
 			&i.ClassifiedAs,
 			&i.TaskID,
 			&i.CreatedAt,
+			&i.Source,
 		); err != nil {
 			return nil, err
 		}

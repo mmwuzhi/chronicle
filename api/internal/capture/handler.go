@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"regexp"
+	"strings"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -49,6 +51,7 @@ type CaptureBody struct {
 	MediaType    string  `json:"mediaType"`
 	ClassifiedAs string  `json:"classifiedAs"`
 	TaskID       *string `json:"taskId"`
+	Source       string  `json:"source"`
 	CreatedAt    string  `json:"createdAt"`
 }
 
@@ -57,6 +60,7 @@ func toBody(c db.Capture) CaptureBody {
 		ID:           c.ID.String(),
 		MediaType:    string(c.MediaType),
 		ClassifiedAs: string(c.ClassifiedAs),
+		Source:       c.Source,
 		CreatedAt:    c.CreatedAt.Time.UTC().Format(time.RFC3339),
 	}
 	if c.RawText.Valid {
@@ -110,6 +114,7 @@ type CaptureCreateInput struct {
 		MediaType    string  `json:"mediaType" enum:"text,image,audio"`
 		ClassifiedAs string  `json:"classifiedAs" enum:"task,idea,routine,log,unclassified" default:"unclassified"`
 		TaskID       *string `json:"taskId,omitempty" format:"uuid"`
+		Source       string  `json:"source,omitempty" default:"web" doc:"Capture source, for example web or desktop_quick_capture"`
 	}
 }
 
@@ -126,6 +131,13 @@ func (h *handler) create(ctx context.Context, input *CaptureCreateInput) (*Creat
 	if classifiedAs == "" {
 		classifiedAs = "unclassified"
 	}
+	source, err := normalizeSource(input.Body.Source)
+	if err != nil {
+		return nil, err
+	}
+	if input.Body.MediaType == "text" && (input.Body.RawText == nil || strings.TrimSpace(*input.Body.RawText) == "") {
+		return nil, huma.Error422UnprocessableEntity("rawText is required for text captures")
+	}
 	c, err := h.q.CreateCapture(ctx, db.CreateCaptureParams{
 		UserID:       uid,
 		RawText:      nullText(input.Body.RawText),
@@ -133,6 +145,7 @@ func (h *handler) create(ctx context.Context, input *CaptureCreateInput) (*Creat
 		MediaType:    db.CaptureMediaType(input.Body.MediaType),
 		ClassifiedAs: db.CaptureClassifiedAs(classifiedAs),
 		TaskID:       nullUUID(input.Body.TaskID),
+		Source:       source,
 	})
 	if err != nil {
 		return nil, huma.Error500InternalServerError("internal error")
@@ -241,4 +254,17 @@ func strPtr(s string) *string {
 		return nil
 	}
 	return &s
+}
+
+var sourcePattern = regexp.MustCompile(`^[a-z][a-z0-9_:-]{0,63}$`)
+
+func normalizeSource(source string) (string, error) {
+	source = strings.TrimSpace(source)
+	if source == "" {
+		return "web", nil
+	}
+	if !sourcePattern.MatchString(source) {
+		return "", huma.Error422UnprocessableEntity("source must start with a lowercase letter and contain only lowercase letters, digits, _, :, or -")
+	}
+	return source, nil
 }
