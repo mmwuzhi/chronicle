@@ -4,6 +4,9 @@ services:
     ports:
       - "8080:8080"
     env_file: .env
+    environment:
+      DATABASE_URL: postgres://chronicle:chronicle@postgres:5432/chronicle?sslmode=disable
+      REDIS_URL: redis://redis:6379
     depends_on:
       postgres:
         condition: service_healthy
@@ -19,6 +22,8 @@ services:
     working_dir: /app
     ports:
       - "5173:5173"
+    environment:
+      VITE_PROXY_TARGET: http://api:8080
     volumes:
       - ./web:/app
       - /app/node_modules

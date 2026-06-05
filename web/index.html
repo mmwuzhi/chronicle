@@ -2,6 +2,24 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <script>
+      if (location.hostname === "localhost" && "serviceWorker" in navigator) {
+        navigator.serviceWorker.getRegistrations().then((registrations) => {
+          if (registrations.length === 0) return;
+          Promise.all(
+            registrations.map((registration) => registration.unregister()),
+          )
+            .then(() => ("caches" in window ? caches.keys() : []))
+            .then((keys) =>
+              Promise.all((keys || []).map((key) => caches.delete(key))),
+            )
+            .then(() => {
+              if (navigator.serviceWorker.controller) location.reload();
+            })
+            .catch(() => {});
+        });
+      }
+    </script>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Chronicle</title>
