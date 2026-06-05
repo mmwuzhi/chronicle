@@ -19,6 +19,7 @@ import type { LogEntryBody, TaskBody } from "../api";
 import { Nav } from "../components/nav";
 import { Timer } from "../components/Timer";
 import { ProjectDropdown } from "../components/ProjectDropdown";
+import { Composer } from "../components/Composer";
 import { Markdown } from "../components/Markdown";
 import { STATUS_CYCLE } from "../constants/status";
 import { timeAgo } from "../utils/format";
@@ -61,14 +62,14 @@ function TaskDetail() {
   const queryClient = useQueryClient();
   const confirm = useConfirm();
   const [body, setBody] = useState("");
-  const [polishing, setPolishing] = useState(false);
   const [polishError, setPolishError] = useState(false);
   const [titleEditing, setTitleEditing] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const dateInputRef = useRef<HTMLInputElement>(null);
+  const startDateInputRef = useRef<HTMLInputElement>(null);
+  const dueDateInputRef = useRef<HTMLInputElement>(null);
   const [editingEntryId, setEditingEntryId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState("");
 
@@ -99,15 +100,18 @@ function TaskDetail() {
         const previousLists = queryClient.getQueriesData<TaskBody[]>({
           queryKey: getListTasksQueryKey(),
         });
+        const optimistic = { ...data } as Partial<TaskBody>;
+        if ("clearStartAt" in data) optimistic.startAt = null;
+        if ("clearDueAt" in data) optimistic.dueAt = null;
         queryClient.setQueryData<TaskBody>(getGetTaskQueryKey(id), (old) =>
-          old ? { ...old, ...data } : old,
+          old ? { ...old, ...optimistic } : old,
         );
         queryClient.setQueriesData<TaskBody[]>(
           { queryKey: getListTasksQueryKey() },
           (old) =>
             old == null
               ? old
-              : old.map((t) => (t.id === id ? { ...t, ...data } : t)),
+              : old.map((t) => (t.id === id ? { ...t, ...optimistic } : t)),
         );
         return { previousTask, previousLists };
       },
@@ -149,26 +153,23 @@ function TaskDetail() {
     update.mutate({ id: task.id, data: { status: next } });
   };
 
-  const handlePolish = async () => {
-    const trimmed = body.trim();
-    if (!trimmed) return;
+  const handlePolish = async (value: string) => {
+    const trimmed = value.trim();
     setPolishError(false);
-    setPolishing(true);
     try {
       const res = await apiClient.post<{ polished: string }>("/ai/polish", {
         text: trimmed,
       });
-      setBody(res.data.polished);
+      return res.data.polished;
     } catch {
       setPolishError(true);
       setTimeout(() => setPolishError(false), 3000);
-    } finally {
-      setPolishing(false);
+      throw new Error("polish failed");
     }
   };
 
-  const handleAddEntry = () => {
-    const trimmed = body.trim();
+  const handleAddEntry = (value = body) => {
+    const trimmed = value.trim();
     if (!trimmed) return;
     createEntry.mutate(
       { data: { body: trimmed, taskId } },
@@ -218,6 +219,17 @@ function TaskDetail() {
       setUploading(false);
     }
   };
+
+  const displayDate = (value?: string | null) =>
+    value
+      ? new Date(value).toLocaleDateString(undefined, {
+          month: "short",
+          day: "numeric",
+        })
+      : "—";
+
+  const isoFromDateInput = (value: string) =>
+    new Date(`${value}T00:00:00`).toISOString();
 
   return (
     <>
@@ -340,7 +352,7 @@ function TaskDetail() {
                   }
                 />
               </div>
-              {/* Start date (read-only, shows createdAt) */}
+              {/* Start date */}
               <div
                 style={{
                   display: "flex",
@@ -359,20 +371,40 @@ function TaskDetail() {
                 >
                   {t("startDate")}
                 </span>
-                <span
-                  className="ch-datebtn"
-                  style={{
-                    pointerEvents: "none",
-                    opacity: 0.7,
-                    cursor: "default",
-                  }}
+                <button
+                  className={`ch-datebtn${task.startAt ? "" : " empty"}`}
+                  onClick={() => startDateInputRef.current?.click()}
                 >
                   <CalendarIcon />
-                  {new Date(task.createdAt).toLocaleDateString(undefined, {
-                    month: "short",
-                    day: "numeric",
-                  })}
-                </span>
+                  {displayDate(task.startAt)}
+                </button>
+                {task.startAt && (
+                  <button
+                    className="ch-btn ch-btn-ghost ch-btn-sm"
+                    onClick={() =>
+                      update.mutate({
+                        id: taskId,
+                        data: { clearStartAt: true },
+                      })
+                    }
+                  >
+                    {tc("actions.clear")}
+                  </button>
+                )}
+                <input
+                  ref={startDateInputRef}
+                  type="date"
+                  style={{ display: "none" }}
+                  value={task.startAt ? task.startAt.slice(0, 10) : ""}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (!val) return;
+                    update.mutate({
+                      id: taskId,
+                      data: { startAt: isoFromDateInput(val) },
+                    });
+                  }}
+                />
               </div>
               {/* Due date */}
               <div
@@ -395,18 +427,26 @@ function TaskDetail() {
                 </span>
                 <button
                   className={`ch-datebtn${task.dueAt ? "" : " empty"}`}
-                  onClick={() => dateInputRef.current?.click()}
+                  onClick={() => dueDateInputRef.current?.click()}
                 >
                   <CalendarIcon />
-                  {task.dueAt
-                    ? new Date(task.dueAt).toLocaleDateString(undefined, {
-                        month: "short",
-                        day: "numeric",
-                      })
-                    : "—"}
+                  {displayDate(task.dueAt)}
                 </button>
+                {task.dueAt && (
+                  <button
+                    className="ch-btn ch-btn-ghost ch-btn-sm"
+                    onClick={() =>
+                      update.mutate({
+                        id: taskId,
+                        data: { clearDueAt: true },
+                      })
+                    }
+                  >
+                    {tc("actions.clear")}
+                  </button>
+                )}
                 <input
-                  ref={dateInputRef}
+                  ref={dueDateInputRef}
                   type="date"
                   style={{ display: "none" }}
                   value={task.dueAt ? task.dueAt.slice(0, 10) : ""}
@@ -415,9 +455,7 @@ function TaskDetail() {
                     if (!val) return;
                     update.mutate({
                       id: taskId,
-                      data: {
-                        dueAt: new Date(val + "T00:00:00").toISOString(),
-                      },
+                      data: { dueAt: isoFromDateInput(val) },
                     });
                   }}
                 />
@@ -500,58 +538,17 @@ function TaskDetail() {
             </div>
 
             {/* Log composer */}
-            <div
-              className="ch-card"
-              style={{ padding: "var(--pad)", marginBottom: 12 }}
-            >
-              <textarea
-                className="ch-textarea"
-                value={body}
-                onChange={(e) => setBody(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-                    e.preventDefault();
-                    handleAddEntry();
-                  }
-                }}
-                placeholder={t("log.placeholder")}
-                rows={2}
-                style={{
-                  border: "none",
-                  boxShadow: "none",
-                  padding: 0,
-                  marginBottom: 10,
-                }}
-              />
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "flex-end",
-                  gap: 8,
-                  alignItems: "center",
-                }}
-              >
-                {polishError && (
-                  <span style={{ fontSize: "var(--fs-xs)", color: "#c2410c" }}>
-                    {tc("errors.polishFailed")}
-                  </span>
-                )}
-                <button
-                  className="ch-btn ch-btn-ai ch-btn-sm"
-                  onClick={handlePolish}
-                  disabled={polishing || !body.trim()}
-                >
-                  {polishing ? "…" : "✦"} {tc("actions.polish")}
-                </button>
-                <button
-                  className="ch-btn ch-btn-primary ch-btn-sm"
-                  onClick={handleAddEntry}
-                  disabled={createEntry.isPending || !body.trim()}
-                >
-                  {t("log.addNote")}
-                </button>
-              </div>
-            </div>
+            <Composer
+              value={body}
+              onChange={setBody}
+              onSubmit={handleAddEntry}
+              placeholder={t("log.placeholder")}
+              submitLabel={t("log.addNote")}
+              submitDisabled={createEntry.isPending}
+              onPolish={handlePolish}
+              error={polishError ? tc("errors.polishFailed") : null}
+              minRows={2}
+            />
 
             {/* Log entries */}
             {entriesLoading ? (

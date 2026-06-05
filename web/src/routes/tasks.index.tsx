@@ -1,6 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { useConfirm } from "../components/confirm-dialog";
 import {
   useListTasks,
@@ -122,6 +123,19 @@ function Tasks() {
     done: "✓",
   };
 
+  const projectCounts = new Map<string, number>();
+  for (const task of allActive) {
+    if (task.projectId) {
+      projectCounts.set(
+        task.projectId,
+        (projectCounts.get(task.projectId) ?? 0) + 1,
+      );
+    }
+  }
+  const selectedProject = filterProjectId
+    ? (activeProjects.find((p) => p.id === filterProjectId) ?? null)
+    : null;
+
   return (
     <>
       <Nav />
@@ -207,25 +221,76 @@ function Tasks() {
             flexWrap: "wrap",
           }}
         >
-          {/* Project filter */}
           {activeProjects.length > 0 && (
-            <select
-              value={filterProjectId}
-              onChange={(e) => setFilterProjectId(e.target.value)}
-              className="ch-input"
-              style={{
-                width: "auto",
-                padding: "6px 10px",
-                fontSize: "var(--fs-sm)",
-              }}
-            >
-              <option value="">{t("allProjects")}</option>
-              {activeProjects.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
+            <DropdownMenu.Root>
+              <DropdownMenu.Trigger asChild>
+                <button
+                  className="ch-btn ch-btn-sm"
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 8,
+                  }}
+                >
+                  <span
+                    style={{
+                      width: 8,
+                      height: 8,
+                      borderRadius: "50%",
+                      background: selectedProject
+                        ? selectedProject.color
+                        : "var(--text-faint)",
+                    }}
+                  />
+                  {selectedProject ? selectedProject.name : t("allProjects")}
+                </button>
+              </DropdownMenu.Trigger>
+              <DropdownMenu.Portal>
+                <DropdownMenu.Content
+                  className="ch-dropdown"
+                  align="start"
+                  sideOffset={4}
+                >
+                  <DropdownMenu.Item
+                    className="ch-dropdown-item"
+                    onSelect={() => setFilterProjectId("")}
+                  >
+                    <span
+                      style={{
+                        width: 8,
+                        height: 8,
+                        borderRadius: "50%",
+                        background: "var(--text-faint)",
+                        flexShrink: 0,
+                      }}
+                    />
+                    <span style={{ flex: 1 }}>{t("allProjects")}</span>
+                    <span className="ch-meta">{allActive.length}</span>
+                  </DropdownMenu.Item>
+                  {activeProjects.map((p) => (
+                    <DropdownMenu.Item
+                      key={p.id}
+                      className="ch-dropdown-item"
+                      onSelect={() => setFilterProjectId(p.id)}
+                    >
+                      <span
+                        style={{
+                          width: 8,
+                          height: 8,
+                          borderRadius: "50%",
+                          background: p.color,
+                          flexShrink: 0,
+                        }}
+                      />
+                      <span style={{ flex: 1 }}>{p.name}</span>
+                      <span className="ch-meta">
+                        {projectCounts.get(p.id) ?? 0}
+                      </span>
+                    </DropdownMenu.Item>
+                  ))}
+                </DropdownMenu.Content>
+              </DropdownMenu.Portal>
+            </DropdownMenu.Root>
           )}
           {/* Status segment */}
           <div className="ch-seg" style={{ marginLeft: "auto" }}>
@@ -338,37 +403,51 @@ function Tasks() {
                     <DueBadge dueAt={task.dueAt} t={t} />
                   )}
 
-                  <button
-                    className="ch-btn ch-btn-ghost ch-btn-sm"
-                    onClick={() =>
-                      update.mutate({
-                        id: task.id,
-                        data: { status: "archived" },
-                      })
-                    }
-                    style={{ fontSize: "var(--fs-xs)", padding: "4px 8px" }}
-                  >
-                    {tc("actions.archive")}
-                  </button>
-                  <button
-                    className="ch-btn ch-btn-ghost ch-btn-sm"
-                    style={{
-                      color: "var(--text-faint)",
-                      fontSize: "var(--fs-xs)",
-                      padding: "4px 8px",
-                    }}
-                    onClick={async () => {
-                      const ok = await confirm({
-                        title: tc("confirm.deleteTask"),
-                        description: tc("confirm.cannotUndo"),
-                        confirmLabel: tc("actions.delete"),
-                        variant: "danger",
-                      });
-                      if (ok) del.mutate({ id: task.id });
-                    }}
-                  >
-                    {tc("actions.delete")}
-                  </button>
+                  <DropdownMenu.Root>
+                    <DropdownMenu.Trigger asChild>
+                      <button
+                        className="ch-iconbtn"
+                        style={{ width: 28, height: 28, fontSize: 16 }}
+                        aria-label="More options"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        ···
+                      </button>
+                    </DropdownMenu.Trigger>
+                    <DropdownMenu.Portal>
+                      <DropdownMenu.Content
+                        className="ch-dropdown"
+                        align="end"
+                        sideOffset={4}
+                      >
+                        <DropdownMenu.Item
+                          className="ch-dropdown-item"
+                          onSelect={() =>
+                            update.mutate({
+                              id: task.id,
+                              data: { status: "archived" },
+                            })
+                          }
+                        >
+                          {tc("actions.archive")}
+                        </DropdownMenu.Item>
+                        <DropdownMenu.Item
+                          className="ch-dropdown-item danger"
+                          onSelect={async () => {
+                            const ok = await confirm({
+                              title: tc("confirm.deleteTask"),
+                              description: tc("confirm.cannotUndo"),
+                              confirmLabel: tc("actions.delete"),
+                              variant: "danger",
+                            });
+                            if (ok) del.mutate({ id: task.id });
+                          }}
+                        >
+                          {tc("actions.delete")}
+                        </DropdownMenu.Item>
+                      </DropdownMenu.Content>
+                    </DropdownMenu.Portal>
+                  </DropdownMenu.Root>
                 </div>
               ))}
               {filtered.length === 0 && (

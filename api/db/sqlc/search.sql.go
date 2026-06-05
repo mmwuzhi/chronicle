@@ -96,7 +96,7 @@ func (q *Queries) SearchLogEntries(ctx context.Context, arg SearchLogEntriesPara
 }
 
 const searchTasks = `-- name: SearchTasks :many
-SELECT id, user_id, project_id, title, type, status, due_at, created_at, deleted_at, media_url, media_type FROM tasks
+SELECT id, user_id, project_id, title, type, status, due_at, created_at, deleted_at, media_url, media_type, start_at FROM tasks
 WHERE user_id = $1
   AND deleted_at IS NULL
   AND title ILIKE '%' || $2::text || '%'
@@ -130,6 +130,7 @@ func (q *Queries) SearchTasks(ctx context.Context, arg SearchTasksParams) ([]Tas
 			&i.DeletedAt,
 			&i.MediaUrl,
 			&i.MediaType,
+			&i.StartAt,
 		); err != nil {
 			return nil, err
 		}

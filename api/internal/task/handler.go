@@ -49,6 +49,7 @@ type TaskBody struct {
 	Title     string  `json:"title"`
 	Type      string  `json:"type"`
 	Status    string  `json:"status"`
+	StartAt   *string `json:"startAt"`
 	DueAt     *string `json:"dueAt"`
 	CreatedAt string  `json:"createdAt"`
 	MediaUrl  *string `json:"mediaUrl"`
@@ -66,6 +67,10 @@ func toBody(t db.Task) TaskBody {
 	if t.ProjectID.Valid {
 		pid := uuid.UUID(t.ProjectID.Bytes).String()
 		b.ProjectID = &pid
+	}
+	if t.StartAt.Valid {
+		s := t.StartAt.Time.UTC().Format(time.RFC3339)
+		b.StartAt = &s
 	}
 	if t.DueAt.Valid {
 		s := t.DueAt.Time.UTC().Format(time.RFC3339)
@@ -153,6 +158,7 @@ type TaskCreateInput struct {
 		Title     string     `json:"title" minLength:"1" maxLength:"255"`
 		Type      string     `json:"type" enum:"task,idea,routine,log"`
 		ProjectID *string    `json:"projectId,omitempty" format:"uuid"`
+		StartAt   *time.Time `json:"startAt,omitempty"`
 		DueAt     *time.Time `json:"dueAt,omitempty"`
 	}
 }
@@ -171,6 +177,7 @@ func (h *handler) create(ctx context.Context, input *TaskCreateInput) (*CreateOu
 		ProjectID: nullUUID(input.Body.ProjectID),
 		Title:     input.Body.Title,
 		Type:      db.TaskType(input.Body.Type),
+		StartAt:   nullTime(input.Body.StartAt),
 		DueAt:     nullTime(input.Body.DueAt),
 	})
 	if err != nil {
@@ -184,13 +191,16 @@ func (h *handler) create(ctx context.Context, input *TaskCreateInput) (*CreateOu
 type TaskUpdateInput struct {
 	ID   string `path:"id" format:"uuid"`
 	Body struct {
-		Title     *string    `json:"title,omitempty" minLength:"1" maxLength:"255"`
-		Status    *string    `json:"status,omitempty" enum:"todo,in_progress,done,archived"`
-		Type      *string    `json:"type,omitempty" enum:"task,idea,routine,log"`
-		ProjectID *string    `json:"projectId,omitempty" format:"uuid"`
-		DueAt     *time.Time `json:"dueAt,omitempty"`
-		MediaUrl  *string    `json:"mediaUrl,omitempty"`
-		MediaType *string    `json:"mediaType,omitempty"`
+		Title        *string    `json:"title,omitempty" minLength:"1" maxLength:"255"`
+		Status       *string    `json:"status,omitempty" enum:"todo,in_progress,done,archived"`
+		Type         *string    `json:"type,omitempty" enum:"task,idea,routine,log"`
+		ProjectID    *string    `json:"projectId,omitempty" format:"uuid"`
+		StartAt      *time.Time `json:"startAt,omitempty"`
+		ClearStartAt bool       `json:"clearStartAt,omitempty"`
+		DueAt        *time.Time `json:"dueAt,omitempty"`
+		ClearDueAt   bool       `json:"clearDueAt,omitempty"`
+		MediaUrl     *string    `json:"mediaUrl,omitempty"`
+		MediaType    *string    `json:"mediaType,omitempty"`
 	}
 }
 
@@ -208,15 +218,18 @@ func (h *handler) update(ctx context.Context, input *TaskUpdateInput) (*UpdateOu
 		return nil, huma.Error422UnprocessableEntity("invalid id")
 	}
 	t, err := h.q.UpdateTask(ctx, db.UpdateTaskParams{
-		ID:        id,
-		UserID:    uid,
-		Title:     nullText(input.Body.Title),
-		Status:    nullText(input.Body.Status),
-		Type:      nullText(input.Body.Type),
-		ProjectID: nullUUID(input.Body.ProjectID),
-		DueAt:     nullTime(input.Body.DueAt),
-		MediaUrl:  nullText(input.Body.MediaUrl),
-		MediaType: nullText(input.Body.MediaType),
+		ID:           id,
+		UserID:       uid,
+		Title:        nullText(input.Body.Title),
+		Status:       nullText(input.Body.Status),
+		Type:         nullText(input.Body.Type),
+		ProjectID:    nullUUID(input.Body.ProjectID),
+		StartAt:      nullTime(input.Body.StartAt),
+		ClearStartAt: input.Body.ClearStartAt,
+		DueAt:        nullTime(input.Body.DueAt),
+		ClearDueAt:   input.Body.ClearDueAt,
+		MediaUrl:     nullText(input.Body.MediaUrl),
+		MediaType:    nullText(input.Body.MediaType),
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {

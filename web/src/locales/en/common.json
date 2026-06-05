@@ -32,6 +32,7 @@
     "edit": "Edit",
     "archive": "Archive",
     "add": "Add",
+    "clear": "Clear",
     "polish": "Polish",
     "polishResult": "AI suggestion",
     "accept": "Accept",
@@ -52,6 +53,8 @@
     "captures": "Captures",
     "tasks": "Tasks",
     "logEntries": "Log entries",
+    "recentTasks": "Recent tasks",
+    "recentCaptures": "Recent captures",
     "noResults": "No results",
     "typeToSearch": "Type to search…"
   },

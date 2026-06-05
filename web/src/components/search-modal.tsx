@@ -2,6 +2,8 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import { apiClient } from "../lib/axios";
+import { useListCaptures, useListTasks } from "../api";
+import type { CaptureBody, TaskBody } from "../api";
 
 interface SearchCapture {
   id: string;
@@ -13,6 +15,7 @@ interface SearchTask {
   id: string;
   title: string;
   status: string;
+  createdAt?: string;
 }
 interface SearchLogEntry {
   id: string;
@@ -94,6 +97,8 @@ export function SearchModal({ onClose }: { onClose: () => void }) {
   const [loading, setLoading] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const { data: recentTasks } = useListTasks();
+  const { data: recentCaptures } = useListCaptures();
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -132,6 +137,10 @@ export function SearchModal({ onClose }: { onClose: () => void }) {
     (results.captures.length > 0 ||
       results.tasks.length > 0 ||
       results.logEntries.length > 0);
+  const recentTaskItems = (recentTasks ?? [])
+    .filter((task: TaskBody) => task.status !== "archived")
+    .slice(0, 4);
+  const recentCaptureItems = (recentCaptures ?? []).slice(0, 4);
 
   return (
     <div className="ch-searchwrap">
@@ -159,18 +168,85 @@ export function SearchModal({ onClose }: { onClose: () => void }) {
             </div>
           )}
 
-          {!query && (
-            <div
-              style={{
-                padding: "24px 11px",
-                color: "var(--text-faint)",
-                fontSize: "var(--fs-sm)",
-                textAlign: "center",
-              }}
-            >
-              {t("search.typeToSearch")}
-            </div>
-          )}
+          {!query &&
+            (recentTaskItems.length > 0 || recentCaptureItems.length > 0) && (
+              <>
+                {recentTaskItems.length > 0 && (
+                  <>
+                    <div className="ch-sgroup">{t("search.recentTasks")}</div>
+                    {recentTaskItems.map((task: TaskBody) => (
+                      <button
+                        key={task.id}
+                        className="ch-sresult"
+                        style={{
+                          width: "100%",
+                          border: "none",
+                          background: "none",
+                          textAlign: "left",
+                        }}
+                        onClick={() => {
+                          navigate({
+                            to: "/tasks/$taskId",
+                            params: { taskId: task.id },
+                          });
+                          onClose();
+                        }}
+                      >
+                        <span className="s-ico">
+                          <TaskIcon />
+                        </span>
+                        <span className="s-body">
+                          <span className="s-title">{task.title}</span>
+                          <span className="s-sub">{task.status}</span>
+                        </span>
+                      </button>
+                    ))}
+                  </>
+                )}
+
+                {recentCaptureItems.length > 0 && (
+                  <>
+                    <div className="ch-sgroup">
+                      {t("search.recentCaptures")}
+                    </div>
+                    {recentCaptureItems.map((c: CaptureBody) => (
+                      <button
+                        key={c.id}
+                        className="ch-sresult"
+                        style={{
+                          width: "100%",
+                          border: "none",
+                          background: "none",
+                          textAlign: "left",
+                        }}
+                        onClick={() => {
+                          navigate({ to: "/captures" });
+                          onClose();
+                        }}
+                      >
+                        <span className="s-ico">
+                          <CaptureIcon />
+                        </span>
+                        <span className="s-body">
+                          <span className="s-title">{c.rawText ?? "—"}</span>
+                          <span className="s-sub">
+                            {new Date(c.createdAt).toLocaleDateString()}
+                          </span>
+                        </span>
+                      </button>
+                    ))}
+                  </>
+                )}
+              </>
+            )}
+
+          {!query &&
+            recentTaskItems.length === 0 &&
+            recentCaptureItems.length === 0 && (
+              <div className="ch-empty" style={{ padding: "32px 24px" }}>
+                <p>{t("search.typeToSearch")}</p>
+              </div>
+            )}
 
           {results && results.tasks.length > 0 && (
             <>

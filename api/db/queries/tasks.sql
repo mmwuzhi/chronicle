@@ -1,6 +1,6 @@
 -- name: CreateTask :one
-INSERT INTO tasks (user_id, project_id, title, type, due_at)
-VALUES ($1, $2, $3, $4, $5)
+INSERT INTO tasks (user_id, project_id, title, type, start_at, due_at)
+VALUES ($1, $2, $3, $4, $5, $6)
 RETURNING *;
 
 -- name: ListTasks :many
@@ -27,7 +27,12 @@ SET
                THEN sqlc.narg('type')::task_type
                ELSE type END,
   project_id = COALESCE(sqlc.narg('project_id')::uuid, project_id),
-  due_at     = COALESCE(sqlc.narg('due_at')::timestamptz, due_at),
+  start_at   = CASE WHEN sqlc.arg('clear_start_at')::boolean
+               THEN NULL
+               ELSE COALESCE(sqlc.narg('start_at')::timestamptz, start_at) END,
+  due_at     = CASE WHEN sqlc.arg('clear_due_at')::boolean
+               THEN NULL
+               ELSE COALESCE(sqlc.narg('due_at')::timestamptz, due_at) END,
   media_url  = COALESCE(sqlc.narg('media_url'), media_url),
   media_type = COALESCE(sqlc.narg('media_type'), media_type)
 WHERE id = sqlc.arg('id') AND user_id = sqlc.arg('user_id') AND deleted_at IS NULL

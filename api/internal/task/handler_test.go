@@ -156,12 +156,14 @@ func TestCreateTask_WithDueAt(t *testing.T) {
 	srv, pool := newServer(t)
 	_, token := createTestUser(t, pool)
 
+	start := time.Now().UTC().Truncate(time.Second)
 	due := time.Now().Add(24 * time.Hour).UTC().Truncate(time.Second)
 
 	resp := do(t, srv.Client(), http.MethodPost, srv.URL+"/tasks", token, map[string]any{
-		"title": "Deadline task",
-		"type":  "task",
-		"dueAt": due.Format(time.RFC3339),
+		"title":   "Deadline task",
+		"type":    "task",
+		"startAt": start.Format(time.RFC3339),
+		"dueAt":   due.Format(time.RFC3339),
 	})
 
 	if resp.StatusCode != http.StatusOK {
@@ -169,10 +171,14 @@ func TestCreateTask_WithDueAt(t *testing.T) {
 	}
 
 	var body struct {
-		DueAt *string `json:"dueAt"`
+		StartAt *string `json:"startAt"`
+		DueAt   *string `json:"dueAt"`
 	}
 	decodeBody(t, resp, &body)
 
+	if body.StartAt == nil {
+		t.Fatal("expected startAt to be set")
+	}
 	if body.DueAt == nil {
 		t.Fatal("expected dueAt to be set")
 	}
@@ -306,6 +312,55 @@ func TestUpdateTask_ChangeStatus(t *testing.T) {
 
 	if body.Status != "in_progress" {
 		t.Fatalf("expected status 'in_progress', got %q", body.Status)
+	}
+}
+
+func TestUpdateTask_SetAndClearDates(t *testing.T) {
+	srv, pool := newServer(t)
+	_, token := createTestUser(t, pool)
+
+	id := createTask(t, srv, token, nil)
+	start := time.Now().UTC().Truncate(time.Second)
+	due := start.Add(48 * time.Hour)
+
+	resp := do(t, srv.Client(), http.MethodPatch, srv.URL+"/tasks/"+id, token, map[string]any{
+		"startAt": start.Format(time.RFC3339),
+		"dueAt":   due.Format(time.RFC3339),
+	})
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+
+	var updated struct {
+		StartAt *string `json:"startAt"`
+		DueAt   *string `json:"dueAt"`
+	}
+	decodeBody(t, resp, &updated)
+	if updated.StartAt == nil {
+		t.Fatal("expected startAt to be set")
+	}
+	if updated.DueAt == nil {
+		t.Fatal("expected dueAt to be set")
+	}
+
+	clearResp := do(t, srv.Client(), http.MethodPatch, srv.URL+"/tasks/"+id, token, map[string]any{
+		"clearStartAt": true,
+		"clearDueAt":   true,
+	})
+	if clearResp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", clearResp.StatusCode)
+	}
+
+	var cleared struct {
+		StartAt *string `json:"startAt"`
+		DueAt   *string `json:"dueAt"`
+	}
+	decodeBody(t, clearResp, &cleared)
+	if cleared.StartAt != nil {
+		t.Fatalf("expected startAt to be cleared, got %q", *cleared.StartAt)
+	}
+	if cleared.DueAt != nil {
+		t.Fatalf("expected dueAt to be cleared, got %q", *cleared.DueAt)
 	}
 }
 

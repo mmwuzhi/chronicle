@@ -34,6 +34,14 @@ function useFormatDuration() {
   };
 }
 
+function formatDurationCompact(sec: number): string {
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  if (h > 0) return m > 0 ? `${h}h ${m}m` : `${h}h`;
+  if (m > 0) return `${m}m`;
+  return `${sec}s`;
+}
+
 export function Timer({ taskId }: { taskId: string }) {
   const { t } = useTranslation("tasks");
   const { t: tc } = useTranslation("common");
@@ -131,7 +139,10 @@ export function Timer({ taskId }: { taskId: string }) {
                 className="ch-meta"
                 style={{ color: "var(--accent)", fontWeight: 600 }}
               >
-                +{b.durationSec != null ? formatDuration(b.durationSec) : "—"}
+                +
+                {b.durationSec != null
+                  ? formatDurationCompact(b.durationSec)
+                  : "—"}
               </span>
             </div>
           ))}

@@ -71,29 +71,33 @@ export function LinkedAccountsSection() {
 
   return (
     <>
-      <h3 className="text-sm font-medium text-gray-900 pt-4">
+      <h3
+        style={{
+          margin: "16px 0 0",
+          fontSize: "var(--fs-sm)",
+          fontWeight: 700,
+          color: "var(--text)",
+        }}
+      >
         {t("account.linkedAccounts")}
       </h3>
-      <div className="divide-y divide-gray-100">
+      <div className="ch-divide">
         {OAUTH_PROVIDERS.map((provider) => {
           const account = linked.find((a) => a.provider === provider);
           return (
-            <div
-              key={provider}
-              className="flex items-center justify-between py-4"
-            >
-              <span className="text-sm text-gray-500">
-                {capitalize(provider)}
-              </span>
+            <div key={provider} className="ch-setrow">
+              <div className="lbl">
+                <b>{capitalize(provider)}</b>
+              </div>
               {account ? (
-                <div className="flex items-center gap-3">
-                  <span className="text-xs text-green-600 bg-green-50 px-2 py-0.5 rounded-full">
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <span className="ch-pill st-done">
                     {t("account.connected")}
                   </span>
                   <button
                     onClick={() => handleDisconnect(account)}
                     disabled={unlinking === account.id}
-                    className="text-sm px-3 py-1.5 rounded-md border border-gray-300 hover:bg-gray-50 transition-colors disabled:opacity-50"
+                    className="ch-btn ch-btn-sm"
                   >
                     {t("account.disconnect")}
                   </button>
@@ -101,7 +105,7 @@ export function LinkedAccountsSection() {
               ) : (
                 <button
                   onClick={() => handleConnect(provider)}
-                  className="text-sm px-3 py-1.5 rounded-md border border-gray-300 hover:bg-gray-50 transition-colors"
+                  className="ch-btn ch-btn-sm"
                 >
                   {t("account.connect")}
                 </button>

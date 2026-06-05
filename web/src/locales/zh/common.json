@@ -32,6 +32,7 @@
     "edit": "编辑",
     "archive": "归档",
     "add": "添加",
+    "clear": "清空",
     "polish": "润色",
     "polishResult": "AI 建议",
     "accept": "采用",
@@ -52,6 +53,8 @@
     "captures": "捕获",
     "tasks": "任务",
     "logEntries": "日志",
+    "recentTasks": "最近任务",
+    "recentCaptures": "最近捕获",
     "noResults": "无结果",
     "typeToSearch": "输入搜索内容…"
   },

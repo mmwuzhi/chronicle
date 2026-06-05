@@ -16,7 +16,8 @@ import {
 } from "../api";
 import type { CaptureBody, CaptureCreateInputBodyMediaType } from "../api";
 import { Nav } from "../components/nav";
-import { CaptureCard, AutoTextarea } from "../components/CaptureCard";
+import { CaptureCard } from "../components/CaptureCard";
+import { Composer } from "../components/Composer";
 import { Markdown } from "../components/Markdown";
 import { useTranslation } from "react-i18next";
 
@@ -38,51 +39,6 @@ const TAB_IDS: Tab[] = [
   "log",
 ];
 
-const CL_CLASS: Record<Tab, string> = {
-  all: "cl-unclassified",
-  unclassified: "cl-unclassified",
-  idea: "cl-idea",
-  task: "cl-task",
-  routine: "cl-routine",
-  log: "cl-log",
-};
-
-const AttachIcon = () => (
-  <svg
-    width="14"
-    height="14"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth={1.75}
-    viewBox="0 0 24 24"
-    style={{ flexShrink: 0 }}
-  >
-    <path
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      d="m18.375 12.739-7.693 7.693a4.5 4.5 0 0 1-6.364-6.364l10.94-10.94A3 3 0 1 1 19.5 7.372L8.552 18.32m.009-.01-.01.01m5.699-9.941-7.81 7.81a1.5 1.5 0 0 0 2.112 2.13"
-    />
-  </svg>
-);
-
-const MicIcon = () => (
-  <svg
-    width="14"
-    height="14"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth={1.75}
-    viewBox="0 0 24 24"
-    style={{ flexShrink: 0 }}
-  >
-    <path
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      d="M12 18.75a6 6 0 0 0 6-6v-1.5m-6 7.5a6 6 0 0 1-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 0 1-3-3V4.5a3 3 0 1 1 6 0v8.25a3 3 0 0 1-3 3Z"
-    />
-  </svg>
-);
-
 function Captures() {
   const { t } = useTranslation("captures");
   const { t: tc } = useTranslation("common");
@@ -91,9 +47,6 @@ function Captures() {
   const confirm = useConfirm();
   const [tab, setTab] = useState<Tab>("all");
   const [text, setText] = useState("");
-  const [polishedText, setPolishedText] = useState<string | null>(null);
-  const [polishing, setPolishing] = useState(false);
-  const [polishError, setPolishError] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState(false);
   const [recording, setRecording] = useState(false);
@@ -205,26 +158,16 @@ function Captures() {
     }
   };
 
-  const handlePolish = async () => {
-    const trimmed = text.trim();
-    if (!trimmed) return;
-    setPolishError(false);
-    setPolishing(true);
-    try {
-      const res = await apiClient.post<{ polished: string }>("/ai/polish", {
-        text: trimmed,
-      });
-      setPolishedText(res.data.polished);
-    } catch {
-      setPolishError(true);
-      setTimeout(() => setPolishError(false), 3000);
-    } finally {
-      setPolishing(false);
-    }
+  const handlePolish = async (value: string) => {
+    const trimmed = value.trim();
+    const res = await apiClient.post<{ polished: string }>("/ai/polish", {
+      text: trimmed,
+    });
+    return res.data.polished;
   };
 
-  const handleAdd = () => {
-    const trimmed = text.trim();
+  const handleAdd = (value = text) => {
+    const trimmed = value.trim();
     if (!trimmed) return;
     create.mutate(
       {
@@ -269,8 +212,6 @@ function Captures() {
     );
   };
 
-  const displayText = polishedText !== null ? polishedText : text;
-
   return (
     <>
       <Nav />
@@ -288,156 +229,32 @@ function Captures() {
           </p>
         </div>
 
-        {/* Composer */}
-        <div
-          className="ch-card"
-          style={{ padding: "var(--pad)", marginBottom: 16 }}
-        >
-          <AutoTextarea
-            value={displayText}
-            onChange={(v) => {
-              if (polishedText !== null) setPolishedText(v);
-              else setText(v);
-            }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-                e.preventDefault();
-                if (polishedText !== null) {
-                  const trimmed = polishedText.trim();
-                  if (!trimmed) return;
-                  create.mutate(
-                    {
-                      data: {
-                        rawText: trimmed,
-                        mediaType: "text",
-                        classifiedAs: "unclassified",
-                      },
-                    },
-                    {
-                      onSuccess: () => {
-                        setText("");
-                        setPolishedText(null);
-                      },
-                    },
-                  );
-                } else {
-                  handleAdd();
-                }
-              }
-            }}
-            placeholder={t("placeholder")}
-            className="ch-textarea"
-            style={
-              {
-                border: "none",
-                boxShadow: "none",
-                padding: 0,
-                marginBottom: 10,
-                ...(polishedText !== null
-                  ? { color: "var(--accent-strong)" }
-                  : {}),
-              } as React.CSSProperties
-            }
-          />
-
-          {polishedText !== null && (
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 8,
-                marginBottom: 10,
-              }}
-            >
-              <span
-                style={{
-                  fontSize: "var(--fs-xs)",
-                  color: "var(--accent-strong)",
-                  fontWeight: 600,
-                }}
-              >
-                ✦ {tc("actions.polishResult")}
-              </span>
-              <div style={{ flex: 1 }} />
-              <button
-                className="ch-btn ch-btn-ai ch-btn-sm"
-                onClick={() => {
-                  setText(polishedText);
-                  setPolishedText(null);
-                }}
-              >
-                {tc("actions.accept")}
-              </button>
-              <button
-                className="ch-btn ch-btn-sm"
-                onClick={() => setPolishedText(null)}
-              >
-                {tc("actions.dismiss")}
-              </button>
-            </div>
-          )}
-
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <button
-              className="ch-btn ch-btn-sm"
-              onClick={() => imageInputRef.current?.click()}
-              disabled={uploading || recording}
-              style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
-            >
-              <AttachIcon /> {t("attach")}
-            </button>
-            <button
-              className="ch-btn ch-btn-sm"
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 6,
-                ...(recording
-                  ? { borderColor: "#c2410c", color: "#c2410c" }
-                  : {}),
-              }}
-              onClick={handleAudioToggle}
-              disabled={uploading}
-            >
-              {recording ? "⏹" : <MicIcon />} {t("record")}
-            </button>
-            <button
-              className="ch-btn ch-btn-ai ch-btn-sm"
-              onClick={handlePolish}
-              disabled={polishing || !text.trim() || polishedText !== null}
-              style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
-            >
-              {polishing ? "…" : "✦"} {tc("actions.polish")}
-            </button>
-            <div style={{ flex: 1 }} />
-            {(polishError || uploadError) && (
-              <span style={{ fontSize: "var(--fs-xs)", color: "#c2410c" }}>
-                {polishError ? tc("errors.polishFailed") : t("uploadFailed")}
-              </span>
-            )}
-            {(uploading || recording) && (
-              <span className="ch-meta">
-                {recording ? t("recording") : t("transcribing")}
-              </span>
-            )}
-            <button
-              className="ch-btn ch-btn-primary ch-btn-sm"
-              onClick={handleAdd}
-              disabled={
-                create.isPending || !text.trim() || polishedText !== null
-              }
-            >
-              {tc("actions.save")}
-            </button>
-          </div>
-          <input
-            ref={imageInputRef}
-            type="file"
-            accept="image/*"
-            style={{ display: "none" }}
-            onChange={handleImageUpload}
-          />
-        </div>
+        <Composer
+          value={text}
+          onChange={setText}
+          onSubmit={handleAdd}
+          placeholder={t("placeholder")}
+          submitLabel={tc("actions.save")}
+          submitDisabled={create.isPending}
+          onPolish={handlePolish}
+          onAttach={() => imageInputRef.current?.click()}
+          onRecord={handleAudioToggle}
+          attachLabel={t("attach")}
+          recordLabel={t("record")}
+          recording={recording}
+          busy={uploading || recording}
+          busyLabel={recording ? t("recording") : t("transcribing")}
+          error={uploadError ? t("uploadFailed") : null}
+          attachmentInput={
+            <input
+              ref={imageInputRef}
+              type="file"
+              accept="image/*"
+              style={{ display: "none" }}
+              onChange={handleImageUpload}
+            />
+          }
+        />
 
         {/* Filter tabs */}
         <div
@@ -451,8 +268,8 @@ function Captures() {
           {TAB_IDS.map((id) => (
             <button
               key={id}
-              className={`ch-pill ${tab === id ? CL_CLASS[id] : "cl-unclassified"}`}
-              style={{ cursor: "pointer", border: "none" }}
+              className={`ch-navlink${tab === id ? " active" : ""}`}
+              style={{ cursor: "pointer" }}
               onClick={() => setTab(id)}
             >
               {t(`tabs.${id}`)}

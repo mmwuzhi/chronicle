@@ -9,28 +9,20 @@ test("nav: search placeholder is short", async ({ page }) => {
   await expect(trigger).not.toContainText("captures");
 });
 
-test("mobile: settings shows gear icon, not text", async ({
+test("nav: settings affordance matches viewport", async ({
   page,
   isMobile,
 }) => {
-  if (!isMobile) return test.skip();
   await page.goto("/");
   const icon = page.locator(".ch-settings-icon");
   const text = page.locator(".ch-settings-text");
-  await expect(icon).toBeVisible();
-  await expect(text).not.toBeVisible();
-});
-
-test("desktop: settings shows text, not gear icon", async ({
-  page,
-  isMobile,
-}) => {
-  if (isMobile) return test.skip();
-  await page.goto("/");
-  const icon = page.locator(".ch-settings-icon");
-  const text = page.locator(".ch-settings-text");
-  await expect(icon).not.toBeVisible();
-  await expect(text).toBeVisible();
+  if (isMobile) {
+    await expect(icon).toBeVisible();
+    await expect(text).not.toBeVisible();
+  } else {
+    await expect(icon).not.toBeVisible();
+    await expect(text).toBeVisible();
+  }
 });
 
 // ── Projects ──────────────────────────────────────────────────────────────
@@ -177,8 +169,7 @@ test("captures: timestamp uses Jun 3 · 8:51am format", async ({ page }) => {
 
 test("markdown: capture display uses ch-prose renderer", async ({ page }) => {
   await page.goto("/captures");
-  const rows = page.locator(".ch-row");
-  if ((await rows.count()) === 0) return test.skip();
+  await page.locator(".ch-row").first().waitFor({ timeout: 5_000 });
   await expect(page.locator(".ch-prose").first()).toBeVisible();
 });
 
@@ -199,13 +190,21 @@ test("timer: minutes input has no spinner and rejects non-digits", async ({
 
 test("search: only one close affordance (no X icon)", async ({ page }) => {
   await page.goto("/");
-  await page.locator(".ch-searchtrigger, .ch-search-mobile").first().click();
+  await page
+    .locator(".ch-searchtrigger, .ch-search-mobile")
+    .filter({ visible: true })
+    .first()
+    .click();
   await expect(page.getByRole("button", { name: /^close$/i })).toHaveCount(0);
 });
 
 test("search: long result titles truncate with ellipsis", async ({ page }) => {
   await page.goto("/");
-  await page.locator(".ch-searchtrigger, .ch-search-mobile").first().click();
+  await page
+    .locator(".ch-searchtrigger, .ch-search-mobile")
+    .filter({ visible: true })
+    .first()
+    .click();
   await page.locator(".ch-searchbar input").fill("a");
   await page.waitForTimeout(500);
   const titles = page.locator(".ch-sresult .s-title");

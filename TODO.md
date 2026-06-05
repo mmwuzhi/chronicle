@@ -10,5 +10,8 @@ Deferred work to revisit after the current UI route files are refactored.
 
 ## Revisit After Refactor
 
+- Task event history: represent task edits as deletable log-style events.
+- Capture-to-task relationship banner: keep a persistent source link after promotion, with an unlink action.
+- Inline capture-to-task conversion: replace the promotion modal with an inline panel that preserves context.
 - Weekly digest email: auto-send the weekly report through Resend.
 - Due-date reminder emails: notify about tasks approaching `due_at`.

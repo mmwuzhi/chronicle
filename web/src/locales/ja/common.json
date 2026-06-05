@@ -32,6 +32,7 @@
     "edit": "編集",
     "archive": "アーカイブ",
     "add": "追加",
+    "clear": "クリア",
     "polish": "推敲",
     "polishResult": "AI 提案",
     "accept": "採用",
@@ -52,6 +53,8 @@
     "captures": "キャプチャ",
     "tasks": "タスク",
     "logEntries": "ログエントリ",
+    "recentTasks": "最近のタスク",
+    "recentCaptures": "最近のキャプチャ",
     "noResults": "結果なし",
     "typeToSearch": "検索キーワードを入力…"
   },

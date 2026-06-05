@@ -23,30 +23,23 @@ export function MFASection() {
   };
 
   return (
-    <div className="flex items-center justify-between">
-      <div>
-        <p className="text-sm font-medium">{t("security.mfa.title")}</p>
-        <p className="text-sm text-gray-500 mt-0.5">
-          {t("security.mfa.description")}
-        </p>
+    <div className="ch-setrow">
+      <div className="lbl">
+        <b>{t("security.mfa.title")}</b>
+        <span>{t("security.mfa.description")}</span>
       </div>
       {totpEnabled ? (
-        <div className="flex items-center gap-3">
-          <span className="text-xs text-green-600 bg-green-50 px-2 py-0.5 rounded-full">
-            {t("security.mfa.enabled")}
-          </span>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <span className="ch-pill st-done">{t("security.mfa.enabled")}</span>
           <button
             onClick={() => setDisableOpen(true)}
-            className="text-sm px-3 py-1.5 rounded-md border border-gray-300 hover:bg-gray-50 transition-colors"
+            className="ch-btn ch-btn-sm"
           >
             {t("security.mfa.disable")}
           </button>
         </div>
       ) : (
-        <button
-          onClick={() => setSetupOpen(true)}
-          className="text-sm px-3 py-1.5 rounded-md border border-gray-300 hover:bg-gray-50 transition-colors"
-        >
+        <button onClick={() => setSetupOpen(true)} className="ch-btn ch-btn-sm">
           {t("security.mfa.enable")}
         </button>
       )}

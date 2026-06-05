@@ -271,6 +271,7 @@ type Task struct {
 	DeletedAt pgtype.Timestamptz `json:"deleted_at"`
 	MediaUrl  pgtype.Text        `json:"media_url"`
 	MediaType pgtype.Text        `json:"media_type"`
+	StartAt   pgtype.Timestamptz `json:"start_at"`
 }
 
 type TimeBlock struct {

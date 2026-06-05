@@ -70,41 +70,35 @@ export function PasskeysSection() {
 
   return (
     <div>
-      <div className="flex items-center justify-between">
-        <div>
-          <h3 className="text-sm font-medium">
-            {t("security.passkeys.title")}
-          </h3>
-          <p className="text-sm text-gray-500 mt-0.5">
-            {t("security.passkeys.description")}
-          </p>
+      <div className="ch-setrow">
+        <div className="lbl">
+          <b>{t("security.passkeys.title")}</b>
+          <span>{t("security.passkeys.description")}</span>
         </div>
         <button
           onClick={handleAdd}
           disabled={adding}
-          className="text-sm px-3 py-1.5 rounded-md border border-gray-300 hover:bg-gray-50 transition-colors disabled:opacity-50 shrink-0 ml-4"
+          className="ch-btn ch-btn-sm"
         >
           {t("security.passkeys.add")}
         </button>
       </div>
 
       {loading ? null : passkeys.length === 0 ? (
-        <p className="text-sm text-gray-400 mt-3">
+        <p className="ch-meta" style={{ margin: "0 0 12px" }}>
           {t("security.passkeys.empty")}
         </p>
       ) : (
-        <div className="mt-3 divide-y divide-gray-100">
+        <div className="ch-divide">
           {passkeys.map((pk) => (
-            <div key={pk.id} className="flex items-center justify-between py-3">
-              <div>
-                <p className="text-sm">{pk.name}</p>
-                <p className="text-xs text-gray-400">
-                  {new Date(pk.createdAt).toLocaleDateString()}
-                </p>
+            <div key={pk.id} className="ch-setrow">
+              <div className="lbl">
+                <b>{pk.name}</b>
+                <span>{new Date(pk.createdAt).toLocaleDateString()}</span>
               </div>
               <button
                 onClick={() => handleDelete(pk)}
-                className="text-sm text-gray-500 hover:text-red-600 transition-colors"
+                className="ch-btn ch-btn-danger ch-btn-sm"
               >
                 {t("security.passkeys.delete")}
               </button>
