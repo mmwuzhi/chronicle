@@ -15,7 +15,6 @@
   "profile": {
     "title": "Profile",
     "email": "Email",
-    "authMethod": "Auth method",
     "verifyHint": "Your email is not verified. Please check your inbox for the verification link.",
     "verifyResend": "Resend",
     "verifySending": "Sending…",

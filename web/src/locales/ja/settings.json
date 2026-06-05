@@ -15,7 +15,6 @@
   "profile": {
     "title": "プロフィール",
     "email": "メールアドレス",
-    "authMethod": "認証方法",
     "verifyHint": "メールアドレスが未認証です。受信トレイの確認リンクをご確認ください。",
     "verifyResend": "再送信",
     "verifySending": "送信中…",

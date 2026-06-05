@@ -15,7 +15,6 @@
   "profile": {
     "title": "个人信息",
     "email": "邮箱",
-    "authMethod": "登录方式",
     "verifyHint": "你的邮箱尚未验证，请查看收件箱中的验证链接。",
     "verifyResend": "重新发送",
     "verifySending": "发送中…",

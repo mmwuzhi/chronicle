@@ -7,6 +7,7 @@ api/tmp/
 api/vendor/
 
 # Node
+.pnpm-store/
 web/node_modules/
 web/dist/
 web/.pnpm-store/

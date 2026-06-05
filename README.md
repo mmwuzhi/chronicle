@@ -1,14 +1,15 @@
 # Chronicle
 
-Personal productivity tracker. Capture thoughts, track time on tasks, and generate weekly reports.
+Personal productivity OS. Capture text, images, and voice; track time on tasks; generate weekly reports; share progress as a public changelog.
 
 ## Features
 
-- **Capture inbox** — dump text quickly, classify later (task / idea / log)
-- **Task management** — projects, status cycles, due dates
-- **Time tracking** — start/stop timer per task, view history
-- **Log entries** — attach notes to any task
-- **Weekly reports** — auto-generated summaries with a shareable public URL
+- **Capture inbox** — save text, images, and audio; classify later as task / idea / routine / log
+- **Task management** — projects, status cycles, due dates, attachments, markdown notes, and AI title polish
+- **Time tracking** — add manual duration entries per task and review time history
+- **Log entries** — attach markdown-formatted notes to any task
+- **Weekly reports** — generate summaries with charts and shareable public URLs
+- **Auth and security** — email verification, password reset, Google/GitHub OAuth, passkeys, MFA, account deletion, and optional Turnstile bot protection
 
 ## Tech Stack
 
@@ -19,6 +20,9 @@ Personal productivity tracker. Capture thoughts, track time on tasks, and genera
 | Database | PostgreSQL — sqlc + pgx, goose migrations |
 | Cache / rate limit | Redis (Upstash in prod) |
 | Auth | JWT — 15m access token + 30d refresh token, httpOnly cookies |
+| File storage | Cloudflare R2 for image/audio uploads |
+| Email | Resend for verification and password reset |
+| AI | OpenAI Whisper for transcription; Gemini/OpenAI-backed polish endpoints |
 | CI/CD | GitHub Actions → Fly.io (API) + Cloudflare Pages (frontend) |
 
 Type safety flows end-to-end: Go structs → huma generates `/openapi.json` → orval generates TypeScript types + TanStack Query hooks.
@@ -34,7 +38,7 @@ cd chronicle
 make setup          # copies .env.example → .env, starts postgres + redis, runs migrations
 
 # 2. Fill in secrets
-#    Edit .env — JWT_SECRET is required; R2 and OpenAI keys are optional for local dev
+#    Edit .env — JWT_SECRET is required; feature integrations are optional for local dev
 
 # 3. Start everything
 make dev            # full stack via docker compose watch
@@ -120,7 +124,7 @@ Required GitHub secrets: `FLY_API_TOKEN`, `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_AC
 
 ## Environment Variables
 
-See `.env.example` for the full list. The API exits immediately on startup if any required variable is missing — no silent fallbacks.
+See `.env.example` for the full list. The API exits immediately on startup if a required variable is missing — no silent fallbacks.
 
 Key variables:
 
@@ -129,5 +133,19 @@ Key variables:
 | `DATABASE_URL` | yes | PostgreSQL connection string |
 | `REDIS_URL` | yes | Redis connection string |
 | `JWT_SECRET` | yes | Secret for signing JWTs |
-| `R2_*` | no | Cloudflare R2 — needed for image/voice captures |
+| `API_BASE_URL` | no | Public API base used for OAuth callback URLs |
+| `FRONTEND_URL` | no | Frontend origin for CORS and email links |
+| `R2_*` | no | Cloudflare R2 — needed for image/audio uploads |
 | `OPENAI_API_KEY` | no | Voice transcription via Whisper |
+| `GEMINI_API_KEY` | no | AI polish/enrichment |
+| `RESEND_API_KEY` | no | Verification and password reset email |
+| `GOOGLE_CLIENT_*` | no | Google OAuth login/linking |
+| `GITHUB_CLIENT_*` | no | GitHub OAuth login/linking |
+| `TURNSTILE_SECRET_KEY` | no | Server-side Cloudflare Turnstile verification |
+| `WEBAUTHN_RP_*` | no | Passkey relying-party ID and origin |
+| `VITE_API_URL` | no | Frontend API base URL; defaults to `/api` if omitted |
+| `VITE_TURNSTILE_SITE_KEY` | no | Frontend Turnstile site key for registration |
+
+## Future Work
+
+Deferred product work lives in [`TODO.md`](./TODO.md). Refactor oversized route files first, then revisit weekly digest emails and due-date reminders.

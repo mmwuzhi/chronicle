@@ -8,9 +8,12 @@ Personal productivity OS. Capture text, images, and voice; track time on tasks; 
 - Backend: Go — chi router, huma v2 (OpenAPI-first), slog structured logging
 - Database: PostgreSQL (Neon in prod, Docker in dev) — sqlc + pgx, goose migrations
 - Cache / rate limit: Redis (Upstash in prod, Docker in dev) — go-redis
-- Auth: JWT — access token 15 min, refresh token 30 days, httpOnly cookies
+- Auth: JWT — access token 15 min, refresh token 30 days, httpOnly cookies; email verification/password reset, Google/GitHub OAuth, passkeys, and TOTP MFA
 - File storage: Cloudflare R2 (images + audio)
 - Voice transcription: OpenAI Whisper (optional — app works without it)
+- AI polish: Gemini/OpenAI-backed enrichment endpoints (optional — app works without it)
+- Email: Resend for verification and password reset (optional locally)
+- Bot protection: Cloudflare Turnstile on registration when configured
 - E2E type safety: huma → `/openapi.json` → orval codegen → typed TanStack Query hooks
 - CI/CD: GitHub Actions → Fly.io (API) + Cloudflare Pages (frontend)
 
@@ -30,20 +33,24 @@ Personal productivity OS. Capture text, images, and voice; track time on tasks; 
 - `web/src/constants/` — shared constants (e.g. `status.ts`)
 - `web/src/utils/` — shared pure utilities (e.g. `format.ts`)
 - `web/src/lib/` — non-React helpers (axios client, authenticated fetch)
+- `TODO.md` — deferred work; refactor oversized route files before adding reminder/digest features
 - `.env.example` — all required env vars
 
 ## Data Model
 
 ```
-users           id, email, password_hash, created_at
+users           id, email, password_hash, created_at, email_verified, email_verify_token, password_reset_token, password_reset_expires, totp_secret, totp_enabled
 projects        id, user_id, name, color, archived, created_at
-tasks           id, user_id, project_id, title, type, status, due_at, created_at, deleted_at
+tasks           id, user_id, project_id, title, type, status, due_at, created_at, deleted_at, media_url, media_type
 time_blocks     id, task_id, user_id, started_at, ended_at, duration_sec
 log_entries     id, task_id, user_id, body, created_at, deleted_at
 captures        id, user_id, raw_text, media_url, media_type, classified_as, created_at
 weekly_reports  id, user_id, week_start, data jsonb, created_at
 public_shares   id, report_id, slug, created_at
 refresh_tokens  id, user_id, token_hash, expires_at, revoked
+oauth_accounts  id, user_id, provider, provider_id, created_at
+passkeys        id, user_id, credential_id, public_key, aaguid, sign_count, name, created_at
+recovery_codes  id, user_id, code_hash, used
 ```
 
 Soft delete only — `tasks` and `log_entries` have `deleted_at`. Never issue a hard DELETE on user data.
@@ -120,3 +127,5 @@ pnpm test                         # vitest
 ## Environment
 
 Copy `.env.example` to `.env`. The API reads env vars through `api/internal/config/config.go` using envconfig — process exits immediately if any required variable is missing or invalid. No silent fallbacks.
+
+Feature integrations are optional unless the code path is used: R2 enables uploads, Resend enables email verification/reset, OAuth vars enable Google/GitHub auth, Turnstile vars enable registration bot checks, WebAuthn vars configure passkeys, and OpenAI/Gemini keys enable AI features.
