@@ -1,11 +1,12 @@
 # Chronicle
 
-Personal productivity OS. Capture text, images, and voice; track time on tasks; generate weekly reports; share progress as a public changelog.
+Personal memory system. Capture work, thoughts, and time with low-friction input surfaces; analyze progress through reports, search, and public changelogs.
 
 ## Tech Stack
 
 - Frontend: Vite + TanStack Router + TanStack Query, Radix UI primitives, Recharts, React Hook Form + Zod
 - Backend: Go — chi router, huma v2 (OpenAPI-first), slog structured logging
+- Desktop: Swift macOS menu bar app for quick capture
 - Database: PostgreSQL (Neon in prod, Docker in dev) — sqlc + pgx, goose migrations
 - Cache / rate limit: Redis (Upstash in prod, Docker in dev) — go-redis
 - Auth: JWT — access token 15 min, refresh token 30 days, httpOnly cookies; email verification/password reset, Google/GitHub OAuth, passkeys, and TOTP MFA
@@ -26,6 +27,9 @@ Personal productivity OS. Capture text, images, and voice; track time on tasks; 
 - `api/db/migrations/` — goose SQL migration files, never edit by hand
 - `api/db/queries/` — sqlc `.sql` query files (source of truth for DB queries)
 - `api/db/sqlc/` — generated Go code from sqlc, never edit by hand
+- `desktop/` — Swift macOS menu bar quick-capture app
+- `desktop/Sources/ChronicleDesktopCore/` — testable capture payload, API client, queue, and path helpers
+- `desktop/Sources/ChronicleDesktop/` — AppKit menu bar UI, global hotkey, settings, and quick-capture panel
 - `web/` — Vite frontend
 - `web/src/api/` — orval-generated TanStack Query hooks, never edit by hand
 - `web/src/routes/` — TanStack Router file-based routes
@@ -44,7 +48,7 @@ projects        id, user_id, name, color, archived, created_at
 tasks           id, user_id, project_id, title, type, status, due_at, created_at, deleted_at, media_url, media_type
 time_blocks     id, task_id, user_id, started_at, ended_at, duration_sec
 log_entries     id, task_id, user_id, body, created_at, deleted_at
-captures        id, user_id, raw_text, media_url, media_type, classified_as, created_at
+captures        id, user_id, raw_text, media_url, media_type, classified_as, source, created_at
 weekly_reports  id, user_id, week_start, data jsonb, created_at
 public_shares   id, report_id, slug, created_at
 refresh_tokens  id, user_id, token_hash, expires_at, revoked
@@ -71,6 +75,7 @@ make dev-data                     # just postgres + redis
 make down                         # stop all dev containers
 make api                          # API server only — auto-starts postgres + redis if needed
 make web                          # Vite dev server only (separate terminal)
+make desktop-capture              # Swift macOS menu bar quick-capture app
 
 # Codegen
 make sqlc                         # regenerate api/db/sqlc/ from db/queries/*.sql
@@ -89,6 +94,10 @@ make migrate-new name=add_foo     # create a new migration file
 pnpm build                        # production build
 pnpm typecheck                    # tsc --noEmit
 pnpm test                         # vitest
+
+# Desktop (run from desktop/)
+swift test                        # Swift core tests
+swift build                       # compile the menu bar app
 ```
 
 ## Conventions
@@ -117,6 +126,11 @@ pnpm test                         # vitest
   pnpm typecheck                  # no errors allowed
   pnpm test                       # vitest must pass
   pnpm build                      # catches module resolution errors tsc misses
+
+  # Desktop
+  cd ../desktop
+  swift test                      # core tests must pass
+  swift build                     # app must compile
   ```
 
   Fix every failure before pushing. CI runs these same steps exactly.

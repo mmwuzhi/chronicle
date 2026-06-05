@@ -1,10 +1,11 @@
 # Chronicle
 
-Personal productivity OS. Capture text, images, and voice; track time on tasks; generate weekly reports; share progress as a public changelog.
+Personal memory system. Capture work, thoughts, and time with low-friction input surfaces; analyze progress through reports, search, and public changelogs.
 
 ## Features
 
 - **Capture inbox** — save text, images, and audio; classify later as task / idea / routine / log
+- **Desktop quick capture** — save text captures from a native macOS menu bar app with a global shortcut and local retry queue
 - **Task management** — projects, status cycles, due dates, attachments, markdown notes, and AI title polish
 - **Time tracking** — add manual duration entries per task and review time history
 - **Log entries** — attach markdown-formatted notes to any task
@@ -17,6 +18,7 @@ Personal productivity OS. Capture text, images, and voice; track time on tasks; 
 |---|---|
 | Frontend | Vite + React + TanStack Router + TanStack Query |
 | Backend | Go + chi + huma v2 (OpenAPI-first) |
+| Desktop input | Swift macOS menu bar app |
 | Database | PostgreSQL — sqlc + pgx, goose migrations |
 | Cache / rate limit | Redis (Upstash in prod) |
 | Auth | JWT — 15m access token + 30d refresh token, httpOnly cookies |
@@ -50,6 +52,7 @@ Or run services separately:
 make dev-data       # postgres + redis only
 make api            # Go server on :8080 (auto-starts db if needed)
 make web            # Vite dev server on :5173
+make desktop-capture # macOS menu bar quick-capture app
 ```
 
 API docs: http://localhost:8080/docs (Swagger UI, auto-generated)
@@ -72,17 +75,25 @@ go vet ./...
 # Frontend (from web/)
 pnpm typecheck
 pnpm lint
+pnpm test
 pnpm build
+
+# Desktop quick capture (from desktop/)
+swift test
+swift run ChronicleDesktop
 ```
 
 Full check before pushing:
 
 ```bash
 # API
-cd api && go fmt ./... && go vet ./... && staticcheck ./... && go test -p 1 ./...
+(cd api && go fmt ./... && go vet ./... && staticcheck ./... && go test -p 1 ./...)
 
 # Frontend
-cd web && pnpm format && pnpm lint && pnpm typecheck && pnpm build
+(cd web && pnpm format && pnpm lint && pnpm typecheck && pnpm test && pnpm build)
+
+# Desktop
+(cd desktop && swift test && swift build)
 ```
 
 ## Project Structure
@@ -101,6 +112,8 @@ chronicle/
 │   │   └── sqlc/          # generated Go code — never edit by hand
 │   ├── Dockerfile
 │   └── fly.toml
+├── desktop/
+│   └── Sources/          # Swift macOS menu bar quick-capture app
 └── web/
     └── src/
         ├── api/           # orval-generated hooks — never edit by hand
@@ -145,6 +158,14 @@ Key variables:
 | `WEBAUTHN_RP_*` | no | Passkey relying-party ID and origin |
 | `VITE_API_URL` | no | Frontend API base URL; defaults to `/api` if omitted |
 | `VITE_TURNSTILE_SITE_KEY` | no | Frontend Turnstile site key for registration |
+
+## Product Direction
+
+Chronicle is moving toward a capture-first architecture:
+
+- **Client = input layer** — desktop quick capture first, then browser, VSCode, mobile, and automatic collectors.
+- **Web = analysis layer** — search, dashboards, reports, data visualization, and sharing.
+- **Long-term memory** — Ask Chronicle, hybrid search, memory decay, and AI consolidation come after capture volume is reliable.
 
 ## Future Work
 
