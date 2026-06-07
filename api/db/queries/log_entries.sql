@@ -6,15 +6,23 @@ WHERE user_id = $1
 ORDER BY created_at DESC;
 
 -- name: CreateLogEntry :one
-INSERT INTO log_entries (user_id, task_id, body)
-VALUES ($1, $2, $3)
+INSERT INTO log_entries (user_id, task_id, body, time_block_id)
+VALUES ($1, $2, $3, $4)
 RETURNING *;
 
 -- name: UpdateLogEntry :one
 UPDATE log_entries
-SET body = $1
+SET body = $1,
+    time_block_id = CASE
+      WHEN sqlc.arg('clear_time_block')::boolean THEN NULL
+      ELSE COALESCE(sqlc.narg('time_block_id')::uuid, time_block_id)
+    END
 WHERE id = $2 AND user_id = $3 AND deleted_at IS NULL
 RETURNING *;
+
+-- name: GetLogEntry :one
+SELECT * FROM log_entries
+WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL;
 
 -- name: DeleteLogEntry :one
 UPDATE log_entries

@@ -58,6 +58,8 @@ type ComposerProps = {
   error?: string | null;
   minRows?: number;
   attachmentInput?: ReactNode;
+  extraControls?: ReactNode;
+  canSubmitWithoutText?: boolean;
 };
 
 export function Composer({
@@ -79,14 +81,18 @@ export function Composer({
   error,
   minRows,
   attachmentInput,
-}: ComposerProps) {
+  extraControls,
+  canSubmitWithoutText,
+}: ComposerProps): React.JSX.Element {
   const { t: tc } = useTranslation("common");
   const [suggestion, setSuggestion] = useState<string | null>(null);
   const [polishing, setPolishing] = useState(false);
   const [polishError, setPolishError] = useState(false);
 
   const trimmed = value.trim();
-  const canSubmit = trimmed.length > 0 && suggestion === null;
+  const canSubmit =
+    (trimmed.length > 0 || canSubmitWithoutText === true) &&
+    suggestion === null;
   const shownError = polishError ? tc("errors.polishFailed") : error;
 
   const handlePolish = async () => {
@@ -130,6 +136,7 @@ export function Composer({
           minHeight: minRows ? `${minRows * 24}px` : undefined,
         }}
       />
+      {extraControls}
 
       {suggestion !== null && (
         <div
@@ -197,7 +204,7 @@ export function Composer({
           <button
             className="ch-btn ch-btn-sm"
             onClick={onRecord}
-            disabled={busy}
+            disabled={busy && !recording}
             style={{
               display: "inline-flex",
               alignItems: "center",

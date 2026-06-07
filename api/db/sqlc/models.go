@@ -188,25 +188,80 @@ func (ns NullTaskType) Value() (driver.Value, error) {
 	return string(ns.TaskType), nil
 }
 
+type TranscriptionStatus string
+
+const (
+	TranscriptionStatusNone       TranscriptionStatus = "none"
+	TranscriptionStatusPending    TranscriptionStatus = "pending"
+	TranscriptionStatusProcessing TranscriptionStatus = "processing"
+	TranscriptionStatusCompleted  TranscriptionStatus = "completed"
+	TranscriptionStatusFailed     TranscriptionStatus = "failed"
+	TranscriptionStatusSkipped    TranscriptionStatus = "skipped"
+)
+
+func (e *TranscriptionStatus) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = TranscriptionStatus(s)
+	case string:
+		*e = TranscriptionStatus(s)
+	default:
+		return fmt.Errorf("unsupported scan type for TranscriptionStatus: %T", src)
+	}
+	return nil
+}
+
+type NullTranscriptionStatus struct {
+	TranscriptionStatus TranscriptionStatus `json:"transcription_status"`
+	Valid               bool                `json:"valid"` // Valid is true if TranscriptionStatus is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullTranscriptionStatus) Scan(value interface{}) error {
+	if value == nil {
+		ns.TranscriptionStatus, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.TranscriptionStatus.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullTranscriptionStatus) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.TranscriptionStatus), nil
+}
+
 type Capture struct {
-	ID           uuid.UUID           `json:"id"`
-	UserID       uuid.UUID           `json:"user_id"`
-	RawText      pgtype.Text         `json:"raw_text"`
-	MediaUrl     pgtype.Text         `json:"media_url"`
-	MediaType    CaptureMediaType    `json:"media_type"`
-	ClassifiedAs CaptureClassifiedAs `json:"classified_as"`
-	TaskID       pgtype.UUID         `json:"task_id"`
-	CreatedAt    pgtype.Timestamptz  `json:"created_at"`
-	Source       string              `json:"source"`
+	ID                    uuid.UUID           `json:"id"`
+	UserID                uuid.UUID           `json:"user_id"`
+	RawText               pgtype.Text         `json:"raw_text"`
+	MediaUrl              pgtype.Text         `json:"media_url"`
+	MediaType             CaptureMediaType    `json:"media_type"`
+	ClassifiedAs          CaptureClassifiedAs `json:"classified_as"`
+	TaskID                pgtype.UUID         `json:"task_id"`
+	CreatedAt             pgtype.Timestamptz  `json:"created_at"`
+	Source                string              `json:"source"`
+	Transcript            pgtype.Text         `json:"transcript"`
+	TranscriptionStatus   TranscriptionStatus `json:"transcription_status"`
+	TranscriptionModel    pgtype.Text         `json:"transcription_model"`
+	TranscriptionAttempts int32               `json:"transcription_attempts"`
+	TranscribedAt         pgtype.Timestamptz  `json:"transcribed_at"`
+	NextTranscriptionAt   pgtype.Timestamptz  `json:"next_transcription_at"`
+	AudioDurationSec      pgtype.Int4         `json:"audio_duration_sec"`
+	MediaKey              pgtype.Text         `json:"media_key"`
 }
 
 type LogEntry struct {
-	ID        uuid.UUID          `json:"id"`
-	UserID    uuid.UUID          `json:"user_id"`
-	TaskID    pgtype.UUID        `json:"task_id"`
-	Body      string             `json:"body"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
-	DeletedAt pgtype.Timestamptz `json:"deleted_at"`
+	ID          uuid.UUID          `json:"id"`
+	UserID      uuid.UUID          `json:"user_id"`
+	TaskID      pgtype.UUID        `json:"task_id"`
+	Body        string             `json:"body"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	DeletedAt   pgtype.Timestamptz `json:"deleted_at"`
+	TimeBlockID pgtype.UUID        `json:"time_block_id"`
 }
 
 type OauthAccount struct {
@@ -283,6 +338,8 @@ type TimeBlock struct {
 	EndedAt     pgtype.Timestamptz `json:"ended_at"`
 	DurationSec pgtype.Int4        `json:"duration_sec"`
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	DeletedAt   pgtype.Timestamptz `json:"deleted_at"`
+	InputMode   string             `json:"input_mode"`
 }
 
 type User struct {

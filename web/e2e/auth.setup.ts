@@ -42,9 +42,13 @@ async function seedData(page: Parameters<Parameters<typeof setup>[1]>[0]) {
     `${apiBase}/log-entries?taskId=${task.id}`,
     { headers },
   );
-  const entries = entriesRes.ok()
-    ? ((await entriesRes.json()) as { body: string }[])
-    : [];
+  if (!entriesRes.ok()) {
+    throw new Error(`Failed to list log entries: ${entriesRes.status()}`);
+  }
+  const entries = (await entriesRes.json()) as {
+    body: string;
+    time?: { durationSec: number };
+  }[];
   if (!entries.some((entry) => entry.body.includes("E2E seeded alpha note"))) {
     const logRes = await page.request.post(`${apiBase}/log-entries`, {
       headers,
@@ -58,25 +62,24 @@ async function seedData(page: Parameters<Parameters<typeof setup>[1]>[0]) {
     }
   }
 
-  const timeRes = await page.request.get(
-    `${apiBase}/time-blocks?taskId=${task.id}`,
-    { headers },
-  );
-  const blocks = timeRes.ok()
-    ? ((await timeRes.json()) as { durationSec: number | null }[])
-    : [];
-  if (!blocks.some((block) => block.durationSec === 2700)) {
-    const blockRes = await page.request.post(`${apiBase}/time-blocks`, {
+  if (!entries.some((entry) => entry.time?.durationSec === 2700)) {
+    const timedLogRes = await page.request.post(`${apiBase}/log-entries`, {
       headers,
       data: {
         taskId: task.id,
-        startedAt: "2026-06-03T08:30:00.000Z",
-        endedAt: "2026-06-03T09:15:00.000Z",
-        durationSec: 2700,
+        body: "E2E seeded timed log entry.",
+        time: {
+          inputMode: "range",
+          startedAt: "2026-06-03T08:30:00.000Z",
+          endedAt: "2026-06-03T09:15:00.000Z",
+          durationSec: 2700,
+        },
       },
     });
-    if (!blockRes.ok()) {
-      throw new Error(`Failed to create time block: ${blockRes.status()}`);
+    if (!timedLogRes.ok()) {
+      throw new Error(
+        `Failed to create timed log entry: ${timedLogRes.status()}`,
+      );
     }
   }
 
@@ -116,7 +119,24 @@ setup("authenticate", async ({ page }) => {
     throw new Error("E2E_EMAIL and E2E_PASSWORD must be set in environment");
   }
 
-  await page.goto("/login");
+  const loginProbe = await page.request.post(`${apiBase}/auth/login`, {
+    data: { email, password },
+  });
+  if (!loginProbe.ok()) {
+    const registerResponse = await page.request.post(
+      `${apiBase}/auth/register`,
+      {
+        data: { email, password },
+      },
+    );
+    if (!registerResponse.ok()) {
+      throw new Error(
+        `E2E account login failed and registration returned ${registerResponse.status()}`,
+      );
+    }
+  }
+
+  await page.goto("/login", { waitUntil: "domcontentloaded" });
   await page.fill('input[name="email"]', email);
   await page.fill('input[name="password"]', password);
   await page.click('button[type="submit"]');

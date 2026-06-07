@@ -5,18 +5,23 @@
  * OpenAPI spec version: 0.1.0
  */
 import {
+  useInfiniteQuery,
   useMutation,
   useQuery
 } from '@tanstack/react-query';
 import type {
   DataTag,
   DefinedInitialDataOptions,
+  DefinedUseInfiniteQueryResult,
   DefinedUseQueryResult,
+  InfiniteData,
   MutationFunction,
   QueryClient,
   QueryFunction,
   QueryKey,
   UndefinedInitialDataOptions,
+  UseInfiniteQueryOptions,
+  UseInfiniteQueryResult,
   UseMutationOptions,
   UseMutationResult,
   UseQueryOptions,
@@ -54,6 +59,8 @@ type NonReadonly<T> = [T] extends [UnionToIntersection<T>] ? {
 export interface CaptureBody {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
+  /** @nullable */
+  audioDurationSec: number | null;
   classifiedAs: string;
   createdAt: string;
   id: string;
@@ -65,6 +72,23 @@ export interface CaptureBody {
   source: string;
   /** @nullable */
   taskId: string | null;
+  /** @nullable */
+  transcribedAt: string | null;
+  /** @nullable */
+  transcript: string | null;
+  /** @nullable */
+  transcriptionModel: string | null;
+  transcriptionStatus: string;
+}
+
+export interface CaptureContextBody {
+  /** A URL to the JSON Schema for this object. */
+  readonly $schema?: string;
+  anchorIndex: number;
+  hasEarlier: boolean;
+  hasLater: boolean;
+  /** @nullable */
+  items: CaptureBody[] | null;
 }
 
 export type CaptureCreateInputBodyClassifiedAs = typeof CaptureCreateInputBodyClassifiedAs[keyof typeof CaptureCreateInputBodyClassifiedAs];
@@ -99,6 +123,15 @@ export interface CaptureCreateInputBody {
   taskId?: string;
 }
 
+export interface CapturePageBody {
+  /** A URL to the JSON Schema for this object. */
+  readonly $schema?: string;
+  /** @nullable */
+  items: CaptureBody[] | null;
+  /** @nullable */
+  nextCursor: string | null;
+}
+
 export type CaptureUpdateInputBodyClassifiedAs = typeof CaptureUpdateInputBodyClassifiedAs[keyof typeof CaptureUpdateInputBodyClassifiedAs];
 
 
@@ -116,6 +149,7 @@ export interface CaptureUpdateInputBody {
   classifiedAs?: CaptureUpdateInputBodyClassifiedAs;
   rawText?: string;
   taskId?: string;
+  transcript?: string;
 }
 
 export interface ErrorDetail {
@@ -153,12 +187,36 @@ export interface ForgotPasswordInputBody {
   email: string;
 }
 
+export type LogTimeInputInputMode = typeof LogTimeInputInputMode[keyof typeof LogTimeInputInputMode];
+
+
+export const LogTimeInputInputMode = {
+  duration: 'duration',
+  range: 'range',
+} as const;
+
+export interface LogTimeInput {
+  /** @minimum 1 */
+  durationSec: number;
+  endedAt?: string;
+  inputMode: LogTimeInputInputMode;
+  startedAt?: string;
+}
+
 export interface LogCreateInputBody {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
-  /** @minLength 1 */
-  body: string;
+  body?: string;
   taskId?: string;
+  time?: LogTimeInput;
+}
+
+export interface LogTimeBody {
+  durationSec: number;
+  endedAt: string;
+  id: string;
+  inputMode: string;
+  startedAt: string;
 }
 
 export interface LogEntryBody {
@@ -169,13 +227,15 @@ export interface LogEntryBody {
   id: string;
   /** @nullable */
   taskId: string | null;
+  time?: LogTimeBody;
 }
 
 export interface LogUpdateInputBody {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
-  /** @minLength 1 */
-  body: string;
+  body?: string;
+  removeTime?: boolean;
+  time?: LogTimeInput;
 }
 
 export interface LoginInputBody {
@@ -394,19 +454,25 @@ export interface SearchCaptureItem {
   classifiedAs: string;
   createdAt: string;
   id: string;
+  matchedField: string;
   mediaType: string;
   /** @nullable */
   mediaUrl: string | null;
+  preview: string;
   /** @nullable */
   rawText: string | null;
+  source: string;
   /** @nullable */
   taskId: string | null;
+  /** @nullable */
+  transcript: string | null;
 }
 
 export interface SearchLogEntryItem {
   body: string;
   createdAt: string;
   id: string;
+  preview: string;
   /** @nullable */
   taskId: string | null;
 }
@@ -416,6 +482,7 @@ export interface SearchTaskItem {
   /** @nullable */
   dueAt: string | null;
   id: string;
+  preview: string;
   /** @nullable */
   projectId: string | null;
   status: string;
@@ -563,25 +630,44 @@ export interface TimeBlockBody {
   /** @nullable */
   endedAt: string | null;
   id: string;
+  inputMode: string;
   startedAt: string;
   /** @nullable */
   taskId: string | null;
 }
+
+export type TimeBlockCreateInputBodyInputMode = typeof TimeBlockCreateInputBodyInputMode[keyof typeof TimeBlockCreateInputBodyInputMode];
+
+
+export const TimeBlockCreateInputBodyInputMode = {
+  duration: 'duration',
+  range: 'range',
+} as const;
 
 export interface TimeBlockCreateInputBody {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
   durationSec?: number;
   endedAt?: string;
+  inputMode?: TimeBlockCreateInputBodyInputMode;
   startedAt?: string;
   taskId?: string;
 }
+
+export type TimeBlockUpdateInputBodyInputMode = typeof TimeBlockUpdateInputBodyInputMode[keyof typeof TimeBlockUpdateInputBodyInputMode];
+
+
+export const TimeBlockUpdateInputBodyInputMode = {
+  duration: 'duration',
+  range: 'range',
+} as const;
 
 export interface TimeBlockUpdateInputBody {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
   durationSec?: number;
   endedAt?: string;
+  inputMode?: TimeBlockUpdateInputBodyInputMode;
   startedAt?: string;
   taskId?: string;
 }
@@ -628,6 +714,33 @@ export type ListCapturesParams = {
 classifiedAs?: string;
 };
 
+export type GetCaptureContextParams = {
+anchorId: string;
+/**
+ * @minimum 0
+ * @maximum 50
+ */
+before?: number;
+/**
+ * @minimum 0
+ * @maximum 50
+ */
+after?: number;
+};
+
+export type ListCapturePageParams = {
+/**
+ * Filter by classification: task, idea, routine, log, unclassified
+ */
+classifiedAs?: string;
+cursor?: string;
+/**
+ * @minimum 1
+ * @maximum 100
+ */
+limit?: number;
+};
+
 export type ListLogEntriesParams = {
 /**
  * Filter by task (UUID)
@@ -647,7 +760,7 @@ export type SearchParams = {
  * @minLength 1
  * @maxLength 100
  */
-q?: string;
+q: string;
 };
 
 export type ListTasksParams = {
@@ -2127,6 +2240,267 @@ export const useCreateCapture = <TError = ErrorModel,
     }
 
 /**
+ * @summary Get captures around an anchor
+ */
+export const getCaptureContext = (
+    params: GetCaptureContextParams,
+ signal?: AbortSignal
+) => {
+
+
+      return api<CaptureContextBody>(
+      {url: `/captures/context`, method: 'GET',
+        params, signal
+    },
+      );
+    }
+
+
+
+
+export const getGetCaptureContextQueryKey = (params?: GetCaptureContextParams,) => {
+    return [
+    `/captures/context`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetCaptureContextQueryOptions = <TData = Awaited<ReturnType<typeof getCaptureContext>>, TError = ErrorModel>(params: GetCaptureContextParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getCaptureContext>>, TError, TData>>, }
+) => {
+
+const {query: queryOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetCaptureContextQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getCaptureContext>>> = ({ signal }) => getCaptureContext(params, signal);
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getCaptureContext>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetCaptureContextQueryResult = NonNullable<Awaited<ReturnType<typeof getCaptureContext>>>
+export type GetCaptureContextQueryError = ErrorModel
+
+
+export function useGetCaptureContext<TData = Awaited<ReturnType<typeof getCaptureContext>>, TError = ErrorModel>(
+ params: GetCaptureContextParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getCaptureContext>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getCaptureContext>>,
+          TError,
+          Awaited<ReturnType<typeof getCaptureContext>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetCaptureContext<TData = Awaited<ReturnType<typeof getCaptureContext>>, TError = ErrorModel>(
+ params: GetCaptureContextParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getCaptureContext>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getCaptureContext>>,
+          TError,
+          Awaited<ReturnType<typeof getCaptureContext>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetCaptureContext<TData = Awaited<ReturnType<typeof getCaptureContext>>, TError = ErrorModel>(
+ params: GetCaptureContextParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getCaptureContext>>, TError, TData>>, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Get captures around an anchor
+ */
+
+export function useGetCaptureContext<TData = Awaited<ReturnType<typeof getCaptureContext>>, TError = ErrorModel>(
+ params: GetCaptureContextParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getCaptureContext>>, TError, TData>>, }
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetCaptureContextQueryOptions(params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+/**
+ * @summary List a page of captures
+ */
+export const listCapturePage = (
+    params?: ListCapturePageParams,
+ signal?: AbortSignal
+) => {
+
+
+      return api<CapturePageBody>(
+      {url: `/captures/page`, method: 'GET',
+        params, signal
+    },
+      );
+    }
+
+
+
+
+export const getListCapturePageInfiniteQueryKey = (params?: ListCapturePageParams,) => {
+    return [
+    'infinite', `/captures/page`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+export const getListCapturePageQueryKey = (params?: ListCapturePageParams,) => {
+    return [
+    `/captures/page`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListCapturePageInfiniteQueryOptions = <TData = InfiniteData<Awaited<ReturnType<typeof listCapturePage>>, ListCapturePageParams['cursor']>, TError = ErrorModel>(params?: ListCapturePageParams, options?: { query?:Partial<UseInfiniteQueryOptions<Awaited<ReturnType<typeof listCapturePage>>, TError, TData, QueryKey, ListCapturePageParams['cursor']>>, }
+) => {
+
+const {query: queryOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListCapturePageInfiniteQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listCapturePage>>, QueryKey, ListCapturePageParams['cursor']> = ({ signal, pageParam }) => listCapturePage({...params, 'cursor': pageParam || params?.['cursor']}, signal);
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseInfiniteQueryOptions<Awaited<ReturnType<typeof listCapturePage>>, TError, TData, QueryKey, ListCapturePageParams['cursor']> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListCapturePageInfiniteQueryResult = NonNullable<Awaited<ReturnType<typeof listCapturePage>>>
+export type ListCapturePageInfiniteQueryError = ErrorModel
+
+
+export function useListCapturePageInfinite<TData = InfiniteData<Awaited<ReturnType<typeof listCapturePage>>, ListCapturePageParams['cursor']>, TError = ErrorModel>(
+ params: undefined |  ListCapturePageParams, options: { query:Partial<UseInfiniteQueryOptions<Awaited<ReturnType<typeof listCapturePage>>, TError, TData, QueryKey, ListCapturePageParams['cursor']>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listCapturePage>>,
+          TError,
+          Awaited<ReturnType<typeof listCapturePage>>, QueryKey
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  DefinedUseInfiniteQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListCapturePageInfinite<TData = InfiniteData<Awaited<ReturnType<typeof listCapturePage>>, ListCapturePageParams['cursor']>, TError = ErrorModel>(
+ params?: ListCapturePageParams, options?: { query?:Partial<UseInfiniteQueryOptions<Awaited<ReturnType<typeof listCapturePage>>, TError, TData, QueryKey, ListCapturePageParams['cursor']>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listCapturePage>>,
+          TError,
+          Awaited<ReturnType<typeof listCapturePage>>, QueryKey
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  UseInfiniteQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListCapturePageInfinite<TData = InfiniteData<Awaited<ReturnType<typeof listCapturePage>>, ListCapturePageParams['cursor']>, TError = ErrorModel>(
+ params?: ListCapturePageParams, options?: { query?:Partial<UseInfiniteQueryOptions<Awaited<ReturnType<typeof listCapturePage>>, TError, TData, QueryKey, ListCapturePageParams['cursor']>>, }
+ , queryClient?: QueryClient
+  ):  UseInfiniteQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary List a page of captures
+ */
+
+export function useListCapturePageInfinite<TData = InfiniteData<Awaited<ReturnType<typeof listCapturePage>>, ListCapturePageParams['cursor']>, TError = ErrorModel>(
+ params?: ListCapturePageParams, options?: { query?:Partial<UseInfiniteQueryOptions<Awaited<ReturnType<typeof listCapturePage>>, TError, TData, QueryKey, ListCapturePageParams['cursor']>>, }
+ , queryClient?: QueryClient
+ ):  UseInfiniteQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getListCapturePageInfiniteQueryOptions(params,options)
+
+  const query = useInfiniteQuery(queryOptions, queryClient) as  UseInfiniteQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+export const getListCapturePageQueryOptions = <TData = Awaited<ReturnType<typeof listCapturePage>>, TError = ErrorModel>(params?: ListCapturePageParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listCapturePage>>, TError, TData>>, }
+) => {
+
+const {query: queryOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListCapturePageQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listCapturePage>>> = ({ signal }) => listCapturePage(params, signal);
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listCapturePage>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListCapturePageQueryResult = NonNullable<Awaited<ReturnType<typeof listCapturePage>>>
+export type ListCapturePageQueryError = ErrorModel
+
+
+export function useListCapturePage<TData = Awaited<ReturnType<typeof listCapturePage>>, TError = ErrorModel>(
+ params: undefined |  ListCapturePageParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listCapturePage>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listCapturePage>>,
+          TError,
+          Awaited<ReturnType<typeof listCapturePage>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListCapturePage<TData = Awaited<ReturnType<typeof listCapturePage>>, TError = ErrorModel>(
+ params?: ListCapturePageParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listCapturePage>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listCapturePage>>,
+          TError,
+          Awaited<ReturnType<typeof listCapturePage>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListCapturePage<TData = Awaited<ReturnType<typeof listCapturePage>>, TError = ErrorModel>(
+ params?: ListCapturePageParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listCapturePage>>, TError, TData>>, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary List a page of captures
+ */
+
+export function useListCapturePage<TData = Awaited<ReturnType<typeof listCapturePage>>, TError = ErrorModel>(
+ params?: ListCapturePageParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listCapturePage>>, TError, TData>>, }
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getListCapturePageQueryOptions(params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+/**
  * @summary Delete a capture
  */
 export const deleteCapture = (
@@ -2251,6 +2625,68 @@ export const useUpdateCapture = <TError = ErrorModel,
         TContext
       > => {
       return useMutation(getUpdateCaptureMutationOptions(options), queryClient);
+    }
+
+/**
+ * @summary Retry audio transcription
+ */
+export const retryCaptureTranscription = (
+    id: string,
+ signal?: AbortSignal
+) => {
+
+
+      return api<CaptureBody>(
+      {url: `/captures/${id}/transcription/retry`, method: 'POST', signal
+    },
+      );
+    }
+
+
+
+export const getRetryCaptureTranscriptionMutationOptions = <TError = ErrorModel,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof retryCaptureTranscription>>, TError,{id: string}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof retryCaptureTranscription>>, TError,{id: string}, TContext> => {
+
+const mutationKey = ['retryCaptureTranscription'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof retryCaptureTranscription>>, {id: string}> = (props) => {
+          const {id} = props ?? {};
+
+          return  retryCaptureTranscription(id,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RetryCaptureTranscriptionMutationResult = NonNullable<Awaited<ReturnType<typeof retryCaptureTranscription>>>
+
+    export type RetryCaptureTranscriptionMutationError = ErrorModel
+
+    /**
+ * @summary Retry audio transcription
+ */
+export const useRetryCaptureTranscription = <TError = ErrorModel,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof retryCaptureTranscription>>, TError,{id: string}, TContext>, }
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof retryCaptureTranscription>>,
+        TError,
+        {id: string},
+        TContext
+      > => {
+      return useMutation(getRetryCaptureTranscriptionMutationOptions(options), queryClient);
     }
 
 /**
@@ -3199,7 +3635,7 @@ export const useShareReport = <TError = ErrorModel,
  * @summary Search across captures, tasks, and log entries
  */
 export const search = (
-    params?: SearchParams,
+    params: SearchParams,
  signal?: AbortSignal
 ) => {
 
@@ -3221,7 +3657,7 @@ export const getSearchQueryKey = (params?: SearchParams,) => {
     }
 
 
-export const getSearchQueryOptions = <TData = Awaited<ReturnType<typeof search>>, TError = ErrorModel>(params?: SearchParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof search>>, TError, TData>>, }
+export const getSearchQueryOptions = <TData = Awaited<ReturnType<typeof search>>, TError = ErrorModel>(params: SearchParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof search>>, TError, TData>>, }
 ) => {
 
 const {query: queryOptions} = options ?? {};
@@ -3244,7 +3680,7 @@ export type SearchQueryError = ErrorModel
 
 
 export function useSearch<TData = Awaited<ReturnType<typeof search>>, TError = ErrorModel>(
- params: undefined |  SearchParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof search>>, TError, TData>> & Pick<
+ params: SearchParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof search>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof search>>,
           TError,
@@ -3254,7 +3690,7 @@ export function useSearch<TData = Awaited<ReturnType<typeof search>>, TError = E
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 export function useSearch<TData = Awaited<ReturnType<typeof search>>, TError = ErrorModel>(
- params?: SearchParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof search>>, TError, TData>> & Pick<
+ params: SearchParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof search>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof search>>,
           TError,
@@ -3264,7 +3700,7 @@ export function useSearch<TData = Awaited<ReturnType<typeof search>>, TError = E
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 export function useSearch<TData = Awaited<ReturnType<typeof search>>, TError = ErrorModel>(
- params?: SearchParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof search>>, TError, TData>>, }
+ params: SearchParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof search>>, TError, TData>>, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 /**
@@ -3272,7 +3708,7 @@ export function useSearch<TData = Awaited<ReturnType<typeof search>>, TError = E
  */
 
 export function useSearch<TData = Awaited<ReturnType<typeof search>>, TError = ErrorModel>(
- params?: SearchParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof search>>, TError, TData>>, }
+ params: SearchParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof search>>, TError, TData>>, }
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 

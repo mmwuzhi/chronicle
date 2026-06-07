@@ -14,6 +14,14 @@ export default defineConfig({
           path: "./src/lib/axios.ts",
           name: "api",
         },
+        operations: {
+          "list-capture-page": {
+            query: {
+              useInfinite: true,
+              useInfiniteQueryParam: "cursor",
+            },
+          },
+        },
       },
     },
   },

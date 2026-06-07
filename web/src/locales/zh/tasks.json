@@ -7,6 +7,7 @@
   "noTasks": "还没有任务。",
   "dueDate": "截止日期",
   "startDate": "开始",
+  "setDate": "设置日期",
   "overdue": "已逾期",
   "dueToday": "今天",
   "failedToLoad": "加载任务失败",
@@ -25,6 +26,12 @@
     "title": "时间",
     "minutesPlaceholder": "分钟",
     "noTimeLogged": "还没有记录",
+    "noTime": "不记录时间",
+    "durationMode": "仅时长",
+    "rangeMode": "时间段",
+    "minutes": "分钟",
+    "start": "开始",
+    "end": "结束",
     "total": "总计：{{duration}}"
   },
   "log": {

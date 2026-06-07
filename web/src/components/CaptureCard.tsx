@@ -57,7 +57,7 @@ export function AutoTextarea({
   className?: string;
   style?: React.CSSProperties;
   autoFocus?: boolean;
-}) {
+}): React.JSX.Element {
   const ref = useRef<HTMLTextAreaElement>(null);
 
   const resize = useCallback(() => {
@@ -95,18 +95,26 @@ export function CaptureCard({
   onReclassify,
   onDelete,
   onSaveText,
+  onSaveTranscript,
+  onUseTranscript,
+  onRetryTranscription,
   onPromoteToTask,
 }: {
   c: CaptureBody;
   onReclassify: (id: string, v: CaptureUpdateInputBodyClassifiedAs) => void;
   onDelete: (id: string) => void;
   onSaveText: (id: string, text: string) => void;
+  onSaveTranscript: (id: string, transcript: string) => void;
+  onUseTranscript: (id: string, mode: "append" | "replace") => void;
+  onRetryTranscription: (id: string) => void;
   onPromoteToTask: (rawText: string, captureId: string) => void;
-}) {
+}): React.JSX.Element {
   const { t } = useTranslation("captures");
   const { t: tc } = useTranslation("common");
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(c.rawText ?? "");
+  const [editingTranscript, setEditingTranscript] = useState(false);
+  const [transcriptDraft, setTranscriptDraft] = useState(c.transcript ?? "");
 
   const commitEdit = () => {
     const trimmed = draft.trim();
@@ -114,6 +122,14 @@ export function CaptureCard({
       onSaveText(c.id, trimmed);
     }
     setEditing(false);
+  };
+
+  const commitTranscript = () => {
+    const trimmed = transcriptDraft.trim();
+    if (trimmed && trimmed !== c.transcript) {
+      onSaveTranscript(c.id, trimmed);
+    }
+    setEditingTranscript(false);
   };
 
   return (
@@ -139,6 +155,23 @@ export function CaptureCard({
           src={c.mediaUrl}
           style={{ width: "100%", height: 32 }}
         />
+      )}
+      {c.mediaType === "audio" &&
+        ["pending", "processing"].includes(c.transcriptionStatus) && (
+          <div className="ch-transcript-status">
+            {t("transcript.processing")}
+          </div>
+        )}
+      {c.mediaType === "audio" && c.transcriptionStatus === "failed" && (
+        <div className="ch-transcript-status error">
+          <span>{t("transcript.failed")}</span>
+          <button
+            className="ch-btn ch-btn-sm"
+            onClick={() => onRetryTranscription(c.id)}
+          >
+            {t("transcript.retry")}
+          </button>
+        </div>
       )}
       {editing ? (
         <AutoTextarea
@@ -176,6 +209,73 @@ export function CaptureCard({
           }}
         >
           <Markdown>{c.rawText ?? ""}</Markdown>
+        </div>
+      )}
+      {c.transcript && (
+        <div className="ch-transcript">
+          <div className="ch-transcript-head">
+            <span>{t("transcript.label")}</span>
+            {!editingTranscript && (
+              <button
+                className="ch-btn ch-btn-ghost ch-btn-sm"
+                onClick={() => {
+                  setTranscriptDraft(c.transcript ?? "");
+                  setEditingTranscript(true);
+                }}
+              >
+                {tc("actions.edit")}
+              </button>
+            )}
+          </div>
+          {editingTranscript ? (
+            <>
+              <AutoTextarea
+                autoFocus
+                value={transcriptDraft}
+                onChange={setTranscriptDraft}
+                onKeyDown={(event) => {
+                  if (event.key === "Escape") setEditingTranscript(false);
+                }}
+                className="ch-textarea"
+              />
+              <div className="ch-transcript-actions">
+                <button
+                  className="ch-btn ch-btn-primary ch-btn-sm"
+                  onClick={commitTranscript}
+                >
+                  {tc("actions.save")}
+                </button>
+                <button
+                  className="ch-btn ch-btn-sm"
+                  onClick={() => setEditingTranscript(false)}
+                >
+                  {tc("actions.cancel")}
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              <Markdown>{c.transcript}</Markdown>
+              <div className="ch-transcript-actions">
+                {c.rawText && (
+                  <button
+                    className="ch-btn ch-btn-sm"
+                    onClick={() => onUseTranscript(c.id, "append")}
+                  >
+                    {t("transcript.append")}
+                  </button>
+                )}
+                <button
+                  className="ch-btn ch-btn-primary ch-btn-sm"
+                  onClick={() => onUseTranscript(c.id, "replace")}
+                >
+                  {c.rawText
+                    ? t("transcript.replace")
+                    : t("transcript.useAsText")}
+                </button>
+              </div>
+            </>
+          )}
         </div>
       )}
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>

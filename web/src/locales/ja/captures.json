@@ -17,8 +17,27 @@
   "uploadImage": "画像",
   "uploadAudio": "録音",
   "recording": "録音中…",
-  "transcribing": "文字起こし中…",
+  "stopRecording": "停止",
+  "uploading": "アップロード中…",
   "uploadFailed": "アップロード失敗",
+  "loadMore": "さらに読み込む",
+  "context": {
+    "title": "キャプチャの文脈",
+    "subtitle": "この記憶の直前と直後のキャプチャを表示します。",
+    "match": "検索結果",
+    "earlier": "これより前のキャプチャは未読み込みです",
+    "later": "これより後のキャプチャは未読み込みです",
+    "failedToLoad": "キャプチャの文脈を読み込めませんでした"
+  },
+  "transcript": {
+    "label": "AI文字起こし",
+    "processing": "バックグラウンドで文字起こし中…",
+    "failed": "文字起こしに失敗しました。",
+    "retry": "再試行",
+    "append": "キャプチャに追記",
+    "replace": "キャプチャ本文を置換",
+    "useAsText": "キャプチャ本文にする"
+  },
   "promoteToTask": "タスクに変換",
   "promoteDialog": {
     "title": "タスクに変換",

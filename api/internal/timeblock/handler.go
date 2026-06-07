@@ -48,6 +48,7 @@ type TimeBlockBody struct {
 	StartedAt   string  `json:"startedAt"`
 	EndedAt     *string `json:"endedAt"`
 	DurationSec *int32  `json:"durationSec"`
+	InputMode   string  `json:"inputMode"`
 	CreatedAt   string  `json:"createdAt"`
 }
 
@@ -56,6 +57,7 @@ func toBody(t db.TimeBlock) TimeBlockBody {
 		ID:        t.ID.String(),
 		StartedAt: t.StartedAt.Time.UTC().Format(time.RFC3339),
 		CreatedAt: t.CreatedAt.Time.UTC().Format(time.RFC3339),
+		InputMode: t.InputMode,
 	}
 	if t.TaskID.Valid {
 		tid := uuid.UUID(t.TaskID.Bytes).String()
@@ -113,6 +115,7 @@ type TimeBlockCreateInput struct {
 		StartedAt   *time.Time `json:"startedAt,omitempty"`
 		EndedAt     *time.Time `json:"endedAt,omitempty"`
 		DurationSec *int32     `json:"durationSec,omitempty"`
+		InputMode   string     `json:"inputMode,omitempty" enum:"duration,range"`
 	}
 }
 
@@ -129,12 +132,17 @@ func (h *handler) create(ctx context.Context, input *TimeBlockCreateInput) (*Cre
 	if input.Body.StartedAt != nil {
 		startedAt = *input.Body.StartedAt
 	}
+	inputMode := input.Body.InputMode
+	if inputMode == "" {
+		inputMode = "duration"
+	}
 	t, err := h.q.CreateTimeBlock(ctx, db.CreateTimeBlockParams{
 		UserID:      uid,
 		TaskID:      nullUUID(input.Body.TaskID),
 		StartedAt:   pgtype.Timestamptz{Time: startedAt, Valid: true},
 		EndedAt:     nullTime(input.Body.EndedAt),
 		DurationSec: nullInt4(input.Body.DurationSec),
+		InputMode:   inputMode,
 	})
 	if err != nil {
 		return nil, huma.Error500InternalServerError("internal error")
@@ -151,6 +159,7 @@ type TimeBlockUpdateInput struct {
 		StartedAt   *time.Time `json:"startedAt,omitempty"`
 		EndedAt     *time.Time `json:"endedAt,omitempty"`
 		DurationSec *int32     `json:"durationSec,omitempty"`
+		InputMode   *string    `json:"inputMode,omitempty" enum:"duration,range"`
 	}
 }
 
@@ -174,6 +183,7 @@ func (h *handler) update(ctx context.Context, input *TimeBlockUpdateInput) (*Upd
 		StartedAt:   nullTime(input.Body.StartedAt),
 		EndedAt:     nullTime(input.Body.EndedAt),
 		DurationSec: nullInt4(input.Body.DurationSec),
+		InputMode:   nullText(input.Body.InputMode),
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -245,4 +255,11 @@ func nullInt4(n *int32) pgtype.Int4 {
 		return pgtype.Int4{}
 	}
 	return pgtype.Int4{Int32: *n, Valid: true}
+}
+
+func nullText(value *string) pgtype.Text {
+	if value == nil {
+		return pgtype.Text{}
+	}
+	return pgtype.Text{String: *value, Valid: true}
 }

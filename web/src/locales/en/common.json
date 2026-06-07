@@ -40,7 +40,8 @@
     "dismiss": "Dismiss"
   },
   "errors": {
-    "polishFailed": "Couldn't polish text. Try again."
+    "polishFailed": "Couldn't polish text. Try again.",
+    "mutationFailed": "Couldn't save that change. Try again."
   },
   "loading": "Loading…",
   "error": "Something went wrong",
@@ -56,7 +57,10 @@
     "recentTasks": "Recent tasks",
     "recentCaptures": "Recent captures",
     "noResults": "No results",
-    "typeToSearch": "Type to search…"
+    "typeToSearch": "Type to search…",
+    "matchedTranscript": "Matched transcript",
+    "openInContext": "Open in context",
+    "openTask": "Open task"
   },
   "confirm": {
     "cannotUndo": "This cannot be undone.",

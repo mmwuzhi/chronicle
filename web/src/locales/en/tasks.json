@@ -7,6 +7,7 @@
   "noTasks": "No tasks yet.",
   "dueDate": "Due date",
   "startDate": "Start",
+  "setDate": "Set date",
   "overdue": "Overdue",
   "dueToday": "Today",
   "failedToLoad": "Failed to load tasks",
@@ -25,6 +26,12 @@
     "title": "Time",
     "minutesPlaceholder": "min",
     "noTimeLogged": "No time logged yet",
+    "noTime": "No time",
+    "durationMode": "Duration",
+    "rangeMode": "Time range",
+    "minutes": "Minutes",
+    "start": "Start",
+    "end": "End",
     "total": "Total: {{duration}}"
   },
   "log": {

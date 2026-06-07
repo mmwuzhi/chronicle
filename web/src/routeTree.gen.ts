@@ -25,6 +25,7 @@ import { Route as ProjectsIndexRouteImport } from './routes/projects.index'
 import { Route as TasksTaskIdRouteImport } from './routes/tasks.$taskId'
 import { Route as ShareSlugRouteImport } from './routes/share.$slug'
 import { Route as ProjectsProjectIdRouteImport } from './routes/projects.$projectId'
+import { Route as CapturesContextRouteImport } from './routes/captures_.context'
 import { Route as AuthMfaRouteImport } from './routes/auth.mfa'
 import { Route as AuthCallbackRouteImport } from './routes/auth.callback'
 
@@ -108,6 +109,11 @@ const ProjectsProjectIdRoute = ProjectsProjectIdRouteImport.update({
   path: '/$projectId',
   getParentRoute: () => ProjectsRoute,
 } as any)
+const CapturesContextRoute = CapturesContextRouteImport.update({
+  id: '/captures_/context',
+  path: '/captures/context',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AuthMfaRoute = AuthMfaRouteImport.update({
   id: '/auth/mfa',
   path: '/auth/mfa',
@@ -133,6 +139,7 @@ export interface FileRoutesByFullPath {
   '/verify-email': typeof VerifyEmailRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/auth/mfa': typeof AuthMfaRoute
+  '/captures/context': typeof CapturesContextRoute
   '/projects/$projectId': typeof ProjectsProjectIdRoute
   '/share/$slug': typeof ShareSlugRoute
   '/tasks/$taskId': typeof TasksTaskIdRoute
@@ -151,6 +158,7 @@ export interface FileRoutesByTo {
   '/verify-email': typeof VerifyEmailRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/auth/mfa': typeof AuthMfaRoute
+  '/captures/context': typeof CapturesContextRoute
   '/projects/$projectId': typeof ProjectsProjectIdRoute
   '/share/$slug': typeof ShareSlugRoute
   '/tasks/$taskId': typeof TasksTaskIdRoute
@@ -172,6 +180,7 @@ export interface FileRoutesById {
   '/verify-email': typeof VerifyEmailRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/auth/mfa': typeof AuthMfaRoute
+  '/captures_/context': typeof CapturesContextRoute
   '/projects/$projectId': typeof ProjectsProjectIdRoute
   '/share/$slug': typeof ShareSlugRoute
   '/tasks/$taskId': typeof TasksTaskIdRoute
@@ -194,6 +203,7 @@ export interface FileRouteTypes {
     | '/verify-email'
     | '/auth/callback'
     | '/auth/mfa'
+    | '/captures/context'
     | '/projects/$projectId'
     | '/share/$slug'
     | '/tasks/$taskId'
@@ -212,6 +222,7 @@ export interface FileRouteTypes {
     | '/verify-email'
     | '/auth/callback'
     | '/auth/mfa'
+    | '/captures/context'
     | '/projects/$projectId'
     | '/share/$slug'
     | '/tasks/$taskId'
@@ -232,6 +243,7 @@ export interface FileRouteTypes {
     | '/verify-email'
     | '/auth/callback'
     | '/auth/mfa'
+    | '/captures_/context'
     | '/projects/$projectId'
     | '/share/$slug'
     | '/tasks/$taskId'
@@ -253,6 +265,7 @@ export interface RootRouteChildren {
   VerifyEmailRoute: typeof VerifyEmailRoute
   AuthCallbackRoute: typeof AuthCallbackRoute
   AuthMfaRoute: typeof AuthMfaRoute
+  CapturesContextRoute: typeof CapturesContextRoute
   ShareSlugRoute: typeof ShareSlugRoute
 }
 
@@ -370,6 +383,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProjectsProjectIdRouteImport
       parentRoute: typeof ProjectsRoute
     }
+    '/captures_/context': {
+      id: '/captures_/context'
+      path: '/captures/context'
+      fullPath: '/captures/context'
+      preLoaderRoute: typeof CapturesContextRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/auth/mfa': {
       id: '/auth/mfa'
       path: '/auth/mfa'
@@ -427,6 +447,7 @@ const rootRouteChildren: RootRouteChildren = {
   VerifyEmailRoute: VerifyEmailRoute,
   AuthCallbackRoute: AuthCallbackRoute,
   AuthMfaRoute: AuthMfaRoute,
+  CapturesContextRoute: CapturesContextRoute,
   ShareSlugRoute: ShareSlugRoute,
 }
 export const routeTree = rootRouteImport

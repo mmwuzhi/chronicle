@@ -40,7 +40,8 @@
     "dismiss": "关闭"
   },
   "errors": {
-    "polishFailed": "润色失败，请重试。"
+    "polishFailed": "润色失败，请重试。",
+    "mutationFailed": "保存失败，请重试。"
   },
   "loading": "加载中…",
   "error": "出错了",
@@ -56,7 +57,10 @@
     "recentTasks": "最近任务",
     "recentCaptures": "最近捕获",
     "noResults": "无结果",
-    "typeToSearch": "输入搜索内容…"
+    "typeToSearch": "输入搜索内容…",
+    "matchedTranscript": "命中转写",
+    "openInContext": "在上下文中打开",
+    "openTask": "打开任务"
   },
   "confirm": {
     "cannotUndo": "此操作无法撤销。",

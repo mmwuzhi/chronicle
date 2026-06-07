@@ -12,10 +12,73 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const claimPendingTranscription = `-- name: ClaimPendingTranscription :one
+UPDATE captures
+SET transcription_status = 'processing',
+    transcription_attempts = transcription_attempts + 1,
+    next_transcription_at = now() + interval '10 minutes'
+WHERE id = (
+  SELECT id
+  FROM captures
+  WHERE transcription_status IN ('pending', 'processing')
+    AND next_transcription_at <= now()
+  ORDER BY next_transcription_at, created_at
+  FOR UPDATE SKIP LOCKED
+  LIMIT 1
+)
+RETURNING id, user_id, raw_text, media_url, media_type, classified_as, task_id, created_at, source, transcript, transcription_status, transcription_model, transcription_attempts, transcribed_at, next_transcription_at, audio_duration_sec, media_key
+`
+
+func (q *Queries) ClaimPendingTranscription(ctx context.Context) (Capture, error) {
+	row := q.db.QueryRow(ctx, claimPendingTranscription)
+	var i Capture
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.RawText,
+		&i.MediaUrl,
+		&i.MediaType,
+		&i.ClassifiedAs,
+		&i.TaskID,
+		&i.CreatedAt,
+		&i.Source,
+		&i.Transcript,
+		&i.TranscriptionStatus,
+		&i.TranscriptionModel,
+		&i.TranscriptionAttempts,
+		&i.TranscribedAt,
+		&i.NextTranscriptionAt,
+		&i.AudioDurationSec,
+		&i.MediaKey,
+	)
+	return i, err
+}
+
+const completeCaptureTranscription = `-- name: CompleteCaptureTranscription :exec
+UPDATE captures
+SET transcript = $2,
+    transcription_status = 'completed',
+    transcription_model = $3,
+    transcribed_at = now(),
+    next_transcription_at = NULL
+WHERE id = $1
+`
+
+type CompleteCaptureTranscriptionParams struct {
+	ID                 uuid.UUID   `json:"id"`
+	Transcript         pgtype.Text `json:"transcript"`
+	TranscriptionModel pgtype.Text `json:"transcription_model"`
+}
+
+func (q *Queries) CompleteCaptureTranscription(ctx context.Context, arg CompleteCaptureTranscriptionParams) error {
+	_, err := q.db.Exec(ctx, completeCaptureTranscription, arg.ID, arg.Transcript, arg.TranscriptionModel)
+	return err
+}
+
 const createCapture = `-- name: CreateCapture :one
 INSERT INTO captures (user_id, raw_text, media_url, media_type, classified_as, task_id, source)
 VALUES ($1, $2, $3, $4, $5, $6, $7)
-RETURNING id, user_id, raw_text, media_url, media_type, classified_as, task_id, created_at, source
+RETURNING id, user_id, raw_text, media_url, media_type, classified_as, task_id, created_at, source, transcript, transcription_status, transcription_model, transcription_attempts, transcribed_at, next_transcription_at, audio_duration_sec, media_key
 `
 
 type CreateCaptureParams struct {
@@ -49,6 +112,97 @@ func (q *Queries) CreateCapture(ctx context.Context, arg CreateCaptureParams) (C
 		&i.TaskID,
 		&i.CreatedAt,
 		&i.Source,
+		&i.Transcript,
+		&i.TranscriptionStatus,
+		&i.TranscriptionModel,
+		&i.TranscriptionAttempts,
+		&i.TranscribedAt,
+		&i.NextTranscriptionAt,
+		&i.AudioDurationSec,
+		&i.MediaKey,
+	)
+	return i, err
+}
+
+const createUploadedCapture = `-- name: CreateUploadedCapture :one
+INSERT INTO captures (
+  user_id,
+  media_url,
+  media_type,
+  classified_as,
+  source,
+  media_key,
+  audio_duration_sec,
+  transcription_status,
+  next_transcription_at
+)
+VALUES (
+  $1,
+  $2,
+  $3,
+  'unclassified',
+  'web',
+  $4,
+  $5,
+  CASE
+    WHEN $3::capture_media_type = 'audio'
+      AND $5::integer IS NOT NULL
+      AND $5::integer <= 300
+      AND $6::boolean
+    THEN 'pending'::transcription_status
+    WHEN $3::capture_media_type = 'audio'
+    THEN 'skipped'::transcription_status
+    ELSE 'none'::transcription_status
+  END,
+  CASE
+    WHEN $3::capture_media_type = 'audio'
+      AND $5::integer IS NOT NULL
+      AND $5::integer <= 300
+      AND $6::boolean
+    THEN now()
+    ELSE NULL
+  END
+)
+RETURNING id, user_id, raw_text, media_url, media_type, classified_as, task_id, created_at, source, transcript, transcription_status, transcription_model, transcription_attempts, transcribed_at, next_transcription_at, audio_duration_sec, media_key
+`
+
+type CreateUploadedCaptureParams struct {
+	UserID               uuid.UUID        `json:"user_id"`
+	MediaUrl             pgtype.Text      `json:"media_url"`
+	MediaType            CaptureMediaType `json:"media_type"`
+	MediaKey             pgtype.Text      `json:"media_key"`
+	AudioDurationSec     pgtype.Int4      `json:"audio_duration_sec"`
+	TranscriptionEnabled bool             `json:"transcription_enabled"`
+}
+
+func (q *Queries) CreateUploadedCapture(ctx context.Context, arg CreateUploadedCaptureParams) (Capture, error) {
+	row := q.db.QueryRow(ctx, createUploadedCapture,
+		arg.UserID,
+		arg.MediaUrl,
+		arg.MediaType,
+		arg.MediaKey,
+		arg.AudioDurationSec,
+		arg.TranscriptionEnabled,
+	)
+	var i Capture
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.RawText,
+		&i.MediaUrl,
+		&i.MediaType,
+		&i.ClassifiedAs,
+		&i.TaskID,
+		&i.CreatedAt,
+		&i.Source,
+		&i.Transcript,
+		&i.TranscriptionStatus,
+		&i.TranscriptionModel,
+		&i.TranscriptionAttempts,
+		&i.TranscribedAt,
+		&i.NextTranscriptionAt,
+		&i.AudioDurationSec,
+		&i.MediaKey,
 	)
 	return i, err
 }
@@ -71,8 +225,255 @@ func (q *Queries) DeleteCapture(ctx context.Context, arg DeleteCaptureParams) (u
 	return id, err
 }
 
+const failCaptureTranscription = `-- name: FailCaptureTranscription :exec
+UPDATE captures
+SET transcription_status = CASE
+      WHEN transcription_attempts >= 4 THEN 'failed'::transcription_status
+      ELSE 'pending'::transcription_status
+    END,
+    next_transcription_at = CASE transcription_attempts
+      WHEN 1 THEN now() + interval '1 minute'
+      WHEN 2 THEN now() + interval '5 minutes'
+      WHEN 3 THEN now() + interval '30 minutes'
+      ELSE NULL
+    END
+WHERE id = $1
+`
+
+func (q *Queries) FailCaptureTranscription(ctx context.Context, id uuid.UUID) error {
+	_, err := q.db.Exec(ctx, failCaptureTranscription, id)
+	return err
+}
+
+const getCapture = `-- name: GetCapture :one
+SELECT id, user_id, raw_text, media_url, media_type, classified_as, task_id, created_at, source, transcript, transcription_status, transcription_model, transcription_attempts, transcribed_at, next_transcription_at, audio_duration_sec, media_key FROM captures
+WHERE id = $1 AND user_id = $2
+`
+
+type GetCaptureParams struct {
+	ID     uuid.UUID `json:"id"`
+	UserID uuid.UUID `json:"user_id"`
+}
+
+func (q *Queries) GetCapture(ctx context.Context, arg GetCaptureParams) (Capture, error) {
+	row := q.db.QueryRow(ctx, getCapture, arg.ID, arg.UserID)
+	var i Capture
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.RawText,
+		&i.MediaUrl,
+		&i.MediaType,
+		&i.ClassifiedAs,
+		&i.TaskID,
+		&i.CreatedAt,
+		&i.Source,
+		&i.Transcript,
+		&i.TranscriptionStatus,
+		&i.TranscriptionModel,
+		&i.TranscriptionAttempts,
+		&i.TranscribedAt,
+		&i.NextTranscriptionAt,
+		&i.AudioDurationSec,
+		&i.MediaKey,
+	)
+	return i, err
+}
+
+const listCaptureContextAfter = `-- name: ListCaptureContextAfter :many
+SELECT id, user_id, raw_text, media_url, media_type, classified_as, task_id, created_at, source, transcript, transcription_status, transcription_model, transcription_attempts, transcribed_at, next_transcription_at, audio_duration_sec, media_key FROM captures
+WHERE user_id = $1
+  AND (created_at, id) > (
+    $2::timestamptz,
+    $3::uuid
+  )
+ORDER BY created_at ASC, id ASC
+LIMIT $4
+`
+
+type ListCaptureContextAfterParams struct {
+	UserID          uuid.UUID          `json:"user_id"`
+	AnchorCreatedAt pgtype.Timestamptz `json:"anchor_created_at"`
+	AnchorID        uuid.UUID          `json:"anchor_id"`
+	WindowSize      int32              `json:"window_size"`
+}
+
+func (q *Queries) ListCaptureContextAfter(ctx context.Context, arg ListCaptureContextAfterParams) ([]Capture, error) {
+	rows, err := q.db.Query(ctx, listCaptureContextAfter,
+		arg.UserID,
+		arg.AnchorCreatedAt,
+		arg.AnchorID,
+		arg.WindowSize,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Capture
+	for rows.Next() {
+		var i Capture
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.RawText,
+			&i.MediaUrl,
+			&i.MediaType,
+			&i.ClassifiedAs,
+			&i.TaskID,
+			&i.CreatedAt,
+			&i.Source,
+			&i.Transcript,
+			&i.TranscriptionStatus,
+			&i.TranscriptionModel,
+			&i.TranscriptionAttempts,
+			&i.TranscribedAt,
+			&i.NextTranscriptionAt,
+			&i.AudioDurationSec,
+			&i.MediaKey,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listCaptureContextBefore = `-- name: ListCaptureContextBefore :many
+SELECT id, user_id, raw_text, media_url, media_type, classified_as, task_id, created_at, source, transcript, transcription_status, transcription_model, transcription_attempts, transcribed_at, next_transcription_at, audio_duration_sec, media_key FROM captures
+WHERE user_id = $1
+  AND (created_at, id) < (
+    $2::timestamptz,
+    $3::uuid
+  )
+ORDER BY created_at DESC, id DESC
+LIMIT $4
+`
+
+type ListCaptureContextBeforeParams struct {
+	UserID          uuid.UUID          `json:"user_id"`
+	AnchorCreatedAt pgtype.Timestamptz `json:"anchor_created_at"`
+	AnchorID        uuid.UUID          `json:"anchor_id"`
+	WindowSize      int32              `json:"window_size"`
+}
+
+func (q *Queries) ListCaptureContextBefore(ctx context.Context, arg ListCaptureContextBeforeParams) ([]Capture, error) {
+	rows, err := q.db.Query(ctx, listCaptureContextBefore,
+		arg.UserID,
+		arg.AnchorCreatedAt,
+		arg.AnchorID,
+		arg.WindowSize,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Capture
+	for rows.Next() {
+		var i Capture
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.RawText,
+			&i.MediaUrl,
+			&i.MediaType,
+			&i.ClassifiedAs,
+			&i.TaskID,
+			&i.CreatedAt,
+			&i.Source,
+			&i.Transcript,
+			&i.TranscriptionStatus,
+			&i.TranscriptionModel,
+			&i.TranscriptionAttempts,
+			&i.TranscribedAt,
+			&i.NextTranscriptionAt,
+			&i.AudioDurationSec,
+			&i.MediaKey,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listCapturePage = `-- name: ListCapturePage :many
+SELECT id, user_id, raw_text, media_url, media_type, classified_as, task_id, created_at, source, transcript, transcription_status, transcription_model, transcription_attempts, transcribed_at, next_transcription_at, audio_duration_sec, media_key FROM captures
+WHERE user_id = $1
+  AND (
+    $2::text IS NULL
+    OR classified_as::text = $2::text
+  )
+  AND (
+    $3::timestamptz IS NULL
+    OR (created_at, id) < (
+      $3::timestamptz,
+      $4::uuid
+    )
+  )
+ORDER BY created_at DESC, id DESC
+LIMIT $5
+`
+
+type ListCapturePageParams struct {
+	UserID          uuid.UUID          `json:"user_id"`
+	ClassifiedAs    pgtype.Text        `json:"classified_as"`
+	CursorCreatedAt pgtype.Timestamptz `json:"cursor_created_at"`
+	CursorID        pgtype.UUID        `json:"cursor_id"`
+	PageSize        int32              `json:"page_size"`
+}
+
+func (q *Queries) ListCapturePage(ctx context.Context, arg ListCapturePageParams) ([]Capture, error) {
+	rows, err := q.db.Query(ctx, listCapturePage,
+		arg.UserID,
+		arg.ClassifiedAs,
+		arg.CursorCreatedAt,
+		arg.CursorID,
+		arg.PageSize,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Capture
+	for rows.Next() {
+		var i Capture
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.RawText,
+			&i.MediaUrl,
+			&i.MediaType,
+			&i.ClassifiedAs,
+			&i.TaskID,
+			&i.CreatedAt,
+			&i.Source,
+			&i.Transcript,
+			&i.TranscriptionStatus,
+			&i.TranscriptionModel,
+			&i.TranscriptionAttempts,
+			&i.TranscribedAt,
+			&i.NextTranscriptionAt,
+			&i.AudioDurationSec,
+			&i.MediaKey,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listCaptures = `-- name: ListCaptures :many
-SELECT id, user_id, raw_text, media_url, media_type, classified_as, task_id, created_at, source FROM captures
+SELECT id, user_id, raw_text, media_url, media_type, classified_as, task_id, created_at, source, transcript, transcription_status, transcription_model, transcription_attempts, transcribed_at, next_transcription_at, audio_duration_sec, media_key FROM captures
 WHERE user_id = $1
   AND ($2::text IS NULL OR classified_as::text = $2::text)
 ORDER BY created_at DESC
@@ -102,6 +503,14 @@ func (q *Queries) ListCaptures(ctx context.Context, arg ListCapturesParams) ([]C
 			&i.TaskID,
 			&i.CreatedAt,
 			&i.Source,
+			&i.Transcript,
+			&i.TranscriptionStatus,
+			&i.TranscriptionModel,
+			&i.TranscriptionAttempts,
+			&i.TranscribedAt,
+			&i.NextTranscriptionAt,
+			&i.AudioDurationSec,
+			&i.MediaKey,
 		); err != nil {
 			return nil, err
 		}
@@ -114,7 +523,7 @@ func (q *Queries) ListCaptures(ctx context.Context, arg ListCapturesParams) ([]C
 }
 
 const listCapturesInRange = `-- name: ListCapturesInRange :many
-SELECT id, user_id, raw_text, media_url, media_type, classified_as, task_id, created_at, source FROM captures
+SELECT id, user_id, raw_text, media_url, media_type, classified_as, task_id, created_at, source, transcript, transcription_status, transcription_model, transcription_attempts, transcribed_at, next_transcription_at, audio_duration_sec, media_key FROM captures
 WHERE user_id = $1
   AND created_at >= $2
   AND created_at < $3
@@ -146,6 +555,14 @@ func (q *Queries) ListCapturesInRange(ctx context.Context, arg ListCapturesInRan
 			&i.TaskID,
 			&i.CreatedAt,
 			&i.Source,
+			&i.Transcript,
+			&i.TranscriptionStatus,
+			&i.TranscriptionModel,
+			&i.TranscriptionAttempts,
+			&i.TranscribedAt,
+			&i.NextTranscriptionAt,
+			&i.AudioDurationSec,
+			&i.MediaKey,
 		); err != nil {
 			return nil, err
 		}
@@ -157,20 +574,65 @@ func (q *Queries) ListCapturesInRange(ctx context.Context, arg ListCapturesInRan
 	return items, nil
 }
 
+const retryCaptureTranscription = `-- name: RetryCaptureTranscription :one
+UPDATE captures
+SET transcription_status = 'pending',
+    transcription_attempts = 0,
+    next_transcription_at = now()
+WHERE id = $1
+  AND user_id = $2
+  AND media_type = 'audio'
+  AND audio_duration_sec IS NOT NULL
+  AND audio_duration_sec <= 300
+RETURNING id, user_id, raw_text, media_url, media_type, classified_as, task_id, created_at, source, transcript, transcription_status, transcription_model, transcription_attempts, transcribed_at, next_transcription_at, audio_duration_sec, media_key
+`
+
+type RetryCaptureTranscriptionParams struct {
+	ID     uuid.UUID `json:"id"`
+	UserID uuid.UUID `json:"user_id"`
+}
+
+func (q *Queries) RetryCaptureTranscription(ctx context.Context, arg RetryCaptureTranscriptionParams) (Capture, error) {
+	row := q.db.QueryRow(ctx, retryCaptureTranscription, arg.ID, arg.UserID)
+	var i Capture
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.RawText,
+		&i.MediaUrl,
+		&i.MediaType,
+		&i.ClassifiedAs,
+		&i.TaskID,
+		&i.CreatedAt,
+		&i.Source,
+		&i.Transcript,
+		&i.TranscriptionStatus,
+		&i.TranscriptionModel,
+		&i.TranscriptionAttempts,
+		&i.TranscribedAt,
+		&i.NextTranscriptionAt,
+		&i.AudioDurationSec,
+		&i.MediaKey,
+	)
+	return i, err
+}
+
 const updateCapture = `-- name: UpdateCapture :one
 UPDATE captures
 SET
   raw_text      = COALESCE($1::text,           raw_text),
-  classified_as = CASE WHEN $2::text IS NOT NULL
-                  THEN $2::capture_classified_as
+  transcript    = COALESCE($2::text,         transcript),
+  classified_as = CASE WHEN $3::text IS NOT NULL
+                  THEN $3::capture_classified_as
                   ELSE classified_as END,
-  task_id       = COALESCE($3::uuid, task_id)
-WHERE id = $4 AND user_id = $5
-RETURNING id, user_id, raw_text, media_url, media_type, classified_as, task_id, created_at, source
+  task_id       = COALESCE($4::uuid, task_id)
+WHERE id = $5 AND user_id = $6
+RETURNING id, user_id, raw_text, media_url, media_type, classified_as, task_id, created_at, source, transcript, transcription_status, transcription_model, transcription_attempts, transcribed_at, next_transcription_at, audio_duration_sec, media_key
 `
 
 type UpdateCaptureParams struct {
 	RawText      pgtype.Text `json:"raw_text"`
+	Transcript   pgtype.Text `json:"transcript"`
 	ClassifiedAs pgtype.Text `json:"classified_as"`
 	TaskID       pgtype.UUID `json:"task_id"`
 	ID           uuid.UUID   `json:"id"`
@@ -180,6 +642,7 @@ type UpdateCaptureParams struct {
 func (q *Queries) UpdateCapture(ctx context.Context, arg UpdateCaptureParams) (Capture, error) {
 	row := q.db.QueryRow(ctx, updateCapture,
 		arg.RawText,
+		arg.Transcript,
 		arg.ClassifiedAs,
 		arg.TaskID,
 		arg.ID,
@@ -196,6 +659,14 @@ func (q *Queries) UpdateCapture(ctx context.Context, arg UpdateCaptureParams) (C
 		&i.TaskID,
 		&i.CreatedAt,
 		&i.Source,
+		&i.Transcript,
+		&i.TranscriptionStatus,
+		&i.TranscriptionModel,
+		&i.TranscriptionAttempts,
+		&i.TranscribedAt,
+		&i.NextTranscriptionAt,
+		&i.AudioDurationSec,
+		&i.MediaKey,
 	)
 	return i, err
 }

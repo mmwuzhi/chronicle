@@ -37,31 +37,40 @@ func Register(api huma.API, pool *pgxpool.Pool, authMW func(huma.Context, func(h
 	}
 
 	huma.Register(api, op("list-captures", http.MethodGet, "/captures", "List captures"), h.list)
+	huma.Register(api, op("list-capture-page", http.MethodGet, "/captures/page", "List a page of captures"), h.listPage)
+	huma.Register(api, op("get-capture-context", http.MethodGet, "/captures/context", "Get captures around an anchor"), h.context)
 	huma.Register(api, op("create-capture", http.MethodPost, "/captures", "Create a capture"), h.create)
 	huma.Register(api, op("update-capture", http.MethodPatch, "/captures/{id}", "Update a capture"), h.update)
+	huma.Register(api, op("retry-capture-transcription", http.MethodPost, "/captures/{id}/transcription/retry", "Retry audio transcription"), h.retryTranscription)
 	huma.Register(api, op("delete-capture", http.MethodDelete, "/captures/{id}", "Delete a capture"), h.delete)
 }
 
 // --- shared types ---
 
 type CaptureBody struct {
-	ID           string  `json:"id"`
-	RawText      *string `json:"rawText"`
-	MediaUrl     *string `json:"mediaUrl"`
-	MediaType    string  `json:"mediaType"`
-	ClassifiedAs string  `json:"classifiedAs"`
-	TaskID       *string `json:"taskId"`
-	Source       string  `json:"source"`
-	CreatedAt    string  `json:"createdAt"`
+	ID                  string  `json:"id"`
+	RawText             *string `json:"rawText"`
+	MediaUrl            *string `json:"mediaUrl"`
+	MediaType           string  `json:"mediaType"`
+	ClassifiedAs        string  `json:"classifiedAs"`
+	TaskID              *string `json:"taskId"`
+	Source              string  `json:"source"`
+	Transcript          *string `json:"transcript"`
+	TranscriptionStatus string  `json:"transcriptionStatus"`
+	TranscriptionModel  *string `json:"transcriptionModel"`
+	TranscribedAt       *string `json:"transcribedAt"`
+	AudioDurationSec    *int32  `json:"audioDurationSec"`
+	CreatedAt           string  `json:"createdAt"`
 }
 
 func toBody(c db.Capture) CaptureBody {
 	b := CaptureBody{
-		ID:           c.ID.String(),
-		MediaType:    string(c.MediaType),
-		ClassifiedAs: string(c.ClassifiedAs),
-		Source:       c.Source,
-		CreatedAt:    c.CreatedAt.Time.UTC().Format(time.RFC3339),
+		ID:                  c.ID.String(),
+		MediaType:           string(c.MediaType),
+		ClassifiedAs:        string(c.ClassifiedAs),
+		Source:              c.Source,
+		TranscriptionStatus: string(c.TranscriptionStatus),
+		CreatedAt:           c.CreatedAt.Time.UTC().Format(time.RFC3339),
 	}
 	if c.RawText.Valid {
 		b.RawText = &c.RawText.String
@@ -72,6 +81,19 @@ func toBody(c db.Capture) CaptureBody {
 	if c.TaskID.Valid {
 		tid := uuid.UUID(c.TaskID.Bytes).String()
 		b.TaskID = &tid
+	}
+	if c.Transcript.Valid {
+		b.Transcript = &c.Transcript.String
+	}
+	if c.TranscriptionModel.Valid {
+		b.TranscriptionModel = &c.TranscriptionModel.String
+	}
+	if c.TranscribedAt.Valid {
+		s := c.TranscribedAt.Time.UTC().Format(time.RFC3339)
+		b.TranscribedAt = &s
+	}
+	if c.AudioDurationSec.Valid {
+		b.AudioDurationSec = &c.AudioDurationSec.Int32
 	}
 	return b
 }
@@ -159,6 +181,7 @@ type CaptureUpdateInput struct {
 	ID   string `path:"id" format:"uuid"`
 	Body struct {
 		RawText      *string `json:"rawText,omitempty"`
+		Transcript   *string `json:"transcript,omitempty"`
 		ClassifiedAs *string `json:"classifiedAs,omitempty" enum:"task,idea,routine,log,unclassified"`
 		TaskID       *string `json:"taskId,omitempty" format:"uuid"`
 	}
@@ -181,12 +204,36 @@ func (h *handler) update(ctx context.Context, input *CaptureUpdateInput) (*Updat
 		ID:           id,
 		UserID:       uid,
 		RawText:      nullText(input.Body.RawText),
+		Transcript:   nullText(input.Body.Transcript),
 		ClassifiedAs: nullText(input.Body.ClassifiedAs),
 		TaskID:       nullUUID(input.Body.TaskID),
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, huma.Error404NotFound("capture not found")
+		}
+		return nil, huma.Error500InternalServerError("internal error")
+	}
+	return &UpdateOutput{Body: toBody(c)}, nil
+}
+
+type CaptureRetryTranscriptionInput struct {
+	ID string `path:"id" format:"uuid"`
+}
+
+func (h *handler) retryTranscription(ctx context.Context, input *CaptureRetryTranscriptionInput) (*UpdateOutput, error) {
+	uid, err := userID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	id, err := uuid.Parse(input.ID)
+	if err != nil {
+		return nil, huma.Error422UnprocessableEntity("invalid id")
+	}
+	c, err := h.q.RetryCaptureTranscription(ctx, db.RetryCaptureTranscriptionParams{ID: id, UserID: uid})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, huma.Error404NotFound("eligible audio capture not found")
 		}
 		return nil, huma.Error500InternalServerError("internal error")
 	}

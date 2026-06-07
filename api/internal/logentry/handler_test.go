@@ -26,7 +26,7 @@ import (
 func newServer(t *testing.T) (*httptest.Server, *pgxpool.Pool) {
 	t.Helper()
 	pool := testutil.NewPool(t)
-	testutil.Truncate(t, pool, "log_entries", "tasks", "projects", "users")
+	testutil.Truncate(t, pool, "log_entries", "time_blocks", "tasks", "projects", "users")
 
 	r := chi.NewRouter()
 	api := humachi.New(r, huma.DefaultConfig("Test", "0.0.0"))
@@ -151,6 +151,68 @@ func TestCreateLogEntry_EmptyBody(t *testing.T) {
 	}
 }
 
+func TestCreateLogEntry_TimeOnly(t *testing.T) {
+	srv, pool := newServer(t)
+	userID, token := createTestUser(t, pool)
+
+	resp := do(t, srv.Client(), http.MethodPost, srv.URL+"/log-entries", token, map[string]any{
+		"time": map[string]any{
+			"inputMode":   "duration",
+			"durationSec": 1500,
+		},
+	})
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+
+	var body struct {
+		Body string `json:"body"`
+		Time struct {
+			ID          string `json:"id"`
+			DurationSec int32  `json:"durationSec"`
+			InputMode   string `json:"inputMode"`
+		} `json:"time"`
+	}
+	decodeBody(t, resp, &body)
+	if body.Body != "" || body.Time.ID == "" {
+		t.Fatalf("expected time-only entry, got body=%q time=%+v", body.Body, body.Time)
+	}
+	if body.Time.DurationSec != 1500 || body.Time.InputMode != "duration" {
+		t.Fatalf("unexpected time block: %+v", body.Time)
+	}
+
+	var count int
+	if err := pool.QueryRow(context.Background(),
+		"SELECT count(*) FROM time_blocks WHERE user_id = $1 AND deleted_at IS NULL",
+		userID,
+	).Scan(&count); err != nil {
+		t.Fatalf("count time blocks: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("expected one active time block, got %d", count)
+	}
+}
+
+func TestCreateLogEntry_RangeDurationCannotExceedRange(t *testing.T) {
+	srv, pool := newServer(t)
+	_, token := createTestUser(t, pool)
+	startedAt := "2026-06-06T08:00:00Z"
+	endedAt := "2026-06-06T08:30:00Z"
+
+	resp := do(t, srv.Client(), http.MethodPost, srv.URL+"/log-entries", token, map[string]any{
+		"time": map[string]any{
+			"inputMode":   "range",
+			"startedAt":   startedAt,
+			"endedAt":     endedAt,
+			"durationSec": 3600,
+		},
+	})
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("expected 422, got %d", resp.StatusCode)
+	}
+}
+
 // --- list ---
 
 func TestListLogEntries_IsolatedByUser(t *testing.T) {
@@ -221,6 +283,52 @@ func TestUpdateLogEntry_NotOwned(t *testing.T) {
 	}
 }
 
+func TestUpdateLogEntry_RemoveTimeKeepsLog(t *testing.T) {
+	srv, pool := newServer(t)
+	_, token := createTestUser(t, pool)
+
+	createResp := do(t, srv.Client(), http.MethodPost, srv.URL+"/log-entries", token, map[string]any{
+		"body": "reviewed the release",
+		"time": map[string]any{
+			"inputMode":   "duration",
+			"durationSec": 900,
+		},
+	})
+	var created struct {
+		ID   string `json:"id"`
+		Time struct {
+			ID string `json:"id"`
+		} `json:"time"`
+	}
+	decodeBody(t, createResp, &created)
+
+	resp := do(t, srv.Client(), http.MethodPatch, srv.URL+"/log-entries/"+created.ID, token, map[string]any{
+		"removeTime": true,
+	})
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+	var updated struct {
+		Body string `json:"body"`
+		Time any    `json:"time"`
+	}
+	decodeBody(t, resp, &updated)
+	if updated.Body != "reviewed the release" || updated.Time != nil {
+		t.Fatalf("expected body without time, got %+v", updated)
+	}
+
+	var deletedAt *string
+	if err := pool.QueryRow(context.Background(),
+		"SELECT deleted_at::text FROM time_blocks WHERE id = $1",
+		created.Time.ID,
+	).Scan(&deletedAt); err != nil {
+		t.Fatalf("read time block: %v", err)
+	}
+	if deletedAt == nil {
+		t.Fatal("expected removed time block to be soft deleted")
+	}
+}
+
 // --- delete ---
 
 func TestDeleteLogEntry_SoftDelete(t *testing.T) {
@@ -241,6 +349,45 @@ func TestDeleteLogEntry_SoftDelete(t *testing.T) {
 	decodeBody(t, listResp, &items)
 	if len(items) != 0 {
 		t.Fatalf("expected empty list after soft delete, got %d items", len(items))
+	}
+}
+
+func TestDeleteLogEntry_SoftDeletesLinkedTime(t *testing.T) {
+	srv, pool := newServer(t)
+	_, token := createTestUser(t, pool)
+
+	createResp := do(t, srv.Client(), http.MethodPost, srv.URL+"/log-entries", token, map[string]any{
+		"time": map[string]any{
+			"inputMode":   "duration",
+			"durationSec": 600,
+		},
+	})
+	var created struct {
+		ID   string `json:"id"`
+		Time struct {
+			ID string `json:"id"`
+		} `json:"time"`
+	}
+	decodeBody(t, createResp, &created)
+
+	resp := do(t, srv.Client(), http.MethodDelete, srv.URL+"/log-entries/"+created.ID, token, nil)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d", resp.StatusCode)
+	}
+
+	var logDeletedAt, timeDeletedAt *string
+	if err := pool.QueryRow(context.Background(),
+		`SELECT l.deleted_at::text, t.deleted_at::text
+		 FROM log_entries l
+		 JOIN time_blocks t ON t.id = l.time_block_id
+		 WHERE l.id = $1`,
+		created.ID,
+	).Scan(&logDeletedAt, &timeDeletedAt); err != nil {
+		t.Fatalf("read deleted records: %v", err)
+	}
+	if logDeletedAt == nil || timeDeletedAt == nil {
+		t.Fatalf("expected both records soft deleted, got log=%v time=%v", logDeletedAt, timeDeletedAt)
 	}
 }
 

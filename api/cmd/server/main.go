@@ -44,7 +44,8 @@ func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	slog.SetDefault(logger)
 
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
 	pool, err := pgxpool.New(ctx, cfg.DatabaseURL)
 	if err != nil {
@@ -109,7 +110,7 @@ func main() {
 	})
 
 	// Init R2/S3 client if all credentials are present
-	var s3client upload.S3Putter
+	var s3client upload.S3Client
 	if cfg.R2BucketName != "" && cfg.R2AccountID != "" && cfg.R2AccessKey != "" && cfg.R2SecretKey != "" {
 		awsCfg, err := awsconfig.LoadDefaultConfig(ctx,
 			awsconfig.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(cfg.R2AccessKey, cfg.R2SecretKey, "")),
@@ -124,11 +125,15 @@ func main() {
 	}
 
 	authMW := middleware.RequireAuthHuma(auth.ValidateToken(cfg.JWTSecret))
-	upload.Register(r, s3client, upload.Config{
-		R2BucketName: cfg.R2BucketName,
-		R2AccountID:  cfg.R2AccountID,
-		OpenAIKey:    cfg.OpenAIKey,
-	}, auth.ValidateToken(cfg.JWTSecret))
+	uploadConfig := upload.Config{
+		R2BucketName:  cfg.R2BucketName,
+		R2AccountID:   cfg.R2AccountID,
+		OpenAIKey:     cfg.OpenAIKey,
+		OpenAIBaseURL: cfg.OpenAIBaseURL,
+		OpenAIModel:   cfg.OpenAITranscriptionModel,
+	}
+	upload.Register(r, pool, s3client, uploadConfig, auth.ValidateToken(cfg.JWTSecret))
+	upload.StartTranscriptionWorker(ctx, pool, s3client, uploadConfig)
 	project.Register(api, pool, authMW)
 	task.Register(api, pool, authMW)
 	logentry.Register(api, pool, authMW)
@@ -160,6 +165,7 @@ func main() {
 	<-quit
 
 	slog.Info("shutting down")
+	cancel()
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	if err := srv.Shutdown(shutdownCtx); err != nil {

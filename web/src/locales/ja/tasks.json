@@ -7,6 +7,7 @@
   "noTasks": "タスクはまだありません。",
   "dueDate": "期限",
   "startDate": "開始",
+  "setDate": "日付を設定",
   "overdue": "期限超過",
   "dueToday": "今日",
   "failedToLoad": "タスクの読み込みに失敗しました",
@@ -25,6 +26,12 @@
     "title": "時間",
     "minutesPlaceholder": "分",
     "noTimeLogged": "まだ記録はありません",
+    "noTime": "時間なし",
+    "durationMode": "所要時間",
+    "rangeMode": "時間帯",
+    "minutes": "分",
+    "start": "開始",
+    "end": "終了",
     "total": "合計：{{duration}}"
   },
   "log": {

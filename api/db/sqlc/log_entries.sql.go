@@ -13,19 +13,25 @@ import (
 )
 
 const createLogEntry = `-- name: CreateLogEntry :one
-INSERT INTO log_entries (user_id, task_id, body)
-VALUES ($1, $2, $3)
-RETURNING id, user_id, task_id, body, created_at, deleted_at
+INSERT INTO log_entries (user_id, task_id, body, time_block_id)
+VALUES ($1, $2, $3, $4)
+RETURNING id, user_id, task_id, body, created_at, deleted_at, time_block_id
 `
 
 type CreateLogEntryParams struct {
-	UserID uuid.UUID   `json:"user_id"`
-	TaskID pgtype.UUID `json:"task_id"`
-	Body   string      `json:"body"`
+	UserID      uuid.UUID   `json:"user_id"`
+	TaskID      pgtype.UUID `json:"task_id"`
+	Body        string      `json:"body"`
+	TimeBlockID pgtype.UUID `json:"time_block_id"`
 }
 
 func (q *Queries) CreateLogEntry(ctx context.Context, arg CreateLogEntryParams) (LogEntry, error) {
-	row := q.db.QueryRow(ctx, createLogEntry, arg.UserID, arg.TaskID, arg.Body)
+	row := q.db.QueryRow(ctx, createLogEntry,
+		arg.UserID,
+		arg.TaskID,
+		arg.Body,
+		arg.TimeBlockID,
+	)
 	var i LogEntry
 	err := row.Scan(
 		&i.ID,
@@ -34,6 +40,7 @@ func (q *Queries) CreateLogEntry(ctx context.Context, arg CreateLogEntryParams) 
 		&i.Body,
 		&i.CreatedAt,
 		&i.DeletedAt,
+		&i.TimeBlockID,
 	)
 	return i, err
 }
@@ -57,8 +64,33 @@ func (q *Queries) DeleteLogEntry(ctx context.Context, arg DeleteLogEntryParams) 
 	return id, err
 }
 
+const getLogEntry = `-- name: GetLogEntry :one
+SELECT id, user_id, task_id, body, created_at, deleted_at, time_block_id FROM log_entries
+WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL
+`
+
+type GetLogEntryParams struct {
+	ID     uuid.UUID `json:"id"`
+	UserID uuid.UUID `json:"user_id"`
+}
+
+func (q *Queries) GetLogEntry(ctx context.Context, arg GetLogEntryParams) (LogEntry, error) {
+	row := q.db.QueryRow(ctx, getLogEntry, arg.ID, arg.UserID)
+	var i LogEntry
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.TaskID,
+		&i.Body,
+		&i.CreatedAt,
+		&i.DeletedAt,
+		&i.TimeBlockID,
+	)
+	return i, err
+}
+
 const listLogEntries = `-- name: ListLogEntries :many
-SELECT id, user_id, task_id, body, created_at, deleted_at FROM log_entries
+SELECT id, user_id, task_id, body, created_at, deleted_at, time_block_id FROM log_entries
 WHERE user_id = $1
   AND deleted_at IS NULL
   AND ($2::uuid IS NULL OR task_id = $2::uuid)
@@ -86,6 +118,7 @@ func (q *Queries) ListLogEntries(ctx context.Context, arg ListLogEntriesParams) 
 			&i.Body,
 			&i.CreatedAt,
 			&i.DeletedAt,
+			&i.TimeBlockID,
 		); err != nil {
 			return nil, err
 		}
@@ -98,7 +131,7 @@ func (q *Queries) ListLogEntries(ctx context.Context, arg ListLogEntriesParams) 
 }
 
 const listLogEntriesInRange = `-- name: ListLogEntriesInRange :many
-SELECT id, user_id, task_id, body, created_at, deleted_at FROM log_entries
+SELECT id, user_id, task_id, body, created_at, deleted_at, time_block_id FROM log_entries
 WHERE user_id = $1
   AND deleted_at IS NULL
   AND created_at >= $2
@@ -128,6 +161,7 @@ func (q *Queries) ListLogEntriesInRange(ctx context.Context, arg ListLogEntriesI
 			&i.Body,
 			&i.CreatedAt,
 			&i.DeletedAt,
+			&i.TimeBlockID,
 		); err != nil {
 			return nil, err
 		}
@@ -141,19 +175,31 @@ func (q *Queries) ListLogEntriesInRange(ctx context.Context, arg ListLogEntriesI
 
 const updateLogEntry = `-- name: UpdateLogEntry :one
 UPDATE log_entries
-SET body = $1
+SET body = $1,
+    time_block_id = CASE
+      WHEN $4::boolean THEN NULL
+      ELSE COALESCE($5::uuid, time_block_id)
+    END
 WHERE id = $2 AND user_id = $3 AND deleted_at IS NULL
-RETURNING id, user_id, task_id, body, created_at, deleted_at
+RETURNING id, user_id, task_id, body, created_at, deleted_at, time_block_id
 `
 
 type UpdateLogEntryParams struct {
-	Body   string    `json:"body"`
-	ID     uuid.UUID `json:"id"`
-	UserID uuid.UUID `json:"user_id"`
+	Body           string      `json:"body"`
+	ID             uuid.UUID   `json:"id"`
+	UserID         uuid.UUID   `json:"user_id"`
+	ClearTimeBlock bool        `json:"clear_time_block"`
+	TimeBlockID    pgtype.UUID `json:"time_block_id"`
 }
 
 func (q *Queries) UpdateLogEntry(ctx context.Context, arg UpdateLogEntryParams) (LogEntry, error) {
-	row := q.db.QueryRow(ctx, updateLogEntry, arg.Body, arg.ID, arg.UserID)
+	row := q.db.QueryRow(ctx, updateLogEntry,
+		arg.Body,
+		arg.ID,
+		arg.UserID,
+		arg.ClearTimeBlock,
+		arg.TimeBlockID,
+	)
 	var i LogEntry
 	err := row.Scan(
 		&i.ID,
@@ -162,6 +208,7 @@ func (q *Queries) UpdateLogEntry(ctx context.Context, arg UpdateLogEntryParams) 
 		&i.Body,
 		&i.CreatedAt,
 		&i.DeletedAt,
+		&i.TimeBlockID,
 	)
 	return i, err
 }

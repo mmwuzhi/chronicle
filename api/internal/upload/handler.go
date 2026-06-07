@@ -7,9 +7,9 @@ import (
 	"fmt"
 	"io"
 	"mime"
-	"mime/multipart"
 	"net/http"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -17,38 +17,52 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	db "github.com/sikaoshenmi/chronicle/db/sqlc"
 )
 
 const maxUploadSize = 20 << 20 // 20 MB
 
-// S3Putter is the subset of aws s3.Client we need.
-type S3Putter interface {
+// S3Client is the subset of aws s3.Client used by uploads and transcription.
+type S3Client interface {
 	PutObject(ctx context.Context, input *s3.PutObjectInput, opts ...func(*s3.Options)) (*s3.PutObjectOutput, error)
+	GetObject(ctx context.Context, input *s3.GetObjectInput, opts ...func(*s3.Options)) (*s3.GetObjectOutput, error)
 }
 
 type Config struct {
-	R2BucketName string
-	R2AccountID  string
-	OpenAIKey    string
+	R2BucketName  string
+	R2AccountID   string
+	OpenAIKey     string
+	OpenAIBaseURL string
+	OpenAIModel   string
 }
 
 type handler struct {
-	s3       S3Putter
+	s3       S3Client
+	q        *db.Queries
 	cfg      Config
 	validate func(raw string) (string, error)
 }
 
 // Register mounts POST /captures/upload on the chi router as a plain http.Handler.
 // Multipart parsing requires direct *http.Request access, so huma is bypassed here.
-func Register(r chi.Router, s3c S3Putter, cfg Config, validate func(raw string) (string, error)) {
-	h := &handler{s3: s3c, cfg: cfg, validate: validate}
+func Register(r chi.Router, pool *pgxpool.Pool, s3c S3Client, cfg Config, validate func(raw string) (string, error)) {
+	h := &handler{s3: s3c, q: db.New(pool), cfg: cfg, validate: validate}
 	r.Post("/captures/upload", h.upload)
 }
 
 type uploadResponse struct {
-	MediaUrl  string  `json:"mediaUrl"`
-	MediaType string  `json:"mediaType"`
-	RawText   *string `json:"rawText,omitempty"`
+	ID                  string  `json:"id,omitempty"`
+	MediaUrl            string  `json:"mediaUrl"`
+	MediaType           string  `json:"mediaType"`
+	ClassifiedAs        string  `json:"classifiedAs,omitempty"`
+	Source              string  `json:"source,omitempty"`
+	Transcript          *string `json:"transcript,omitempty"`
+	TranscriptionStatus string  `json:"transcriptionStatus,omitempty"`
+	AudioDurationSec    *int32  `json:"audioDurationSec,omitempty"`
+	CreatedAt           string  `json:"createdAt,omitempty"`
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
@@ -73,6 +87,11 @@ func (h *handler) upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	userID, err := h.validate(raw)
+	if err != nil {
+		writeErr(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	uid, err := uuid.Parse(userID)
 	if err != nil {
 		writeErr(w, http.StatusUnauthorized, "unauthorized")
 		return
@@ -112,6 +131,25 @@ func (h *handler) upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var duration *int32
+	if rawDuration := r.FormValue("durationSec"); rawDuration != "" {
+		parsed, parseErr := strconv.ParseInt(rawDuration, 10, 32)
+		if parseErr != nil || parsed <= 0 {
+			writeErr(w, http.StatusUnprocessableEntity, "durationSec must be a positive integer")
+			return
+		}
+		value := int32(parsed)
+		duration = &value
+	}
+	createCapture := false
+	if rawCreateCapture := r.FormValue("createCapture"); rawCreateCapture != "" {
+		createCapture, err = strconv.ParseBool(rawCreateCapture)
+		if err != nil {
+			writeErr(w, http.StatusUnprocessableEntity, "createCapture must be a boolean")
+			return
+		}
+	}
+
 	ext := extensionFor(fh.Filename, contentType)
 	key := fmt.Sprintf("captures/%s/%s%s", userID, uuid.New().String(), ext)
 	publicURL := fmt.Sprintf("https://%s.%s.r2.cloudflarestorage.com/%s",
@@ -127,15 +165,38 @@ func (h *handler) upload(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadGateway, "storage upload failed")
 		return
 	}
-
-	resp := uploadResponse{MediaUrl: publicURL, MediaType: mediaType}
-
-	if mediaType == "audio" && h.cfg.OpenAIKey != "" {
-		if text := transcribe(r.Context(), data, fh.Filename, contentType, h.cfg.OpenAIKey); text != "" {
-			resp.RawText = &text
-		}
+	if !createCapture {
+		writeJSON(w, http.StatusOK, uploadResponse{
+			MediaUrl:  publicURL,
+			MediaType: mediaType,
+		})
+		return
 	}
 
+	c, err := h.q.CreateUploadedCapture(r.Context(), db.CreateUploadedCaptureParams{
+		UserID:               uid,
+		MediaUrl:             pgtype.Text{String: publicURL, Valid: true},
+		MediaType:            db.CaptureMediaType(mediaType),
+		MediaKey:             pgtype.Text{String: key, Valid: true},
+		AudioDurationSec:     nullableInt4(duration),
+		TranscriptionEnabled: h.cfg.OpenAIKey != "",
+	})
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "could not create capture")
+		return
+	}
+	resp := uploadResponse{
+		ID:                  c.ID.String(),
+		MediaUrl:            publicURL,
+		MediaType:           mediaType,
+		ClassifiedAs:        string(c.ClassifiedAs),
+		Source:              c.Source,
+		TranscriptionStatus: string(c.TranscriptionStatus),
+		CreatedAt:           c.CreatedAt.Time.UTC().Format(time.RFC3339),
+	}
+	if c.AudioDurationSec.Valid {
+		resp.AudioDurationSec = &c.AudioDurationSec.Int32
+	}
 	writeJSON(w, http.StatusOK, resp)
 }
 
@@ -162,53 +223,9 @@ func extensionFor(filename, contentType string) string {
 	return ""
 }
 
-func transcribe(ctx context.Context, data []byte, filename, contentType, apiKey string) string {
-	var buf bytes.Buffer
-	mw := multipart.NewWriter(&buf)
-
-	fw, err := mw.CreateFormFile("file", filenameOrDefault(filename, contentType))
-	if err != nil {
-		return ""
+func nullableInt4(value *int32) pgtype.Int4 {
+	if value == nil {
+		return pgtype.Int4{}
 	}
-	if _, err = fw.Write(data); err != nil {
-		return ""
-	}
-	_ = mw.WriteField("model", "whisper-1")
-	_ = mw.WriteField("response_format", "text")
-	mw.Close()
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		"https://api.openai.com/v1/audio/transcriptions", &buf)
-	if err != nil {
-		return ""
-	}
-	req.Header.Set("Authorization", "Bearer "+apiKey)
-	req.Header.Set("Content-Type", mw.FormDataContentType())
-
-	resp, err := (&http.Client{Timeout: 60 * time.Second}).Do(req)
-	if err != nil || resp.StatusCode != http.StatusOK {
-		if resp != nil {
-			resp.Body.Close()
-		}
-		return ""
-	}
-	defer resp.Body.Close()
-
-	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-	return strings.TrimSpace(string(body))
-}
-
-func filenameOrDefault(name, contentType string) string {
-	if name != "" {
-		return name
-	}
-	mt, _, _ := mime.ParseMediaType(contentType)
-	switch mt {
-	case "audio/webm", "video/webm":
-		return "recording.webm"
-	case "audio/ogg", "video/ogg":
-		return "recording.ogg"
-	default:
-		return "recording.mp3"
-	}
+	return pgtype.Int4{Int32: *value, Valid: true}
 }

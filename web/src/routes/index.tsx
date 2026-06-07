@@ -4,7 +4,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import {
   useGetMe,
   useListTasks,
-  useListCaptures,
+  useListCapturePage,
   useListTimeBlocks,
   useListLogEntries,
   useUpdateTask,
@@ -63,9 +63,12 @@ function Dashboard() {
 
   const { data: me } = useGetMe();
   const { data: tasks } = useListTasks(undefined, { query: { enabled: !!me } });
-  const { data: captures } = useListCaptures(undefined, {
-    query: { enabled: !!me },
-  });
+  const { data: capturePage } = useListCapturePage(
+    { limit: 5 },
+    {
+      query: { enabled: !!me },
+    },
+  );
   const { data: blocks } = useListTimeBlocks(undefined, {
     query: { enabled: !!me },
   });
@@ -121,7 +124,7 @@ function Dashboard() {
     (t: TaskBody) => t.status === "todo" || t.status === "in_progress",
   );
   const doneTasks = allTasks.filter((t: TaskBody) => t.status === "done");
-  const recentCaptures = (captures ?? []).slice(0, 5);
+  const recentCaptures = capturePage?.items ?? [];
   const weekBlocks = (blocks ?? []).filter((b) => new Date(b.startedAt) >= ws);
   const totalSec = weekBlocks.reduce((s, b) => s + (b.durationSec ?? 0), 0);
   const hours = Math.floor(totalSec / 3600);
@@ -134,7 +137,10 @@ function Dashboard() {
       value: `${doneTasks.length}/${allTasks.length}`,
       label: t("tasksDoneLabel"),
     },
-    { value: String((captures ?? []).length), label: t("capturesLabel") },
+    {
+      value: `${recentCaptures.length}${capturePage?.nextCursor ? "+" : ""}`,
+      label: t("capturesLabel"),
+    },
     { value: String(entryCount), label: t("logsLabel") },
     { value: `${hours}h ${minutes}m`, label: t("trackedLabel") },
   ];

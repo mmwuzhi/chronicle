@@ -17,8 +17,27 @@
   "uploadImage": "Image",
   "uploadAudio": "Record",
   "recording": "Recording…",
-  "transcribing": "Transcribing…",
+  "stopRecording": "Stop",
+  "uploading": "Uploading…",
   "uploadFailed": "Upload failed",
+  "loadMore": "Load more",
+  "context": {
+    "title": "Capture context",
+    "subtitle": "The captures immediately before and after this memory.",
+    "match": "Search match",
+    "earlier": "Earlier captures are not loaded",
+    "later": "Later captures are not loaded",
+    "failedToLoad": "Failed to load capture context"
+  },
+  "transcript": {
+    "label": "AI transcript",
+    "processing": "Transcribing in the background…",
+    "failed": "Transcription failed.",
+    "retry": "Retry",
+    "append": "Append to capture",
+    "replace": "Replace capture text",
+    "useAsText": "Use as capture text"
+  },
   "promoteToTask": "Turn into task",
   "promoteDialog": {
     "title": "Promote to Task",

@@ -13,9 +13,9 @@ import (
 )
 
 const createTimeBlock = `-- name: CreateTimeBlock :one
-INSERT INTO time_blocks (user_id, task_id, started_at, ended_at, duration_sec)
-VALUES ($1, $2, $3, $4, $5)
-RETURNING id, user_id, task_id, started_at, ended_at, duration_sec, created_at
+INSERT INTO time_blocks (user_id, task_id, started_at, ended_at, duration_sec, input_mode)
+VALUES ($1, $2, $3, $4, $5, $6)
+RETURNING id, user_id, task_id, started_at, ended_at, duration_sec, created_at, deleted_at, input_mode
 `
 
 type CreateTimeBlockParams struct {
@@ -24,6 +24,7 @@ type CreateTimeBlockParams struct {
 	StartedAt   pgtype.Timestamptz `json:"started_at"`
 	EndedAt     pgtype.Timestamptz `json:"ended_at"`
 	DurationSec pgtype.Int4        `json:"duration_sec"`
+	InputMode   string             `json:"input_mode"`
 }
 
 func (q *Queries) CreateTimeBlock(ctx context.Context, arg CreateTimeBlockParams) (TimeBlock, error) {
@@ -33,6 +34,7 @@ func (q *Queries) CreateTimeBlock(ctx context.Context, arg CreateTimeBlockParams
 		arg.StartedAt,
 		arg.EndedAt,
 		arg.DurationSec,
+		arg.InputMode,
 	)
 	var i TimeBlock
 	err := row.Scan(
@@ -43,13 +45,16 @@ func (q *Queries) CreateTimeBlock(ctx context.Context, arg CreateTimeBlockParams
 		&i.EndedAt,
 		&i.DurationSec,
 		&i.CreatedAt,
+		&i.DeletedAt,
+		&i.InputMode,
 	)
 	return i, err
 }
 
 const deleteTimeBlock = `-- name: DeleteTimeBlock :one
-DELETE FROM time_blocks
-WHERE id = $1 AND user_id = $2
+UPDATE time_blocks
+SET deleted_at = now()
+WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL
 RETURNING id
 `
 
@@ -65,9 +70,37 @@ func (q *Queries) DeleteTimeBlock(ctx context.Context, arg DeleteTimeBlockParams
 	return id, err
 }
 
+const getTimeBlock = `-- name: GetTimeBlock :one
+SELECT id, user_id, task_id, started_at, ended_at, duration_sec, created_at, deleted_at, input_mode FROM time_blocks
+WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL
+`
+
+type GetTimeBlockParams struct {
+	ID     uuid.UUID `json:"id"`
+	UserID uuid.UUID `json:"user_id"`
+}
+
+func (q *Queries) GetTimeBlock(ctx context.Context, arg GetTimeBlockParams) (TimeBlock, error) {
+	row := q.db.QueryRow(ctx, getTimeBlock, arg.ID, arg.UserID)
+	var i TimeBlock
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.TaskID,
+		&i.StartedAt,
+		&i.EndedAt,
+		&i.DurationSec,
+		&i.CreatedAt,
+		&i.DeletedAt,
+		&i.InputMode,
+	)
+	return i, err
+}
+
 const listTimeBlocks = `-- name: ListTimeBlocks :many
-SELECT id, user_id, task_id, started_at, ended_at, duration_sec, created_at FROM time_blocks
+SELECT id, user_id, task_id, started_at, ended_at, duration_sec, created_at, deleted_at, input_mode FROM time_blocks
 WHERE user_id = $1
+  AND deleted_at IS NULL
   AND ($2::uuid IS NULL OR task_id = $2::uuid)
 ORDER BY started_at DESC
 `
@@ -94,6 +127,8 @@ func (q *Queries) ListTimeBlocks(ctx context.Context, arg ListTimeBlocksParams) 
 			&i.EndedAt,
 			&i.DurationSec,
 			&i.CreatedAt,
+			&i.DeletedAt,
+			&i.InputMode,
 		); err != nil {
 			return nil, err
 		}
@@ -106,8 +141,9 @@ func (q *Queries) ListTimeBlocks(ctx context.Context, arg ListTimeBlocksParams) 
 }
 
 const listTimeBlocksInRange = `-- name: ListTimeBlocksInRange :many
-SELECT id, user_id, task_id, started_at, ended_at, duration_sec, created_at FROM time_blocks
+SELECT id, user_id, task_id, started_at, ended_at, duration_sec, created_at, deleted_at, input_mode FROM time_blocks
 WHERE user_id = $1
+  AND deleted_at IS NULL
   AND started_at >= $2
   AND started_at < $3
 ORDER BY started_at
@@ -136,6 +172,8 @@ func (q *Queries) ListTimeBlocksInRange(ctx context.Context, arg ListTimeBlocksI
 			&i.EndedAt,
 			&i.DurationSec,
 			&i.CreatedAt,
+			&i.DeletedAt,
+			&i.InputMode,
 		); err != nil {
 			return nil, err
 		}
@@ -153,9 +191,10 @@ SET
   task_id      = COALESCE($1::uuid,       task_id),
   started_at   = COALESCE($2::timestamptz, started_at),
   ended_at     = COALESCE($3::timestamptz,   ended_at),
-  duration_sec = COALESCE($4::integer,   duration_sec)
-WHERE id = $5 AND user_id = $6
-RETURNING id, user_id, task_id, started_at, ended_at, duration_sec, created_at
+  duration_sec = COALESCE($4::integer,   duration_sec),
+  input_mode   = COALESCE($5::text, input_mode)
+WHERE id = $6 AND user_id = $7 AND deleted_at IS NULL
+RETURNING id, user_id, task_id, started_at, ended_at, duration_sec, created_at, deleted_at, input_mode
 `
 
 type UpdateTimeBlockParams struct {
@@ -163,6 +202,7 @@ type UpdateTimeBlockParams struct {
 	StartedAt   pgtype.Timestamptz `json:"started_at"`
 	EndedAt     pgtype.Timestamptz `json:"ended_at"`
 	DurationSec pgtype.Int4        `json:"duration_sec"`
+	InputMode   pgtype.Text        `json:"input_mode"`
 	ID          uuid.UUID          `json:"id"`
 	UserID      uuid.UUID          `json:"user_id"`
 }
@@ -173,6 +213,7 @@ func (q *Queries) UpdateTimeBlock(ctx context.Context, arg UpdateTimeBlockParams
 		arg.StartedAt,
 		arg.EndedAt,
 		arg.DurationSec,
+		arg.InputMode,
 		arg.ID,
 		arg.UserID,
 	)
@@ -185,6 +226,8 @@ func (q *Queries) UpdateTimeBlock(ctx context.Context, arg UpdateTimeBlockParams
 		&i.EndedAt,
 		&i.DurationSec,
 		&i.CreatedAt,
+		&i.DeletedAt,
+		&i.InputMode,
 	)
 	return i, err
 }

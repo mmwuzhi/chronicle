@@ -17,8 +17,27 @@
   "uploadImage": "图片",
   "uploadAudio": "录音",
   "recording": "录音中…",
-  "transcribing": "转写中…",
+  "stopRecording": "停止",
+  "uploading": "上传中…",
   "uploadFailed": "上传失败",
+  "loadMore": "加载更多",
+  "context": {
+    "title": "捕获上下文",
+    "subtitle": "查看这条记忆前后紧邻发生的记录。",
+    "match": "搜索命中",
+    "earlier": "更早的捕获未加载",
+    "later": "更晚的捕获未加载",
+    "failedToLoad": "加载捕获上下文失败"
+  },
+  "transcript": {
+    "label": "AI 转写",
+    "processing": "正在后台转写…",
+    "failed": "转写失败。",
+    "retry": "重试",
+    "append": "追加到捕获内容",
+    "replace": "替换捕获内容",
+    "useAsText": "用作捕获内容"
+  },
   "promoteToTask": "转为任务",
   "promoteDialog": {
     "title": "转换为任务",
