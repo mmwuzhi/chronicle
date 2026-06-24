@@ -1,16 +1,23 @@
 # Chronicle
 
-Personal memory system. Capture work, thoughts, and time with low-friction input surfaces; analyze progress through reports, search, and public changelogs.
+Capture anything.
+Find it later.
+
+Chronicle is a capture-first personal memory system designed to help people remember ideas, thoughts, tasks, observations, and life events without requiring manual organization.
+
+Instead of forcing users to structure information up front, Chronicle focuses on fast capture, powerful retrieval, and long-term memory.
 
 ## Features
 
-- **Capture inbox** — save text, images, and audio; classify later as task / idea / routine / log
-- **Desktop quick capture** — save text captures from a native macOS menu bar app with a global shortcut and local retry queue
-- **Task management** — projects, status cycles, due dates, attachments, markdown notes, and AI title polish
-- **Time tracking** — add manual duration entries per task and review time history
-- **Log entries** — attach markdown-formatted notes to any task
-- **Weekly reports** — generate summaries with charts and shareable public URLs
-- **Auth and security** — email verification, password reset, Google/GitHub OAuth, passkeys, MFA, account deletion, and optional Turnstile bot protection
+- Fast capture for text, images, and audio
+- Native macOS quick capture app
+- [iOS quick capture](docs/ios-quick-capture.md) from the Action Button via a create-only token
+- Full-text search
+- Semantic search
+- Related capture discovery
+- Voice transcription
+- AI-assisted memory retrieval
+- Optional task extraction
 
 ## Tech Stack
 
@@ -24,7 +31,7 @@ Personal memory system. Capture work, thoughts, and time with low-friction input
 | Auth | JWT — 15m access token + 30d refresh token, httpOnly cookies |
 | File storage | Cloudflare R2 for image/audio uploads |
 | Email | Resend for verification and password reset |
-| AI | OpenAI Whisper for transcription; Gemini/OpenAI-backed polish endpoints |
+| AI | OpenAI `gpt-4o-mini-transcribe` for voice transcription; Gemini/OpenAI-backed polish endpoints |
 | CI/CD | GitHub Actions → Fly.io (API) + Cloudflare Pages (frontend) |
 
 Type safety flows end-to-end: Go structs → huma generates `/openapi.json` → orval generates TypeScript types + TanStack Query hooks.
@@ -114,6 +121,8 @@ chronicle/
 │   └── fly.toml
 ├── desktop/
 │   └── Sources/          # Swift macOS menu bar quick-capture app
+├── docs/
+│   └── ios-quick-capture.md  # iOS Action Button / Share Sheet setup guide
 └── web/
     └── src/
         ├── api/           # orval-generated hooks — never edit by hand
@@ -149,7 +158,9 @@ Key variables:
 | `API_BASE_URL` | no | Public API base used for OAuth callback URLs |
 | `FRONTEND_URL` | no | Frontend origin for CORS and email links |
 | `R2_*` | no | Cloudflare R2 — needed for image/audio uploads |
-| `OPENAI_API_KEY` | no | Voice transcription via Whisper |
+| `OPENAI_API_KEY` | no | Background transcription for recordings up to five minutes |
+| `OPENAI_BASE_URL` | no | OpenAI-compatible API base; defaults to `https://api.openai.com/v1` |
+| `OPENAI_TRANSCRIPTION_MODEL` | no | Audio transcription model; defaults to `gpt-4o-mini-transcribe` |
 | `GEMINI_API_KEY` | no | AI polish/enrichment |
 | `RESEND_API_KEY` | no | Verification and password reset email |
 | `GOOGLE_CLIENT_*` | no | Google OAuth login/linking |
@@ -161,12 +172,58 @@ Key variables:
 
 ## Product Direction
 
-Chronicle is moving toward a capture-first architecture:
+Chronicle follows a capture-first philosophy.
 
-- **Client = input layer** — desktop quick capture first, then browser, VSCode, mobile, and automatic collectors.
-- **Web = analysis layer** — search, dashboards, reports, data visualization, and sharing.
-- **Long-term memory** — Ask Chronicle, hybrid search, memory decay, and AI consolidation come after capture volume is reliable.
+Core loop:
+
+Capture
+↓
+Store
+↓
+Retrieve
+↓
+Understand
+
+Chronicle is not a traditional note-taking app.
+
+Chronicle is not a project management tool.
+
+Chronicle is a personal memory system focused on retrieval and recall.
+
+The most important feature is not AI.
+
+The most important feature is helping users find something they once thought, wrote, or experienced.
+
+AI is used to improve retrieval, review, and memory recall.
+
+Users should never be required to maintain a complex organizational system.
 
 ## Future Work
 
 Deferred product work lives in [`TODO.md`](./TODO.md). Refactor oversized route files first, then revisit weekly digest emails and due-date reminders.
+
+## Principles
+
+### Capture First
+
+Record now.
+Organize later.
+
+### Retrieval Over Organization
+
+Finding a memory is more important than categorizing it.
+
+### Evidence Over AI
+
+Chronicle should prefer showing original captures over only AI-generated conclusions.
+
+### AI Suggests, Humans Decide
+
+AI may suggest.
+Users remain in control.
+
+### No Maintenance
+
+Users should not maintain the system.
+
+The system should maintain itself whenever possible.

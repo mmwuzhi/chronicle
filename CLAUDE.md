@@ -1,6 +1,107 @@
 # Chronicle
 
-Personal memory system. Capture work, thoughts, and time with low-friction input surfaces; analyze progress through reports, search, and public changelogs.
+Capture anything.
+Find it later.
+
+Chronicle is a capture-first personal memory system.
+
+The primary purpose of Chronicle is helping users find information they have already captured.
+
+Capture First means:
+
+- Record first.
+- Organize later.
+- Retrieve when needed.
+
+Everything starts as a capture.
+
+Search and retrieval are more important than automatic organization.
+
+AI should enhance retrieval and recall, not replace them.
+
+Users should never need to decide:
+
+- Is this a note?
+- Is this a task?
+- Is this a project?
+- Is this a context?
+
+Users only need to decide:
+
+- I want to remember this.
+
+Everything starts as a Capture.
+
+Core loop:
+
+Capture
+↓
+Store
+↓
+Retrieve
+↓
+Understand (optional)
+
+Search and retrieval are more important than automatic organization.
+
+AI should enhance memory retrieval, not replace it.
+
+## Product Guardrails
+
+Chronicle should reduce maintenance, not create maintenance.
+
+Prefer:
+
+- capture
+- search
+- retrieval
+- memory recall
+- review
+- related captures
+
+Avoid:
+
+- complex project management
+- workflow automation
+- deep hierarchies
+- mandatory categorization
+- manual organization requirements
+
+When uncertain:
+
+Choose the simpler solution.
+
+## Current Priorities
+
+P0
+
+- Fast capture
+- Full-text search
+- Embeddings
+- Hybrid retrieval
+
+P1
+
+- Related captures
+- Memory retrieval
+- Review
+
+P2
+
+- AI summaries
+- Context discovery
+- Forget suggestions
+
+Deferred
+
+- MCP
+- Plugin systems
+- Graph view
+- Advanced analyzers
+- Agent workflows
+- E2EE
+
+Do not introduce deferred features unless explicitly requested.
 
 ## Tech Stack
 
@@ -40,7 +141,43 @@ Personal memory system. Capture work, thoughts, and time with low-friction input
 - `TODO.md` — deferred work; refactor oversized route files before adding reminder/digest features
 - `.env.example` — all required env vars
 
+## Conceptual Model
+
+Current database tables reflect historical implementation details.
+
+Conceptually:
+
+Capture is the primary object.
+
+Everything else is derived from captures.
+
+Examples:
+
+Capture
+↓
+Task (actionable capture)
+
+Capture
+↓
+Context (group of related captures)
+
+Capture
+↓
+Review
+
+Capture
+↓
+Summary
+
+Capture
+↓
+Analyzer
+
+Do not assume the current schema represents the final product model.
+
 ## Data Model
+
+Current implementation:
 
 ```
 users           id, email, password_hash, created_at, email_verified, email_verify_token, password_reset_token, password_reset_expires, totp_secret, totp_enabled
@@ -56,6 +193,14 @@ oauth_accounts  id, user_id, provider, provider_id, created_at
 passkeys        id, user_id, credential_id, public_key, aaguid, sign_count, name, created_at
 recovery_codes  id, user_id, code_hash, used
 ```
+
+Notes:
+
+- captures are the conceptual center of the system.
+- all long-term value should originate from captures.
+- tasks are actionable captures.
+- projects are expected to evolve toward contexts.
+- existing tables are implementation details, not product direction.
 
 Soft delete only — `tasks` and `log_entries` have `deleted_at`. Never issue a hard DELETE on user data.
 

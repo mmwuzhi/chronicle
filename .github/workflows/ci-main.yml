@@ -172,6 +172,26 @@ jobs:
           path: web/dist
           retention-days: 1
 
+  # ── Desktop: Swift tests + app smoke E2E ───────────────────────────────────
+  desktop-check:
+    name: Desktop test & E2E
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Test
+        working-directory: desktop
+        run: swift test
+
+      - name: Build
+        working-directory: desktop
+        run: swift build
+
+      - name: E2E smoke
+        working-directory: desktop
+        run: bash scripts/e2e.sh
+
   # ── Frontend: deploy to Cloudflare Pages ────────────────────────────────────
   web-deploy:
     name: Deploy frontend

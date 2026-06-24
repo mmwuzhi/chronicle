@@ -1,12 +1,14 @@
 API_DIR := api
 WEB_DIR := web
 DESKTOP_DIR := desktop
+RAG_DIR := ragsvc
 MIGRATIONS := $(API_DIR)/db/migrations
+RAG_PORT ?= 5400
 
 -include .env
 export
 
-.PHONY: help dev dev-data down api web desktop-capture orval test lint migrate migrate-new sqlc setup
+.PHONY: help dev dev-data down api web desktop-capture desktop-app desktop-e2e orval test lint migrate migrate-new sqlc setup rag rag-setup rag-backfill rag-test
 
 help:
 	@grep -hE '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-16s %s\n", $$1, $$2}'
@@ -36,6 +38,12 @@ web: ## run Vite dev server
 desktop-capture: ## run the macOS menu bar quick-capture app
 	cd $(DESKTOP_DIR) && swift run ChronicleDesktop
 
+desktop-app: ## build the macOS .app bundle (required for reminder notifications)
+	cd $(DESKTOP_DIR) && bash scripts/build-app.sh
+
+desktop-e2e: ## run the macOS desktop smoke E2E tests
+	cd $(DESKTOP_DIR) && bash scripts/e2e.sh
+
 orval: ## regenerate typed API hooks (API server must be running)
 	cd $(WEB_DIR) && pnpm orval
 
@@ -53,3 +61,17 @@ migrate-new: ## create a new migration  usage: make migrate-new name=add_foo
 
 sqlc: ## regenerate db/sqlc/ from db/queries/
 	cd $(API_DIR) && sqlc generate
+
+rag-setup: ## create the ragsvc venv and install deps
+	cd $(RAG_DIR) && python3 -m venv .venv && .venv/bin/pip install -q --upgrade pip && .venv/bin/pip install -q -r requirements.txt
+
+rag: dev-data ## run the Python RAG sidecar (embeddings + retrieval + analysis)
+	@test -d $(RAG_DIR)/.venv || $(MAKE) rag-setup
+	cd $(RAG_DIR) && .venv/bin/python app.py
+
+rag-backfill: ## index + extract all existing captures (RAG sidecar must be running)
+	curl -fsS -X POST http://localhost:$(RAG_PORT)/backfill && echo
+
+rag-test: ## run ragsvc pure-logic tests
+	@test -d $(RAG_DIR)/.venv || $(MAKE) rag-setup
+	cd $(RAG_DIR) && .venv/bin/python -m pytest -q
