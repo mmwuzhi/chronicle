@@ -24,13 +24,14 @@ import (
 	"github.com/sikaoshenmi/chronicle/internal/auth"
 	"github.com/sikaoshenmi/chronicle/internal/capture"
 	"github.com/sikaoshenmi/chronicle/internal/middleware"
+	"github.com/sikaoshenmi/chronicle/internal/ragclient"
 	"github.com/sikaoshenmi/chronicle/testutil"
 )
 
 func newServer(t *testing.T) (*httptest.Server, *pgxpool.Pool) {
 	t.Helper()
 	pool := testutil.NewPool(t)
-	testutil.Truncate(t, pool, "captures", "tasks", "projects", "users")
+	testutil.Truncate(t, pool, "captures", "users")
 
 	r := chi.NewRouter()
 	api := humachi.New(r, huma.DefaultConfig("Test", "0.0.0"))
@@ -47,7 +48,10 @@ func newServer(t *testing.T) (*httptest.Server, *pgxpool.Pool) {
 		return sub, nil
 	})
 
-	capture.Register(api, pool, authMW)
+	// create accepts a JWT or a capture token (the real create-only validator);
+	// read/mutate routes stay JWT-only via authMW.
+	createMW := middleware.RequireAuthHumaCtx(auth.ValidateTokenOrPAT(testutil.TestJWTSecret, db.New(pool)))
+	capture.Register(api, pool, ragclient.New(""), authMW, createMW)
 
 	srv := httptest.NewServer(r)
 	t.Cleanup(srv.Close)
@@ -188,6 +192,70 @@ func TestCreateCapture_DesktopSource(t *testing.T) {
 	}
 }
 
+func TestCreateCapture_WithReminder(t *testing.T) {
+	srv, pool := newServer(t)
+	userID, token := createTestUser(t, pool)
+	remindAt := time.Now().Add(time.Hour).UTC().Truncate(time.Second).Format(time.RFC3339)
+
+	resp := do(t, srv.Client(), http.MethodPost, srv.URL+"/captures", token, map[string]any{
+		"mediaType":    "text",
+		"classifiedAs": "unclassified",
+		"rawText":      "Remind me from desktop",
+		"remindAt":     remindAt,
+	})
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+
+	var body struct {
+		ID       string  `json:"id"`
+		RemindAt *string `json:"remindAt"`
+	}
+	decodeBody(t, resp, &body)
+
+	if body.RemindAt == nil || *body.RemindAt != remindAt {
+		t.Fatalf("expected remindAt %q, got %v", remindAt, body.RemindAt)
+	}
+
+	queries := db.New(pool)
+	uid := uuid.MustParse(userID)
+	rows, err := queries.PendingReminders(context.Background(), uid)
+	if err != nil {
+		t.Fatalf("pending reminders: %v", err)
+	}
+	if len(rows) != 1 || rows[0].ID.String() != body.ID {
+		t.Fatalf("expected created capture in pending reminders, got %d rows", len(rows))
+	}
+}
+
+func TestCreateCapture_InvalidReminderDoesNotCreateCapture(t *testing.T) {
+	srv, pool := newServer(t)
+	userID, token := createTestUser(t, pool)
+
+	resp := do(t, srv.Client(), http.MethodPost, srv.URL+"/captures", token, map[string]any{
+		"mediaType":    "text",
+		"classifiedAs": "unclassified",
+		"rawText":      "Bad reminder",
+		"remindAt":     "tomorrow-ish",
+	})
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("expected 422, got %d", resp.StatusCode)
+	}
+
+	rows, err := db.New(pool).ListCaptures(context.Background(), db.ListCapturesParams{
+		UserID: uuid.MustParse(userID),
+	})
+	if err != nil {
+		t.Fatalf("list captures: %v", err)
+	}
+	if len(rows) != 0 {
+		t.Fatalf("invalid reminder should not create capture, got %d rows", len(rows))
+	}
+}
+
 func TestCreateCapture_InvalidMediaType(t *testing.T) {
 	srv, pool := newServer(t)
 	_, token := createTestUser(t, pool)
@@ -305,6 +373,132 @@ func TestUploadedAudioTranscriptionDurationBoundary(t *testing.T) {
 	}
 }
 
+func TestUploadedImageVisionTranscription(t *testing.T) {
+	_, pool := newServer(t)
+	userID, _ := createTestUser(t, pool)
+	queries := db.New(pool)
+
+	for _, test := range []struct {
+		name          string
+		visionEnabled bool
+		status        db.TranscriptionStatus
+	}{
+		{name: "vision enabled is pending", visionEnabled: true, status: db.TranscriptionStatusPending},
+		{name: "vision disabled is skipped", visionEnabled: false, status: db.TranscriptionStatusSkipped},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			capture, err := queries.CreateUploadedCapture(context.Background(), db.CreateUploadedCaptureParams{
+				UserID:        uuid.MustParse(userID),
+				MediaUrl:      pgtype.Text{String: "https://example.test/receipt.jpg", Valid: true},
+				MediaType:     db.CaptureMediaTypeImage,
+				MediaKey:      pgtype.Text{String: "captures/receipt.jpg", Valid: true},
+				VisionEnabled: test.visionEnabled,
+			})
+			if err != nil {
+				t.Fatalf("create uploaded capture: %v", err)
+			}
+			if capture.TranscriptionStatus != test.status {
+				t.Fatalf("expected %q, got %q", test.status, capture.TranscriptionStatus)
+			}
+		})
+	}
+}
+
+func TestCaptureReminderBrowseAndRecall(t *testing.T) {
+	_, pool := newServer(t)
+	userID, _ := createTestUser(t, pool)
+	queries := db.New(pool)
+	uid := uuid.MustParse(userID)
+	ctx := context.Background()
+
+	mk := func(text string) db.Capture {
+		c, err := queries.CreateCapture(ctx, db.CreateCaptureParams{
+			UserID:       uid,
+			RawText:      pgtype.Text{String: text, Valid: true},
+			MediaType:    db.CaptureMediaTypeText,
+			ClassifiedAs: db.CaptureClassifiedAsUnclassified,
+			Source:       "web",
+		})
+		if err != nil {
+			t.Fatalf("create capture %q: %v", text, err)
+		}
+		return c
+	}
+	setRemind := func(c db.Capture, at pgtype.Timestamptz) {
+		if _, err := queries.SetCaptureRemind(ctx, db.SetCaptureRemindParams{
+			ID: c.ID, UserID: uid, RemindAt: at,
+		}); err != nil {
+			t.Fatalf("set remind: %v", err)
+		}
+	}
+	ids := func(rows []db.Capture) map[uuid.UUID]bool {
+		m := make(map[uuid.UUID]bool, len(rows))
+		for _, c := range rows {
+			m[c.ID] = true
+		}
+		return m
+	}
+
+	plain := mk("plain note")
+	future := mk("buy milk later")
+	past := mk("call the dentist")
+	setRemind(future, pgtype.Timestamptz{Time: time.Now().Add(time.Hour), Valid: true})
+	setRemind(past, pgtype.Timestamptz{Time: time.Now().Add(-time.Hour), Valid: true})
+
+	// Default browse hides the not-yet-due reminder, keeps plain + past-due.
+	browse, err := queries.ListCaptures(ctx, db.ListCapturesParams{UserID: uid})
+	if err != nil {
+		t.Fatalf("list captures: %v", err)
+	}
+	got := ids(browse)
+	if !got[plain.ID] || !got[past.ID] {
+		t.Fatalf("default browse should include plain and past-due captures")
+	}
+	if got[future.ID] {
+		t.Fatalf("default browse should hide the not-yet-due reminder")
+	}
+
+	// include_reminded shows everything (management view).
+	all, err := queries.ListCaptures(ctx, db.ListCapturesParams{UserID: uid, IncludeReminded: true})
+	if err != nil {
+		t.Fatalf("list captures (include_reminded): %v", err)
+	}
+	if len(all) != 3 {
+		t.Fatalf("expected 3 with include_reminded, got %d", len(all))
+	}
+
+	// DueReminders returns only the past-due one.
+	due, err := queries.DueReminders(ctx, db.DueRemindersParams{
+		UserID: uid,
+		Since:  pgtype.Timestamptz{Time: time.Now().Add(-24 * time.Hour), Valid: true},
+	})
+	if err != nil {
+		t.Fatalf("due reminders: %v", err)
+	}
+	if len(due) != 1 || due[0].ID != past.ID {
+		t.Fatalf("expected only the past-due reminder, got %d rows", len(due))
+	}
+
+	// PendingReminders returns only the not-yet-due one.
+	pending, err := queries.PendingReminders(ctx, uid)
+	if err != nil {
+		t.Fatalf("pending reminders: %v", err)
+	}
+	if len(pending) != 1 || pending[0].ID != future.ID {
+		t.Fatalf("expected only the not-yet-due reminder, got %d rows", len(pending))
+	}
+
+	// Clearing the reminder returns the capture to the default browse.
+	setRemind(future, pgtype.Timestamptz{})
+	browse2, err := queries.ListCaptures(ctx, db.ListCapturesParams{UserID: uid})
+	if err != nil {
+		t.Fatalf("list captures after clear: %v", err)
+	}
+	if !ids(browse2)[future.ID] {
+		t.Fatalf("cleared reminder should reappear in default browse")
+	}
+}
+
 // --- list ---
 
 func TestListCaptures_IsolatedByUser(t *testing.T) {
@@ -350,6 +544,66 @@ func TestListCaptures_FilterByClassifiedAs(t *testing.T) {
 	}
 	if captures[0].ClassifiedAs != "idea" {
 		t.Fatalf("expected classifiedAs 'idea', got %q", captures[0].ClassifiedAs)
+	}
+}
+
+func TestListCaptures_IncludeReminded(t *testing.T) {
+	srv, pool := newServer(t)
+	_, token := createTestUser(t, pool)
+
+	createCapture(t, srv, token, map[string]any{"rawText": "plain note"})
+	future := time.Now().Add(time.Hour).UTC().Format(time.RFC3339)
+	createCapture(t, srv, token, map[string]any{"rawText": "buy milk later", "remindAt": future})
+
+	// Default browse hides the not-yet-due reminder.
+	def := do(t, srv.Client(), http.MethodGet, srv.URL+"/captures", token, nil)
+	if def.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", def.StatusCode)
+	}
+	var defItems []map[string]any
+	decodeBody(t, def, &defItems)
+	if len(defItems) != 1 {
+		t.Fatalf("default browse should hide the future reminder, got %d", len(defItems))
+	}
+
+	// includeReminded=true must reach the query so the management view can surface
+	// and edit/clear the reminder (regression guard for the unplumbed handler param).
+	all := do(t, srv.Client(), http.MethodGet, srv.URL+"/captures?includeReminded=true", token, nil)
+	if all.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", all.StatusCode)
+	}
+	var allItems []map[string]any
+	decodeBody(t, all, &allItems)
+	if len(allItems) != 2 {
+		t.Fatalf("includeReminded should surface the future reminder, got %d", len(allItems))
+	}
+}
+
+func TestListCapturePage_IncludeReminded(t *testing.T) {
+	srv, pool := newServer(t)
+	_, token := createTestUser(t, pool)
+
+	createCapture(t, srv, token, map[string]any{"rawText": "plain note"})
+	future := time.Now().Add(time.Hour).UTC().Format(time.RFC3339)
+	createCapture(t, srv, token, map[string]any{"rawText": "buy milk later", "remindAt": future})
+
+	page := func(query string) int {
+		resp := do(t, srv.Client(), http.MethodGet, srv.URL+"/captures/page"+query, token, nil)
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("expected 200, got %d", resp.StatusCode)
+		}
+		var body struct {
+			Items []map[string]any `json:"items"`
+		}
+		decodeBody(t, resp, &body)
+		return len(body.Items)
+	}
+
+	if n := page(""); n != 1 {
+		t.Fatalf("default page should hide the future reminder, got %d", n)
+	}
+	if n := page("?includeReminded=true"); n != 2 {
+		t.Fatalf("includeReminded page should surface the future reminder, got %d", n)
 	}
 }
 

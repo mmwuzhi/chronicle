@@ -27,7 +27,10 @@ type Config struct {
 	OpenAIKey                string `envconfig:"OPENAI_API_KEY"`
 	OpenAIBaseURL            string `envconfig:"OPENAI_BASE_URL" default:"https://api.openai.com/v1"`
 	OpenAITranscriptionModel string `envconfig:"OPENAI_TRANSCRIPTION_MODEL" default:"gpt-4o-mini-transcribe"`
+	OpenAIVisionModel        string `envconfig:"OPENAI_VISION_MODEL" default:"gpt-4o-mini"`
+	VisionEnabled            bool   `envconfig:"VISION_ENABLED" doc:"Transcribe image captures to searchable text via the vision model; requires OPENAI_API_KEY"`
 	GeminiKey                string `envconfig:"GEMINI_API_KEY"`
+	RAGServiceURL            string `envconfig:"RAG_SERVICE_URL" doc:"Base URL of the Python RAG sidecar; empty disables semantic recall"`
 	Port                     string `envconfig:"PORT" default:"8080"`
 	Env                      string `envconfig:"ENV" default:"development"`
 }

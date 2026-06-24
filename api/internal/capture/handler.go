@@ -16,14 +16,20 @@ import (
 
 	db "github.com/sikaoshenmi/chronicle/db/sqlc"
 	"github.com/sikaoshenmi/chronicle/internal/middleware"
+	"github.com/sikaoshenmi/chronicle/internal/ragclient"
 )
 
 type handler struct {
-	q *db.Queries
+	q   *db.Queries
+	rag *ragclient.Client
 }
 
-func Register(api huma.API, pool *pgxpool.Pool, authMW func(huma.Context, func(huma.Context))) {
-	h := &handler{q: db.New(pool)}
+// Register wires the capture routes. authMW (JWT only) guards every read/mutate
+// route; createMW additionally accepts long-lived capture tokens (see
+// auth.ValidateTokenOrPAT) and is applied ONLY to POST /captures, so a headless
+// quick-capture token can append captures but cannot read, update, or delete.
+func Register(api huma.API, pool *pgxpool.Pool, rag *ragclient.Client, authMW, createMW func(huma.Context, func(huma.Context))) {
+	h := &handler{q: db.New(pool), rag: rag}
 
 	op := func(id, method, path, summary string) huma.Operation {
 		return huma.Operation{
@@ -39,9 +45,14 @@ func Register(api huma.API, pool *pgxpool.Pool, authMW func(huma.Context, func(h
 	huma.Register(api, op("list-captures", http.MethodGet, "/captures", "List captures"), h.list)
 	huma.Register(api, op("list-capture-page", http.MethodGet, "/captures/page", "List a page of captures"), h.listPage)
 	huma.Register(api, op("get-capture-context", http.MethodGet, "/captures/context", "Get captures around an anchor"), h.context)
-	huma.Register(api, op("create-capture", http.MethodPost, "/captures", "Create a capture"), h.create)
+	createOp := op("create-capture", http.MethodPost, "/captures", "Create a capture")
+	createOp.Middlewares = huma.Middlewares{createMW}
+	huma.Register(api, createOp, h.create)
 	huma.Register(api, op("update-capture", http.MethodPatch, "/captures/{id}", "Update a capture"), h.update)
 	huma.Register(api, op("retry-capture-transcription", http.MethodPost, "/captures/{id}/transcription/retry", "Retry audio transcription"), h.retryTranscription)
+	huma.Register(api, op("set-capture-remind", http.MethodPost, "/captures/{id}/remind", "Set or clear a capture reminder"), h.setRemind)
+	huma.Register(api, op("due-reminders", http.MethodGet, "/reminders/due", "List reminders that have come due"), h.dueReminders)
+	huma.Register(api, op("pending-reminders", http.MethodGet, "/reminders/pending", "List not-yet-due reminders"), h.pendingReminders)
 	huma.Register(api, op("delete-capture", http.MethodDelete, "/captures/{id}", "Delete a capture"), h.delete)
 }
 
@@ -53,13 +64,13 @@ type CaptureBody struct {
 	MediaUrl            *string `json:"mediaUrl"`
 	MediaType           string  `json:"mediaType"`
 	ClassifiedAs        string  `json:"classifiedAs"`
-	TaskID              *string `json:"taskId"`
 	Source              string  `json:"source"`
 	Transcript          *string `json:"transcript"`
 	TranscriptionStatus string  `json:"transcriptionStatus"`
 	TranscriptionModel  *string `json:"transcriptionModel"`
 	TranscribedAt       *string `json:"transcribedAt"`
 	AudioDurationSec    *int32  `json:"audioDurationSec"`
+	RemindAt            *string `json:"remindAt"`
 	CreatedAt           string  `json:"createdAt"`
 }
 
@@ -78,10 +89,6 @@ func toBody(c db.Capture) CaptureBody {
 	if c.MediaUrl.Valid {
 		b.MediaUrl = &c.MediaUrl.String
 	}
-	if c.TaskID.Valid {
-		tid := uuid.UUID(c.TaskID.Bytes).String()
-		b.TaskID = &tid
-	}
 	if c.Transcript.Valid {
 		b.Transcript = &c.Transcript.String
 	}
@@ -95,13 +102,18 @@ func toBody(c db.Capture) CaptureBody {
 	if c.AudioDurationSec.Valid {
 		b.AudioDurationSec = &c.AudioDurationSec.Int32
 	}
+	if c.RemindAt.Valid {
+		s := c.RemindAt.Time.UTC().Format(time.RFC3339)
+		b.RemindAt = &s
+	}
 	return b
 }
 
 // --- list ---
 
 type CaptureListInput struct {
-	ClassifiedAs string `query:"classifiedAs" doc:"Filter by classification: task, idea, routine, log, unclassified"`
+	ClassifiedAs    string `query:"classifiedAs" doc:"Filter by classification: task, idea, routine, log, unclassified"`
+	IncludeReminded bool   `query:"includeReminded" doc:"Include captures with a future reminder (hidden by default until due); set true for a reminder-management view"`
 }
 
 type ListOutput struct {
@@ -114,8 +126,9 @@ func (h *handler) list(ctx context.Context, input *CaptureListInput) (*ListOutpu
 		return nil, err
 	}
 	rows, err := h.q.ListCaptures(ctx, db.ListCapturesParams{
-		UserID:       uid,
-		ClassifiedAs: nullText(strPtr(input.ClassifiedAs)),
+		UserID:          uid,
+		ClassifiedAs:    nullText(strPtr(input.ClassifiedAs)),
+		IncludeReminded: input.IncludeReminded,
 	})
 	if err != nil {
 		return nil, huma.Error500InternalServerError("internal error")
@@ -134,9 +147,9 @@ type CaptureCreateInput struct {
 		RawText      *string `json:"rawText,omitempty"`
 		MediaUrl     *string `json:"mediaUrl,omitempty"`
 		MediaType    string  `json:"mediaType" enum:"text,image,audio"`
-		ClassifiedAs string  `json:"classifiedAs" enum:"task,idea,routine,log,unclassified" default:"unclassified"`
-		TaskID       *string `json:"taskId,omitempty" format:"uuid"`
+		ClassifiedAs string  `json:"classifiedAs,omitempty" enum:"task,idea,routine,log,unclassified" default:"unclassified"`
 		Source       string  `json:"source,omitempty" default:"web" doc:"Capture source, for example web or desktop_quick_capture"`
+		RemindAt     *string `json:"remindAt,omitempty" doc:"RFC3339 time to resurface this capture"`
 	}
 }
 
@@ -160,17 +173,35 @@ func (h *handler) create(ctx context.Context, input *CaptureCreateInput) (*Creat
 	if input.Body.MediaType == "text" && (input.Body.RawText == nil || strings.TrimSpace(*input.Body.RawText) == "") {
 		return nil, huma.Error422UnprocessableEntity("rawText is required for text captures")
 	}
+	remindAt, err := parseRemindAt(input.Body.RemindAt)
+	if err != nil {
+		return nil, err
+	}
 	c, err := h.q.CreateCapture(ctx, db.CreateCaptureParams{
 		UserID:       uid,
 		RawText:      nullText(input.Body.RawText),
 		MediaUrl:     nullText(input.Body.MediaUrl),
 		MediaType:    db.CaptureMediaType(input.Body.MediaType),
 		ClassifiedAs: db.CaptureClassifiedAs(classifiedAs),
-		TaskID:       nullUUID(input.Body.TaskID),
 		Source:       source,
 	})
 	if err != nil {
 		return nil, huma.Error500InternalServerError("internal error")
+	}
+	if remindAt.Valid {
+		c, err = h.q.SetCaptureRemind(ctx, db.SetCaptureRemindParams{
+			ID:       c.ID,
+			UserID:   uid,
+			RemindAt: remindAt,
+		})
+		if err != nil {
+			return nil, huma.Error500InternalServerError("internal error")
+		}
+	}
+	// Only index when there's text to embed; media-only captures get indexed once
+	// their transcript lands (transcription worker), not here.
+	if input.Body.RawText != nil && strings.TrimSpace(*input.Body.RawText) != "" {
+		h.rag.Index(uid.String(), c.ID.String())
 	}
 	return &CreateOutput{Body: toBody(c)}, nil
 }
@@ -183,7 +214,6 @@ type CaptureUpdateInput struct {
 		RawText      *string `json:"rawText,omitempty"`
 		Transcript   *string `json:"transcript,omitempty"`
 		ClassifiedAs *string `json:"classifiedAs,omitempty" enum:"task,idea,routine,log,unclassified"`
-		TaskID       *string `json:"taskId,omitempty" format:"uuid"`
 	}
 }
 
@@ -206,13 +236,17 @@ func (h *handler) update(ctx context.Context, input *CaptureUpdateInput) (*Updat
 		RawText:      nullText(input.Body.RawText),
 		Transcript:   nullText(input.Body.Transcript),
 		ClassifiedAs: nullText(input.Body.ClassifiedAs),
-		TaskID:       nullUUID(input.Body.TaskID),
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, huma.Error404NotFound("capture not found")
 		}
 		return nil, huma.Error500InternalServerError("internal error")
+	}
+	// Reindex only when the indexable text actually changed — metadata-only edits
+	// (classifiedAs, taskId) must not trigger embedding + extraction.
+	if input.Body.RawText != nil || input.Body.Transcript != nil {
+		h.rag.Index(uid.String(), c.ID.String())
 	}
 	return &UpdateOutput{Body: toBody(c)}, nil
 }
@@ -238,6 +272,105 @@ func (h *handler) retryTranscription(ctx context.Context, input *CaptureRetryTra
 		return nil, huma.Error500InternalServerError("internal error")
 	}
 	return &UpdateOutput{Body: toBody(c)}, nil
+}
+
+// --- reminders (time-based recall) ---
+//
+// Only this browse-side surface reads remind_at. Search and recall (search.sql,
+// ragsvc) never filter it, preserving time-window completeness.
+
+type CaptureRemindInput struct {
+	ID   string `path:"id" format:"uuid"`
+	Body struct {
+		At *string `json:"at,omitempty" doc:"RFC3339 time to resurface this capture; omit or null to clear the reminder"`
+	}
+}
+
+func (h *handler) setRemind(ctx context.Context, input *CaptureRemindInput) (*UpdateOutput, error) {
+	uid, err := userID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	id, err := uuid.Parse(input.ID)
+	if err != nil {
+		return nil, huma.Error422UnprocessableEntity("invalid id")
+	}
+	at, err := parseRemindAt(input.Body.At)
+	if err != nil {
+		return nil, err
+	}
+	c, err := h.q.SetCaptureRemind(ctx, db.SetCaptureRemindParams{
+		ID:       id,
+		UserID:   uid,
+		RemindAt: at,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, huma.Error404NotFound("capture not found")
+		}
+		return nil, huma.Error500InternalServerError("internal error")
+	}
+	return &UpdateOutput{Body: toBody(c)}, nil
+}
+
+type RemindersDueInput struct {
+	Since string `query:"since" doc:"RFC3339 lower bound (exclusive); reminders due after this and up to now. Omit for all past-due."`
+}
+
+func (h *handler) dueReminders(ctx context.Context, input *RemindersDueInput) (*ListOutput, error) {
+	uid, err := userID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	since := time.Time{} // zero value matches all past-due reminders
+	if strings.TrimSpace(input.Since) != "" {
+		parsed, perr := time.Parse(time.RFC3339, input.Since)
+		if perr != nil {
+			return nil, huma.Error422UnprocessableEntity("since must be an RFC3339 timestamp")
+		}
+		since = parsed
+	}
+	rows, err := h.q.DueReminders(ctx, db.DueRemindersParams{
+		UserID: uid,
+		Since:  pgtype.Timestamptz{Time: since, Valid: true},
+	})
+	if err != nil {
+		return nil, huma.Error500InternalServerError("internal error")
+	}
+	out := &ListOutput{Body: make([]CaptureBody, len(rows))}
+	for i, c := range rows {
+		out.Body[i] = toBody(c)
+	}
+	return out, nil
+}
+
+type RemindersPendingInput struct{}
+
+func (h *handler) pendingReminders(ctx context.Context, _ *RemindersPendingInput) (*ListOutput, error) {
+	uid, err := userID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := h.q.PendingReminders(ctx, uid)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("internal error")
+	}
+	out := &ListOutput{Body: make([]CaptureBody, len(rows))}
+	for i, c := range rows {
+		out.Body[i] = toBody(c)
+	}
+	return out, nil
+}
+
+func parseRemindAt(at *string) (pgtype.Timestamptz, error) {
+	if at == nil || strings.TrimSpace(*at) == "" {
+		return pgtype.Timestamptz{}, nil // clear the reminder
+	}
+	t, err := time.Parse(time.RFC3339, *at)
+	if err != nil {
+		return pgtype.Timestamptz{}, huma.Error422UnprocessableEntity("at must be an RFC3339 timestamp")
+	}
+	return pgtype.Timestamptz{Time: t, Valid: true}, nil
 }
 
 // --- delete ---
@@ -283,17 +416,6 @@ func nullText(s *string) pgtype.Text {
 		return pgtype.Text{}
 	}
 	return pgtype.Text{String: *s, Valid: true}
-}
-
-func nullUUID(s *string) pgtype.UUID {
-	if s == nil {
-		return pgtype.UUID{}
-	}
-	id, err := uuid.Parse(*s)
-	if err != nil {
-		return pgtype.UUID{}
-	}
-	return pgtype.UUID{Bytes: id, Valid: true}
 }
 
 func strPtr(s string) *string {

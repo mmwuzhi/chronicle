@@ -32,6 +32,27 @@ func RequireAuthHuma(validate TokenValidator) func(huma.Context, func(huma.Conte
 	}
 }
 
+// RequireAuthHumaCtx is like RequireAuthHuma but passes the request context to
+// the validator, so validators that need to hit a datastore (e.g. capture-token
+// lookups) keep tracing and cancellation instead of a detached background
+// context. The validator stays a plain function so this package keeps no
+// dependency on the DB layer.
+func RequireAuthHumaCtx(validate func(ctx context.Context, raw string) (string, error)) func(huma.Context, func(huma.Context)) {
+	return func(ctx huma.Context, next func(huma.Context)) {
+		raw := tokenFromHumaCtx(ctx)
+		if raw == "" {
+			writeHumaUnauthorized(ctx)
+			return
+		}
+		userID, err := validate(ctx.Context(), raw)
+		if err != nil {
+			writeHumaUnauthorized(ctx)
+			return
+		}
+		next(huma.WithValue(ctx, userIDKey, userID))
+	}
+}
+
 func tokenFromHumaCtx(ctx huma.Context) string {
 	if h := ctx.Header("Authorization"); strings.HasPrefix(h, "Bearer ") {
 		return strings.TrimPrefix(h, "Bearer ")

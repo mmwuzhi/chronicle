@@ -167,6 +167,33 @@ func Register(api huma.API, r chi.Router, pool *pgxpool.Pool, rdb *redis.Client,
 	authMW := middleware.RequireAuthHuma(ValidateToken(opts.JWTSecret))
 
 	huma.Register(api, huma.Operation{
+		OperationID: "createCaptureToken",
+		Method:      http.MethodPost,
+		Path:        "/auth/tokens",
+		Summary:     "Create a long-lived capture token (shown once)",
+		Tags:        []string{"auth"},
+		Middlewares: huma.Middlewares{authMW},
+	}, h.createCaptureToken)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "listCaptureTokens",
+		Method:      http.MethodGet,
+		Path:        "/auth/tokens",
+		Summary:     "List capture tokens",
+		Tags:        []string{"auth"},
+		Middlewares: huma.Middlewares{authMW},
+	}, h.listCaptureTokens)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "revokeCaptureToken",
+		Method:      http.MethodDelete,
+		Path:        "/auth/tokens/{id}",
+		Summary:     "Revoke a capture token",
+		Tags:        []string{"auth"},
+		Middlewares: huma.Middlewares{authMW},
+	}, h.revokeCaptureToken)
+
+	huma.Register(api, huma.Operation{
 		OperationID: "resendVerificationEmail",
 		Method:      http.MethodPost,
 		Path:        "/auth/resend-verification",

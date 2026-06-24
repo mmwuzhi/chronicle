@@ -32,11 +32,13 @@ type S3Client interface {
 }
 
 type Config struct {
-	R2BucketName  string
-	R2AccountID   string
-	OpenAIKey     string
-	OpenAIBaseURL string
-	OpenAIModel   string
+	R2BucketName      string
+	R2AccountID       string
+	OpenAIKey         string
+	OpenAIBaseURL     string
+	OpenAIModel       string
+	OpenAIVisionModel string
+	VisionEnabled     bool
 }
 
 type handler struct {
@@ -180,6 +182,7 @@ func (h *handler) upload(w http.ResponseWriter, r *http.Request) {
 		MediaKey:             pgtype.Text{String: key, Valid: true},
 		AudioDurationSec:     nullableInt4(duration),
 		TranscriptionEnabled: h.cfg.OpenAIKey != "",
+		VisionEnabled:        h.cfg.OpenAIKey != "" && h.cfg.VisionEnabled,
 	})
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "could not create capture")

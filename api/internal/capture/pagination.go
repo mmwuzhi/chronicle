@@ -27,9 +27,10 @@ type captureCursor struct {
 }
 
 type CapturePageInput struct {
-	ClassifiedAs string `query:"classifiedAs" doc:"Filter by classification: task, idea, routine, log, unclassified"`
-	Cursor       string `query:"cursor"`
-	Limit        int    `query:"limit" minimum:"1" maximum:"100" default:"30"`
+	ClassifiedAs    string `query:"classifiedAs" doc:"Filter by classification: task, idea, routine, log, unclassified"`
+	Cursor          string `query:"cursor"`
+	Limit           int    `query:"limit" minimum:"1" maximum:"100" default:"30"`
+	IncludeReminded bool   `query:"includeReminded" doc:"Include captures with a future reminder (hidden by default until due); set true for a reminder-management view"`
 }
 
 type CapturePageBody struct {
@@ -71,6 +72,7 @@ func (h *handler) listPage(ctx context.Context, input *CapturePageInput) (*Captu
 		CursorCreatedAt: cursorCreatedAt,
 		CursorID:        cursorID,
 		PageSize:        int32(limit + 1),
+		IncludeReminded: input.IncludeReminded,
 	})
 	if err != nil {
 		return nil, huma.Error500InternalServerError("internal error")

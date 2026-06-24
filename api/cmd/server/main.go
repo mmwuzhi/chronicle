@@ -23,19 +23,17 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 
+	db "github.com/sikaoshenmi/chronicle/db/sqlc"
 	"github.com/sikaoshenmi/chronicle/internal/ai"
 	"github.com/sikaoshenmi/chronicle/internal/auth"
 	"github.com/sikaoshenmi/chronicle/internal/capture"
 	"github.com/sikaoshenmi/chronicle/internal/config"
-	"github.com/sikaoshenmi/chronicle/internal/logentry"
 	"github.com/sikaoshenmi/chronicle/internal/middleware"
-	"github.com/sikaoshenmi/chronicle/internal/project"
-	"github.com/sikaoshenmi/chronicle/internal/report"
+	"github.com/sikaoshenmi/chronicle/internal/ragclient"
 	"github.com/sikaoshenmi/chronicle/internal/search"
-	"github.com/sikaoshenmi/chronicle/internal/task"
-	"github.com/sikaoshenmi/chronicle/internal/timeblock"
 	"github.com/sikaoshenmi/chronicle/internal/upload"
 	"github.com/sikaoshenmi/chronicle/internal/user"
+	"github.com/sikaoshenmi/chronicle/internal/webhook"
 )
 
 func main() {
@@ -124,25 +122,36 @@ func main() {
 		}
 	}
 
+	rag := ragclient.New(cfg.RAGServiceURL)
+	if rag.Enabled() {
+		slog.Info("RAG sidecar configured", "url", cfg.RAGServiceURL)
+	}
+
 	authMW := middleware.RequireAuthHuma(auth.ValidateToken(cfg.JWTSecret))
+	// captureCreateMW additionally accepts long-lived capture tokens; it guards
+	// only POST /captures (see capture.Register), keeping such tokens create-only.
+	captureCreateMW := middleware.RequireAuthHumaCtx(auth.ValidateTokenOrPAT(cfg.JWTSecret, db.New(pool)))
 	uploadConfig := upload.Config{
-		R2BucketName:  cfg.R2BucketName,
-		R2AccountID:   cfg.R2AccountID,
-		OpenAIKey:     cfg.OpenAIKey,
-		OpenAIBaseURL: cfg.OpenAIBaseURL,
-		OpenAIModel:   cfg.OpenAITranscriptionModel,
+		R2BucketName:      cfg.R2BucketName,
+		R2AccountID:       cfg.R2AccountID,
+		OpenAIKey:         cfg.OpenAIKey,
+		OpenAIBaseURL:     cfg.OpenAIBaseURL,
+		OpenAIModel:       cfg.OpenAITranscriptionModel,
+		OpenAIVisionModel: cfg.OpenAIVisionModel,
+		VisionEnabled:     cfg.VisionEnabled,
 	}
 	upload.Register(r, pool, s3client, uploadConfig, auth.ValidateToken(cfg.JWTSecret))
-	upload.StartTranscriptionWorker(ctx, pool, s3client, uploadConfig)
-	project.Register(api, pool, authMW)
-	task.Register(api, pool, authMW)
-	logentry.Register(api, pool, authMW)
-	timeblock.Register(api, pool, authMW)
-	capture.Register(api, pool, authMW)
+	upload.StartTranscriptionWorker(ctx, pool, s3client, uploadConfig, rag)
+	capture.Register(api, pool, rag, authMW, captureCreateMW)
 	user.Register(api, pool, authMW)
 	ai.Register(api, cfg.GeminiKey, authMW)
-	report.Register(api, pool, cfg.GeminiKey, authMW)
-	search.Register(api, pool, authMW)
+	search.Register(api, pool, rag, authMW)
+	// Always register the webhook CRUD so the API contract (and the generated web
+	// client / Integrations settings that always call /webhooks) stays stable
+	// regardless of deployment. Rules are only *matched and delivered* by the RAG
+	// sidecar; without it a rule is stored but never fires, which the UI surfaces
+	// rather than 404-ing on a route that vanished with the env.
+	webhook.Register(api, pool, rag, authMW)
 
 	srv := &http.Server{
 		Addr:         ":" + cfg.Port,
