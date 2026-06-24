@@ -234,6 +234,52 @@ func (ns NullTranscriptionStatus) Value() (driver.Value, error) {
 	return string(ns.TranscriptionStatus), nil
 }
 
+type ArchivedLogEntry struct {
+	ID          uuid.UUID          `json:"id"`
+	UserID      uuid.UUID          `json:"user_id"`
+	TaskID      pgtype.UUID        `json:"task_id"`
+	Body        string             `json:"body"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	DeletedAt   pgtype.Timestamptz `json:"deleted_at"`
+	TimeBlockID pgtype.UUID        `json:"time_block_id"`
+}
+
+type ArchivedProject struct {
+	ID        uuid.UUID          `json:"id"`
+	UserID    uuid.UUID          `json:"user_id"`
+	Name      string             `json:"name"`
+	Color     string             `json:"color"`
+	Archived  bool               `json:"archived"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
+type ArchivedTask struct {
+	ID        uuid.UUID          `json:"id"`
+	UserID    uuid.UUID          `json:"user_id"`
+	ProjectID pgtype.UUID        `json:"project_id"`
+	Title     string             `json:"title"`
+	Type      TaskType           `json:"type"`
+	Status    TaskStatus         `json:"status"`
+	DueAt     pgtype.Timestamptz `json:"due_at"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	DeletedAt pgtype.Timestamptz `json:"deleted_at"`
+	MediaUrl  pgtype.Text        `json:"media_url"`
+	MediaType pgtype.Text        `json:"media_type"`
+	StartAt   pgtype.Timestamptz `json:"start_at"`
+}
+
+type ArchivedTimeBlock struct {
+	ID          uuid.UUID          `json:"id"`
+	UserID      uuid.UUID          `json:"user_id"`
+	TaskID      pgtype.UUID        `json:"task_id"`
+	StartedAt   pgtype.Timestamptz `json:"started_at"`
+	EndedAt     pgtype.Timestamptz `json:"ended_at"`
+	DurationSec pgtype.Int4        `json:"duration_sec"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	DeletedAt   pgtype.Timestamptz `json:"deleted_at"`
+	InputMode   string             `json:"input_mode"`
+}
+
 type Capture struct {
 	ID                    uuid.UUID           `json:"id"`
 	UserID                uuid.UUID           `json:"user_id"`
@@ -241,7 +287,6 @@ type Capture struct {
 	MediaUrl              pgtype.Text         `json:"media_url"`
 	MediaType             CaptureMediaType    `json:"media_type"`
 	ClassifiedAs          CaptureClassifiedAs `json:"classified_as"`
-	TaskID                pgtype.UUID         `json:"task_id"`
 	CreatedAt             pgtype.Timestamptz  `json:"created_at"`
 	Source                string              `json:"source"`
 	Transcript            pgtype.Text         `json:"transcript"`
@@ -252,16 +297,51 @@ type Capture struct {
 	NextTranscriptionAt   pgtype.Timestamptz  `json:"next_transcription_at"`
 	AudioDurationSec      pgtype.Int4         `json:"audio_duration_sec"`
 	MediaKey              pgtype.Text         `json:"media_key"`
+	RemindAt              pgtype.Timestamptz  `json:"remind_at"`
+	DeletedAt             pgtype.Timestamptz  `json:"deleted_at"`
 }
 
-type LogEntry struct {
-	ID          uuid.UUID          `json:"id"`
-	UserID      uuid.UUID          `json:"user_id"`
-	TaskID      pgtype.UUID        `json:"task_id"`
-	Body        string             `json:"body"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
-	DeletedAt   pgtype.Timestamptz `json:"deleted_at"`
-	TimeBlockID pgtype.UUID        `json:"time_block_id"`
+type CaptureEmbedding struct {
+	CaptureID  uuid.UUID          `json:"capture_id"`
+	UserID     uuid.UUID          `json:"user_id"`
+	Embedding  []byte             `json:"embedding"`
+	Model      string             `json:"model"`
+	EmbedV     int32              `json:"embed_v"`
+	UpdatedAt  pgtype.Timestamptz `json:"updated_at"`
+	SourceHash pgtype.Text        `json:"source_hash"`
+}
+
+type CaptureMetadatum struct {
+	CaptureID  uuid.UUID          `json:"capture_id"`
+	UserID     uuid.UUID          `json:"user_id"`
+	Data       []byte             `json:"data"`
+	ExtractV   int32              `json:"extract_v"`
+	UpdatedAt  pgtype.Timestamptz `json:"updated_at"`
+	SourceHash pgtype.Text        `json:"source_hash"`
+}
+
+type CaptureToken struct {
+	ID         uuid.UUID          `json:"id"`
+	UserID     uuid.UUID          `json:"user_id"`
+	TokenHash  string             `json:"token_hash"`
+	Name       string             `json:"name"`
+	LastUsedAt pgtype.Timestamptz `json:"last_used_at"`
+	Revoked    bool               `json:"revoked"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+}
+
+type CaptureWebhook struct {
+	ID                uuid.UUID          `json:"id"`
+	UserID            uuid.UUID          `json:"user_id"`
+	Name              string             `json:"name"`
+	TargetUrl         string             `json:"target_url"`
+	Keywords          []string           `json:"keywords"`
+	SemanticQuery     pgtype.Text        `json:"semantic_query"`
+	SemanticThreshold float64            `json:"semantic_threshold"`
+	PayloadTemplate   string             `json:"payload_template"`
+	Enabled           bool               `json:"enabled"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	DeletedAt         pgtype.Timestamptz `json:"deleted_at"`
 }
 
 type OauthAccount struct {
@@ -283,20 +363,9 @@ type Passkey struct {
 	CreatedAt    pgtype.Timestamptz `json:"created_at"`
 }
 
-type Project struct {
-	ID        uuid.UUID          `json:"id"`
-	UserID    uuid.UUID          `json:"user_id"`
-	Name      string             `json:"name"`
-	Color     string             `json:"color"`
-	Archived  bool               `json:"archived"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
-}
-
-type PublicShare struct {
-	ID        uuid.UUID          `json:"id"`
-	ReportID  uuid.UUID          `json:"report_id"`
-	Slug      string             `json:"slug"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
+type RagConfig struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
 }
 
 type RecoveryCode struct {
@@ -315,33 +384,6 @@ type RefreshToken struct {
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
 
-type Task struct {
-	ID        uuid.UUID          `json:"id"`
-	UserID    uuid.UUID          `json:"user_id"`
-	ProjectID pgtype.UUID        `json:"project_id"`
-	Title     string             `json:"title"`
-	Type      TaskType           `json:"type"`
-	Status    TaskStatus         `json:"status"`
-	DueAt     pgtype.Timestamptz `json:"due_at"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
-	DeletedAt pgtype.Timestamptz `json:"deleted_at"`
-	MediaUrl  pgtype.Text        `json:"media_url"`
-	MediaType pgtype.Text        `json:"media_type"`
-	StartAt   pgtype.Timestamptz `json:"start_at"`
-}
-
-type TimeBlock struct {
-	ID          uuid.UUID          `json:"id"`
-	UserID      uuid.UUID          `json:"user_id"`
-	TaskID      pgtype.UUID        `json:"task_id"`
-	StartedAt   pgtype.Timestamptz `json:"started_at"`
-	EndedAt     pgtype.Timestamptz `json:"ended_at"`
-	DurationSec pgtype.Int4        `json:"duration_sec"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
-	DeletedAt   pgtype.Timestamptz `json:"deleted_at"`
-	InputMode   string             `json:"input_mode"`
-}
-
 type User struct {
 	ID                   uuid.UUID          `json:"id"`
 	Email                string             `json:"email"`
@@ -353,12 +395,4 @@ type User struct {
 	PasswordResetExpires pgtype.Timestamptz `json:"password_reset_expires"`
 	TotpSecret           pgtype.Text        `json:"totp_secret"`
 	TotpEnabled          bool               `json:"totp_enabled"`
-}
-
-type WeeklyReport struct {
-	ID        uuid.UUID          `json:"id"`
-	UserID    uuid.UUID          `json:"user_id"`
-	WeekStart pgtype.Date        `json:"week_start"`
-	Data      []byte             `json:"data"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }

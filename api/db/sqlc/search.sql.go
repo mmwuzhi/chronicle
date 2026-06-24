@@ -15,7 +15,7 @@ import (
 const searchCaptures = `-- name: SearchCaptures :many
 WITH ranked AS (
   SELECT
-    captures.id, captures.user_id, captures.raw_text, captures.media_url, captures.media_type, captures.classified_as, captures.task_id, captures.created_at, captures.source, captures.transcript, captures.transcription_status, captures.transcription_model, captures.transcription_attempts, captures.transcribed_at, captures.next_transcription_at, captures.audio_duration_sec, captures.media_key,
+    captures.id, captures.user_id, captures.raw_text, captures.media_url, captures.media_type, captures.classified_as, captures.created_at, captures.source, captures.transcript, captures.transcription_status, captures.transcription_model, captures.transcription_attempts, captures.transcribed_at, captures.next_transcription_at, captures.audio_duration_sec, captures.media_key, captures.remind_at, captures.deleted_at,
     CASE
       WHEN raw_text ILIKE '%' || $1::text || '%' THEN 'rawText'
       WHEN transcript ILIKE '%' || $1::text || '%' THEN 'transcript'
@@ -45,6 +45,7 @@ WITH ranked AS (
     )::double precision AS relevance
   FROM captures
   WHERE user_id = $2
+    AND deleted_at IS NULL
     AND (
       raw_text ILIKE '%' || $1::text || '%'
       OR transcript ILIKE '%' || $1::text || '%'
@@ -54,7 +55,7 @@ WITH ranked AS (
       ) @@ websearch_to_tsquery('simple', $1::text)
     )
 )
-SELECT id, user_id, raw_text, media_url, media_type, classified_as, task_id, created_at, source, transcript, transcription_status, transcription_model, transcription_attempts, transcribed_at, next_transcription_at, audio_duration_sec, media_key, matched_field, relevance FROM ranked
+SELECT id, user_id, raw_text, media_url, media_type, classified_as, created_at, source, transcript, transcription_status, transcription_model, transcription_attempts, transcribed_at, next_transcription_at, audio_duration_sec, media_key, remind_at, deleted_at, matched_field, relevance FROM ranked
 ORDER BY relevance DESC, created_at DESC
 LIMIT 20
 `
@@ -71,7 +72,6 @@ type SearchCapturesRow struct {
 	MediaUrl              pgtype.Text         `json:"media_url"`
 	MediaType             CaptureMediaType    `json:"media_type"`
 	ClassifiedAs          CaptureClassifiedAs `json:"classified_as"`
-	TaskID                pgtype.UUID         `json:"task_id"`
 	CreatedAt             pgtype.Timestamptz  `json:"created_at"`
 	Source                string              `json:"source"`
 	Transcript            pgtype.Text         `json:"transcript"`
@@ -82,6 +82,8 @@ type SearchCapturesRow struct {
 	NextTranscriptionAt   pgtype.Timestamptz  `json:"next_transcription_at"`
 	AudioDurationSec      pgtype.Int4         `json:"audio_duration_sec"`
 	MediaKey              pgtype.Text         `json:"media_key"`
+	RemindAt              pgtype.Timestamptz  `json:"remind_at"`
+	DeletedAt             pgtype.Timestamptz  `json:"deleted_at"`
 	MatchedField          string              `json:"matched_field"`
 	Relevance             float64             `json:"relevance"`
 }
@@ -102,7 +104,6 @@ func (q *Queries) SearchCaptures(ctx context.Context, arg SearchCapturesParams) 
 			&i.MediaUrl,
 			&i.MediaType,
 			&i.ClassifiedAs,
-			&i.TaskID,
 			&i.CreatedAt,
 			&i.Source,
 			&i.Transcript,
@@ -113,151 +114,9 @@ func (q *Queries) SearchCaptures(ctx context.Context, arg SearchCapturesParams) 
 			&i.NextTranscriptionAt,
 			&i.AudioDurationSec,
 			&i.MediaKey,
+			&i.RemindAt,
+			&i.DeletedAt,
 			&i.MatchedField,
-			&i.Relevance,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const searchLogEntries = `-- name: SearchLogEntries :many
-SELECT
-  log_entries.id, log_entries.user_id, log_entries.task_id, log_entries.body, log_entries.created_at, log_entries.deleted_at, log_entries.time_block_id,
-  (
-    CASE WHEN body ILIKE '%' || $1::text || '%' THEN 2.0 ELSE 0.0 END
-    + similarity(body, $1::text)
-    + ts_rank_cd(
-        to_tsvector('simple', body),
-        websearch_to_tsquery('simple', $1::text)
-      )
-  )::double precision AS relevance
-FROM log_entries
-WHERE user_id = $2
-  AND deleted_at IS NULL
-  AND (
-    body ILIKE '%' || $1::text || '%'
-    OR to_tsvector('simple', body) @@ websearch_to_tsquery('simple', $1::text)
-  )
-ORDER BY relevance DESC, created_at DESC
-LIMIT 20
-`
-
-type SearchLogEntriesParams struct {
-	Query  string    `json:"query"`
-	UserID uuid.UUID `json:"user_id"`
-}
-
-type SearchLogEntriesRow struct {
-	ID          uuid.UUID          `json:"id"`
-	UserID      uuid.UUID          `json:"user_id"`
-	TaskID      pgtype.UUID        `json:"task_id"`
-	Body        string             `json:"body"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
-	DeletedAt   pgtype.Timestamptz `json:"deleted_at"`
-	TimeBlockID pgtype.UUID        `json:"time_block_id"`
-	Relevance   float64            `json:"relevance"`
-}
-
-func (q *Queries) SearchLogEntries(ctx context.Context, arg SearchLogEntriesParams) ([]SearchLogEntriesRow, error) {
-	rows, err := q.db.Query(ctx, searchLogEntries, arg.Query, arg.UserID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []SearchLogEntriesRow
-	for rows.Next() {
-		var i SearchLogEntriesRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.UserID,
-			&i.TaskID,
-			&i.Body,
-			&i.CreatedAt,
-			&i.DeletedAt,
-			&i.TimeBlockID,
-			&i.Relevance,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const searchTasks = `-- name: SearchTasks :many
-SELECT
-  tasks.id, tasks.user_id, tasks.project_id, tasks.title, tasks.type, tasks.status, tasks.due_at, tasks.created_at, tasks.deleted_at, tasks.media_url, tasks.media_type, tasks.start_at,
-  (
-    CASE WHEN title ILIKE '%' || $1::text || '%' THEN 2.0 ELSE 0.0 END
-    + similarity(title, $1::text)
-    + ts_rank_cd(
-        to_tsvector('simple', title),
-        websearch_to_tsquery('simple', $1::text)
-      )
-  )::double precision AS relevance
-FROM tasks
-WHERE user_id = $2
-  AND deleted_at IS NULL
-  AND (
-    title ILIKE '%' || $1::text || '%'
-    OR to_tsvector('simple', title) @@ websearch_to_tsquery('simple', $1::text)
-  )
-ORDER BY relevance DESC, created_at DESC
-LIMIT 20
-`
-
-type SearchTasksParams struct {
-	Query  string    `json:"query"`
-	UserID uuid.UUID `json:"user_id"`
-}
-
-type SearchTasksRow struct {
-	ID        uuid.UUID          `json:"id"`
-	UserID    uuid.UUID          `json:"user_id"`
-	ProjectID pgtype.UUID        `json:"project_id"`
-	Title     string             `json:"title"`
-	Type      TaskType           `json:"type"`
-	Status    TaskStatus         `json:"status"`
-	DueAt     pgtype.Timestamptz `json:"due_at"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
-	DeletedAt pgtype.Timestamptz `json:"deleted_at"`
-	MediaUrl  pgtype.Text        `json:"media_url"`
-	MediaType pgtype.Text        `json:"media_type"`
-	StartAt   pgtype.Timestamptz `json:"start_at"`
-	Relevance float64            `json:"relevance"`
-}
-
-func (q *Queries) SearchTasks(ctx context.Context, arg SearchTasksParams) ([]SearchTasksRow, error) {
-	rows, err := q.db.Query(ctx, searchTasks, arg.Query, arg.UserID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []SearchTasksRow
-	for rows.Next() {
-		var i SearchTasksRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.UserID,
-			&i.ProjectID,
-			&i.Title,
-			&i.Type,
-			&i.Status,
-			&i.DueAt,
-			&i.CreatedAt,
-			&i.DeletedAt,
-			&i.MediaUrl,
-			&i.MediaType,
-			&i.StartAt,
 			&i.Relevance,
 		); err != nil {
 			return nil, err

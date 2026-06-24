@@ -21,12 +21,13 @@ WHERE id = (
   SELECT id
   FROM captures
   WHERE transcription_status IN ('pending', 'processing')
+    AND deleted_at IS NULL
     AND next_transcription_at <= now()
   ORDER BY next_transcription_at, created_at
   FOR UPDATE SKIP LOCKED
   LIMIT 1
 )
-RETURNING id, user_id, raw_text, media_url, media_type, classified_as, task_id, created_at, source, transcript, transcription_status, transcription_model, transcription_attempts, transcribed_at, next_transcription_at, audio_duration_sec, media_key
+RETURNING id, user_id, raw_text, media_url, media_type, classified_as, created_at, source, transcript, transcription_status, transcription_model, transcription_attempts, transcribed_at, next_transcription_at, audio_duration_sec, media_key, remind_at, deleted_at
 `
 
 func (q *Queries) ClaimPendingTranscription(ctx context.Context) (Capture, error) {
@@ -39,7 +40,6 @@ func (q *Queries) ClaimPendingTranscription(ctx context.Context) (Capture, error
 		&i.MediaUrl,
 		&i.MediaType,
 		&i.ClassifiedAs,
-		&i.TaskID,
 		&i.CreatedAt,
 		&i.Source,
 		&i.Transcript,
@@ -50,6 +50,8 @@ func (q *Queries) ClaimPendingTranscription(ctx context.Context) (Capture, error
 		&i.NextTranscriptionAt,
 		&i.AudioDurationSec,
 		&i.MediaKey,
+		&i.RemindAt,
+		&i.DeletedAt,
 	)
 	return i, err
 }
@@ -76,9 +78,9 @@ func (q *Queries) CompleteCaptureTranscription(ctx context.Context, arg Complete
 }
 
 const createCapture = `-- name: CreateCapture :one
-INSERT INTO captures (user_id, raw_text, media_url, media_type, classified_as, task_id, source)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
-RETURNING id, user_id, raw_text, media_url, media_type, classified_as, task_id, created_at, source, transcript, transcription_status, transcription_model, transcription_attempts, transcribed_at, next_transcription_at, audio_duration_sec, media_key
+INSERT INTO captures (user_id, raw_text, media_url, media_type, classified_as, source)
+VALUES ($1, $2, $3, $4, $5, $6)
+RETURNING id, user_id, raw_text, media_url, media_type, classified_as, created_at, source, transcript, transcription_status, transcription_model, transcription_attempts, transcribed_at, next_transcription_at, audio_duration_sec, media_key, remind_at, deleted_at
 `
 
 type CreateCaptureParams struct {
@@ -87,7 +89,6 @@ type CreateCaptureParams struct {
 	MediaUrl     pgtype.Text         `json:"media_url"`
 	MediaType    CaptureMediaType    `json:"media_type"`
 	ClassifiedAs CaptureClassifiedAs `json:"classified_as"`
-	TaskID       pgtype.UUID         `json:"task_id"`
 	Source       string              `json:"source"`
 }
 
@@ -98,7 +99,6 @@ func (q *Queries) CreateCapture(ctx context.Context, arg CreateCaptureParams) (C
 		arg.MediaUrl,
 		arg.MediaType,
 		arg.ClassifiedAs,
-		arg.TaskID,
 		arg.Source,
 	)
 	var i Capture
@@ -109,7 +109,6 @@ func (q *Queries) CreateCapture(ctx context.Context, arg CreateCaptureParams) (C
 		&i.MediaUrl,
 		&i.MediaType,
 		&i.ClassifiedAs,
-		&i.TaskID,
 		&i.CreatedAt,
 		&i.Source,
 		&i.Transcript,
@@ -120,6 +119,8 @@ func (q *Queries) CreateCapture(ctx context.Context, arg CreateCaptureParams) (C
 		&i.NextTranscriptionAt,
 		&i.AudioDurationSec,
 		&i.MediaKey,
+		&i.RemindAt,
+		&i.DeletedAt,
 	)
 	return i, err
 }
@@ -152,6 +153,11 @@ VALUES (
     THEN 'pending'::transcription_status
     WHEN $3::capture_media_type = 'audio'
     THEN 'skipped'::transcription_status
+    WHEN $3::capture_media_type = 'image'
+      AND $7::boolean
+    THEN 'pending'::transcription_status
+    WHEN $3::capture_media_type = 'image'
+    THEN 'skipped'::transcription_status
     ELSE 'none'::transcription_status
   END,
   CASE
@@ -160,10 +166,13 @@ VALUES (
       AND $5::integer <= 300
       AND $6::boolean
     THEN now()
+    WHEN $3::capture_media_type = 'image'
+      AND $7::boolean
+    THEN now()
     ELSE NULL
   END
 )
-RETURNING id, user_id, raw_text, media_url, media_type, classified_as, task_id, created_at, source, transcript, transcription_status, transcription_model, transcription_attempts, transcribed_at, next_transcription_at, audio_duration_sec, media_key
+RETURNING id, user_id, raw_text, media_url, media_type, classified_as, created_at, source, transcript, transcription_status, transcription_model, transcription_attempts, transcribed_at, next_transcription_at, audio_duration_sec, media_key, remind_at, deleted_at
 `
 
 type CreateUploadedCaptureParams struct {
@@ -173,6 +182,7 @@ type CreateUploadedCaptureParams struct {
 	MediaKey             pgtype.Text      `json:"media_key"`
 	AudioDurationSec     pgtype.Int4      `json:"audio_duration_sec"`
 	TranscriptionEnabled bool             `json:"transcription_enabled"`
+	VisionEnabled        bool             `json:"vision_enabled"`
 }
 
 func (q *Queries) CreateUploadedCapture(ctx context.Context, arg CreateUploadedCaptureParams) (Capture, error) {
@@ -183,6 +193,7 @@ func (q *Queries) CreateUploadedCapture(ctx context.Context, arg CreateUploadedC
 		arg.MediaKey,
 		arg.AudioDurationSec,
 		arg.TranscriptionEnabled,
+		arg.VisionEnabled,
 	)
 	var i Capture
 	err := row.Scan(
@@ -192,7 +203,6 @@ func (q *Queries) CreateUploadedCapture(ctx context.Context, arg CreateUploadedC
 		&i.MediaUrl,
 		&i.MediaType,
 		&i.ClassifiedAs,
-		&i.TaskID,
 		&i.CreatedAt,
 		&i.Source,
 		&i.Transcript,
@@ -203,13 +213,16 @@ func (q *Queries) CreateUploadedCapture(ctx context.Context, arg CreateUploadedC
 		&i.NextTranscriptionAt,
 		&i.AudioDurationSec,
 		&i.MediaKey,
+		&i.RemindAt,
+		&i.DeletedAt,
 	)
 	return i, err
 }
 
 const deleteCapture = `-- name: DeleteCapture :one
-DELETE FROM captures
-WHERE id = $1 AND user_id = $2
+UPDATE captures
+SET deleted_at = now()
+WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL
 RETURNING id
 `
 
@@ -218,11 +231,71 @@ type DeleteCaptureParams struct {
 	UserID uuid.UUID `json:"user_id"`
 }
 
+// Soft delete (project convention: never hard-DELETE user data). Idempotent —
+// a second delete of the same id matches no row (deleted_at already set) and
+// returns pgx.ErrNoRows, which the handler maps to 404.
 func (q *Queries) DeleteCapture(ctx context.Context, arg DeleteCaptureParams) (uuid.UUID, error) {
 	row := q.db.QueryRow(ctx, deleteCapture, arg.ID, arg.UserID)
 	var id uuid.UUID
 	err := row.Scan(&id)
 	return id, err
+}
+
+const dueReminders = `-- name: DueReminders :many
+SELECT id, user_id, raw_text, media_url, media_type, classified_as, created_at, source, transcript, transcription_status, transcription_model, transcription_attempts, transcribed_at, next_transcription_at, audio_duration_sec, media_key, remind_at, deleted_at FROM captures
+WHERE user_id = $1
+  AND deleted_at IS NULL
+  AND remind_at IS NOT NULL
+  AND remind_at > $2::timestamptz
+  AND remind_at <= now()
+ORDER BY remind_at DESC
+`
+
+type DueRemindersParams struct {
+	UserID uuid.UUID          `json:"user_id"`
+	Since  pgtype.Timestamptz `json:"since"`
+}
+
+// Reminders that came due in (since, now] — left-open to avoid re-notifying the
+// same one (since = caller's last check), right-closed to include "due right now".
+// Newest first for the feed's "due" section.
+func (q *Queries) DueReminders(ctx context.Context, arg DueRemindersParams) ([]Capture, error) {
+	rows, err := q.db.Query(ctx, dueReminders, arg.UserID, arg.Since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Capture
+	for rows.Next() {
+		var i Capture
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.RawText,
+			&i.MediaUrl,
+			&i.MediaType,
+			&i.ClassifiedAs,
+			&i.CreatedAt,
+			&i.Source,
+			&i.Transcript,
+			&i.TranscriptionStatus,
+			&i.TranscriptionModel,
+			&i.TranscriptionAttempts,
+			&i.TranscribedAt,
+			&i.NextTranscriptionAt,
+			&i.AudioDurationSec,
+			&i.MediaKey,
+			&i.RemindAt,
+			&i.DeletedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const failCaptureTranscription = `-- name: FailCaptureTranscription :exec
@@ -246,8 +319,8 @@ func (q *Queries) FailCaptureTranscription(ctx context.Context, id uuid.UUID) er
 }
 
 const getCapture = `-- name: GetCapture :one
-SELECT id, user_id, raw_text, media_url, media_type, classified_as, task_id, created_at, source, transcript, transcription_status, transcription_model, transcription_attempts, transcribed_at, next_transcription_at, audio_duration_sec, media_key FROM captures
-WHERE id = $1 AND user_id = $2
+SELECT id, user_id, raw_text, media_url, media_type, classified_as, created_at, source, transcript, transcription_status, transcription_model, transcription_attempts, transcribed_at, next_transcription_at, audio_duration_sec, media_key, remind_at, deleted_at FROM captures
+WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL
 `
 
 type GetCaptureParams struct {
@@ -265,7 +338,6 @@ func (q *Queries) GetCapture(ctx context.Context, arg GetCaptureParams) (Capture
 		&i.MediaUrl,
 		&i.MediaType,
 		&i.ClassifiedAs,
-		&i.TaskID,
 		&i.CreatedAt,
 		&i.Source,
 		&i.Transcript,
@@ -276,13 +348,16 @@ func (q *Queries) GetCapture(ctx context.Context, arg GetCaptureParams) (Capture
 		&i.NextTranscriptionAt,
 		&i.AudioDurationSec,
 		&i.MediaKey,
+		&i.RemindAt,
+		&i.DeletedAt,
 	)
 	return i, err
 }
 
 const listCaptureContextAfter = `-- name: ListCaptureContextAfter :many
-SELECT id, user_id, raw_text, media_url, media_type, classified_as, task_id, created_at, source, transcript, transcription_status, transcription_model, transcription_attempts, transcribed_at, next_transcription_at, audio_duration_sec, media_key FROM captures
+SELECT id, user_id, raw_text, media_url, media_type, classified_as, created_at, source, transcript, transcription_status, transcription_model, transcription_attempts, transcribed_at, next_transcription_at, audio_duration_sec, media_key, remind_at, deleted_at FROM captures
 WHERE user_id = $1
+  AND deleted_at IS NULL
   AND (created_at, id) > (
     $2::timestamptz,
     $3::uuid
@@ -319,7 +394,6 @@ func (q *Queries) ListCaptureContextAfter(ctx context.Context, arg ListCaptureCo
 			&i.MediaUrl,
 			&i.MediaType,
 			&i.ClassifiedAs,
-			&i.TaskID,
 			&i.CreatedAt,
 			&i.Source,
 			&i.Transcript,
@@ -330,6 +404,8 @@ func (q *Queries) ListCaptureContextAfter(ctx context.Context, arg ListCaptureCo
 			&i.NextTranscriptionAt,
 			&i.AudioDurationSec,
 			&i.MediaKey,
+			&i.RemindAt,
+			&i.DeletedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -342,8 +418,9 @@ func (q *Queries) ListCaptureContextAfter(ctx context.Context, arg ListCaptureCo
 }
 
 const listCaptureContextBefore = `-- name: ListCaptureContextBefore :many
-SELECT id, user_id, raw_text, media_url, media_type, classified_as, task_id, created_at, source, transcript, transcription_status, transcription_model, transcription_attempts, transcribed_at, next_transcription_at, audio_duration_sec, media_key FROM captures
+SELECT id, user_id, raw_text, media_url, media_type, classified_as, created_at, source, transcript, transcription_status, transcription_model, transcription_attempts, transcribed_at, next_transcription_at, audio_duration_sec, media_key, remind_at, deleted_at FROM captures
 WHERE user_id = $1
+  AND deleted_at IS NULL
   AND (created_at, id) < (
     $2::timestamptz,
     $3::uuid
@@ -380,7 +457,6 @@ func (q *Queries) ListCaptureContextBefore(ctx context.Context, arg ListCaptureC
 			&i.MediaUrl,
 			&i.MediaType,
 			&i.ClassifiedAs,
-			&i.TaskID,
 			&i.CreatedAt,
 			&i.Source,
 			&i.Transcript,
@@ -391,6 +467,8 @@ func (q *Queries) ListCaptureContextBefore(ctx context.Context, arg ListCaptureC
 			&i.NextTranscriptionAt,
 			&i.AudioDurationSec,
 			&i.MediaKey,
+			&i.RemindAt,
+			&i.DeletedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -403,8 +481,9 @@ func (q *Queries) ListCaptureContextBefore(ctx context.Context, arg ListCaptureC
 }
 
 const listCapturePage = `-- name: ListCapturePage :many
-SELECT id, user_id, raw_text, media_url, media_type, classified_as, task_id, created_at, source, transcript, transcription_status, transcription_model, transcription_attempts, transcribed_at, next_transcription_at, audio_duration_sec, media_key FROM captures
+SELECT id, user_id, raw_text, media_url, media_type, classified_as, created_at, source, transcript, transcription_status, transcription_model, transcription_attempts, transcribed_at, next_transcription_at, audio_duration_sec, media_key, remind_at, deleted_at FROM captures
 WHERE user_id = $1
+  AND deleted_at IS NULL
   AND (
     $2::text IS NULL
     OR classified_as::text = $2::text
@@ -416,8 +495,13 @@ WHERE user_id = $1
       $4::uuid
     )
   )
+  AND (
+    $5::boolean
+    OR remind_at IS NULL
+    OR remind_at <= now()
+  )
 ORDER BY created_at DESC, id DESC
-LIMIT $5
+LIMIT $6
 `
 
 type ListCapturePageParams struct {
@@ -425,6 +509,7 @@ type ListCapturePageParams struct {
 	ClassifiedAs    pgtype.Text        `json:"classified_as"`
 	CursorCreatedAt pgtype.Timestamptz `json:"cursor_created_at"`
 	CursorID        pgtype.UUID        `json:"cursor_id"`
+	IncludeReminded bool               `json:"include_reminded"`
 	PageSize        int32              `json:"page_size"`
 }
 
@@ -434,6 +519,7 @@ func (q *Queries) ListCapturePage(ctx context.Context, arg ListCapturePageParams
 		arg.ClassifiedAs,
 		arg.CursorCreatedAt,
 		arg.CursorID,
+		arg.IncludeReminded,
 		arg.PageSize,
 	)
 	if err != nil {
@@ -450,7 +536,6 @@ func (q *Queries) ListCapturePage(ctx context.Context, arg ListCapturePageParams
 			&i.MediaUrl,
 			&i.MediaType,
 			&i.ClassifiedAs,
-			&i.TaskID,
 			&i.CreatedAt,
 			&i.Source,
 			&i.Transcript,
@@ -461,6 +546,8 @@ func (q *Queries) ListCapturePage(ctx context.Context, arg ListCapturePageParams
 			&i.NextTranscriptionAt,
 			&i.AudioDurationSec,
 			&i.MediaKey,
+			&i.RemindAt,
+			&i.DeletedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -473,19 +560,22 @@ func (q *Queries) ListCapturePage(ctx context.Context, arg ListCapturePageParams
 }
 
 const listCaptures = `-- name: ListCaptures :many
-SELECT id, user_id, raw_text, media_url, media_type, classified_as, task_id, created_at, source, transcript, transcription_status, transcription_model, transcription_attempts, transcribed_at, next_transcription_at, audio_duration_sec, media_key FROM captures
+SELECT id, user_id, raw_text, media_url, media_type, classified_as, created_at, source, transcript, transcription_status, transcription_model, transcription_attempts, transcribed_at, next_transcription_at, audio_duration_sec, media_key, remind_at, deleted_at FROM captures
 WHERE user_id = $1
+  AND deleted_at IS NULL
   AND ($2::text IS NULL OR classified_as::text = $2::text)
+  AND ($3::boolean OR remind_at IS NULL OR remind_at <= now())
 ORDER BY created_at DESC
 `
 
 type ListCapturesParams struct {
-	UserID       uuid.UUID   `json:"user_id"`
-	ClassifiedAs pgtype.Text `json:"classified_as"`
+	UserID          uuid.UUID   `json:"user_id"`
+	ClassifiedAs    pgtype.Text `json:"classified_as"`
+	IncludeReminded bool        `json:"include_reminded"`
 }
 
 func (q *Queries) ListCaptures(ctx context.Context, arg ListCapturesParams) ([]Capture, error) {
-	rows, err := q.db.Query(ctx, listCaptures, arg.UserID, arg.ClassifiedAs)
+	rows, err := q.db.Query(ctx, listCaptures, arg.UserID, arg.ClassifiedAs, arg.IncludeReminded)
 	if err != nil {
 		return nil, err
 	}
@@ -500,7 +590,6 @@ func (q *Queries) ListCaptures(ctx context.Context, arg ListCapturesParams) ([]C
 			&i.MediaUrl,
 			&i.MediaType,
 			&i.ClassifiedAs,
-			&i.TaskID,
 			&i.CreatedAt,
 			&i.Source,
 			&i.Transcript,
@@ -511,6 +600,8 @@ func (q *Queries) ListCaptures(ctx context.Context, arg ListCapturesParams) ([]C
 			&i.NextTranscriptionAt,
 			&i.AudioDurationSec,
 			&i.MediaKey,
+			&i.RemindAt,
+			&i.DeletedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -523,8 +614,9 @@ func (q *Queries) ListCaptures(ctx context.Context, arg ListCapturesParams) ([]C
 }
 
 const listCapturesInRange = `-- name: ListCapturesInRange :many
-SELECT id, user_id, raw_text, media_url, media_type, classified_as, task_id, created_at, source, transcript, transcription_status, transcription_model, transcription_attempts, transcribed_at, next_transcription_at, audio_duration_sec, media_key FROM captures
+SELECT id, user_id, raw_text, media_url, media_type, classified_as, created_at, source, transcript, transcription_status, transcription_model, transcription_attempts, transcribed_at, next_transcription_at, audio_duration_sec, media_key, remind_at, deleted_at FROM captures
 WHERE user_id = $1
+  AND deleted_at IS NULL
   AND created_at >= $2
   AND created_at < $3
 ORDER BY created_at
@@ -552,7 +644,6 @@ func (q *Queries) ListCapturesInRange(ctx context.Context, arg ListCapturesInRan
 			&i.MediaUrl,
 			&i.MediaType,
 			&i.ClassifiedAs,
-			&i.TaskID,
 			&i.CreatedAt,
 			&i.Source,
 			&i.Transcript,
@@ -563,6 +654,58 @@ func (q *Queries) ListCapturesInRange(ctx context.Context, arg ListCapturesInRan
 			&i.NextTranscriptionAt,
 			&i.AudioDurationSec,
 			&i.MediaKey,
+			&i.RemindAt,
+			&i.DeletedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const pendingReminders = `-- name: PendingReminders :many
+SELECT id, user_id, raw_text, media_url, media_type, classified_as, created_at, source, transcript, transcription_status, transcription_model, transcription_attempts, transcribed_at, next_transcription_at, audio_duration_sec, media_key, remind_at, deleted_at FROM captures
+WHERE user_id = $1
+  AND deleted_at IS NULL
+  AND remind_at IS NOT NULL
+  AND remind_at > now()
+ORDER BY remind_at
+`
+
+// All not-yet-due reminders (remind_at > now), so the desktop app can reconcile
+// its scheduled OS notifications on launch.
+func (q *Queries) PendingReminders(ctx context.Context, userID uuid.UUID) ([]Capture, error) {
+	rows, err := q.db.Query(ctx, pendingReminders, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Capture
+	for rows.Next() {
+		var i Capture
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.RawText,
+			&i.MediaUrl,
+			&i.MediaType,
+			&i.ClassifiedAs,
+			&i.CreatedAt,
+			&i.Source,
+			&i.Transcript,
+			&i.TranscriptionStatus,
+			&i.TranscriptionModel,
+			&i.TranscriptionAttempts,
+			&i.TranscribedAt,
+			&i.NextTranscriptionAt,
+			&i.AudioDurationSec,
+			&i.MediaKey,
+			&i.RemindAt,
+			&i.DeletedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -581,10 +724,11 @@ SET transcription_status = 'pending',
     next_transcription_at = now()
 WHERE id = $1
   AND user_id = $2
+  AND deleted_at IS NULL
   AND media_type = 'audio'
   AND audio_duration_sec IS NOT NULL
   AND audio_duration_sec <= 300
-RETURNING id, user_id, raw_text, media_url, media_type, classified_as, task_id, created_at, source, transcript, transcription_status, transcription_model, transcription_attempts, transcribed_at, next_transcription_at, audio_duration_sec, media_key
+RETURNING id, user_id, raw_text, media_url, media_type, classified_as, created_at, source, transcript, transcription_status, transcription_model, transcription_attempts, transcribed_at, next_transcription_at, audio_duration_sec, media_key, remind_at, deleted_at
 `
 
 type RetryCaptureTranscriptionParams struct {
@@ -602,7 +746,6 @@ func (q *Queries) RetryCaptureTranscription(ctx context.Context, arg RetryCaptur
 		&i.MediaUrl,
 		&i.MediaType,
 		&i.ClassifiedAs,
-		&i.TaskID,
 		&i.CreatedAt,
 		&i.Source,
 		&i.Transcript,
@@ -613,6 +756,50 @@ func (q *Queries) RetryCaptureTranscription(ctx context.Context, arg RetryCaptur
 		&i.NextTranscriptionAt,
 		&i.AudioDurationSec,
 		&i.MediaKey,
+		&i.RemindAt,
+		&i.DeletedAt,
+	)
+	return i, err
+}
+
+const setCaptureRemind = `-- name: SetCaptureRemind :one
+UPDATE captures
+SET remind_at = $1::timestamptz
+WHERE id = $2 AND user_id = $3 AND deleted_at IS NULL
+RETURNING id, user_id, raw_text, media_url, media_type, classified_as, created_at, source, transcript, transcription_status, transcription_model, transcription_attempts, transcribed_at, next_transcription_at, audio_duration_sec, media_key, remind_at, deleted_at
+`
+
+type SetCaptureRemindParams struct {
+	RemindAt pgtype.Timestamptz `json:"remind_at"`
+	ID       uuid.UUID          `json:"id"`
+	UserID   uuid.UUID          `json:"user_id"`
+}
+
+// Set or clear (remind_at = NULL) a capture's reminder. Independent of content
+// edits so the semantics stay separate. Only the browse path filters on this;
+// search/recall never do.
+func (q *Queries) SetCaptureRemind(ctx context.Context, arg SetCaptureRemindParams) (Capture, error) {
+	row := q.db.QueryRow(ctx, setCaptureRemind, arg.RemindAt, arg.ID, arg.UserID)
+	var i Capture
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.RawText,
+		&i.MediaUrl,
+		&i.MediaType,
+		&i.ClassifiedAs,
+		&i.CreatedAt,
+		&i.Source,
+		&i.Transcript,
+		&i.TranscriptionStatus,
+		&i.TranscriptionModel,
+		&i.TranscriptionAttempts,
+		&i.TranscribedAt,
+		&i.NextTranscriptionAt,
+		&i.AudioDurationSec,
+		&i.MediaKey,
+		&i.RemindAt,
+		&i.DeletedAt,
 	)
 	return i, err
 }
@@ -624,17 +811,15 @@ SET
   transcript    = COALESCE($2::text,         transcript),
   classified_as = CASE WHEN $3::text IS NOT NULL
                   THEN $3::capture_classified_as
-                  ELSE classified_as END,
-  task_id       = COALESCE($4::uuid, task_id)
-WHERE id = $5 AND user_id = $6
-RETURNING id, user_id, raw_text, media_url, media_type, classified_as, task_id, created_at, source, transcript, transcription_status, transcription_model, transcription_attempts, transcribed_at, next_transcription_at, audio_duration_sec, media_key
+                  ELSE classified_as END
+WHERE id = $4 AND user_id = $5 AND deleted_at IS NULL
+RETURNING id, user_id, raw_text, media_url, media_type, classified_as, created_at, source, transcript, transcription_status, transcription_model, transcription_attempts, transcribed_at, next_transcription_at, audio_duration_sec, media_key, remind_at, deleted_at
 `
 
 type UpdateCaptureParams struct {
 	RawText      pgtype.Text `json:"raw_text"`
 	Transcript   pgtype.Text `json:"transcript"`
 	ClassifiedAs pgtype.Text `json:"classified_as"`
-	TaskID       pgtype.UUID `json:"task_id"`
 	ID           uuid.UUID   `json:"id"`
 	UserID       uuid.UUID   `json:"user_id"`
 }
@@ -644,7 +829,6 @@ func (q *Queries) UpdateCapture(ctx context.Context, arg UpdateCaptureParams) (C
 		arg.RawText,
 		arg.Transcript,
 		arg.ClassifiedAs,
-		arg.TaskID,
 		arg.ID,
 		arg.UserID,
 	)
@@ -656,7 +840,6 @@ func (q *Queries) UpdateCapture(ctx context.Context, arg UpdateCaptureParams) (C
 		&i.MediaUrl,
 		&i.MediaType,
 		&i.ClassifiedAs,
-		&i.TaskID,
 		&i.CreatedAt,
 		&i.Source,
 		&i.Transcript,
@@ -667,6 +850,8 @@ func (q *Queries) UpdateCapture(ctx context.Context, arg UpdateCaptureParams) (C
 		&i.NextTranscriptionAt,
 		&i.AudioDurationSec,
 		&i.MediaKey,
+		&i.RemindAt,
+		&i.DeletedAt,
 	)
 	return i, err
 }

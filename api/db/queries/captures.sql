@@ -1,12 +1,15 @@
 -- name: ListCaptures :many
 SELECT * FROM captures
 WHERE user_id = $1
+  AND deleted_at IS NULL
   AND (sqlc.narg('classified_as')::text IS NULL OR classified_as::text = sqlc.narg('classified_as')::text)
+  AND (sqlc.arg('include_reminded')::boolean OR remind_at IS NULL OR remind_at <= now())
 ORDER BY created_at DESC;
 
 -- name: ListCapturePage :many
 SELECT * FROM captures
 WHERE user_id = sqlc.arg('user_id')
+  AND deleted_at IS NULL
   AND (
     sqlc.narg('classified_as')::text IS NULL
     OR classified_as::text = sqlc.narg('classified_as')::text
@@ -18,16 +21,22 @@ WHERE user_id = sqlc.arg('user_id')
       sqlc.narg('cursor_id')::uuid
     )
   )
+  AND (
+    sqlc.arg('include_reminded')::boolean
+    OR remind_at IS NULL
+    OR remind_at <= now()
+  )
 ORDER BY created_at DESC, id DESC
 LIMIT sqlc.arg('page_size');
 
 -- name: GetCapture :one
 SELECT * FROM captures
-WHERE id = $1 AND user_id = $2;
+WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL;
 
 -- name: ListCaptureContextBefore :many
 SELECT * FROM captures
 WHERE user_id = sqlc.arg('user_id')
+  AND deleted_at IS NULL
   AND (created_at, id) < (
     sqlc.arg('anchor_created_at')::timestamptz,
     sqlc.arg('anchor_id')::uuid
@@ -38,6 +47,7 @@ LIMIT sqlc.arg('window_size');
 -- name: ListCaptureContextAfter :many
 SELECT * FROM captures
 WHERE user_id = sqlc.arg('user_id')
+  AND deleted_at IS NULL
   AND (created_at, id) > (
     sqlc.arg('anchor_created_at')::timestamptz,
     sqlc.arg('anchor_id')::uuid
@@ -46,8 +56,8 @@ ORDER BY created_at ASC, id ASC
 LIMIT sqlc.arg('window_size');
 
 -- name: CreateCapture :one
-INSERT INTO captures (user_id, raw_text, media_url, media_type, classified_as, task_id, source)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
+INSERT INTO captures (user_id, raw_text, media_url, media_type, classified_as, source)
+VALUES ($1, $2, $3, $4, $5, $6)
 RETURNING *;
 
 -- name: CreateUploadedCapture :one
@@ -78,6 +88,11 @@ VALUES (
     THEN 'pending'::transcription_status
     WHEN $3::capture_media_type = 'audio'
     THEN 'skipped'::transcription_status
+    WHEN $3::capture_media_type = 'image'
+      AND sqlc.arg('vision_enabled')::boolean
+    THEN 'pending'::transcription_status
+    WHEN $3::capture_media_type = 'image'
+    THEN 'skipped'::transcription_status
     ELSE 'none'::transcription_status
   END,
   CASE
@@ -85,6 +100,9 @@ VALUES (
       AND $5::integer IS NOT NULL
       AND $5::integer <= 300
       AND sqlc.arg('transcription_enabled')::boolean
+    THEN now()
+    WHEN $3::capture_media_type = 'image'
+      AND sqlc.arg('vision_enabled')::boolean
     THEN now()
     ELSE NULL
   END
@@ -98,9 +116,8 @@ SET
   transcript    = COALESCE(sqlc.narg('transcript')::text,         transcript),
   classified_as = CASE WHEN sqlc.narg('classified_as')::text IS NOT NULL
                   THEN sqlc.narg('classified_as')::capture_classified_as
-                  ELSE classified_as END,
-  task_id       = COALESCE(sqlc.narg('task_id')::uuid, task_id)
-WHERE id = sqlc.arg('id') AND user_id = sqlc.arg('user_id')
+                  ELSE classified_as END
+WHERE id = sqlc.arg('id') AND user_id = sqlc.arg('user_id') AND deleted_at IS NULL
 RETURNING *;
 
 -- name: RetryCaptureTranscription :one
@@ -110,6 +127,7 @@ SET transcription_status = 'pending',
     next_transcription_at = now()
 WHERE id = $1
   AND user_id = $2
+  AND deleted_at IS NULL
   AND media_type = 'audio'
   AND audio_duration_sec IS NOT NULL
   AND audio_duration_sec <= 300
@@ -124,6 +142,7 @@ WHERE id = (
   SELECT id
   FROM captures
   WHERE transcription_status IN ('pending', 'processing')
+    AND deleted_at IS NULL
     AND next_transcription_at <= now()
   ORDER BY next_transcription_at, created_at
   FOR UPDATE SKIP LOCKED
@@ -155,13 +174,49 @@ SET transcription_status = CASE
 WHERE id = $1;
 
 -- name: DeleteCapture :one
-DELETE FROM captures
-WHERE id = $1 AND user_id = $2
+-- Soft delete (project convention: never hard-DELETE user data). Idempotent —
+-- a second delete of the same id matches no row (deleted_at already set) and
+-- returns pgx.ErrNoRows, which the handler maps to 404.
+UPDATE captures
+SET deleted_at = now()
+WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL
 RETURNING id;
 
 -- name: ListCapturesInRange :many
 SELECT * FROM captures
 WHERE user_id = $1
+  AND deleted_at IS NULL
   AND created_at >= $2
   AND created_at < $3
 ORDER BY created_at;
+
+-- name: SetCaptureRemind :one
+-- Set or clear (remind_at = NULL) a capture's reminder. Independent of content
+-- edits so the semantics stay separate. Only the browse path filters on this;
+-- search/recall never do.
+UPDATE captures
+SET remind_at = sqlc.narg('remind_at')::timestamptz
+WHERE id = sqlc.arg('id') AND user_id = sqlc.arg('user_id') AND deleted_at IS NULL
+RETURNING *;
+
+-- name: DueReminders :many
+-- Reminders that came due in (since, now] — left-open to avoid re-notifying the
+-- same one (since = caller's last check), right-closed to include "due right now".
+-- Newest first for the feed's "due" section.
+SELECT * FROM captures
+WHERE user_id = $1
+  AND deleted_at IS NULL
+  AND remind_at IS NOT NULL
+  AND remind_at > sqlc.arg('since')::timestamptz
+  AND remind_at <= now()
+ORDER BY remind_at DESC;
+
+-- name: PendingReminders :many
+-- All not-yet-due reminders (remind_at > now), so the desktop app can reconcile
+-- its scheduled OS notifications on launch.
+SELECT * FROM captures
+WHERE user_id = $1
+  AND deleted_at IS NULL
+  AND remind_at IS NOT NULL
+  AND remind_at > now()
+ORDER BY remind_at;
