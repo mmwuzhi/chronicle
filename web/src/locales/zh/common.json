@@ -4,10 +4,21 @@
   "nav": {
     "home": "首页",
     "captures": "捕获",
+    "ask": "提问",
     "tasks": "任务",
     "projects": "项目",
     "reports": "周报",
     "settings": "设置"
+  },
+  "ask": {
+    "title": "提问",
+    "subtitle": "用自然语言问你记下的东西，答案只依据你的捕获。",
+    "placeholder": "比如：这周吃饭花了多少？最近为什么这么累？",
+    "button": "提问",
+    "thinking": "思考中…",
+    "sources": "依据的捕获",
+    "noData": "还没有可供分析的捕获，先记几条吧。",
+    "unavailable": "提问服务暂不可用，请稍后再试。"
   },
   "status": {
     "all": "全部",
@@ -60,7 +71,8 @@
     "typeToSearch": "输入搜索内容…",
     "matchedTranscript": "命中转写",
     "openInContext": "在上下文中打开",
-    "openTask": "打开任务"
+    "openTask": "打开任务",
+    "keywordFallback": "语义检索暂不可用，已用关键词搜索"
   },
   "confirm": {
     "cannotUndo": "此操作无法撤销。",

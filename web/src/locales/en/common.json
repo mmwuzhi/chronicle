@@ -4,10 +4,21 @@
   "nav": {
     "home": "Home",
     "captures": "Captures",
+    "ask": "Ask",
     "tasks": "Tasks",
     "projects": "Projects",
     "reports": "Reports",
     "settings": "Settings"
+  },
+  "ask": {
+    "title": "Ask",
+    "subtitle": "Ask your captures in plain language — answers are grounded only in what you saved.",
+    "placeholder": "e.g. How much did I spend on food this week? Why have I been so tired lately?",
+    "button": "Ask",
+    "thinking": "Thinking…",
+    "sources": "Grounded in",
+    "noData": "No captures to analyze yet — save a few first.",
+    "unavailable": "Ask is unavailable right now. Please try again later."
   },
   "status": {
     "all": "All",
@@ -60,7 +71,8 @@
     "typeToSearch": "Type to search…",
     "matchedTranscript": "Matched transcript",
     "openInContext": "Open in context",
-    "openTask": "Open task"
+    "openTask": "Open task",
+    "keywordFallback": "Semantic search unavailable — using keyword search"
   },
   "confirm": {
     "cannotUndo": "This cannot be undone.",

@@ -14,6 +14,8 @@ import { PasskeysSection } from "../components/settings/PasskeysSection";
 import { LinkedAccountsSection } from "../components/settings/LinkedAccountsSection";
 import { MFASection } from "../components/settings/MFASection";
 import { DangerSection } from "../components/settings/DangerSection";
+import { WebhooksSection } from "../components/settings/WebhooksSection";
+import { QuickCaptureTokenSection } from "../components/settings/QuickCaptureTokenSection";
 import { apiFetch } from "../lib/apiFetch";
 
 export const Route = createFileRoute("/settings")({
@@ -30,7 +32,7 @@ const LANGS = [
   { code: "ja", label: "日本語" },
 ] as const;
 
-type Section = "account" | "security";
+type Section = "account" | "security" | "integrations";
 
 function capitalize(s: string) {
   return s.charAt(0).toUpperCase() + s.slice(1);
@@ -241,6 +243,7 @@ function Settings() {
   const tabs: { id: Section; label: string }[] = [
     { id: "account", label: t("account.title") },
     { id: "security", label: t("security.title") },
+    { id: "integrations", label: t("integrations.title") },
   ];
 
   return (
@@ -287,6 +290,12 @@ function Settings() {
         <div style={{ marginTop: 20 }}>
           {section === "account" && <AccountSection />}
           {section === "security" && <SecuritySection />}
+          {section === "integrations" && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+              <QuickCaptureTokenSection />
+              <WebhooksSection />
+            </div>
+          )}
         </div>
       </div>
     </>

@@ -66,6 +66,41 @@
       "invalidCode": "验证码无效，请重试。"
     }
   },
+  "integrations": {
+    "title": "集成",
+    "webhooks": {
+      "title": "Webhook",
+      "description": "当捕获命中规则（关键词或语义）时，向外部地址发送一条带模板的 POST。",
+      "empty": "还没有 Webhook。",
+      "addTitle": "新建 Webhook",
+      "name": "名称",
+      "targetUrl": "目标地址（URL）",
+      "keywords": "关键词（逗号分隔，可选）",
+      "semanticQuery": "语义查询（可选）",
+      "payloadTemplate": "Payload 模板，用 [capture.text] 等占位符",
+      "add": "添加",
+      "enable": "启用",
+      "disable": "停用"
+    },
+    "captureTokens": {
+      "title": "快速捕获令牌",
+      "description": "用于无界面快速捕获的长效令牌，例如 iOS Action Button 快捷指令。每个令牌只能创建捕获，不能读取、修改或删除任何数据。",
+      "empty": "还没有令牌。",
+      "addTitle": "新建令牌",
+      "namePlaceholder": "名称，例如 iPhone Action Button",
+      "generate": "生成令牌",
+      "revealTitle": "立即复制此令牌——它只显示这一次。",
+      "revealHint": "在 iOS 快捷指令的 Authorization 头里填：Bearer <令牌>",
+      "docHint": "搭建步骤见文档里的 iOS 快捷指令指南。",
+      "copy": "复制",
+      "copied": "已复制",
+      "done": "完成",
+      "created": "创建于 {{date}}",
+      "lastUsed": "最近使用 {{date}}",
+      "neverUsed": "从未使用",
+      "revoke": "吊销"
+    }
+  },
   "danger": {
     "title": "危险操作",
     "deleteAccount": "删除账号",

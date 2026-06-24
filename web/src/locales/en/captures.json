@@ -21,6 +21,8 @@
   "uploading": "Uploading…",
   "uploadFailed": "Upload failed",
   "loadMore": "Load more",
+  "showScheduled": "Show scheduled",
+  "scheduledHint": "Captures with a future reminder are hidden until due. Show them to edit or clear the reminder.",
   "context": {
     "title": "Capture context",
     "subtitle": "The captures immediately before and after this memory.",
@@ -37,6 +39,12 @@
     "append": "Append to capture",
     "replace": "Replace capture text",
     "useAsText": "Use as capture text"
+  },
+  "remind": {
+    "set": "Remind",
+    "at": "Remind at {{time}}",
+    "clear": "Clear",
+    "cancel": "Cancel"
   },
   "promoteToTask": "Turn into task",
   "promoteDialog": {

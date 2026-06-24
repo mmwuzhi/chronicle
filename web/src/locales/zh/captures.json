@@ -21,6 +21,8 @@
   "uploading": "上传中…",
   "uploadFailed": "上传失败",
   "loadMore": "加载更多",
+  "showScheduled": "显示已安排提醒",
+  "scheduledHint": "设有未来提醒的捕获在到期前会被隐藏。显示它们以编辑或清除提醒。",
   "context": {
     "title": "捕获上下文",
     "subtitle": "查看这条记忆前后紧邻发生的记录。",
@@ -37,6 +39,12 @@
     "append": "追加到捕获内容",
     "replace": "替换捕获内容",
     "useAsText": "用作捕获内容"
+  },
+  "remind": {
+    "set": "提醒",
+    "at": "提醒于 {{time}}",
+    "clear": "取消提醒",
+    "cancel": "取消"
   },
   "promoteToTask": "转为任务",
   "promoteDialog": {

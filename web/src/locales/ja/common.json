@@ -4,10 +4,21 @@
   "nav": {
     "home": "ホーム",
     "captures": "キャプチャ",
+    "ask": "質問",
     "tasks": "タスク",
     "projects": "プロジェクト",
     "reports": "レポート",
     "settings": "設定"
+  },
+  "ask": {
+    "title": "質問",
+    "subtitle": "記録した内容に自然な言葉で質問できます。回答はあなたのキャプチャだけに基づきます。",
+    "placeholder": "例：今週は食事にいくら使った？最近なぜこんなに疲れている？",
+    "button": "質問する",
+    "thinking": "考え中…",
+    "sources": "根拠にしたキャプチャ",
+    "noData": "分析できるキャプチャがまだありません。まず記録してみましょう。",
+    "unavailable": "現在質問機能を利用できません。しばらくしてから再試行してください。"
   },
   "status": {
     "all": "すべて",
@@ -60,7 +71,8 @@
     "typeToSearch": "検索キーワードを入力…",
     "matchedTranscript": "文字起こしに一致",
     "openInContext": "文脈で開く",
-    "openTask": "タスクを開く"
+    "openTask": "タスクを開く",
+    "keywordFallback": "セマンティック検索が利用できないため、キーワード検索を使用しています"
   },
   "confirm": {
     "cannotUndo": "この操作は取り消せません。",

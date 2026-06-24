@@ -26,7 +26,7 @@ function ResetPassword() {
     mutationFn: (password: string) => resetPassword(token, password),
     onSuccess: (data) => {
       localStorage.setItem("access_token", data.accessToken);
-      navigate({ to: "/projects" });
+      navigate({ to: "/" });
     },
   });
 

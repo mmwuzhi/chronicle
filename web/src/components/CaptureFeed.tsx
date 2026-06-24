@@ -14,7 +14,7 @@ interface CaptureFeedProps {
   onSaveTranscript: (id: string, transcript: string) => void;
   onUseTranscript: (id: string, mode: "append" | "replace") => void;
   onRetryTranscription: (id: string) => void;
-  onPromoteToTask: (rawText: string, captureId: string) => void;
+  onSetRemind: (id: string, at: string | null) => void;
 }
 
 export function CaptureFeed({

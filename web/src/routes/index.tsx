@@ -1,31 +1,12 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
-import { useQueryClient } from "@tanstack/react-query";
-import {
-  useGetMe,
-  useListTasks,
-  useListCapturePage,
-  useListTimeBlocks,
-  useListLogEntries,
-  useUpdateTask,
-  getListTasksQueryKey,
-} from "../api";
-import type { CaptureBody, TaskBody, TaskUpdateInputBodyStatus } from "../api";
+import { useGetMe, useListCapturePage } from "../api";
+import type { CaptureBody } from "../api";
 
 import { Nav } from "../components/nav";
-import { DueBadge } from "../components/DueBadge";
 import { timeAgo } from "../utils/format";
 
 export const Route = createFileRoute("/")({ component: Index });
-
-function weekStart(): Date {
-  const now = new Date();
-  const day = now.getUTCDay();
-  const diff = day === 0 ? 6 : day - 1;
-  return new Date(
-    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - diff),
-  );
-}
 
 const CL_CLASS: Record<string, string> = {
   unclassified: "cl-unclassified",
@@ -35,75 +16,17 @@ const CL_CLASS: Record<string, string> = {
   log: "cl-log",
 };
 
-const STATUS_CYCLE: Record<string, TaskUpdateInputBodyStatus> = {
-  todo: "in_progress",
-  in_progress: "done",
-  done: "todo",
-};
-
-const ChevronRight = () => (
-  <svg
-    width="16"
-    height="16"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth={2}
-    viewBox="0 0 24 24"
-    style={{ flexShrink: 0, color: "var(--text-faint)" }}
-  >
-    <path strokeLinecap="round" strokeLinejoin="round" d="m9 18 6-6-6-6" />
-  </svg>
-);
-
 function Dashboard() {
   const { t, i18n } = useTranslation("dashboard");
   const { t: tc } = useTranslation("common");
-  const { t: tt } = useTranslation("tasks");
-  const queryClient = useQueryClient();
 
   const { data: me } = useGetMe();
-  const { data: tasks } = useListTasks(undefined, { query: { enabled: !!me } });
   const { data: capturePage } = useListCapturePage(
-    { limit: 5 },
-    {
-      query: { enabled: !!me },
-    },
+    { limit: 8 },
+    { query: { enabled: !!me } },
   );
-  const { data: blocks } = useListTimeBlocks(undefined, {
-    query: { enabled: !!me },
-  });
-  const { data: entries } = useListLogEntries(undefined, {
-    query: { enabled: !!me },
-  });
+  const recentCaptures = capturePage?.items ?? [];
 
-  const invalidateTasks = () =>
-    queryClient.invalidateQueries({ queryKey: getListTasksQueryKey() });
-  const updateTask = useUpdateTask({
-    mutation: {
-      onMutate: async ({ id, data }) => {
-        await queryClient.cancelQueries({ queryKey: getListTasksQueryKey() });
-        const previous = queryClient.getQueriesData<TaskBody[]>({
-          queryKey: getListTasksQueryKey(),
-        });
-        queryClient.setQueriesData<TaskBody[]>(
-          { queryKey: getListTasksQueryKey() },
-          (old) =>
-            old == null
-              ? old
-              : old.map((t) => (t.id === id ? { ...t, ...data } : t)),
-        );
-        return { previous };
-      },
-      onError: (_err, _vars, context) => {
-        context?.previous.forEach(([key, val]) =>
-          queryClient.setQueryData(key, val),
-        );
-      },
-      onSettled: invalidateTasks,
-    },
-  });
-
-  // Date eyebrow: "TUESDAY · JUN 3"
   const now = new Date();
   const dayName = now
     .toLocaleDateString(undefined, { weekday: "long" })
@@ -113,37 +36,10 @@ function Dashboard() {
     .toUpperCase();
   const dateEyebrow = `${dayName} · ${monthDay}`;
 
-  // Time-aware greeting
   const hour = now.getHours();
   const greetingKey =
     hour < 12 ? "goodMorning" : hour < 17 ? "goodAfternoon" : "goodEvening";
-
-  const ws = weekStart();
-  const allTasks = tasks ?? [];
-  const activeTasks = allTasks.filter(
-    (t: TaskBody) => t.status === "todo" || t.status === "in_progress",
-  );
-  const doneTasks = allTasks.filter((t: TaskBody) => t.status === "done");
-  const recentCaptures = capturePage?.items ?? [];
-  const weekBlocks = (blocks ?? []).filter((b) => new Date(b.startedAt) >= ws);
-  const totalSec = weekBlocks.reduce((s, b) => s + (b.durationSec ?? 0), 0);
-  const hours = Math.floor(totalSec / 3600);
-  const minutes = Math.floor((totalSec % 3600) / 60);
-  const entryCount = (entries ?? []).length;
   const name = me?.email?.split("@")[0] ?? "";
-
-  const stats = [
-    {
-      value: `${doneTasks.length}/${allTasks.length}`,
-      label: t("tasksDoneLabel"),
-    },
-    {
-      value: `${recentCaptures.length}${capturePage?.nextCursor ? "+" : ""}`,
-      label: t("capturesLabel"),
-    },
-    { value: String(entryCount), label: t("logsLabel") },
-    { value: `${hours}h ${minutes}m`, label: t("trackedLabel") },
-  ];
 
   return (
     <>
@@ -156,96 +52,6 @@ function Dashboard() {
           </h1>
         </div>
 
-        {/* Week stats card */}
-        <div
-          className="ch-card"
-          style={{
-            padding: "var(--pad)",
-            background:
-              "linear-gradient(180deg, var(--accent-weak), transparent 70%)",
-            marginBottom: 24,
-          }}
-        >
-          <p
-            className="ch-eyebrow"
-            style={{ marginBottom: 14, color: "var(--accent-strong)" }}
-          >
-            <span style={{ marginRight: 4 }}>🌿</span>
-            {t("thisWeek")}
-          </p>
-          <div className="ch-stats-grid">
-            {stats.map((s, i) => (
-              <div key={i} className="ch-stat-cell">
-                <span className="ch-stat-value">{s.value}</span>
-                <span className="ch-stat-label">{s.label}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Active tasks */}
-        <div className="ch-section">
-          <span className="bar" />
-          <span className="ch-sectlabel">{t("activeTasks")}</span>
-          <span className="ch-sectcount">{activeTasks.length}</span>
-          <span className="rule" />
-        </div>
-        {activeTasks.length === 0 ? (
-          <div className="ch-empty">
-            <p>{t("noTasks")}</p>
-          </div>
-        ) : (
-          <div className="ch-list">
-            {activeTasks.slice(0, 10).map((task: TaskBody) => (
-              <div
-                key={task.id}
-                className="ch-row"
-                style={{ display: "flex", alignItems: "center", gap: 10 }}
-              >
-                <button
-                  className={`ch-pill ch-status st-${task.status}`}
-                  onClick={() =>
-                    updateTask.mutate({
-                      id: task.id,
-                      data: {
-                        status: STATUS_CYCLE[
-                          task.status
-                        ] as TaskUpdateInputBodyStatus,
-                      },
-                    })
-                  }
-                  title={tc(`status.${task.status}`)}
-                  style={{ flexShrink: 0 }}
-                >
-                  <span className="pdot" />
-                  {tc(`status.${task.status}`)}
-                </button>
-                <Link
-                  to="/tasks/$taskId"
-                  params={{ taskId: task.id }}
-                  style={{
-                    flex: 1,
-                    fontSize: "var(--fs-sm)",
-                    textDecoration: "none",
-                    color: "var(--text)",
-                    minWidth: 0,
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  {task.title}
-                </Link>
-                {task.dueAt && task.status !== "done" && (
-                  <DueBadge dueAt={task.dueAt} t={tt} />
-                )}
-                <ChevronRight />
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* Recent captures */}
         <div className="ch-section">
           <span className="bar" />
           <span className="ch-sectlabel">{t("recentCaptures")}</span>
@@ -287,7 +93,7 @@ function Dashboard() {
                     } as React.CSSProperties
                   }
                 >
-                  {c.rawText ?? "—"}
+                  {c.rawText ?? c.transcript ?? "—"}
                 </p>
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   <span

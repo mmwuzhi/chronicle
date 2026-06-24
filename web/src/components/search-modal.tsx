@@ -1,13 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
-import { useListCapturePage, useListTasks, useSearch } from "../api";
-import type { CaptureBody, TaskBody } from "../api";
-import {
-  SearchCaptureResult,
-  SearchLogResult,
-  SearchTaskResult,
-} from "./SearchResults";
+import { useFind, useListCapturePage } from "../api";
+import type { CaptureBody } from "../api";
+import { fmtDate } from "../utils/format";
 
 const SearchIcon = () => (
   <svg
@@ -33,16 +29,17 @@ export function SearchModal({
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
-  const { data: recentTasks } = useListTasks();
-  const { data: recentCapturePage } = useListCapturePage({ limit: 4 });
-  const searchQuery = useSearch(
-    { q: debouncedQuery },
+  const { data: recentCapturePage } = useListCapturePage({ limit: 6 });
+  // Semantic hybrid search over captures (/find). It self-degrades to keyword
+  // FTS in the backend when the RAG sidecar is down — surfaced with a hint.
+  const findQuery = useFind(
+    { q: debouncedQuery, limit: 10 },
     { query: { enabled: debouncedQuery.length > 0 } },
   );
-  const captures = searchQuery.data?.captures ?? [];
-  const tasks = searchQuery.data?.tasks ?? [];
-  const logs = searchQuery.data?.logEntries ?? [];
-  const hasResults = captures.length + tasks.length + logs.length > 0;
+  const captures = findQuery.data?.items ?? [];
+  const degraded = findQuery.data?.degraded ?? false;
+  const hasResults = captures.length > 0;
+  const isFetching = findQuery.isFetching;
 
   useEffect(() => inputRef.current?.focus(), []);
   useEffect(() => {
@@ -57,9 +54,11 @@ export function SearchModal({
     return () => window.removeEventListener("keydown", handleKey);
   }, [onClose]);
 
-  const recentTaskItems = (recentTasks ?? [])
-    .filter((task: TaskBody) => task.status !== "archived")
-    .slice(0, 4);
+  const openCapture = (id: string) => {
+    void navigate({ to: "/captures/context", search: { anchorId: id } });
+    onClose();
+  };
+
   const recentCaptures = recentCapturePage?.items ?? [];
 
   return (
@@ -74,108 +73,70 @@ export function SearchModal({
             onChange={(event) => setQuery(event.target.value)}
             placeholder={t("search.placeholder")}
           />
-          {searchQuery.isFetching && <span className="ch-meta">…</span>}
+          {isFetching && <span className="ch-meta">…</span>}
           <kbd>Esc</kbd>
           <button className="s-cancel" onClick={onClose}>
             {t("actions.cancel")}
           </button>
         </div>
         <div className="ch-searchresults">
-          {debouncedQuery && !searchQuery.isFetching && !hasResults && (
+          {debouncedQuery && !isFetching && !hasResults && (
             <div className="ch-empty ch-search-empty">
               <p>{t("search.noResults")}</p>
             </div>
           )}
-          {!debouncedQuery && (
-            <>
-              {recentTaskItems.length > 0 && (
-                <>
-                  <div className="ch-sgroup">{t("search.recentTasks")}</div>
-                  {recentTaskItems.map((task) => (
-                    <button
-                      key={task.id}
-                      className="ch-sresult"
-                      onClick={() => {
-                        void navigate({
-                          to: "/tasks/$taskId",
-                          params: { taskId: task.id },
-                        });
-                        onClose();
-                      }}
-                    >
-                      <span className="s-ico">✓</span>
-                      <span className="s-body">
-                        <span className="s-title">{task.title}</span>
-                        <span className="s-sub">{task.status}</span>
+          {!debouncedQuery &&
+            (recentCaptures.length > 0 ? (
+              <>
+                <div className="ch-sgroup">{t("search.recentCaptures")}</div>
+                {recentCaptures.map((capture: CaptureBody) => (
+                  <button
+                    key={capture.id}
+                    className="ch-sresult"
+                    onClick={() => openCapture(capture.id)}
+                  >
+                    <span className="s-ico">✦</span>
+                    <span className="s-body">
+                      <span className="s-title">
+                        {capture.rawText ?? capture.transcript ?? "—"}
                       </span>
-                    </button>
-                  ))}
-                </>
-              )}
-              {recentCaptures.length > 0 && (
-                <>
-                  <div className="ch-sgroup">{t("search.recentCaptures")}</div>
-                  {recentCaptures.map((capture: CaptureBody) => (
-                    <button
-                      key={capture.id}
-                      className="ch-sresult"
-                      onClick={() => {
-                        void navigate({
-                          to: "/captures/context",
-                          search: { anchorId: capture.id },
-                        });
-                        onClose();
-                      }}
-                    >
-                      <span className="s-ico">✦</span>
-                      <span className="s-body">
-                        <span className="s-title">
-                          {capture.rawText ?? capture.transcript ?? "—"}
-                        </span>
-                        <span className="s-sub">
-                          {new Date(capture.createdAt).toLocaleDateString()}
-                        </span>
+                      <span className="s-sub">
+                        {fmtDate(capture.createdAt)}
                       </span>
-                    </button>
-                  ))}
-                </>
-              )}
-              {recentTaskItems.length === 0 && recentCaptures.length === 0 && (
-                <div className="ch-empty ch-search-empty">
-                  <p>{t("search.typeToSearch")}</p>
-                </div>
-              )}
-            </>
-          )}
-          {tasks.length > 0 && (
-            <>
-              <div className="ch-sgroup">{t("search.tasks")}</div>
-              {tasks.map((task) => (
-                <SearchTaskResult key={task.id} task={task} onClose={onClose} />
-              ))}
-            </>
-          )}
+                    </span>
+                  </button>
+                ))}
+              </>
+            ) : (
+              <div className="ch-empty ch-search-empty">
+                <p>{t("search.typeToSearch")}</p>
+              </div>
+            ))}
           {captures.length > 0 && (
             <>
-              <div className="ch-sgroup">{t("search.captures")}</div>
-              {captures.map((capture) => (
-                <SearchCaptureResult
-                  key={capture.id}
-                  capture={capture}
-                  onClose={onClose}
-                />
-              ))}
-            </>
-          )}
-          {logs.length > 0 && (
-            <>
-              <div className="ch-sgroup">{t("search.logEntries")}</div>
-              {logs.map((entry) => (
-                <SearchLogResult
-                  key={entry.id}
-                  entry={entry}
-                  onClose={onClose}
-                />
+              <div className="ch-sgroup">
+                {t("search.captures")}
+                {degraded && (
+                  <span
+                    className="ch-meta"
+                    style={{ marginLeft: 8, fontWeight: 400 }}
+                  >
+                    {t("search.keywordFallback")}
+                  </span>
+                )}
+              </div>
+              {captures.map((item) => (
+                <button
+                  key={item.id}
+                  className="ch-sresult"
+                  onClick={() => openCapture(item.id)}
+                >
+                  <span className="s-ico">✦</span>
+                  <span className="s-body">
+                    <span className="s-title">{item.content || "—"}</span>
+                    <span className="s-sub">{fmtDate(item.createdAt)}</span>
+                  </span>
+                </button>
               ))}
             </>
           )}

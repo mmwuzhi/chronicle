@@ -76,7 +76,7 @@ function Login() {
         }
         if (res.accessToken) {
           localStorage.setItem("access_token", res.accessToken);
-          navigate({ to: "/projects" });
+          navigate({ to: "/" });
         }
       },
     },
@@ -100,7 +100,7 @@ function Login() {
       }
       const { accessToken } = await res.json();
       localStorage.setItem("access_token", accessToken);
-      navigate({ to: "/projects" });
+      navigate({ to: "/" });
     } finally {
       setMfaVerifying(false);
     }
@@ -133,7 +133,7 @@ function Login() {
       }
       const { accessToken } = await finishRes.json();
       localStorage.setItem("access_token", accessToken);
-      navigate({ to: "/projects" });
+      navigate({ to: "/" });
     } catch {
       // user cancelled
     }

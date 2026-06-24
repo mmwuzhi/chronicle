@@ -4,29 +4,20 @@ import LanguageDetector from "i18next-browser-languagedetector";
 
 import enCommon from "./locales/en/common.json";
 import enAuth from "./locales/en/auth.json";
-import enTasks from "./locales/en/tasks.json";
-import enProjects from "./locales/en/projects.json";
 import enCaptures from "./locales/en/captures.json";
 import enSettings from "./locales/en/settings.json";
-import enReports from "./locales/en/reports.json";
 import enDashboard from "./locales/en/dashboard.json";
 
 import jaCommon from "./locales/ja/common.json";
 import jaAuth from "./locales/ja/auth.json";
-import jaTasks from "./locales/ja/tasks.json";
-import jaProjects from "./locales/ja/projects.json";
 import jaCaptures from "./locales/ja/captures.json";
 import jaSettings from "./locales/ja/settings.json";
-import jaReports from "./locales/ja/reports.json";
 import jaDashboard from "./locales/ja/dashboard.json";
 
 import zhCommon from "./locales/zh/common.json";
 import zhAuth from "./locales/zh/auth.json";
-import zhTasks from "./locales/zh/tasks.json";
-import zhProjects from "./locales/zh/projects.json";
 import zhCaptures from "./locales/zh/captures.json";
 import zhSettings from "./locales/zh/settings.json";
-import zhReports from "./locales/zh/reports.json";
 import zhDashboard from "./locales/zh/dashboard.json";
 
 i18n
@@ -37,31 +28,22 @@ i18n
       en: {
         common: enCommon,
         auth: enAuth,
-        tasks: enTasks,
-        projects: enProjects,
         captures: enCaptures,
         settings: enSettings,
-        reports: enReports,
         dashboard: enDashboard,
       },
       ja: {
         common: jaCommon,
         auth: jaAuth,
-        tasks: jaTasks,
-        projects: jaProjects,
         captures: jaCaptures,
         settings: jaSettings,
-        reports: jaReports,
         dashboard: jaDashboard,
       },
       zh: {
         common: zhCommon,
         auth: zhAuth,
-        tasks: zhTasks,
-        projects: zhProjects,
         captures: zhCaptures,
         settings: zhSettings,
-        reports: zhReports,
         dashboard: zhDashboard,
       },
     },

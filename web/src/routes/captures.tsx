@@ -4,21 +4,17 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import {
   getListCapturePageInfiniteQueryKey,
-  getListTasksQueryKey,
   useCreateCapture,
-  useCreateLogEntry,
-  useCreateTask,
   useDeleteCapture,
   useListCapturePageInfinite,
-  useListProjects,
   useRetryCaptureTranscription,
+  useSetCaptureRemind,
   useUpdateCapture,
 } from "../api";
 import { CaptureComposer } from "../components/CaptureComposer";
 import { CaptureFeed } from "../components/CaptureFeed";
 import { MutationToast } from "../components/mutation-toast";
 import { Nav } from "../components/nav";
-import { PromoteCaptureDialog } from "../components/PromoteCaptureDialog";
 import { useConfirm } from "../components/confirm-dialog";
 import { useMutationToast } from "../hooks/use-mutation-toast";
 
@@ -35,14 +31,13 @@ function Captures() {
   const confirm = useConfirm();
   const mutationToast = useMutationToast();
   const [tab, setTab] = useState<Tab>("all");
-  const [pendingPromote, setPendingPromote] = useState<{
-    rawText: string;
-    captureId: string;
-  } | null>(null);
-  const [promoteProjectId, setPromoteProjectId] = useState("");
+  // Captures with a future reminder are filtered out of the list until they come
+  // due; this opt-in surfaces them so the reminder can be edited or cleared.
+  const [showScheduled, setShowScheduled] = useState(false);
   const params = {
     limit: 30,
     ...(tab === "all" ? {} : { classifiedAs: tab }),
+    ...(showScheduled ? { includeReminded: true } : {}),
   };
   const captureQuery = useListCapturePageInfinite(params, {
     query: {
@@ -93,23 +88,12 @@ function Captures() {
       },
     },
   });
-  const createTask = useCreateTask({
+  const setRemind = useSetCaptureRemind({
     mutation: {
-      onSuccess: () =>
-        queryClient.invalidateQueries({ queryKey: getListTasksQueryKey() }),
+      onSuccess: invalidateCaptures,
       onError: () => mutationToast.show(tc("errors.mutationFailed")),
     },
   });
-  const createLogEntry = useCreateLogEntry({
-    mutation: {
-      onError: () => mutationToast.show(tc("errors.mutationFailed")),
-    },
-  });
-  const { data: projects } = useListProjects();
-  const activeProjects = (projects ?? []).filter(
-    (project) => !project.archived,
-  );
-
   if (captureQuery.error) {
     if (captureQuery.error.status === 401) {
       void navigate({ to: "/login" });
@@ -117,30 +101,6 @@ function Captures() {
     }
     return <div className="ch-page-error">{t("failedToLoad")}</div>;
   }
-
-  const confirmPromote = () => {
-    if (!pendingPromote) return;
-    const [firstLine, ...rest] = pendingPromote.rawText.split("\n");
-    createTask.mutate(
-      {
-        data: {
-          title: firstLine.trim(),
-          type: "task",
-          ...(promoteProjectId ? { projectId: promoteProjectId } : {}),
-        },
-      },
-      {
-        onSuccess: (task) => {
-          const body = rest.join("\n").trim();
-          if (body) {
-            createLogEntry.mutate({ data: { taskId: task.id, body } });
-          }
-          remove.mutate({ id: pendingPromote.captureId });
-          setPendingPromote(null);
-        },
-      },
-    );
-  };
 
   return (
     <>
@@ -176,6 +136,13 @@ function Captures() {
               {t(`tabs.${id}`)}
             </button>
           ))}
+          <button
+            className={`ch-navlink${showScheduled ? " active" : ""}`}
+            onClick={() => setShowScheduled((v) => !v)}
+            title={t("scheduledHint")}
+          >
+            {t("showScheduled")}
+          </button>
         </div>
         <CaptureFeed
           captures={captures}
@@ -209,23 +176,11 @@ function Captures() {
             update.mutate({ id, data: { rawText } });
           }}
           onRetryTranscription={(id) => retryTranscription.mutate({ id })}
-          onPromoteToTask={(rawText, captureId) => {
-            setPendingPromote({ rawText, captureId });
-            setPromoteProjectId("");
-          }}
+          onSetRemind={(id, at) =>
+            setRemind.mutate({ id, data: { at: at ?? undefined } })
+          }
         />
       </main>
-      {pendingPromote && (
-        <PromoteCaptureDialog
-          rawText={pendingPromote.rawText}
-          projects={activeProjects}
-          projectId={promoteProjectId}
-          pending={createTask.isPending}
-          onProjectChange={setPromoteProjectId}
-          onCancel={() => setPendingPromote(null)}
-          onConfirm={confirmPromote}
-        />
-      )}
       <MutationToast message={mutationToast.message} />
     </>
   );

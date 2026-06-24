@@ -56,6 +56,31 @@ type NonReadonly<T> = [T] extends [UnionToIntersection<T>] ? {
     : T[P];
 } : DistributeReadOnlyOverUnions<T>;
 
+export interface AskInputBody {
+  /** A URL to the JSON Schema for this object. */
+  readonly $schema?: string;
+  /**
+     * @minLength 1
+     * @maxLength 500
+     */
+  question: string;
+}
+
+export interface AskSource {
+  content: string;
+  createdAt: string;
+  id: string;
+  n: number;
+}
+
+export interface AskOutputBody {
+  /** A URL to the JSON Schema for this object. */
+  readonly $schema?: string;
+  answer: string;
+  /** @nullable */
+  sources: AskSource[] | null;
+}
+
 export interface CaptureBody {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
@@ -69,9 +94,9 @@ export interface CaptureBody {
   mediaUrl: string | null;
   /** @nullable */
   rawText: string | null;
-  source: string;
   /** @nullable */
-  taskId: string | null;
+  remindAt: string | null;
+  source: string;
   /** @nullable */
   transcribedAt: string | null;
   /** @nullable */
@@ -114,13 +139,14 @@ export const CaptureCreateInputBodyMediaType = {
 export interface CaptureCreateInputBody {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
-  classifiedAs: CaptureCreateInputBodyClassifiedAs;
+  classifiedAs?: CaptureCreateInputBodyClassifiedAs;
   mediaType: CaptureCreateInputBodyMediaType;
   mediaUrl?: string;
   rawText?: string;
+  /** RFC3339 time to resurface this capture */
+  remindAt?: string;
   /** Capture source, for example web or desktop_quick_capture */
   source?: string;
-  taskId?: string;
 }
 
 export interface CapturePageBody {
@@ -130,6 +156,47 @@ export interface CapturePageBody {
   items: CaptureBody[] | null;
   /** @nullable */
   nextCursor: string | null;
+}
+
+export interface CaptureRemindInputBody {
+  /** A URL to the JSON Schema for this object. */
+  readonly $schema?: string;
+  /** RFC3339 time to resurface this capture; omit or null to clear the reminder */
+  at?: string;
+}
+
+export interface CaptureTokenCreateInputBody {
+  /** A URL to the JSON Schema for this object. */
+  readonly $schema?: string;
+  /**
+     * Label to recognize this token, e.g. 'iPhone Action Button'
+     * @minLength 1
+     * @maxLength 100
+     */
+  name: string;
+}
+
+export interface CaptureTokenCreateOutputBody {
+  /** A URL to the JSON Schema for this object. */
+  readonly $schema?: string;
+  id: string;
+  name: string;
+  /** The raw token, shown only once. Copy it now — it cannot be retrieved again. */
+  token: string;
+}
+
+export interface CaptureTokenSummary {
+  createdAt: string;
+  id: string;
+  lastUsedAt?: string;
+  name: string;
+}
+
+export interface CaptureTokenListOutputBody {
+  /** A URL to the JSON Schema for this object. */
+  readonly $schema?: string;
+  /** @nullable */
+  tokens: CaptureTokenSummary[] | null;
 }
 
 export type CaptureUpdateInputBodyClassifiedAs = typeof CaptureUpdateInputBodyClassifiedAs[keyof typeof CaptureUpdateInputBodyClassifiedAs];
@@ -148,7 +215,6 @@ export interface CaptureUpdateInputBody {
   readonly $schema?: string;
   classifiedAs?: CaptureUpdateInputBodyClassifiedAs;
   rawText?: string;
-  taskId?: string;
   transcript?: string;
 }
 
@@ -181,61 +247,28 @@ export interface ErrorModel {
   type?: string;
 }
 
+export interface RecallItem {
+  content: string;
+  createdAt: string;
+  id: string;
+  lexical: boolean;
+  modality: string;
+  score: number;
+}
+
+export interface FindOutputBody {
+  /** A URL to the JSON Schema for this object. */
+  readonly $schema?: string;
+  /** true when the semantic sidecar was unavailable and keyword FTS was used */
+  degraded: boolean;
+  /** @nullable */
+  items: RecallItem[] | null;
+}
+
 export interface ForgotPasswordInputBody {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
   email: string;
-}
-
-export type LogTimeInputInputMode = typeof LogTimeInputInputMode[keyof typeof LogTimeInputInputMode];
-
-
-export const LogTimeInputInputMode = {
-  duration: 'duration',
-  range: 'range',
-} as const;
-
-export interface LogTimeInput {
-  /** @minimum 1 */
-  durationSec: number;
-  endedAt?: string;
-  inputMode: LogTimeInputInputMode;
-  startedAt?: string;
-}
-
-export interface LogCreateInputBody {
-  /** A URL to the JSON Schema for this object. */
-  readonly $schema?: string;
-  body?: string;
-  taskId?: string;
-  time?: LogTimeInput;
-}
-
-export interface LogTimeBody {
-  durationSec: number;
-  endedAt: string;
-  id: string;
-  inputMode: string;
-  startedAt: string;
-}
-
-export interface LogEntryBody {
-  /** A URL to the JSON Schema for this object. */
-  readonly $schema?: string;
-  body: string;
-  createdAt: string;
-  id: string;
-  /** @nullable */
-  taskId: string | null;
-  time?: LogTimeBody;
-}
-
-export interface LogUpdateInputBody {
-  /** A URL to the JSON Schema for this object. */
-  readonly $schema?: string;
-  body?: string;
-  removeTime?: boolean;
-  time?: LogTimeInput;
 }
 
 export interface LoginInputBody {
@@ -348,39 +381,6 @@ export interface PolishOutputBody {
   polished: string;
 }
 
-export interface ProjectBody {
-  /** A URL to the JSON Schema for this object. */
-  readonly $schema?: string;
-  archived: boolean;
-  color: string;
-  createdAt: string;
-  id: string;
-  name: string;
-}
-
-export interface ProjectCreateInputBody {
-  /** A URL to the JSON Schema for this object. */
-  readonly $schema?: string;
-  color: string;
-  /**
-     * @minLength 1
-     * @maxLength 100
-     */
-  name: string;
-}
-
-export interface ProjectUpdateInputBody {
-  /** A URL to the JSON Schema for this object. */
-  readonly $schema?: string;
-  archived?: boolean;
-  color?: string;
-  /**
-     * @minLength 1
-     * @maxLength 100
-     */
-  name?: string;
-}
-
 export interface RefreshOutputBody {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
@@ -402,39 +402,6 @@ export interface RegisterOutputBody {
   userId: string;
 }
 
-export interface ReportStats {
-  capturesCreated: number;
-  logEntriesWritten: number;
-  tasksCreated: number;
-  tasksDone: number;
-  totalTimeSec: number;
-}
-
-export interface TaskSummary {
-  projectName: string;
-  status: string;
-  timeSec: number;
-  title: string;
-}
-
-export interface ReportData {
-  stats: ReportStats;
-  summary: string;
-  /** @nullable */
-  tasks: TaskSummary[] | null;
-}
-
-export interface ReportBody {
-  /** A URL to the JSON Schema for this object. */
-  readonly $schema?: string;
-  createdAt: string;
-  data: ReportData;
-  id: string;
-  /** @nullable */
-  shareSlug: string | null;
-  weekStart: string;
-}
-
 export interface ResetPasswordInputBody {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
@@ -448,63 +415,6 @@ export interface ResetPasswordOutputBody {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
   accessToken: string;
-}
-
-export interface SearchCaptureItem {
-  classifiedAs: string;
-  createdAt: string;
-  id: string;
-  matchedField: string;
-  mediaType: string;
-  /** @nullable */
-  mediaUrl: string | null;
-  preview: string;
-  /** @nullable */
-  rawText: string | null;
-  source: string;
-  /** @nullable */
-  taskId: string | null;
-  /** @nullable */
-  transcript: string | null;
-}
-
-export interface SearchLogEntryItem {
-  body: string;
-  createdAt: string;
-  id: string;
-  preview: string;
-  /** @nullable */
-  taskId: string | null;
-}
-
-export interface SearchTaskItem {
-  createdAt: string;
-  /** @nullable */
-  dueAt: string | null;
-  id: string;
-  preview: string;
-  /** @nullable */
-  projectId: string | null;
-  status: string;
-  title: string;
-  type: string;
-}
-
-export interface SearchOutputBody {
-  /** A URL to the JSON Schema for this object. */
-  readonly $schema?: string;
-  /** @nullable */
-  captures: SearchCaptureItem[] | null;
-  /** @nullable */
-  logEntries: SearchLogEntryItem[] | null;
-  /** @nullable */
-  tasks: SearchTaskItem[] | null;
-}
-
-export interface ShareOutputBody {
-  /** A URL to the JSON Schema for this object. */
-  readonly $schema?: string;
-  slug: string;
 }
 
 export interface TOTPDisableInputBody {
@@ -536,140 +446,6 @@ export interface TOTPSetupOutputBody {
   readonly $schema?: string;
   secret: string;
   uri: string;
-}
-
-export interface TaskBody {
-  /** A URL to the JSON Schema for this object. */
-  readonly $schema?: string;
-  createdAt: string;
-  /** @nullable */
-  dueAt: string | null;
-  id: string;
-  /** @nullable */
-  mediaType: string | null;
-  /** @nullable */
-  mediaUrl: string | null;
-  /** @nullable */
-  projectId: string | null;
-  /** @nullable */
-  startAt: string | null;
-  status: string;
-  title: string;
-  type: string;
-}
-
-export type TaskCreateInputBodyType = typeof TaskCreateInputBodyType[keyof typeof TaskCreateInputBodyType];
-
-
-export const TaskCreateInputBodyType = {
-  task: 'task',
-  idea: 'idea',
-  routine: 'routine',
-  log: 'log',
-} as const;
-
-export interface TaskCreateInputBody {
-  /** A URL to the JSON Schema for this object. */
-  readonly $schema?: string;
-  dueAt?: string;
-  projectId?: string;
-  startAt?: string;
-  /**
-     * @minLength 1
-     * @maxLength 255
-     */
-  title: string;
-  type: TaskCreateInputBodyType;
-}
-
-export type TaskUpdateInputBodyStatus = typeof TaskUpdateInputBodyStatus[keyof typeof TaskUpdateInputBodyStatus];
-
-
-export const TaskUpdateInputBodyStatus = {
-  todo: 'todo',
-  in_progress: 'in_progress',
-  done: 'done',
-  archived: 'archived',
-} as const;
-
-export type TaskUpdateInputBodyType = typeof TaskUpdateInputBodyType[keyof typeof TaskUpdateInputBodyType];
-
-
-export const TaskUpdateInputBodyType = {
-  task: 'task',
-  idea: 'idea',
-  routine: 'routine',
-  log: 'log',
-} as const;
-
-export interface TaskUpdateInputBody {
-  /** A URL to the JSON Schema for this object. */
-  readonly $schema?: string;
-  clearDueAt?: boolean;
-  clearStartAt?: boolean;
-  dueAt?: string;
-  mediaType?: string;
-  mediaUrl?: string;
-  projectId?: string;
-  startAt?: string;
-  status?: TaskUpdateInputBodyStatus;
-  /**
-     * @minLength 1
-     * @maxLength 255
-     */
-  title?: string;
-  type?: TaskUpdateInputBodyType;
-}
-
-export interface TimeBlockBody {
-  /** A URL to the JSON Schema for this object. */
-  readonly $schema?: string;
-  createdAt: string;
-  /** @nullable */
-  durationSec: number | null;
-  /** @nullable */
-  endedAt: string | null;
-  id: string;
-  inputMode: string;
-  startedAt: string;
-  /** @nullable */
-  taskId: string | null;
-}
-
-export type TimeBlockCreateInputBodyInputMode = typeof TimeBlockCreateInputBodyInputMode[keyof typeof TimeBlockCreateInputBodyInputMode];
-
-
-export const TimeBlockCreateInputBodyInputMode = {
-  duration: 'duration',
-  range: 'range',
-} as const;
-
-export interface TimeBlockCreateInputBody {
-  /** A URL to the JSON Schema for this object. */
-  readonly $schema?: string;
-  durationSec?: number;
-  endedAt?: string;
-  inputMode?: TimeBlockCreateInputBodyInputMode;
-  startedAt?: string;
-  taskId?: string;
-}
-
-export type TimeBlockUpdateInputBodyInputMode = typeof TimeBlockUpdateInputBodyInputMode[keyof typeof TimeBlockUpdateInputBodyInputMode];
-
-
-export const TimeBlockUpdateInputBodyInputMode = {
-  duration: 'duration',
-  range: 'range',
-} as const;
-
-export interface TimeBlockUpdateInputBody {
-  /** A URL to the JSON Schema for this object. */
-  readonly $schema?: string;
-  durationSec?: number;
-  endedAt?: string;
-  inputMode?: TimeBlockUpdateInputBodyInputMode;
-  startedAt?: string;
-  taskId?: string;
 }
 
 export interface UserChangePasswordInputBody {
@@ -707,11 +483,67 @@ export interface VerifyEmailInputBody {
   token: string;
 }
 
+export interface WebhookBody {
+  /** A URL to the JSON Schema for this object. */
+  readonly $schema?: string;
+  createdAt: string;
+  enabled: boolean;
+  id: string;
+  /** @nullable */
+  keywords: string[] | null;
+  name: string;
+  payloadTemplate: string;
+  /** @nullable */
+  semanticQuery: string | null;
+  semanticThreshold: number;
+  targetUrl: string;
+}
+
+export interface WebhookFields {
+  /** A URL to the JSON Schema for this object. */
+  readonly $schema?: string;
+  enabled?: boolean;
+  /** @nullable */
+  keywords?: string[] | null;
+  /**
+     * @minLength 1
+     * @maxLength 120
+     */
+  name: string;
+  /** @minLength 1 */
+  payloadTemplate: string;
+  semanticQuery?: string;
+  /**
+     * @minimum 0
+     * @maximum 1
+     */
+  semanticThreshold?: number;
+  targetUrl: string;
+}
+
+export interface WebhookTestInputBody {
+  /** A URL to the JSON Schema for this object. */
+  readonly $schema?: string;
+  captureId: string;
+}
+
+export interface WebhookTestOutputBody {
+  /** A URL to the JSON Schema for this object. */
+  readonly $schema?: string;
+  matched: boolean;
+  /** @nullable */
+  score: number | null;
+}
+
 export type ListCapturesParams = {
 /**
  * Filter by classification: task, idea, routine, log, unclassified
  */
 classifiedAs?: string;
+/**
+ * Include captures with a future reminder (hidden by default until due); set true for a reminder-management view
+ */
+includeReminded?: boolean;
 };
 
 export type GetCaptureContextParams = {
@@ -739,50 +571,30 @@ cursor?: string;
  * @maximum 100
  */
 limit?: number;
-};
-
-export type ListLogEntriesParams = {
 /**
- * Filter by task (UUID)
+ * Include captures with a future reminder (hidden by default until due); set true for a reminder-management view
  */
-taskId?: string;
+includeReminded?: boolean;
 };
 
-export type ListProjectsParams = {
-/**
- * Include archived projects
- */
-archived?: boolean;
-};
-
-export type SearchParams = {
+export type FindParams = {
 /**
  * @minLength 1
- * @maxLength 100
+ * @maxLength 200
  */
 q: string;
+/**
+ * @minimum 1
+ * @maximum 50
+ */
+limit?: number;
 };
 
-export type ListTasksParams = {
+export type DueRemindersParams = {
 /**
- * Filter by project (UUID)
+ * RFC3339 lower bound (exclusive); reminders due after this and up to now. Omit for all past-due.
  */
-projectId?: string;
-/**
- * Filter by status: todo, in_progress, done, archived
- */
-status?: string;
-/**
- * Filter by type: task, idea, routine, log
- */
-type?: string;
-};
-
-export type ListTimeBlocksParams = {
-/**
- * Filter by task (UUID)
- */
-taskId?: string;
+since?: string;
 };
 
 /**
@@ -847,6 +659,70 @@ export const usePolishText = <TError = ErrorModel,
         TContext
       > => {
       return useMutation(getPolishTextMutationOptions(options), queryClient);
+    }
+
+/**
+ * @summary Ask a question answered over your captures
+ */
+export const ask = (
+    askInputBody: NonReadonly<AskInputBody>,
+ signal?: AbortSignal
+) => {
+
+
+      return api<AskOutputBody>(
+      {url: `/ask`, method: 'POST',
+      headers: {'Content-Type': 'application/json', },
+      data: askInputBody, signal
+    },
+      );
+    }
+
+
+
+export const getAskMutationOptions = <TError = ErrorModel,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof ask>>, TError,{data: NonReadonly<AskInputBody>}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof ask>>, TError,{data: NonReadonly<AskInputBody>}, TContext> => {
+
+const mutationKey = ['ask'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof ask>>, {data: NonReadonly<AskInputBody>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  ask(data,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AskMutationResult = NonNullable<Awaited<ReturnType<typeof ask>>>
+    export type AskMutationBody = NonReadonly<AskInputBody>
+    export type AskMutationError = ErrorModel
+
+    /**
+ * @summary Ask a question answered over your captures
+ */
+export const useAsk = <TError = ErrorModel,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof ask>>, TError,{data: NonReadonly<AskInputBody>}, TContext>, }
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof ask>>,
+        TError,
+        {data: NonReadonly<AskInputBody>},
+        TContext
+      > => {
+      return useMutation(getAskMutationOptions(options), queryClient);
     }
 
 /**
@@ -2018,6 +1894,225 @@ export const useResetPassword = <TError = ErrorModel,
     }
 
 /**
+ * @summary List capture tokens
+ */
+export const listCaptureTokens = (
+
+ signal?: AbortSignal
+) => {
+
+
+      return api<CaptureTokenListOutputBody>(
+      {url: `/auth/tokens`, method: 'GET', signal
+    },
+      );
+    }
+
+
+
+
+export const getListCaptureTokensQueryKey = () => {
+    return [
+    `/auth/tokens`
+    ] as const;
+    }
+
+
+export const getListCaptureTokensQueryOptions = <TData = Awaited<ReturnType<typeof listCaptureTokens>>, TError = ErrorModel>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listCaptureTokens>>, TError, TData>>, }
+) => {
+
+const {query: queryOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListCaptureTokensQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listCaptureTokens>>> = ({ signal }) => listCaptureTokens(signal);
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listCaptureTokens>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListCaptureTokensQueryResult = NonNullable<Awaited<ReturnType<typeof listCaptureTokens>>>
+export type ListCaptureTokensQueryError = ErrorModel
+
+
+export function useListCaptureTokens<TData = Awaited<ReturnType<typeof listCaptureTokens>>, TError = ErrorModel>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listCaptureTokens>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listCaptureTokens>>,
+          TError,
+          Awaited<ReturnType<typeof listCaptureTokens>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListCaptureTokens<TData = Awaited<ReturnType<typeof listCaptureTokens>>, TError = ErrorModel>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listCaptureTokens>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listCaptureTokens>>,
+          TError,
+          Awaited<ReturnType<typeof listCaptureTokens>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListCaptureTokens<TData = Awaited<ReturnType<typeof listCaptureTokens>>, TError = ErrorModel>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listCaptureTokens>>, TError, TData>>, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary List capture tokens
+ */
+
+export function useListCaptureTokens<TData = Awaited<ReturnType<typeof listCaptureTokens>>, TError = ErrorModel>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listCaptureTokens>>, TError, TData>>, }
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getListCaptureTokensQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+/**
+ * @summary Create a long-lived capture token (shown once)
+ */
+export const createCaptureToken = (
+    captureTokenCreateInputBody: NonReadonly<CaptureTokenCreateInputBody>,
+ signal?: AbortSignal
+) => {
+
+
+      return api<CaptureTokenCreateOutputBody>(
+      {url: `/auth/tokens`, method: 'POST',
+      headers: {'Content-Type': 'application/json', },
+      data: captureTokenCreateInputBody, signal
+    },
+      );
+    }
+
+
+
+export const getCreateCaptureTokenMutationOptions = <TError = ErrorModel,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createCaptureToken>>, TError,{data: NonReadonly<CaptureTokenCreateInputBody>}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof createCaptureToken>>, TError,{data: NonReadonly<CaptureTokenCreateInputBody>}, TContext> => {
+
+const mutationKey = ['createCaptureToken'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createCaptureToken>>, {data: NonReadonly<CaptureTokenCreateInputBody>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createCaptureToken(data,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateCaptureTokenMutationResult = NonNullable<Awaited<ReturnType<typeof createCaptureToken>>>
+    export type CreateCaptureTokenMutationBody = NonReadonly<CaptureTokenCreateInputBody>
+    export type CreateCaptureTokenMutationError = ErrorModel
+
+    /**
+ * @summary Create a long-lived capture token (shown once)
+ */
+export const useCreateCaptureToken = <TError = ErrorModel,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createCaptureToken>>, TError,{data: NonReadonly<CaptureTokenCreateInputBody>}, TContext>, }
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof createCaptureToken>>,
+        TError,
+        {data: NonReadonly<CaptureTokenCreateInputBody>},
+        TContext
+      > => {
+      return useMutation(getCreateCaptureTokenMutationOptions(options), queryClient);
+    }
+
+/**
+ * @summary Revoke a capture token
+ */
+export const revokeCaptureToken = (
+    id: string,
+ signal?: AbortSignal
+) => {
+
+
+      return api<void>(
+      {url: `/auth/tokens/${id}`, method: 'DELETE', signal
+    },
+      );
+    }
+
+
+
+export const getRevokeCaptureTokenMutationOptions = <TError = ErrorModel,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof revokeCaptureToken>>, TError,{id: string}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof revokeCaptureToken>>, TError,{id: string}, TContext> => {
+
+const mutationKey = ['revokeCaptureToken'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof revokeCaptureToken>>, {id: string}> = (props) => {
+          const {id} = props ?? {};
+
+          return  revokeCaptureToken(id,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RevokeCaptureTokenMutationResult = NonNullable<Awaited<ReturnType<typeof revokeCaptureToken>>>
+
+    export type RevokeCaptureTokenMutationError = ErrorModel
+
+    /**
+ * @summary Revoke a capture token
+ */
+export const useRevokeCaptureToken = <TError = ErrorModel,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof revokeCaptureToken>>, TError,{id: string}, TContext>, }
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof revokeCaptureToken>>,
+        TError,
+        {id: string},
+        TContext
+      > => {
+      return useMutation(getRevokeCaptureTokenMutationOptions(options), queryClient);
+    }
+
+/**
  * @summary Verify email address with token
  */
 export const verifyEmail = (
@@ -2628,6 +2723,71 @@ export const useUpdateCapture = <TError = ErrorModel,
     }
 
 /**
+ * @summary Set or clear a capture reminder
+ */
+export const setCaptureRemind = (
+    id: string,
+    captureRemindInputBody: NonReadonly<CaptureRemindInputBody>,
+ signal?: AbortSignal
+) => {
+
+
+      return api<CaptureBody>(
+      {url: `/captures/${id}/remind`, method: 'POST',
+      headers: {'Content-Type': 'application/json', },
+      data: captureRemindInputBody, signal
+    },
+      );
+    }
+
+
+
+export const getSetCaptureRemindMutationOptions = <TError = ErrorModel,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setCaptureRemind>>, TError,{id: string;data: NonReadonly<CaptureRemindInputBody>}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof setCaptureRemind>>, TError,{id: string;data: NonReadonly<CaptureRemindInputBody>}, TContext> => {
+
+const mutationKey = ['setCaptureRemind'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof setCaptureRemind>>, {id: string;data: NonReadonly<CaptureRemindInputBody>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  setCaptureRemind(id,data,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SetCaptureRemindMutationResult = NonNullable<Awaited<ReturnType<typeof setCaptureRemind>>>
+    export type SetCaptureRemindMutationBody = NonReadonly<CaptureRemindInputBody>
+    export type SetCaptureRemindMutationError = ErrorModel
+
+    /**
+ * @summary Set or clear a capture reminder
+ */
+export const useSetCaptureRemind = <TError = ErrorModel,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setCaptureRemind>>, TError,{id: string;data: NonReadonly<CaptureRemindInputBody>}, TContext>, }
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof setCaptureRemind>>,
+        TError,
+        {id: string;data: NonReadonly<CaptureRemindInputBody>},
+        TContext
+      > => {
+      return useMutation(getSetCaptureRemindMutationOptions(options), queryClient);
+    }
+
+/**
  * @summary Retry audio transcription
  */
 export const retryCaptureTranscription = (
@@ -2690,16 +2850,16 @@ export const useRetryCaptureTranscription = <TError = ErrorModel,
     }
 
 /**
- * @summary List log entries
+ * @summary Hybrid semantic search over captures
  */
-export const listLogEntries = (
-    params?: ListLogEntriesParams,
+export const find = (
+    params: FindParams,
  signal?: AbortSignal
 ) => {
 
 
-      return api<LogEntryBody[] | null>(
-      {url: `/log-entries`, method: 'GET',
+      return api<FindOutputBody>(
+      {url: `/find`, method: 'GET',
         params, signal
     },
       );
@@ -2708,69 +2868,69 @@ export const listLogEntries = (
 
 
 
-export const getListLogEntriesQueryKey = (params?: ListLogEntriesParams,) => {
+export const getFindQueryKey = (params?: FindParams,) => {
     return [
-    `/log-entries`, ...(params ? [params] : [])
+    `/find`, ...(params ? [params] : [])
     ] as const;
     }
 
 
-export const getListLogEntriesQueryOptions = <TData = Awaited<ReturnType<typeof listLogEntries>>, TError = ErrorModel>(params?: ListLogEntriesParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listLogEntries>>, TError, TData>>, }
+export const getFindQueryOptions = <TData = Awaited<ReturnType<typeof find>>, TError = ErrorModel>(params: FindParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof find>>, TError, TData>>, }
 ) => {
 
 const {query: queryOptions} = options ?? {};
 
-  const queryKey =  queryOptions?.queryKey ?? getListLogEntriesQueryKey(params);
+  const queryKey =  queryOptions?.queryKey ?? getFindQueryKey(params);
 
 
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof listLogEntries>>> = ({ signal }) => listLogEntries(params, signal);
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof find>>> = ({ signal }) => find(params, signal);
 
 
 
 
 
-   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listLogEntries>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof find>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
 }
 
-export type ListLogEntriesQueryResult = NonNullable<Awaited<ReturnType<typeof listLogEntries>>>
-export type ListLogEntriesQueryError = ErrorModel
+export type FindQueryResult = NonNullable<Awaited<ReturnType<typeof find>>>
+export type FindQueryError = ErrorModel
 
 
-export function useListLogEntries<TData = Awaited<ReturnType<typeof listLogEntries>>, TError = ErrorModel>(
- params: undefined |  ListLogEntriesParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listLogEntries>>, TError, TData>> & Pick<
+export function useFind<TData = Awaited<ReturnType<typeof find>>, TError = ErrorModel>(
+ params: FindParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof find>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
-          Awaited<ReturnType<typeof listLogEntries>>,
+          Awaited<ReturnType<typeof find>>,
           TError,
-          Awaited<ReturnType<typeof listLogEntries>>
+          Awaited<ReturnType<typeof find>>
         > , 'initialData'
       >, }
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useListLogEntries<TData = Awaited<ReturnType<typeof listLogEntries>>, TError = ErrorModel>(
- params?: ListLogEntriesParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listLogEntries>>, TError, TData>> & Pick<
+export function useFind<TData = Awaited<ReturnType<typeof find>>, TError = ErrorModel>(
+ params: FindParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof find>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
-          Awaited<ReturnType<typeof listLogEntries>>,
+          Awaited<ReturnType<typeof find>>,
           TError,
-          Awaited<ReturnType<typeof listLogEntries>>
+          Awaited<ReturnType<typeof find>>
         > , 'initialData'
       >, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useListLogEntries<TData = Awaited<ReturnType<typeof listLogEntries>>, TError = ErrorModel>(
- params?: ListLogEntriesParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listLogEntries>>, TError, TData>>, }
+export function useFind<TData = Awaited<ReturnType<typeof find>>, TError = ErrorModel>(
+ params: FindParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof find>>, TError, TData>>, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 /**
- * @summary List log entries
+ * @summary Hybrid semantic search over captures
  */
 
-export function useListLogEntries<TData = Awaited<ReturnType<typeof listLogEntries>>, TError = ErrorModel>(
- params?: ListLogEntriesParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listLogEntries>>, TError, TData>>, }
+export function useFind<TData = Awaited<ReturnType<typeof find>>, TError = ErrorModel>(
+ params: FindParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof find>>, TError, TData>>, }
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
-  const queryOptions = getListLogEntriesQueryOptions(params,options)
+  const queryOptions = getFindQueryOptions(params,options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 
@@ -2784,207 +2944,16 @@ export function useListLogEntries<TData = Awaited<ReturnType<typeof listLogEntri
 
 
 /**
- * @summary Create a log entry
+ * @summary List reminders that have come due
  */
-export const createLogEntry = (
-    logCreateInputBody: NonReadonly<LogCreateInputBody>,
+export const dueReminders = (
+    params?: DueRemindersParams,
  signal?: AbortSignal
 ) => {
 
 
-      return api<LogEntryBody>(
-      {url: `/log-entries`, method: 'POST',
-      headers: {'Content-Type': 'application/json', },
-      data: logCreateInputBody, signal
-    },
-      );
-    }
-
-
-
-export const getCreateLogEntryMutationOptions = <TError = ErrorModel,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createLogEntry>>, TError,{data: NonReadonly<LogCreateInputBody>}, TContext>, }
-): UseMutationOptions<Awaited<ReturnType<typeof createLogEntry>>, TError,{data: NonReadonly<LogCreateInputBody>}, TContext> => {
-
-const mutationKey = ['createLogEntry'];
-const {mutation: mutationOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }};
-
-
-
-
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createLogEntry>>, {data: NonReadonly<LogCreateInputBody>}> = (props) => {
-          const {data} = props ?? {};
-
-          return  createLogEntry(data,)
-        }
-
-
-
-
-
-
-  return  { mutationFn, ...mutationOptions }}
-
-    export type CreateLogEntryMutationResult = NonNullable<Awaited<ReturnType<typeof createLogEntry>>>
-    export type CreateLogEntryMutationBody = NonReadonly<LogCreateInputBody>
-    export type CreateLogEntryMutationError = ErrorModel
-
-    /**
- * @summary Create a log entry
- */
-export const useCreateLogEntry = <TError = ErrorModel,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createLogEntry>>, TError,{data: NonReadonly<LogCreateInputBody>}, TContext>, }
- , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof createLogEntry>>,
-        TError,
-        {data: NonReadonly<LogCreateInputBody>},
-        TContext
-      > => {
-      return useMutation(getCreateLogEntryMutationOptions(options), queryClient);
-    }
-
-/**
- * @summary Delete a log entry
- */
-export const deleteLogEntry = (
-    id: string,
- signal?: AbortSignal
-) => {
-
-
-      return api<void>(
-      {url: `/log-entries/${id}`, method: 'DELETE', signal
-    },
-      );
-    }
-
-
-
-export const getDeleteLogEntryMutationOptions = <TError = ErrorModel,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteLogEntry>>, TError,{id: string}, TContext>, }
-): UseMutationOptions<Awaited<ReturnType<typeof deleteLogEntry>>, TError,{id: string}, TContext> => {
-
-const mutationKey = ['deleteLogEntry'];
-const {mutation: mutationOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }};
-
-
-
-
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteLogEntry>>, {id: string}> = (props) => {
-          const {id} = props ?? {};
-
-          return  deleteLogEntry(id,)
-        }
-
-
-
-
-
-
-  return  { mutationFn, ...mutationOptions }}
-
-    export type DeleteLogEntryMutationResult = NonNullable<Awaited<ReturnType<typeof deleteLogEntry>>>
-
-    export type DeleteLogEntryMutationError = ErrorModel
-
-    /**
- * @summary Delete a log entry
- */
-export const useDeleteLogEntry = <TError = ErrorModel,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteLogEntry>>, TError,{id: string}, TContext>, }
- , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof deleteLogEntry>>,
-        TError,
-        {id: string},
-        TContext
-      > => {
-      return useMutation(getDeleteLogEntryMutationOptions(options), queryClient);
-    }
-
-/**
- * @summary Update a log entry
- */
-export const updateLogEntry = (
-    id: string,
-    logUpdateInputBody: NonReadonly<LogUpdateInputBody>,
- signal?: AbortSignal
-) => {
-
-
-      return api<LogEntryBody>(
-      {url: `/log-entries/${id}`, method: 'PATCH',
-      headers: {'Content-Type': 'application/json', },
-      data: logUpdateInputBody, signal
-    },
-      );
-    }
-
-
-
-export const getUpdateLogEntryMutationOptions = <TError = ErrorModel,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateLogEntry>>, TError,{id: string;data: NonReadonly<LogUpdateInputBody>}, TContext>, }
-): UseMutationOptions<Awaited<ReturnType<typeof updateLogEntry>>, TError,{id: string;data: NonReadonly<LogUpdateInputBody>}, TContext> => {
-
-const mutationKey = ['updateLogEntry'];
-const {mutation: mutationOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }};
-
-
-
-
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateLogEntry>>, {id: string;data: NonReadonly<LogUpdateInputBody>}> = (props) => {
-          const {id,data} = props ?? {};
-
-          return  updateLogEntry(id,data,)
-        }
-
-
-
-
-
-
-  return  { mutationFn, ...mutationOptions }}
-
-    export type UpdateLogEntryMutationResult = NonNullable<Awaited<ReturnType<typeof updateLogEntry>>>
-    export type UpdateLogEntryMutationBody = NonReadonly<LogUpdateInputBody>
-    export type UpdateLogEntryMutationError = ErrorModel
-
-    /**
- * @summary Update a log entry
- */
-export const useUpdateLogEntry = <TError = ErrorModel,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateLogEntry>>, TError,{id: string;data: NonReadonly<LogUpdateInputBody>}, TContext>, }
- , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof updateLogEntry>>,
-        TError,
-        {id: string;data: NonReadonly<LogUpdateInputBody>},
-        TContext
-      > => {
-      return useMutation(getUpdateLogEntryMutationOptions(options), queryClient);
-    }
-
-/**
- * @summary List projects
- */
-export const listProjects = (
-    params?: ListProjectsParams,
- signal?: AbortSignal
-) => {
-
-
-      return api<ProjectBody[] | null>(
-      {url: `/projects`, method: 'GET',
+      return api<CaptureBody[] | null>(
+      {url: `/reminders/due`, method: 'GET',
         params, signal
     },
       );
@@ -2993,69 +2962,69 @@ export const listProjects = (
 
 
 
-export const getListProjectsQueryKey = (params?: ListProjectsParams,) => {
+export const getDueRemindersQueryKey = (params?: DueRemindersParams,) => {
     return [
-    `/projects`, ...(params ? [params] : [])
+    `/reminders/due`, ...(params ? [params] : [])
     ] as const;
     }
 
 
-export const getListProjectsQueryOptions = <TData = Awaited<ReturnType<typeof listProjects>>, TError = ErrorModel>(params?: ListProjectsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listProjects>>, TError, TData>>, }
+export const getDueRemindersQueryOptions = <TData = Awaited<ReturnType<typeof dueReminders>>, TError = ErrorModel>(params?: DueRemindersParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof dueReminders>>, TError, TData>>, }
 ) => {
 
 const {query: queryOptions} = options ?? {};
 
-  const queryKey =  queryOptions?.queryKey ?? getListProjectsQueryKey(params);
+  const queryKey =  queryOptions?.queryKey ?? getDueRemindersQueryKey(params);
 
 
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof listProjects>>> = ({ signal }) => listProjects(params, signal);
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof dueReminders>>> = ({ signal }) => dueReminders(params, signal);
 
 
 
 
 
-   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listProjects>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof dueReminders>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
 }
 
-export type ListProjectsQueryResult = NonNullable<Awaited<ReturnType<typeof listProjects>>>
-export type ListProjectsQueryError = ErrorModel
+export type DueRemindersQueryResult = NonNullable<Awaited<ReturnType<typeof dueReminders>>>
+export type DueRemindersQueryError = ErrorModel
 
 
-export function useListProjects<TData = Awaited<ReturnType<typeof listProjects>>, TError = ErrorModel>(
- params: undefined |  ListProjectsParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listProjects>>, TError, TData>> & Pick<
+export function useDueReminders<TData = Awaited<ReturnType<typeof dueReminders>>, TError = ErrorModel>(
+ params: undefined |  DueRemindersParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof dueReminders>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
-          Awaited<ReturnType<typeof listProjects>>,
+          Awaited<ReturnType<typeof dueReminders>>,
           TError,
-          Awaited<ReturnType<typeof listProjects>>
+          Awaited<ReturnType<typeof dueReminders>>
         > , 'initialData'
       >, }
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useListProjects<TData = Awaited<ReturnType<typeof listProjects>>, TError = ErrorModel>(
- params?: ListProjectsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listProjects>>, TError, TData>> & Pick<
+export function useDueReminders<TData = Awaited<ReturnType<typeof dueReminders>>, TError = ErrorModel>(
+ params?: DueRemindersParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof dueReminders>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
-          Awaited<ReturnType<typeof listProjects>>,
+          Awaited<ReturnType<typeof dueReminders>>,
           TError,
-          Awaited<ReturnType<typeof listProjects>>
+          Awaited<ReturnType<typeof dueReminders>>
         > , 'initialData'
       >, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useListProjects<TData = Awaited<ReturnType<typeof listProjects>>, TError = ErrorModel>(
- params?: ListProjectsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listProjects>>, TError, TData>>, }
+export function useDueReminders<TData = Awaited<ReturnType<typeof dueReminders>>, TError = ErrorModel>(
+ params?: DueRemindersParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof dueReminders>>, TError, TData>>, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 /**
- * @summary List projects
+ * @summary List reminders that have come due
  */
 
-export function useListProjects<TData = Awaited<ReturnType<typeof listProjects>>, TError = ErrorModel>(
- params?: ListProjectsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listProjects>>, TError, TData>>, }
+export function useDueReminders<TData = Awaited<ReturnType<typeof dueReminders>>, TError = ErrorModel>(
+ params?: DueRemindersParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof dueReminders>>, TError, TData>>, }
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
-  const queryOptions = getListProjectsQueryOptions(params,options)
+  const queryOptions = getDueRemindersQueryOptions(params,options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 
@@ -3069,207 +3038,16 @@ export function useListProjects<TData = Awaited<ReturnType<typeof listProjects>>
 
 
 /**
- * @summary Create a project
+ * @summary List not-yet-due reminders
  */
-export const createProject = (
-    projectCreateInputBody: NonReadonly<ProjectCreateInputBody>,
- signal?: AbortSignal
-) => {
-
-
-      return api<ProjectBody>(
-      {url: `/projects`, method: 'POST',
-      headers: {'Content-Type': 'application/json', },
-      data: projectCreateInputBody, signal
-    },
-      );
-    }
-
-
-
-export const getCreateProjectMutationOptions = <TError = ErrorModel,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createProject>>, TError,{data: NonReadonly<ProjectCreateInputBody>}, TContext>, }
-): UseMutationOptions<Awaited<ReturnType<typeof createProject>>, TError,{data: NonReadonly<ProjectCreateInputBody>}, TContext> => {
-
-const mutationKey = ['createProject'];
-const {mutation: mutationOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }};
-
-
-
-
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createProject>>, {data: NonReadonly<ProjectCreateInputBody>}> = (props) => {
-          const {data} = props ?? {};
-
-          return  createProject(data,)
-        }
-
-
-
-
-
-
-  return  { mutationFn, ...mutationOptions }}
-
-    export type CreateProjectMutationResult = NonNullable<Awaited<ReturnType<typeof createProject>>>
-    export type CreateProjectMutationBody = NonReadonly<ProjectCreateInputBody>
-    export type CreateProjectMutationError = ErrorModel
-
-    /**
- * @summary Create a project
- */
-export const useCreateProject = <TError = ErrorModel,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createProject>>, TError,{data: NonReadonly<ProjectCreateInputBody>}, TContext>, }
- , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof createProject>>,
-        TError,
-        {data: NonReadonly<ProjectCreateInputBody>},
-        TContext
-      > => {
-      return useMutation(getCreateProjectMutationOptions(options), queryClient);
-    }
-
-/**
- * @summary Delete a project
- */
-export const deleteProject = (
-    id: string,
- signal?: AbortSignal
-) => {
-
-
-      return api<void>(
-      {url: `/projects/${id}`, method: 'DELETE', signal
-    },
-      );
-    }
-
-
-
-export const getDeleteProjectMutationOptions = <TError = ErrorModel,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteProject>>, TError,{id: string}, TContext>, }
-): UseMutationOptions<Awaited<ReturnType<typeof deleteProject>>, TError,{id: string}, TContext> => {
-
-const mutationKey = ['deleteProject'];
-const {mutation: mutationOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }};
-
-
-
-
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteProject>>, {id: string}> = (props) => {
-          const {id} = props ?? {};
-
-          return  deleteProject(id,)
-        }
-
-
-
-
-
-
-  return  { mutationFn, ...mutationOptions }}
-
-    export type DeleteProjectMutationResult = NonNullable<Awaited<ReturnType<typeof deleteProject>>>
-
-    export type DeleteProjectMutationError = ErrorModel
-
-    /**
- * @summary Delete a project
- */
-export const useDeleteProject = <TError = ErrorModel,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteProject>>, TError,{id: string}, TContext>, }
- , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof deleteProject>>,
-        TError,
-        {id: string},
-        TContext
-      > => {
-      return useMutation(getDeleteProjectMutationOptions(options), queryClient);
-    }
-
-/**
- * @summary Update a project
- */
-export const updateProject = (
-    id: string,
-    projectUpdateInputBody: NonReadonly<ProjectUpdateInputBody>,
- signal?: AbortSignal
-) => {
-
-
-      return api<ProjectBody>(
-      {url: `/projects/${id}`, method: 'PATCH',
-      headers: {'Content-Type': 'application/json', },
-      data: projectUpdateInputBody, signal
-    },
-      );
-    }
-
-
-
-export const getUpdateProjectMutationOptions = <TError = ErrorModel,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateProject>>, TError,{id: string;data: NonReadonly<ProjectUpdateInputBody>}, TContext>, }
-): UseMutationOptions<Awaited<ReturnType<typeof updateProject>>, TError,{id: string;data: NonReadonly<ProjectUpdateInputBody>}, TContext> => {
-
-const mutationKey = ['updateProject'];
-const {mutation: mutationOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }};
-
-
-
-
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateProject>>, {id: string;data: NonReadonly<ProjectUpdateInputBody>}> = (props) => {
-          const {id,data} = props ?? {};
-
-          return  updateProject(id,data,)
-        }
-
-
-
-
-
-
-  return  { mutationFn, ...mutationOptions }}
-
-    export type UpdateProjectMutationResult = NonNullable<Awaited<ReturnType<typeof updateProject>>>
-    export type UpdateProjectMutationBody = NonReadonly<ProjectUpdateInputBody>
-    export type UpdateProjectMutationError = ErrorModel
-
-    /**
- * @summary Update a project
- */
-export const useUpdateProject = <TError = ErrorModel,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateProject>>, TError,{id: string;data: NonReadonly<ProjectUpdateInputBody>}, TContext>, }
- , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof updateProject>>,
-        TError,
-        {id: string;data: NonReadonly<ProjectUpdateInputBody>},
-        TContext
-      > => {
-      return useMutation(getUpdateProjectMutationOptions(options), queryClient);
-    }
-
-/**
- * @summary List weekly reports
- */
-export const listReports = (
+export const pendingReminders = (
 
  signal?: AbortSignal
 ) => {
 
 
-      return api<ReportBody[] | null>(
-      {url: `/reports`, method: 'GET', signal
+      return api<CaptureBody[] | null>(
+      {url: `/reminders/pending`, method: 'GET', signal
     },
       );
     }
@@ -3277,69 +3055,69 @@ export const listReports = (
 
 
 
-export const getListReportsQueryKey = () => {
+export const getPendingRemindersQueryKey = () => {
     return [
-    `/reports`
+    `/reminders/pending`
     ] as const;
     }
 
 
-export const getListReportsQueryOptions = <TData = Awaited<ReturnType<typeof listReports>>, TError = ErrorModel>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listReports>>, TError, TData>>, }
+export const getPendingRemindersQueryOptions = <TData = Awaited<ReturnType<typeof pendingReminders>>, TError = ErrorModel>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof pendingReminders>>, TError, TData>>, }
 ) => {
 
 const {query: queryOptions} = options ?? {};
 
-  const queryKey =  queryOptions?.queryKey ?? getListReportsQueryKey();
+  const queryKey =  queryOptions?.queryKey ?? getPendingRemindersQueryKey();
 
 
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof listReports>>> = ({ signal }) => listReports(signal);
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof pendingReminders>>> = ({ signal }) => pendingReminders(signal);
 
 
 
 
 
-   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listReports>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof pendingReminders>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
 }
 
-export type ListReportsQueryResult = NonNullable<Awaited<ReturnType<typeof listReports>>>
-export type ListReportsQueryError = ErrorModel
+export type PendingRemindersQueryResult = NonNullable<Awaited<ReturnType<typeof pendingReminders>>>
+export type PendingRemindersQueryError = ErrorModel
 
 
-export function useListReports<TData = Awaited<ReturnType<typeof listReports>>, TError = ErrorModel>(
-  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listReports>>, TError, TData>> & Pick<
+export function usePendingReminders<TData = Awaited<ReturnType<typeof pendingReminders>>, TError = ErrorModel>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof pendingReminders>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
-          Awaited<ReturnType<typeof listReports>>,
+          Awaited<ReturnType<typeof pendingReminders>>,
           TError,
-          Awaited<ReturnType<typeof listReports>>
+          Awaited<ReturnType<typeof pendingReminders>>
         > , 'initialData'
       >, }
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useListReports<TData = Awaited<ReturnType<typeof listReports>>, TError = ErrorModel>(
-  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listReports>>, TError, TData>> & Pick<
+export function usePendingReminders<TData = Awaited<ReturnType<typeof pendingReminders>>, TError = ErrorModel>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof pendingReminders>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
-          Awaited<ReturnType<typeof listReports>>,
+          Awaited<ReturnType<typeof pendingReminders>>,
           TError,
-          Awaited<ReturnType<typeof listReports>>
+          Awaited<ReturnType<typeof pendingReminders>>
         > , 'initialData'
       >, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useListReports<TData = Awaited<ReturnType<typeof listReports>>, TError = ErrorModel>(
-  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listReports>>, TError, TData>>, }
+export function usePendingReminders<TData = Awaited<ReturnType<typeof pendingReminders>>, TError = ErrorModel>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof pendingReminders>>, TError, TData>>, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 /**
- * @summary List weekly reports
+ * @summary List not-yet-due reminders
  */
 
-export function useListReports<TData = Awaited<ReturnType<typeof listReports>>, TError = ErrorModel>(
-  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listReports>>, TError, TData>>, }
+export function usePendingReminders<TData = Awaited<ReturnType<typeof pendingReminders>>, TError = ErrorModel>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof pendingReminders>>, TError, TData>>, }
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
-  const queryOptions = getListReportsQueryOptions(options)
+  const queryOptions = getPendingRemindersQueryOptions(options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 
@@ -3351,1135 +3129,6 @@ export function useListReports<TData = Awaited<ReturnType<typeof listReports>>, 
 
 
 
-
-/**
- * @summary Generate weekly report
- */
-export const generateReport = (
-
- signal?: AbortSignal
-) => {
-
-
-      return api<ReportBody>(
-      {url: `/reports/generate`, method: 'POST', signal
-    },
-      );
-    }
-
-
-
-export const getGenerateReportMutationOptions = <TError = ErrorModel,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof generateReport>>, TError,void, TContext>, }
-): UseMutationOptions<Awaited<ReturnType<typeof generateReport>>, TError,void, TContext> => {
-
-const mutationKey = ['generateReport'];
-const {mutation: mutationOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }};
-
-
-
-
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof generateReport>>, void> = () => {
-
-
-          return  generateReport()
-        }
-
-
-
-
-
-
-  return  { mutationFn, ...mutationOptions }}
-
-    export type GenerateReportMutationResult = NonNullable<Awaited<ReturnType<typeof generateReport>>>
-
-    export type GenerateReportMutationError = ErrorModel
-
-    /**
- * @summary Generate weekly report
- */
-export const useGenerateReport = <TError = ErrorModel,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof generateReport>>, TError,void, TContext>, }
- , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof generateReport>>,
-        TError,
-        void,
-        TContext
-      > => {
-      return useMutation(getGenerateReportMutationOptions(options), queryClient);
-    }
-
-/**
- * @summary Get weekly report
- */
-export const getReport = (
-    id: string,
- signal?: AbortSignal
-) => {
-
-
-      return api<ReportBody>(
-      {url: `/reports/${id}`, method: 'GET', signal
-    },
-      );
-    }
-
-
-
-
-export const getGetReportQueryKey = (id: string,) => {
-    return [
-    `/reports/${id}`
-    ] as const;
-    }
-
-
-export const getGetReportQueryOptions = <TData = Awaited<ReturnType<typeof getReport>>, TError = ErrorModel>(id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getReport>>, TError, TData>>, }
-) => {
-
-const {query: queryOptions} = options ?? {};
-
-  const queryKey =  queryOptions?.queryKey ?? getGetReportQueryKey(id);
-
-
-
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof getReport>>> = ({ signal }) => getReport(id, signal);
-
-
-
-
-
-   return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getReport>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
-}
-
-export type GetReportQueryResult = NonNullable<Awaited<ReturnType<typeof getReport>>>
-export type GetReportQueryError = ErrorModel
-
-
-export function useGetReport<TData = Awaited<ReturnType<typeof getReport>>, TError = ErrorModel>(
- id: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getReport>>, TError, TData>> & Pick<
-        DefinedInitialDataOptions<
-          Awaited<ReturnType<typeof getReport>>,
-          TError,
-          Awaited<ReturnType<typeof getReport>>
-        > , 'initialData'
-      >, }
- , queryClient?: QueryClient
-  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useGetReport<TData = Awaited<ReturnType<typeof getReport>>, TError = ErrorModel>(
- id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getReport>>, TError, TData>> & Pick<
-        UndefinedInitialDataOptions<
-          Awaited<ReturnType<typeof getReport>>,
-          TError,
-          Awaited<ReturnType<typeof getReport>>
-        > , 'initialData'
-      >, }
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useGetReport<TData = Awaited<ReturnType<typeof getReport>>, TError = ErrorModel>(
- id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getReport>>, TError, TData>>, }
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-/**
- * @summary Get weekly report
- */
-
-export function useGetReport<TData = Awaited<ReturnType<typeof getReport>>, TError = ErrorModel>(
- id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getReport>>, TError, TData>>, }
- , queryClient?: QueryClient
- ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
-
-  const queryOptions = getGetReportQueryOptions(id,options)
-
-  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
-
-  return { ...query, queryKey: queryOptions.queryKey };
-}
-
-
-
-
-
-
-
-/**
- * @summary Remove public share
- */
-export const unshareReport = (
-    id: string,
- signal?: AbortSignal
-) => {
-
-
-      return api<void>(
-      {url: `/reports/${id}/share`, method: 'DELETE', signal
-    },
-      );
-    }
-
-
-
-export const getUnshareReportMutationOptions = <TError = ErrorModel,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof unshareReport>>, TError,{id: string}, TContext>, }
-): UseMutationOptions<Awaited<ReturnType<typeof unshareReport>>, TError,{id: string}, TContext> => {
-
-const mutationKey = ['unshareReport'];
-const {mutation: mutationOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }};
-
-
-
-
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof unshareReport>>, {id: string}> = (props) => {
-          const {id} = props ?? {};
-
-          return  unshareReport(id,)
-        }
-
-
-
-
-
-
-  return  { mutationFn, ...mutationOptions }}
-
-    export type UnshareReportMutationResult = NonNullable<Awaited<ReturnType<typeof unshareReport>>>
-
-    export type UnshareReportMutationError = ErrorModel
-
-    /**
- * @summary Remove public share
- */
-export const useUnshareReport = <TError = ErrorModel,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof unshareReport>>, TError,{id: string}, TContext>, }
- , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof unshareReport>>,
-        TError,
-        {id: string},
-        TContext
-      > => {
-      return useMutation(getUnshareReportMutationOptions(options), queryClient);
-    }
-
-/**
- * @summary Create public share
- */
-export const shareReport = (
-    id: string,
- signal?: AbortSignal
-) => {
-
-
-      return api<ShareOutputBody>(
-      {url: `/reports/${id}/share`, method: 'POST', signal
-    },
-      );
-    }
-
-
-
-export const getShareReportMutationOptions = <TError = ErrorModel,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof shareReport>>, TError,{id: string}, TContext>, }
-): UseMutationOptions<Awaited<ReturnType<typeof shareReport>>, TError,{id: string}, TContext> => {
-
-const mutationKey = ['shareReport'];
-const {mutation: mutationOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }};
-
-
-
-
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof shareReport>>, {id: string}> = (props) => {
-          const {id} = props ?? {};
-
-          return  shareReport(id,)
-        }
-
-
-
-
-
-
-  return  { mutationFn, ...mutationOptions }}
-
-    export type ShareReportMutationResult = NonNullable<Awaited<ReturnType<typeof shareReport>>>
-
-    export type ShareReportMutationError = ErrorModel
-
-    /**
- * @summary Create public share
- */
-export const useShareReport = <TError = ErrorModel,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof shareReport>>, TError,{id: string}, TContext>, }
- , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof shareReport>>,
-        TError,
-        {id: string},
-        TContext
-      > => {
-      return useMutation(getShareReportMutationOptions(options), queryClient);
-    }
-
-/**
- * @summary Search across captures, tasks, and log entries
- */
-export const search = (
-    params: SearchParams,
- signal?: AbortSignal
-) => {
-
-
-      return api<SearchOutputBody>(
-      {url: `/search`, method: 'GET',
-        params, signal
-    },
-      );
-    }
-
-
-
-
-export const getSearchQueryKey = (params?: SearchParams,) => {
-    return [
-    `/search`, ...(params ? [params] : [])
-    ] as const;
-    }
-
-
-export const getSearchQueryOptions = <TData = Awaited<ReturnType<typeof search>>, TError = ErrorModel>(params: SearchParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof search>>, TError, TData>>, }
-) => {
-
-const {query: queryOptions} = options ?? {};
-
-  const queryKey =  queryOptions?.queryKey ?? getSearchQueryKey(params);
-
-
-
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof search>>> = ({ signal }) => search(params, signal);
-
-
-
-
-
-   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof search>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
-}
-
-export type SearchQueryResult = NonNullable<Awaited<ReturnType<typeof search>>>
-export type SearchQueryError = ErrorModel
-
-
-export function useSearch<TData = Awaited<ReturnType<typeof search>>, TError = ErrorModel>(
- params: SearchParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof search>>, TError, TData>> & Pick<
-        DefinedInitialDataOptions<
-          Awaited<ReturnType<typeof search>>,
-          TError,
-          Awaited<ReturnType<typeof search>>
-        > , 'initialData'
-      >, }
- , queryClient?: QueryClient
-  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useSearch<TData = Awaited<ReturnType<typeof search>>, TError = ErrorModel>(
- params: SearchParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof search>>, TError, TData>> & Pick<
-        UndefinedInitialDataOptions<
-          Awaited<ReturnType<typeof search>>,
-          TError,
-          Awaited<ReturnType<typeof search>>
-        > , 'initialData'
-      >, }
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useSearch<TData = Awaited<ReturnType<typeof search>>, TError = ErrorModel>(
- params: SearchParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof search>>, TError, TData>>, }
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-/**
- * @summary Search across captures, tasks, and log entries
- */
-
-export function useSearch<TData = Awaited<ReturnType<typeof search>>, TError = ErrorModel>(
- params: SearchParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof search>>, TError, TData>>, }
- , queryClient?: QueryClient
- ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
-
-  const queryOptions = getSearchQueryOptions(params,options)
-
-  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
-
-  return { ...query, queryKey: queryOptions.queryKey };
-}
-
-
-
-
-
-
-
-/**
- * @summary Get public report
- */
-export const getSharedReport = (
-    slug: string,
- signal?: AbortSignal
-) => {
-
-
-      return api<ReportBody>(
-      {url: `/share/${slug}`, method: 'GET', signal
-    },
-      );
-    }
-
-
-
-
-export const getGetSharedReportQueryKey = (slug: string,) => {
-    return [
-    `/share/${slug}`
-    ] as const;
-    }
-
-
-export const getGetSharedReportQueryOptions = <TData = Awaited<ReturnType<typeof getSharedReport>>, TError = ErrorModel>(slug: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSharedReport>>, TError, TData>>, }
-) => {
-
-const {query: queryOptions} = options ?? {};
-
-  const queryKey =  queryOptions?.queryKey ?? getGetSharedReportQueryKey(slug);
-
-
-
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof getSharedReport>>> = ({ signal }) => getSharedReport(slug, signal);
-
-
-
-
-
-   return  { queryKey, queryFn, enabled: !!(slug), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getSharedReport>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
-}
-
-export type GetSharedReportQueryResult = NonNullable<Awaited<ReturnType<typeof getSharedReport>>>
-export type GetSharedReportQueryError = ErrorModel
-
-
-export function useGetSharedReport<TData = Awaited<ReturnType<typeof getSharedReport>>, TError = ErrorModel>(
- slug: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSharedReport>>, TError, TData>> & Pick<
-        DefinedInitialDataOptions<
-          Awaited<ReturnType<typeof getSharedReport>>,
-          TError,
-          Awaited<ReturnType<typeof getSharedReport>>
-        > , 'initialData'
-      >, }
- , queryClient?: QueryClient
-  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useGetSharedReport<TData = Awaited<ReturnType<typeof getSharedReport>>, TError = ErrorModel>(
- slug: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSharedReport>>, TError, TData>> & Pick<
-        UndefinedInitialDataOptions<
-          Awaited<ReturnType<typeof getSharedReport>>,
-          TError,
-          Awaited<ReturnType<typeof getSharedReport>>
-        > , 'initialData'
-      >, }
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useGetSharedReport<TData = Awaited<ReturnType<typeof getSharedReport>>, TError = ErrorModel>(
- slug: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSharedReport>>, TError, TData>>, }
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-/**
- * @summary Get public report
- */
-
-export function useGetSharedReport<TData = Awaited<ReturnType<typeof getSharedReport>>, TError = ErrorModel>(
- slug: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSharedReport>>, TError, TData>>, }
- , queryClient?: QueryClient
- ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
-
-  const queryOptions = getGetSharedReportQueryOptions(slug,options)
-
-  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
-
-  return { ...query, queryKey: queryOptions.queryKey };
-}
-
-
-
-
-
-
-
-/**
- * @summary List tasks
- */
-export const listTasks = (
-    params?: ListTasksParams,
- signal?: AbortSignal
-) => {
-
-
-      return api<TaskBody[] | null>(
-      {url: `/tasks`, method: 'GET',
-        params, signal
-    },
-      );
-    }
-
-
-
-
-export const getListTasksQueryKey = (params?: ListTasksParams,) => {
-    return [
-    `/tasks`, ...(params ? [params] : [])
-    ] as const;
-    }
-
-
-export const getListTasksQueryOptions = <TData = Awaited<ReturnType<typeof listTasks>>, TError = ErrorModel>(params?: ListTasksParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listTasks>>, TError, TData>>, }
-) => {
-
-const {query: queryOptions} = options ?? {};
-
-  const queryKey =  queryOptions?.queryKey ?? getListTasksQueryKey(params);
-
-
-
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof listTasks>>> = ({ signal }) => listTasks(params, signal);
-
-
-
-
-
-   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listTasks>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
-}
-
-export type ListTasksQueryResult = NonNullable<Awaited<ReturnType<typeof listTasks>>>
-export type ListTasksQueryError = ErrorModel
-
-
-export function useListTasks<TData = Awaited<ReturnType<typeof listTasks>>, TError = ErrorModel>(
- params: undefined |  ListTasksParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listTasks>>, TError, TData>> & Pick<
-        DefinedInitialDataOptions<
-          Awaited<ReturnType<typeof listTasks>>,
-          TError,
-          Awaited<ReturnType<typeof listTasks>>
-        > , 'initialData'
-      >, }
- , queryClient?: QueryClient
-  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useListTasks<TData = Awaited<ReturnType<typeof listTasks>>, TError = ErrorModel>(
- params?: ListTasksParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listTasks>>, TError, TData>> & Pick<
-        UndefinedInitialDataOptions<
-          Awaited<ReturnType<typeof listTasks>>,
-          TError,
-          Awaited<ReturnType<typeof listTasks>>
-        > , 'initialData'
-      >, }
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useListTasks<TData = Awaited<ReturnType<typeof listTasks>>, TError = ErrorModel>(
- params?: ListTasksParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listTasks>>, TError, TData>>, }
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-/**
- * @summary List tasks
- */
-
-export function useListTasks<TData = Awaited<ReturnType<typeof listTasks>>, TError = ErrorModel>(
- params?: ListTasksParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listTasks>>, TError, TData>>, }
- , queryClient?: QueryClient
- ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
-
-  const queryOptions = getListTasksQueryOptions(params,options)
-
-  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
-
-  return { ...query, queryKey: queryOptions.queryKey };
-}
-
-
-
-
-
-
-
-/**
- * @summary Create a task
- */
-export const createTask = (
-    taskCreateInputBody: NonReadonly<TaskCreateInputBody>,
- signal?: AbortSignal
-) => {
-
-
-      return api<TaskBody>(
-      {url: `/tasks`, method: 'POST',
-      headers: {'Content-Type': 'application/json', },
-      data: taskCreateInputBody, signal
-    },
-      );
-    }
-
-
-
-export const getCreateTaskMutationOptions = <TError = ErrorModel,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createTask>>, TError,{data: NonReadonly<TaskCreateInputBody>}, TContext>, }
-): UseMutationOptions<Awaited<ReturnType<typeof createTask>>, TError,{data: NonReadonly<TaskCreateInputBody>}, TContext> => {
-
-const mutationKey = ['createTask'];
-const {mutation: mutationOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }};
-
-
-
-
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createTask>>, {data: NonReadonly<TaskCreateInputBody>}> = (props) => {
-          const {data} = props ?? {};
-
-          return  createTask(data,)
-        }
-
-
-
-
-
-
-  return  { mutationFn, ...mutationOptions }}
-
-    export type CreateTaskMutationResult = NonNullable<Awaited<ReturnType<typeof createTask>>>
-    export type CreateTaskMutationBody = NonReadonly<TaskCreateInputBody>
-    export type CreateTaskMutationError = ErrorModel
-
-    /**
- * @summary Create a task
- */
-export const useCreateTask = <TError = ErrorModel,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createTask>>, TError,{data: NonReadonly<TaskCreateInputBody>}, TContext>, }
- , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof createTask>>,
-        TError,
-        {data: NonReadonly<TaskCreateInputBody>},
-        TContext
-      > => {
-      return useMutation(getCreateTaskMutationOptions(options), queryClient);
-    }
-
-/**
- * @summary Delete a task
- */
-export const deleteTask = (
-    id: string,
- signal?: AbortSignal
-) => {
-
-
-      return api<void>(
-      {url: `/tasks/${id}`, method: 'DELETE', signal
-    },
-      );
-    }
-
-
-
-export const getDeleteTaskMutationOptions = <TError = ErrorModel,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteTask>>, TError,{id: string}, TContext>, }
-): UseMutationOptions<Awaited<ReturnType<typeof deleteTask>>, TError,{id: string}, TContext> => {
-
-const mutationKey = ['deleteTask'];
-const {mutation: mutationOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }};
-
-
-
-
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteTask>>, {id: string}> = (props) => {
-          const {id} = props ?? {};
-
-          return  deleteTask(id,)
-        }
-
-
-
-
-
-
-  return  { mutationFn, ...mutationOptions }}
-
-    export type DeleteTaskMutationResult = NonNullable<Awaited<ReturnType<typeof deleteTask>>>
-
-    export type DeleteTaskMutationError = ErrorModel
-
-    /**
- * @summary Delete a task
- */
-export const useDeleteTask = <TError = ErrorModel,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteTask>>, TError,{id: string}, TContext>, }
- , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof deleteTask>>,
-        TError,
-        {id: string},
-        TContext
-      > => {
-      return useMutation(getDeleteTaskMutationOptions(options), queryClient);
-    }
-
-/**
- * @summary Get a task
- */
-export const getTask = (
-    id: string,
- signal?: AbortSignal
-) => {
-
-
-      return api<TaskBody>(
-      {url: `/tasks/${id}`, method: 'GET', signal
-    },
-      );
-    }
-
-
-
-
-export const getGetTaskQueryKey = (id: string,) => {
-    return [
-    `/tasks/${id}`
-    ] as const;
-    }
-
-
-export const getGetTaskQueryOptions = <TData = Awaited<ReturnType<typeof getTask>>, TError = ErrorModel>(id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getTask>>, TError, TData>>, }
-) => {
-
-const {query: queryOptions} = options ?? {};
-
-  const queryKey =  queryOptions?.queryKey ?? getGetTaskQueryKey(id);
-
-
-
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof getTask>>> = ({ signal }) => getTask(id, signal);
-
-
-
-
-
-   return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getTask>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
-}
-
-export type GetTaskQueryResult = NonNullable<Awaited<ReturnType<typeof getTask>>>
-export type GetTaskQueryError = ErrorModel
-
-
-export function useGetTask<TData = Awaited<ReturnType<typeof getTask>>, TError = ErrorModel>(
- id: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getTask>>, TError, TData>> & Pick<
-        DefinedInitialDataOptions<
-          Awaited<ReturnType<typeof getTask>>,
-          TError,
-          Awaited<ReturnType<typeof getTask>>
-        > , 'initialData'
-      >, }
- , queryClient?: QueryClient
-  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useGetTask<TData = Awaited<ReturnType<typeof getTask>>, TError = ErrorModel>(
- id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getTask>>, TError, TData>> & Pick<
-        UndefinedInitialDataOptions<
-          Awaited<ReturnType<typeof getTask>>,
-          TError,
-          Awaited<ReturnType<typeof getTask>>
-        > , 'initialData'
-      >, }
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useGetTask<TData = Awaited<ReturnType<typeof getTask>>, TError = ErrorModel>(
- id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getTask>>, TError, TData>>, }
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-/**
- * @summary Get a task
- */
-
-export function useGetTask<TData = Awaited<ReturnType<typeof getTask>>, TError = ErrorModel>(
- id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getTask>>, TError, TData>>, }
- , queryClient?: QueryClient
- ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
-
-  const queryOptions = getGetTaskQueryOptions(id,options)
-
-  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
-
-  return { ...query, queryKey: queryOptions.queryKey };
-}
-
-
-
-
-
-
-
-/**
- * @summary Update a task
- */
-export const updateTask = (
-    id: string,
-    taskUpdateInputBody: NonReadonly<TaskUpdateInputBody>,
- signal?: AbortSignal
-) => {
-
-
-      return api<TaskBody>(
-      {url: `/tasks/${id}`, method: 'PATCH',
-      headers: {'Content-Type': 'application/json', },
-      data: taskUpdateInputBody, signal
-    },
-      );
-    }
-
-
-
-export const getUpdateTaskMutationOptions = <TError = ErrorModel,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateTask>>, TError,{id: string;data: NonReadonly<TaskUpdateInputBody>}, TContext>, }
-): UseMutationOptions<Awaited<ReturnType<typeof updateTask>>, TError,{id: string;data: NonReadonly<TaskUpdateInputBody>}, TContext> => {
-
-const mutationKey = ['updateTask'];
-const {mutation: mutationOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }};
-
-
-
-
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateTask>>, {id: string;data: NonReadonly<TaskUpdateInputBody>}> = (props) => {
-          const {id,data} = props ?? {};
-
-          return  updateTask(id,data,)
-        }
-
-
-
-
-
-
-  return  { mutationFn, ...mutationOptions }}
-
-    export type UpdateTaskMutationResult = NonNullable<Awaited<ReturnType<typeof updateTask>>>
-    export type UpdateTaskMutationBody = NonReadonly<TaskUpdateInputBody>
-    export type UpdateTaskMutationError = ErrorModel
-
-    /**
- * @summary Update a task
- */
-export const useUpdateTask = <TError = ErrorModel,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateTask>>, TError,{id: string;data: NonReadonly<TaskUpdateInputBody>}, TContext>, }
- , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof updateTask>>,
-        TError,
-        {id: string;data: NonReadonly<TaskUpdateInputBody>},
-        TContext
-      > => {
-      return useMutation(getUpdateTaskMutationOptions(options), queryClient);
-    }
-
-/**
- * @summary List time blocks
- */
-export const listTimeBlocks = (
-    params?: ListTimeBlocksParams,
- signal?: AbortSignal
-) => {
-
-
-      return api<TimeBlockBody[] | null>(
-      {url: `/time-blocks`, method: 'GET',
-        params, signal
-    },
-      );
-    }
-
-
-
-
-export const getListTimeBlocksQueryKey = (params?: ListTimeBlocksParams,) => {
-    return [
-    `/time-blocks`, ...(params ? [params] : [])
-    ] as const;
-    }
-
-
-export const getListTimeBlocksQueryOptions = <TData = Awaited<ReturnType<typeof listTimeBlocks>>, TError = ErrorModel>(params?: ListTimeBlocksParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listTimeBlocks>>, TError, TData>>, }
-) => {
-
-const {query: queryOptions} = options ?? {};
-
-  const queryKey =  queryOptions?.queryKey ?? getListTimeBlocksQueryKey(params);
-
-
-
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof listTimeBlocks>>> = ({ signal }) => listTimeBlocks(params, signal);
-
-
-
-
-
-   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listTimeBlocks>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
-}
-
-export type ListTimeBlocksQueryResult = NonNullable<Awaited<ReturnType<typeof listTimeBlocks>>>
-export type ListTimeBlocksQueryError = ErrorModel
-
-
-export function useListTimeBlocks<TData = Awaited<ReturnType<typeof listTimeBlocks>>, TError = ErrorModel>(
- params: undefined |  ListTimeBlocksParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listTimeBlocks>>, TError, TData>> & Pick<
-        DefinedInitialDataOptions<
-          Awaited<ReturnType<typeof listTimeBlocks>>,
-          TError,
-          Awaited<ReturnType<typeof listTimeBlocks>>
-        > , 'initialData'
-      >, }
- , queryClient?: QueryClient
-  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useListTimeBlocks<TData = Awaited<ReturnType<typeof listTimeBlocks>>, TError = ErrorModel>(
- params?: ListTimeBlocksParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listTimeBlocks>>, TError, TData>> & Pick<
-        UndefinedInitialDataOptions<
-          Awaited<ReturnType<typeof listTimeBlocks>>,
-          TError,
-          Awaited<ReturnType<typeof listTimeBlocks>>
-        > , 'initialData'
-      >, }
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useListTimeBlocks<TData = Awaited<ReturnType<typeof listTimeBlocks>>, TError = ErrorModel>(
- params?: ListTimeBlocksParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listTimeBlocks>>, TError, TData>>, }
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-/**
- * @summary List time blocks
- */
-
-export function useListTimeBlocks<TData = Awaited<ReturnType<typeof listTimeBlocks>>, TError = ErrorModel>(
- params?: ListTimeBlocksParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listTimeBlocks>>, TError, TData>>, }
- , queryClient?: QueryClient
- ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
-
-  const queryOptions = getListTimeBlocksQueryOptions(params,options)
-
-  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
-
-  return { ...query, queryKey: queryOptions.queryKey };
-}
-
-
-
-
-
-
-
-/**
- * @summary Create a time block
- */
-export const createTimeBlock = (
-    timeBlockCreateInputBody: NonReadonly<TimeBlockCreateInputBody>,
- signal?: AbortSignal
-) => {
-
-
-      return api<TimeBlockBody>(
-      {url: `/time-blocks`, method: 'POST',
-      headers: {'Content-Type': 'application/json', },
-      data: timeBlockCreateInputBody, signal
-    },
-      );
-    }
-
-
-
-export const getCreateTimeBlockMutationOptions = <TError = ErrorModel,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createTimeBlock>>, TError,{data: NonReadonly<TimeBlockCreateInputBody>}, TContext>, }
-): UseMutationOptions<Awaited<ReturnType<typeof createTimeBlock>>, TError,{data: NonReadonly<TimeBlockCreateInputBody>}, TContext> => {
-
-const mutationKey = ['createTimeBlock'];
-const {mutation: mutationOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }};
-
-
-
-
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createTimeBlock>>, {data: NonReadonly<TimeBlockCreateInputBody>}> = (props) => {
-          const {data} = props ?? {};
-
-          return  createTimeBlock(data,)
-        }
-
-
-
-
-
-
-  return  { mutationFn, ...mutationOptions }}
-
-    export type CreateTimeBlockMutationResult = NonNullable<Awaited<ReturnType<typeof createTimeBlock>>>
-    export type CreateTimeBlockMutationBody = NonReadonly<TimeBlockCreateInputBody>
-    export type CreateTimeBlockMutationError = ErrorModel
-
-    /**
- * @summary Create a time block
- */
-export const useCreateTimeBlock = <TError = ErrorModel,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createTimeBlock>>, TError,{data: NonReadonly<TimeBlockCreateInputBody>}, TContext>, }
- , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof createTimeBlock>>,
-        TError,
-        {data: NonReadonly<TimeBlockCreateInputBody>},
-        TContext
-      > => {
-      return useMutation(getCreateTimeBlockMutationOptions(options), queryClient);
-    }
-
-/**
- * @summary Delete a time block
- */
-export const deleteTimeBlock = (
-    id: string,
- signal?: AbortSignal
-) => {
-
-
-      return api<void>(
-      {url: `/time-blocks/${id}`, method: 'DELETE', signal
-    },
-      );
-    }
-
-
-
-export const getDeleteTimeBlockMutationOptions = <TError = ErrorModel,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteTimeBlock>>, TError,{id: string}, TContext>, }
-): UseMutationOptions<Awaited<ReturnType<typeof deleteTimeBlock>>, TError,{id: string}, TContext> => {
-
-const mutationKey = ['deleteTimeBlock'];
-const {mutation: mutationOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }};
-
-
-
-
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteTimeBlock>>, {id: string}> = (props) => {
-          const {id} = props ?? {};
-
-          return  deleteTimeBlock(id,)
-        }
-
-
-
-
-
-
-  return  { mutationFn, ...mutationOptions }}
-
-    export type DeleteTimeBlockMutationResult = NonNullable<Awaited<ReturnType<typeof deleteTimeBlock>>>
-
-    export type DeleteTimeBlockMutationError = ErrorModel
-
-    /**
- * @summary Delete a time block
- */
-export const useDeleteTimeBlock = <TError = ErrorModel,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteTimeBlock>>, TError,{id: string}, TContext>, }
- , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof deleteTimeBlock>>,
-        TError,
-        {id: string},
-        TContext
-      > => {
-      return useMutation(getDeleteTimeBlockMutationOptions(options), queryClient);
-    }
-
-/**
- * @summary Update a time block
- */
-export const updateTimeBlock = (
-    id: string,
-    timeBlockUpdateInputBody: NonReadonly<TimeBlockUpdateInputBody>,
- signal?: AbortSignal
-) => {
-
-
-      return api<TimeBlockBody>(
-      {url: `/time-blocks/${id}`, method: 'PATCH',
-      headers: {'Content-Type': 'application/json', },
-      data: timeBlockUpdateInputBody, signal
-    },
-      );
-    }
-
-
-
-export const getUpdateTimeBlockMutationOptions = <TError = ErrorModel,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateTimeBlock>>, TError,{id: string;data: NonReadonly<TimeBlockUpdateInputBody>}, TContext>, }
-): UseMutationOptions<Awaited<ReturnType<typeof updateTimeBlock>>, TError,{id: string;data: NonReadonly<TimeBlockUpdateInputBody>}, TContext> => {
-
-const mutationKey = ['updateTimeBlock'];
-const {mutation: mutationOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }};
-
-
-
-
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateTimeBlock>>, {id: string;data: NonReadonly<TimeBlockUpdateInputBody>}> = (props) => {
-          const {id,data} = props ?? {};
-
-          return  updateTimeBlock(id,data,)
-        }
-
-
-
-
-
-
-  return  { mutationFn, ...mutationOptions }}
-
-    export type UpdateTimeBlockMutationResult = NonNullable<Awaited<ReturnType<typeof updateTimeBlock>>>
-    export type UpdateTimeBlockMutationBody = NonReadonly<TimeBlockUpdateInputBody>
-    export type UpdateTimeBlockMutationError = ErrorModel
-
-    /**
- * @summary Update a time block
- */
-export const useUpdateTimeBlock = <TError = ErrorModel,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateTimeBlock>>, TError,{id: string;data: NonReadonly<TimeBlockUpdateInputBody>}, TContext>, }
- , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof updateTimeBlock>>,
-        TError,
-        {id: string;data: NonReadonly<TimeBlockUpdateInputBody>},
-        TContext
-      > => {
-      return useMutation(getUpdateTimeBlockMutationOptions(options), queryClient);
-    }
 
 /**
  * @summary Delete the authenticated user's account and all their data
@@ -4853,4 +3502,446 @@ export const useChangePassword = <TError = ErrorModel,
         TContext
       > => {
       return useMutation(getChangePasswordMutationOptions(options), queryClient);
+    }
+
+/**
+ * @summary List capture webhooks
+ */
+export const listWebhooks = (
+
+ signal?: AbortSignal
+) => {
+
+
+      return api<WebhookBody[] | null>(
+      {url: `/webhooks`, method: 'GET', signal
+    },
+      );
+    }
+
+
+
+
+export const getListWebhooksQueryKey = () => {
+    return [
+    `/webhooks`
+    ] as const;
+    }
+
+
+export const getListWebhooksQueryOptions = <TData = Awaited<ReturnType<typeof listWebhooks>>, TError = ErrorModel>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listWebhooks>>, TError, TData>>, }
+) => {
+
+const {query: queryOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListWebhooksQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listWebhooks>>> = ({ signal }) => listWebhooks(signal);
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listWebhooks>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListWebhooksQueryResult = NonNullable<Awaited<ReturnType<typeof listWebhooks>>>
+export type ListWebhooksQueryError = ErrorModel
+
+
+export function useListWebhooks<TData = Awaited<ReturnType<typeof listWebhooks>>, TError = ErrorModel>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listWebhooks>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listWebhooks>>,
+          TError,
+          Awaited<ReturnType<typeof listWebhooks>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListWebhooks<TData = Awaited<ReturnType<typeof listWebhooks>>, TError = ErrorModel>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listWebhooks>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listWebhooks>>,
+          TError,
+          Awaited<ReturnType<typeof listWebhooks>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListWebhooks<TData = Awaited<ReturnType<typeof listWebhooks>>, TError = ErrorModel>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listWebhooks>>, TError, TData>>, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary List capture webhooks
+ */
+
+export function useListWebhooks<TData = Awaited<ReturnType<typeof listWebhooks>>, TError = ErrorModel>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listWebhooks>>, TError, TData>>, }
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getListWebhooksQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+/**
+ * @summary Create a capture webhook
+ */
+export const createWebhook = (
+    webhookFields: NonReadonly<WebhookFields>,
+ signal?: AbortSignal
+) => {
+
+
+      return api<WebhookBody>(
+      {url: `/webhooks`, method: 'POST',
+      headers: {'Content-Type': 'application/json', },
+      data: webhookFields, signal
+    },
+      );
+    }
+
+
+
+export const getCreateWebhookMutationOptions = <TError = ErrorModel,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createWebhook>>, TError,{data: NonReadonly<WebhookFields>}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof createWebhook>>, TError,{data: NonReadonly<WebhookFields>}, TContext> => {
+
+const mutationKey = ['createWebhook'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createWebhook>>, {data: NonReadonly<WebhookFields>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createWebhook(data,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateWebhookMutationResult = NonNullable<Awaited<ReturnType<typeof createWebhook>>>
+    export type CreateWebhookMutationBody = NonReadonly<WebhookFields>
+    export type CreateWebhookMutationError = ErrorModel
+
+    /**
+ * @summary Create a capture webhook
+ */
+export const useCreateWebhook = <TError = ErrorModel,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createWebhook>>, TError,{data: NonReadonly<WebhookFields>}, TContext>, }
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof createWebhook>>,
+        TError,
+        {data: NonReadonly<WebhookFields>},
+        TContext
+      > => {
+      return useMutation(getCreateWebhookMutationOptions(options), queryClient);
+    }
+
+/**
+ * @summary Delete a capture webhook
+ */
+export const deleteWebhook = (
+    id: string,
+ signal?: AbortSignal
+) => {
+
+
+      return api<void>(
+      {url: `/webhooks/${id}`, method: 'DELETE', signal
+    },
+      );
+    }
+
+
+
+export const getDeleteWebhookMutationOptions = <TError = ErrorModel,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteWebhook>>, TError,{id: string}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof deleteWebhook>>, TError,{id: string}, TContext> => {
+
+const mutationKey = ['deleteWebhook'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteWebhook>>, {id: string}> = (props) => {
+          const {id} = props ?? {};
+
+          return  deleteWebhook(id,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteWebhookMutationResult = NonNullable<Awaited<ReturnType<typeof deleteWebhook>>>
+
+    export type DeleteWebhookMutationError = ErrorModel
+
+    /**
+ * @summary Delete a capture webhook
+ */
+export const useDeleteWebhook = <TError = ErrorModel,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteWebhook>>, TError,{id: string}, TContext>, }
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof deleteWebhook>>,
+        TError,
+        {id: string},
+        TContext
+      > => {
+      return useMutation(getDeleteWebhookMutationOptions(options), queryClient);
+    }
+
+/**
+ * @summary Get a capture webhook
+ */
+export const getWebhook = (
+    id: string,
+ signal?: AbortSignal
+) => {
+
+
+      return api<WebhookBody>(
+      {url: `/webhooks/${id}`, method: 'GET', signal
+    },
+      );
+    }
+
+
+
+
+export const getGetWebhookQueryKey = (id: string,) => {
+    return [
+    `/webhooks/${id}`
+    ] as const;
+    }
+
+
+export const getGetWebhookQueryOptions = <TData = Awaited<ReturnType<typeof getWebhook>>, TError = ErrorModel>(id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getWebhook>>, TError, TData>>, }
+) => {
+
+const {query: queryOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetWebhookQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getWebhook>>> = ({ signal }) => getWebhook(id, signal);
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getWebhook>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetWebhookQueryResult = NonNullable<Awaited<ReturnType<typeof getWebhook>>>
+export type GetWebhookQueryError = ErrorModel
+
+
+export function useGetWebhook<TData = Awaited<ReturnType<typeof getWebhook>>, TError = ErrorModel>(
+ id: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getWebhook>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getWebhook>>,
+          TError,
+          Awaited<ReturnType<typeof getWebhook>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetWebhook<TData = Awaited<ReturnType<typeof getWebhook>>, TError = ErrorModel>(
+ id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getWebhook>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getWebhook>>,
+          TError,
+          Awaited<ReturnType<typeof getWebhook>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetWebhook<TData = Awaited<ReturnType<typeof getWebhook>>, TError = ErrorModel>(
+ id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getWebhook>>, TError, TData>>, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Get a capture webhook
+ */
+
+export function useGetWebhook<TData = Awaited<ReturnType<typeof getWebhook>>, TError = ErrorModel>(
+ id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getWebhook>>, TError, TData>>, }
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetWebhookQueryOptions(id,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+/**
+ * @summary Update a capture webhook
+ */
+export const updateWebhook = (
+    id: string,
+    webhookFields: NonReadonly<WebhookFields>,
+ signal?: AbortSignal
+) => {
+
+
+      return api<WebhookBody>(
+      {url: `/webhooks/${id}`, method: 'PATCH',
+      headers: {'Content-Type': 'application/json', },
+      data: webhookFields, signal
+    },
+      );
+    }
+
+
+
+export const getUpdateWebhookMutationOptions = <TError = ErrorModel,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateWebhook>>, TError,{id: string;data: NonReadonly<WebhookFields>}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof updateWebhook>>, TError,{id: string;data: NonReadonly<WebhookFields>}, TContext> => {
+
+const mutationKey = ['updateWebhook'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateWebhook>>, {id: string;data: NonReadonly<WebhookFields>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  updateWebhook(id,data,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateWebhookMutationResult = NonNullable<Awaited<ReturnType<typeof updateWebhook>>>
+    export type UpdateWebhookMutationBody = NonReadonly<WebhookFields>
+    export type UpdateWebhookMutationError = ErrorModel
+
+    /**
+ * @summary Update a capture webhook
+ */
+export const useUpdateWebhook = <TError = ErrorModel,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateWebhook>>, TError,{id: string;data: NonReadonly<WebhookFields>}, TContext>, }
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof updateWebhook>>,
+        TError,
+        {id: string;data: NonReadonly<WebhookFields>},
+        TContext
+      > => {
+      return useMutation(getUpdateWebhookMutationOptions(options), queryClient);
+    }
+
+/**
+ * @summary Score a webhook against a capture
+ */
+export const testWebhook = (
+    id: string,
+    webhookTestInputBody: NonReadonly<WebhookTestInputBody>,
+ signal?: AbortSignal
+) => {
+
+
+      return api<WebhookTestOutputBody>(
+      {url: `/webhooks/${id}/test`, method: 'POST',
+      headers: {'Content-Type': 'application/json', },
+      data: webhookTestInputBody, signal
+    },
+      );
+    }
+
+
+
+export const getTestWebhookMutationOptions = <TError = ErrorModel,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof testWebhook>>, TError,{id: string;data: NonReadonly<WebhookTestInputBody>}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof testWebhook>>, TError,{id: string;data: NonReadonly<WebhookTestInputBody>}, TContext> => {
+
+const mutationKey = ['testWebhook'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof testWebhook>>, {id: string;data: NonReadonly<WebhookTestInputBody>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  testWebhook(id,data,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type TestWebhookMutationResult = NonNullable<Awaited<ReturnType<typeof testWebhook>>>
+    export type TestWebhookMutationBody = NonReadonly<WebhookTestInputBody>
+    export type TestWebhookMutationError = ErrorModel
+
+    /**
+ * @summary Score a webhook against a capture
+ */
+export const useTestWebhook = <TError = ErrorModel,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof testWebhook>>, TError,{id: string;data: NonReadonly<WebhookTestInputBody>}, TContext>, }
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof testWebhook>>,
+        TError,
+        {id: string;data: NonReadonly<WebhookTestInputBody>},
+        TContext
+      > => {
+      return useMutation(getTestWebhookMutationOptions(options), queryClient);
     }

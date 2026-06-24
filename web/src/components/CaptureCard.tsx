@@ -4,6 +4,7 @@ import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import type { CaptureBody, CaptureUpdateInputBodyClassifiedAs } from "../api";
 import { fmtShortDateTime } from "../utils/format";
 import { Markdown } from "./Markdown";
+import { RemindControl } from "./RemindControl";
 
 const CL_CLASS: Record<string, string> = {
   unclassified: "cl-unclassified",
@@ -20,24 +21,6 @@ const RECLASSIFY_OPTIONS: CaptureUpdateInputBodyClassifiedAs[] = [
   "routine",
   "log",
 ];
-
-const PromoteIcon = () => (
-  <svg
-    width="14"
-    height="14"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth={2}
-    viewBox="0 0 24 24"
-    style={{ flexShrink: 0 }}
-  >
-    <path
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      d="M7.5 21 3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5"
-    />
-  </svg>
-);
 
 export function AutoTextarea({
   value,
@@ -98,7 +81,7 @@ export function CaptureCard({
   onSaveTranscript,
   onUseTranscript,
   onRetryTranscription,
-  onPromoteToTask,
+  onSetRemind,
 }: {
   c: CaptureBody;
   onReclassify: (id: string, v: CaptureUpdateInputBodyClassifiedAs) => void;
@@ -107,7 +90,7 @@ export function CaptureCard({
   onSaveTranscript: (id: string, transcript: string) => void;
   onUseTranscript: (id: string, mode: "append" | "replace") => void;
   onRetryTranscription: (id: string) => void;
-  onPromoteToTask: (rawText: string, captureId: string) => void;
+  onSetRemind: (id: string, at: string | null) => void;
 }): React.JSX.Element {
   const { t } = useTranslation("captures");
   const { t: tc } = useTranslation("common");
@@ -314,21 +297,12 @@ export function CaptureCard({
           </>
         ) : (
           <>
+            <RemindControl
+              remindAt={c.remindAt}
+              onSet={(at) => onSetRemind(c.id, at)}
+            />
             {c.createdAt && (
               <span className="ch-meta">{fmtShortDateTime(c.createdAt)}</span>
-            )}
-            {c.classifiedAs === "task" && c.rawText && (
-              <button
-                className="ch-btn ch-btn-ai ch-btn-sm"
-                onClick={() => onPromoteToTask(c.rawText!, c.id)}
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: 6,
-                }}
-              >
-                <PromoteIcon /> {t("promoteToTask")}
-              </button>
             )}
             <DropdownMenu.Root>
               <DropdownMenu.Trigger asChild>

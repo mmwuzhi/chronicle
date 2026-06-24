@@ -21,37 +21,19 @@ const CaptureIcon = () => (
     />
   </svg>
 );
-const TaskIcon = () => (
-  <svg fill="none" stroke="currentColor" strokeWidth={1.75} viewBox="0 0 24 24">
-    <path
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"
-    />
-  </svg>
-);
-const ProjectIcon = () => (
-  <svg fill="none" stroke="currentColor" strokeWidth={1.75} viewBox="0 0 24 24">
-    <path
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      d="M2.25 12.75V12A2.25 2.25 0 0 1 4.5 9.75h15A2.25 2.25 0 0 1 21.75 12v.75m-8.69-6.44-2.12-2.12a1.5 1.5 0 0 0-1.061-.44H4.5A2.25 2.25 0 0 0 2.25 6v12a2.25 2.25 0 0 0 2.25 2.25h15A2.25 2.25 0 0 0 21.75 18V9a2.25 2.25 0 0 0-2.25-2.25h-5.379a1.5 1.5 0 0 1-1.06-.44Z"
-    />
-  </svg>
-);
-const ReportIcon = () => (
-  <svg fill="none" stroke="currentColor" strokeWidth={1.75} viewBox="0 0 24 24">
-    <path
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 0 1 3 19.875v-6.75ZM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V8.625ZM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V4.125Z"
-    />
-  </svg>
-);
 const SearchIcon = () => (
   <svg fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
     <circle cx="11" cy="11" r="8" />
     <path d="m21 21-4.35-4.35" />
+  </svg>
+);
+const AskIcon = () => (
+  <svg fill="none" stroke="currentColor" strokeWidth={1.75} viewBox="0 0 24 24">
+    <path
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      d="M8.625 9.75a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm0 0H8.25m4.125 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm0 0H12m4.125 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm0 0h-.375m-13.5 3.01c0 1.6 1.123 2.994 2.707 3.227 1.087.16 2.185.283 3.293.369V21l4.184-4.183a1.14 1.14 0 0 1 .778-.332 48.294 48.294 0 0 0 5.83-.498c1.585-.233 2.708-1.626 2.708-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0 0 12 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018Z"
+    />
   </svg>
 );
 const SettingsIcon = () => (
@@ -76,12 +58,19 @@ const SettingsIcon = () => (
   </svg>
 );
 
+// The Ask page depends on the RAG sidecar, which isn't part of the deployed
+// (Fly) image yet — only the host-run local-first setup has it. Show the tab in
+// dev, or when a deployment that runs the sidecar opts in via VITE_ASK_ENABLED,
+// so production users never see a tab that only 503s.
+const ASK_ENABLED =
+  import.meta.env.DEV || import.meta.env.VITE_ASK_ENABLED === "true";
+
 const tabs = [
   { to: "/" as const, labelKey: "nav.home", icon: <HomeIcon />, exact: true },
   { to: "/captures" as const, labelKey: "nav.captures", icon: <CaptureIcon /> },
-  { to: "/tasks" as const, labelKey: "nav.tasks", icon: <TaskIcon /> },
-  { to: "/projects" as const, labelKey: "nav.projects", icon: <ProjectIcon /> },
-  { to: "/reports" as const, labelKey: "nav.reports", icon: <ReportIcon /> },
+  ...(ASK_ENABLED
+    ? [{ to: "/ask" as const, labelKey: "nav.ask", icon: <AskIcon /> }]
+    : []),
 ];
 
 export function Nav() {

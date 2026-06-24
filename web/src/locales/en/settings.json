@@ -66,6 +66,41 @@
       "invalidCode": "Invalid code. Please try again."
     }
   },
+  "integrations": {
+    "title": "Integrations",
+    "webhooks": {
+      "title": "Webhooks",
+      "description": "When a capture matches a rule (keyword or semantic), POST a templated payload to an external URL.",
+      "empty": "No webhooks yet.",
+      "addTitle": "New webhook",
+      "name": "Name",
+      "targetUrl": "Target URL",
+      "keywords": "Keywords (comma-separated, optional)",
+      "semanticQuery": "Semantic query (optional)",
+      "payloadTemplate": "Payload template, e.g. with [capture.text] placeholders",
+      "add": "Add",
+      "enable": "Enable",
+      "disable": "Disable"
+    },
+    "captureTokens": {
+      "title": "Quick capture tokens",
+      "description": "Long-lived tokens for headless quick capture, like the iOS Action Button shortcut. A token can only create captures — it can't read, edit, or delete anything.",
+      "empty": "No tokens yet.",
+      "addTitle": "New token",
+      "namePlaceholder": "Name, e.g. iPhone Action Button",
+      "generate": "Generate token",
+      "revealTitle": "Copy this token now — it won't be shown again.",
+      "revealHint": "Use it in your iOS Shortcut's Authorization header as: Bearer <token>",
+      "docHint": "See the iOS Shortcut setup guide in the docs.",
+      "copy": "Copy",
+      "copied": "Copied",
+      "done": "Done",
+      "created": "Created {{date}}",
+      "lastUsed": "last used {{date}}",
+      "neverUsed": "never used",
+      "revoke": "Revoke"
+    }
+  },
   "danger": {
     "title": "Danger zone",
     "deleteAccount": "Delete account",
