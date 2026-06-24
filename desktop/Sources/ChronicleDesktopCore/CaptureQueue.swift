@@ -11,9 +11,11 @@ public final class CaptureQueue {
         decoder.dateDecodingStrategy = .iso8601
     }
 
-    public func append(_ payload: CapturePayload, queuedAt: Date = Date()) throws {
+    public func append(_ payload: CapturePayload, queuedAt: Date = Date(),
+                       reminderLocalId: String? = nil) throws {
         var captures = try load()
-        captures.append(QueuedCapture(payload: payload, queuedAt: queuedAt))
+        captures.append(QueuedCapture(
+            payload: payload, queuedAt: queuedAt, reminderLocalId: reminderLocalId))
         try save(captures)
     }
 
@@ -35,19 +37,19 @@ public final class CaptureQueue {
     public func retry(using sender: CaptureSending) async throws -> RetryResult {
         let captures = try load()
         var remaining: [QueuedCapture] = []
-        var sent = 0
+        var uploaded: [UploadedCapture] = []
 
         for capture in captures {
             do {
-                try await sender.send(capture.payload)
-                sent += 1
+                let id = try await sender.send(capture.payload)
+                uploaded.append(UploadedCapture(id: id, reminderLocalId: capture.reminderLocalId))
             } catch {
                 remaining.append(capture)
             }
         }
 
         try save(remaining)
-        return RetryResult(sent: sent, remaining: remaining.count)
+        return RetryResult(sent: uploaded.count, remaining: remaining.count, uploaded: uploaded)
     }
 
     private func save(_ captures: [QueuedCapture]) throws {
@@ -63,9 +65,23 @@ public final class CaptureQueue {
 public struct RetryResult: Equatable {
     public var sent: Int
     public var remaining: Int
+    public var uploaded: [UploadedCapture]
 
-    public init(sent: Int, remaining: Int) {
+    public init(sent: Int, remaining: Int, uploaded: [UploadedCapture] = []) {
         self.sent = sent
         self.remaining = remaining
+        self.uploaded = uploaded
+    }
+}
+
+// One successfully uploaded queued capture: its new server id, plus the local
+// reminder id (if any) that should now be re-keyed to that capture id.
+public struct UploadedCapture: Equatable {
+    public let id: String
+    public let reminderLocalId: String?
+
+    public init(id: String, reminderLocalId: String?) {
+        self.id = id
+        self.reminderLocalId = reminderLocalId
     }
 }

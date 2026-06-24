@@ -98,12 +98,123 @@ func retryQueueRemovesSentCaptures() async throws {
     #expect(result.sent == 1)
     #expect(result.remaining == 1)
     #expect(try queue.load().map(\.payload.rawText) == ["Second"])
+    #expect(result.uploaded == [UploadedCapture(id: "server-First", reminderLocalId: nil)])
+}
+
+@Test
+func localCaptureStorePersistsPendingCaptureAndReminder() throws {
+    let store = LocalCaptureStore(fileURL: temporaryDatabaseURL())
+    let remindAt = Date(timeIntervalSince1970: 2_000)
+    let createdAt = Date(timeIntervalSince1970: 1_800)
+
+    let record = try store.create(
+        CapturePayload(rawText: "Local first", remindAt: remindAt),
+        now: createdAt,
+    )
+
+    #expect(record.payload.rawText == "Local first")
+    #expect(record.payload.remindAt == remindAt)
+    #expect(record.serverId == nil)
+    #expect(record.notificationId == "rmd-local-\(record.id)")
+
+    let pending = try store.pendingSync()
+    #expect(pending.map(\.id) == [record.id])
+
+    let reminders = try store.upcomingReminders(now: Date(timeIntervalSince1970: 1_900))
+    #expect(reminders.map(\.id) == [record.id])
+}
+
+@Test
+func localCaptureStoreMarksCaptureSynced() throws {
+    let store = LocalCaptureStore(fileURL: temporaryDatabaseURL())
+    let record = try store.create(CapturePayload(rawText: "Sync me"))
+
+    try store.markSynced(localId: record.id, serverId: "server-1", syncedAt: Date(timeIntervalSince1970: 2_100))
+
+    #expect(try store.pendingSync().isEmpty)
+    let found = try store.find(serverId: "server-1")
+    let synced = try #require(found)
+    #expect(synced.id == record.id)
+    #expect(synced.isSynced)
+}
+
+@Test
+func localCaptureStoreUpsertsServerReminderWithoutDuplicating() throws {
+    let store = LocalCaptureStore(fileURL: temporaryDatabaseURL())
+    let remindAt = Date(timeIntervalSince1970: 3_000)
+
+    let first = try store.upsertServerReminder(serverId: "server-2", text: "From web", remindAt: remindAt)
+    let second = try store.upsertServerReminder(
+        serverId: "server-2",
+        text: "Updated from web",
+        remindAt: remindAt.addingTimeInterval(60),
+    )
+
+    #expect(first.id == second.id)
+    #expect(second.payload.rawText == "Updated from web")
+    #expect(try store.count() == 1)
+}
+
+@Test
+func localCaptureStoreMarksDueServerReminderNotifiedOnce() throws {
+    let store = LocalCaptureStore(fileURL: temporaryDatabaseURL())
+    let remindAt = Date(timeIntervalSince1970: 3_000)
+
+    let first = try store.upsertDueServerReminder(
+        serverId: "server-due",
+        text: "Already due",
+        remindAt: remindAt,
+        now: Date(timeIntervalSince1970: 3_100),
+    )
+    let second = try store.upsertDueServerReminder(
+        serverId: "server-due",
+        text: "Already due",
+        remindAt: remindAt,
+        now: Date(timeIntervalSince1970: 3_200),
+    )
+
+    #expect(first != nil)
+    #expect(first?.notifiedAt == Date(timeIntervalSince1970: 3_100))
+    #expect(second == nil)
+}
+
+@Test
+func localCaptureStoreDoesNotReNotifyLocallyScheduledReminderAfterSync() throws {
+    // Regression: a reminder created locally schedules a calendar trigger (which
+    // ReminderNotifier marks notified) and then syncs to the server. When the
+    // reminder later shows up in the server `due` list, the due path must NOT post
+    // a second notification — the local trigger already covers delivery.
+    let store = LocalCaptureStore(fileURL: temporaryDatabaseURL())
+    var payload = CapturePayload(rawText: "Local reminder")
+    payload.remindAt = Date(timeIntervalSince1970: 3_000)
+    let record = try store.create(payload)
+
+    // Calendar trigger scheduled → marked notified, then synced to the server.
+    try store.markNotified(localId: record.id, now: Date(timeIntervalSince1970: 2_900))
+    try store.markSynced(localId: record.id, serverId: "server-local-1")
+
+    // Server reports the same reminder due on a later launch.
+    let dueAgain = try store.upsertDueServerReminder(
+        serverId: "server-local-1",
+        text: "Local reminder",
+        remindAt: Date(timeIntervalSince1970: 3_000),
+        now: Date(timeIntervalSince1970: 3_100),
+    )
+
+    #expect(dueAgain == nil)         // no duplicate notification
+    #expect(try store.count() == 1)  // still the same single row
 }
 
 private func temporaryQueueURL() -> URL {
     FileManager.default.temporaryDirectory
         .appending(path: UUID().uuidString)
         .appending(path: "queue.json")
+}
+
+private func temporaryDatabaseURL() -> URL {
+    FileManager.default.temporaryDirectory
+        .appending(path: UUID().uuidString)
+        .appending(path: "chronicle.sqlite3")
 }
 
 private final class StubSender: CaptureSending {
@@ -113,9 +224,10 @@ private final class StubSender: CaptureSending {
         self.failingTexts = failingTexts
     }
 
-    func send(_ payload: CapturePayload) async throws {
+    func send(_ payload: CapturePayload) async throws -> String {
         if failingTexts.contains(payload.rawText) {
             throw CaptureAPIError.httpStatus(500)
         }
+        return "server-\(payload.rawText)"
     }
 }

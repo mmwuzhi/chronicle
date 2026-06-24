@@ -22,6 +22,14 @@ public struct LoginResponse: Codable, Equatable {
     }
 }
 
+public struct RefreshResponse: Codable, Equatable {
+    public var accessToken: String?
+
+    public init(accessToken: String? = nil) {
+        self.accessToken = accessToken
+    }
+}
+
 public final class AuthAPIClient {
     private let apiURL: URL
     private let session: URLSession
@@ -49,6 +57,66 @@ public final class AuthAPIClient {
             throw AuthAPIError.httpStatus(httpResponse.statusCode)
         }
         return try JSONDecoder().decode(LoginResponse.self, from: data)
+    }
+
+    public func makeRefreshRequest() -> URLRequest {
+        var request = URLRequest(url: apiURL.appending(path: "auth/refresh"))
+        request.httpMethod = "POST"
+        // The refresh token rides as an httpOnly cookie set at login; URLSession's
+        // shared cookie store persists it (30-day TTL) and attaches it here, so the
+        // desktop never has to hold the refresh token itself.
+        request.httpShouldHandleCookies = true
+        return request
+    }
+
+    // Exchange the stored refresh cookie for a fresh short-lived access token.
+    // Throws httpStatus(401) when there is no valid refresh cookie (signed out).
+    public func refresh() async throws -> String {
+        let request = makeRefreshRequest()
+        let (data, response) = try await session.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw AuthAPIError.invalidResponse
+        }
+        guard (200..<300).contains(httpResponse.statusCode) else {
+            throw AuthAPIError.httpStatus(httpResponse.statusCode)
+        }
+        let decoded = try JSONDecoder().decode(RefreshResponse.self, from: data)
+        guard let token = decoded.accessToken, !token.isEmpty else {
+            throw AuthAPIError.missingAccessToken
+        }
+        return token
+    }
+
+    public func makeLogoutRequest() -> URLRequest {
+        var request = URLRequest(url: apiURL.appending(path: "auth/logout"))
+        request.httpMethod = "POST"
+        // /auth/logout reads the refresh token from its httpOnly cookie (not an
+        // Authorization header), so the cookie must ride along to be revoked.
+        request.httpShouldHandleCookies = true
+        return request
+    }
+
+    // Best-effort server-side sign-out: revoke the refresh token and clear its
+    // cookie. Throws on a non-2xx so callers can decide to ignore failures.
+    // `cookies` lets a caller that has already cleared the shared cookie store
+    // (so a crash mid-logout can't leave a re-authenticating cookie behind) still
+    // present the captured refresh cookie explicitly; empty falls back to the
+    // shared store, the original behavior.
+    public func logout(cookies: [HTTPCookie] = []) async throws {
+        var request = makeLogoutRequest()
+        if !cookies.isEmpty {
+            request.httpShouldHandleCookies = false
+            for (field, value) in HTTPCookie.requestHeaderFields(with: cookies) {
+                request.setValue(value, forHTTPHeaderField: field)
+            }
+        }
+        let (_, response) = try await session.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw AuthAPIError.invalidResponse
+        }
+        guard (200..<300).contains(httpResponse.statusCode) else {
+            throw AuthAPIError.httpStatus(httpResponse.statusCode)
+        }
     }
 }
 

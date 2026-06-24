@@ -1,38 +1,51 @@
 import AppKit
+import SwiftUI
+import ChronicleDesktopCore
 
 final class QuickCapturePanel: NSPanel {
-    override var canBecomeKey: Bool {
-        true
-    }
-
-    override var canBecomeMain: Bool {
-        true
-    }
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { true }
 }
 
-final class QuickCapturePanelController: NSWindowController, NSTextFieldDelegate, NSWindowDelegate {
-    private let textField = NSTextField()
-    private let onSubmit: (String) -> Void
+@MainActor
+final class QuickCapturePanelController: NSWindowController, NSWindowDelegate {
+    private let clients: CaptureClients
+    private let onSubmit: (String, Date?) -> Void
+    private var hostingView: NSHostingView<PanelContentView>!
 
-    init(onSubmit: @escaping (String) -> Void) {
+    init(clients: CaptureClients, onSubmit: @escaping (String, Date?) -> Void) {
+        self.clients = clients
         self.onSubmit = onSubmit
 
         let panel = QuickCapturePanel(
-            contentRect: NSRect(x: 0, y: 0, width: 520, height: 88),
+            contentRect: NSRect(x: 0, y: 0, width: 540, height: 120),
             styleMask: [.borderless],
             backing: .buffered,
             defer: false,
         )
         panel.backgroundColor = .clear
+        panel.isOpaque = false
         panel.hasShadow = true
         panel.isFloatingPanel = true
         panel.hidesOnDeactivate = true
-        panel.isOpaque = false
         panel.level = .floating
+        // Appear on the active Space (and over a fullscreen app), so the global
+        // hotkey opens the panel where the user is, not on a stale Space.
+        panel.collectionBehavior.insert(.moveToActiveSpace)
+        panel.collectionBehavior.insert(.fullScreenAuxiliary)
 
         super.init(window: panel)
         panel.delegate = self
-        buildContent()
+
+        let root = PanelContentView(
+            clients: clients,
+            onSubmit: { [weak self] text, remindAt in self?.onSubmit(text, remindAt) },
+            onClose: { [weak self] in self?.hide() },
+            onHeightChange: { [weak self] height in self?.resize(to: height) },
+        )
+        hostingView = NSHostingView(rootView: root)
+        hostingView.translatesAutoresizingMaskIntoConstraints = false
+        panel.contentView = hostingView
     }
 
     @available(*, unavailable)
@@ -41,68 +54,44 @@ final class QuickCapturePanelController: NSWindowController, NSTextFieldDelegate
     }
 
     func show() {
-        guard let window else {
-            return
+        guard let window else { return }
+        // Open on the display the cursor is on, not wherever the panel last showed
+        // (window.center() read window.screen, so it stuck to the previous screen).
+        // x: centered on that screen. y: TOP edge anchored above center, so the
+        // panel opens in the same place and the results area grows downward.
+        if let screen = ScreenPlacement.active() ?? window.screen {
+            var frame = window.frame
+            let vf = screen.visibleFrame
+            frame.origin.x = PanelLayout.centeredOrigin(in: vf, size: frame.size).x
+            frame.origin.y = PanelLayout.originY(visibleFrame: vf, height: frame.size.height)
+            window.setFrame(frame, display: false)
         }
-        textField.stringValue = ""
-        window.center()
         window.makeKeyAndOrderFront(nil)
-        window.makeFirstResponder(textField)
+        NSApp.activate(ignoringOtherApps: true)
+        NotificationCenter.default.post(name: .chroniclePanelShown, object: nil)
     }
 
-    override func cancelOperation(_ sender: Any?) {
+    private func hide() {
         window?.orderOut(nil)
     }
 
     func windowDidResignKey(_ notification: Notification) {
-        window?.orderOut(nil)
+        hide()
     }
 
-    private func buildContent() {
-        guard let contentView = window?.contentView else {
-            return
+    private func resize(to height: CGFloat) {
+        guard let window, height > 0 else { return }
+        var frame = window.frame
+        frame.size.height = height
+        frame.size.width = 540
+        // Re-anchor to the canonical top edge rather than the current maxY, so the
+        // panel grows downward from the same line it opened at — same source of
+        // truth as show().
+        if let screen = window.screen ?? NSScreen.main {
+            frame.origin.y = PanelLayout.originY(visibleFrame: screen.visibleFrame, height: height)
+        } else {
+            frame.origin.y = frame.maxY - height
         }
-        contentView.wantsLayer = true
-        contentView.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
-        contentView.layer?.cornerRadius = 18
-        contentView.layer?.masksToBounds = true
-
-        let stack = NSStackView()
-        stack.orientation = .vertical
-        stack.spacing = 12
-        stack.translatesAutoresizingMaskIntoConstraints = false
-
-        textField.placeholderString = "Capture a thought..."
-        textField.font = .systemFont(ofSize: 16)
-        textField.delegate = self
-        textField.focusRingType = .none
-        textField.wantsLayer = true
-        textField.layer?.cornerRadius = 12
-
-        let hint = NSTextField(labelWithString: "Press Return to save. Press Esc to cancel.")
-        hint.textColor = .secondaryLabelColor
-        hint.font = .systemFont(ofSize: 12)
-
-        stack.addArrangedSubview(textField)
-        stack.addArrangedSubview(hint)
-        contentView.addSubview(stack)
-
-        NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 22),
-            stack.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -22),
-            stack.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
-            textField.heightAnchor.constraint(equalToConstant: 38),
-        ])
-    }
-
-    func controlTextDidEndEditing(_ notification: Notification) {
-        guard let movement = notification.userInfo?["NSTextMovement"] as? Int,
-              movement == NSReturnTextMovement
-        else {
-            return
-        }
-        let value = textField.stringValue
-        window?.orderOut(nil)
-        onSubmit(value)
+        window.setFrame(frame, display: true, animate: false)
     }
 }

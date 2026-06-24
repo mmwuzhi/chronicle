@@ -10,18 +10,27 @@ let package = Package(
         .library(name: "ChronicleDesktopCore", targets: ["ChronicleDesktopCore"]),
     ],
     targets: [
-        .target(name: "ChronicleDesktopCore"),
+        .target(
+            name: "ChronicleDesktopCore",
+            linkerSettings: [.linkedLibrary("sqlite3")],
+        ),
         .executableTarget(
             name: "ChronicleDesktop",
             dependencies: ["ChronicleDesktopCore"],
             linkerSettings: [
                 .linkedFramework("AppKit"),
                 .linkedFramework("Carbon"),
+                .linkedFramework("UserNotifications"),
             ],
         ),
         .testTarget(
             name: "ChronicleDesktopCoreTests",
             dependencies: ["ChronicleDesktopCore"],
+        ),
+        .testTarget(
+            name: "ChronicleDesktopE2ETests",
+            dependencies: ["ChronicleDesktopCore"],
+            linkerSettings: [.linkedFramework("Network")],
         ),
     ],
 )

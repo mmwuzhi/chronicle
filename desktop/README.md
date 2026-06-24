@@ -23,14 +23,16 @@ The desktop app stores the returned access token locally. It uses `http://localh
 - Esc or focus another window → close Quick Capture
 - Menu bar → Retry Queue
 
-If the API is unavailable or the token is missing, captures are stored in:
+If the API is unavailable or the token is missing, captures are stored locally in SQLite and retried later:
 
 ```text
-~/Library/Application Support/Chronicle/quick-capture-queue.json
+~/Library/Application Support/Chronicle/chronicle-local.sqlite3
 ```
 
 ## Tests
 
 ```bash
 swift test
+swift build
+bash scripts/e2e.sh
 ```

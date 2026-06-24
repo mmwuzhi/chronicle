@@ -6,8 +6,12 @@ final class ShortcutRecorderField: NSTextField {
     private(set) var shortcut: ShortcutSpec {
         didSet {
             stringValue = ShortcutParser.displayString(for: shortcut)
+            onChange?(shortcut)
         }
     }
+
+    /// Invoked whenever the recorded shortcut changes (Settings persists it).
+    var onChange: ((ShortcutSpec) -> Void)?
 
     private var previousFlags: NSEvent.ModifierFlags = []
     private var lastControlDownAt: Date?
@@ -19,8 +23,14 @@ final class ShortcutRecorderField: NSTextField {
         placeholderString = "Press shortcut"
         isEditable = false
         isSelectable = false
-        focusRingType = .default
-        bezelStyle = .roundedBezel
+        // Chrome-free to match WorkspaceField: the SwiftUI wrapper draws the
+        // filled rounded background, so the field itself stays transparent
+        // instead of the system rounded bezel (which clashed with the other
+        // settings inputs).
+        isBezeled = false
+        drawsBackground = false
+        focusRingType = .none
+        font = .systemFont(ofSize: 13)
     }
 
     @available(*, unavailable)
