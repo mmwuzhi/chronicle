@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as VerifyEmailRouteImport } from './routes/verify-email'
+import { Route as TrashRouteImport } from './routes/trash'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as RegisterRouteImport } from './routes/register'
@@ -25,6 +26,11 @@ import { Route as AuthCallbackRouteImport } from './routes/auth.callback'
 const VerifyEmailRoute = VerifyEmailRouteImport.update({
   id: '/verify-email',
   path: '/verify-email',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TrashRoute = TrashRouteImport.update({
+  id: '/trash',
+  path: '/trash',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SettingsRoute = SettingsRouteImport.update({
@@ -92,6 +98,7 @@ export interface FileRoutesByFullPath {
   '/register': typeof RegisterRoute
   '/reset-password': typeof ResetPasswordRoute
   '/settings': typeof SettingsRoute
+  '/trash': typeof TrashRoute
   '/verify-email': typeof VerifyEmailRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/auth/mfa': typeof AuthMfaRoute
@@ -106,6 +113,7 @@ export interface FileRoutesByTo {
   '/register': typeof RegisterRoute
   '/reset-password': typeof ResetPasswordRoute
   '/settings': typeof SettingsRoute
+  '/trash': typeof TrashRoute
   '/verify-email': typeof VerifyEmailRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/auth/mfa': typeof AuthMfaRoute
@@ -121,6 +129,7 @@ export interface FileRoutesById {
   '/register': typeof RegisterRoute
   '/reset-password': typeof ResetPasswordRoute
   '/settings': typeof SettingsRoute
+  '/trash': typeof TrashRoute
   '/verify-email': typeof VerifyEmailRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/auth/mfa': typeof AuthMfaRoute
@@ -137,6 +146,7 @@ export interface FileRouteTypes {
     | '/register'
     | '/reset-password'
     | '/settings'
+    | '/trash'
     | '/verify-email'
     | '/auth/callback'
     | '/auth/mfa'
@@ -151,6 +161,7 @@ export interface FileRouteTypes {
     | '/register'
     | '/reset-password'
     | '/settings'
+    | '/trash'
     | '/verify-email'
     | '/auth/callback'
     | '/auth/mfa'
@@ -165,6 +176,7 @@ export interface FileRouteTypes {
     | '/register'
     | '/reset-password'
     | '/settings'
+    | '/trash'
     | '/verify-email'
     | '/auth/callback'
     | '/auth/mfa'
@@ -180,6 +192,7 @@ export interface RootRouteChildren {
   RegisterRoute: typeof RegisterRoute
   ResetPasswordRoute: typeof ResetPasswordRoute
   SettingsRoute: typeof SettingsRoute
+  TrashRoute: typeof TrashRoute
   VerifyEmailRoute: typeof VerifyEmailRoute
   AuthCallbackRoute: typeof AuthCallbackRoute
   AuthMfaRoute: typeof AuthMfaRoute
@@ -193,6 +206,13 @@ declare module '@tanstack/react-router' {
       path: '/verify-email'
       fullPath: '/verify-email'
       preLoaderRoute: typeof VerifyEmailRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/trash': {
+      id: '/trash'
+      path: '/trash'
+      fullPath: '/trash'
+      preLoaderRoute: typeof TrashRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/settings': {
@@ -284,6 +304,7 @@ const rootRouteChildren: RootRouteChildren = {
   RegisterRoute: RegisterRoute,
   ResetPasswordRoute: ResetPasswordRoute,
   SettingsRoute: SettingsRoute,
+  TrashRoute: TrashRoute,
   VerifyEmailRoute: VerifyEmailRoute,
   AuthCallbackRoute: AuthCallbackRoute,
   AuthMfaRoute: AuthMfaRoute,

@@ -3,6 +3,7 @@ import { useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { useGetCaptureContext } from "../api";
 import { CaptureContextTimeline } from "../components/CaptureContextTimeline";
+import { CaptureRelated } from "../components/CaptureRelated";
 import { Nav } from "../components/nav";
 
 export const Route = createFileRoute("/captures_/context")({
@@ -49,6 +50,7 @@ function CaptureContext() {
             hasLater={query.data.hasLater}
           />
         )}
+        {anchorId && <CaptureRelated anchorId={anchorId} />}
       </main>
     </>
   );

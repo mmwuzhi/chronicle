@@ -88,6 +88,8 @@ export interface CaptureBody {
   audioDurationSec: number | null;
   classifiedAs: string;
   createdAt: string;
+  /** @nullable */
+  deletedAt: string | null;
   id: string;
   mediaType: string;
   /** @nullable */
@@ -147,6 +149,13 @@ export interface CaptureCreateInputBody {
   remindAt?: string;
   /** Capture source, for example web or desktop_quick_capture */
   source?: string;
+}
+
+export interface CaptureLinkCreateInputBody {
+  /** A URL to the JSON Schema for this object. */
+  readonly $schema?: string;
+  /** The other capture to link this one to */
+  targetId: string;
 }
 
 export interface CapturePageBody {
@@ -402,6 +411,14 @@ export interface RegisterOutputBody {
   userId: string;
 }
 
+export interface RelatedCapture {
+  content: string;
+  createdAt: string;
+  id: string;
+  modality: string;
+  score: number;
+}
+
 export interface ResetPasswordInputBody {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
@@ -575,6 +592,13 @@ limit?: number;
  * Include captures with a future reminder (hidden by default until due); set true for a reminder-management view
  */
 includeReminded?: boolean;
+};
+
+export type RelatedCapturesParams = {
+/**
+ * Max suggestions to return
+ */
+limit?: number;
 };
 
 export type FindParams = {
@@ -2596,6 +2620,99 @@ export function useListCapturePage<TData = Awaited<ReturnType<typeof listCapture
 
 
 /**
+ * @summary List soft-deleted captures
+ */
+export const listTrashedCaptures = (
+
+ signal?: AbortSignal
+) => {
+
+
+      return api<CaptureBody[] | null>(
+      {url: `/captures/trash`, method: 'GET', signal
+    },
+      );
+    }
+
+
+
+
+export const getListTrashedCapturesQueryKey = () => {
+    return [
+    `/captures/trash`
+    ] as const;
+    }
+
+
+export const getListTrashedCapturesQueryOptions = <TData = Awaited<ReturnType<typeof listTrashedCaptures>>, TError = ErrorModel>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listTrashedCaptures>>, TError, TData>>, }
+) => {
+
+const {query: queryOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListTrashedCapturesQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listTrashedCaptures>>> = ({ signal }) => listTrashedCaptures(signal);
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listTrashedCaptures>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListTrashedCapturesQueryResult = NonNullable<Awaited<ReturnType<typeof listTrashedCaptures>>>
+export type ListTrashedCapturesQueryError = ErrorModel
+
+
+export function useListTrashedCaptures<TData = Awaited<ReturnType<typeof listTrashedCaptures>>, TError = ErrorModel>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listTrashedCaptures>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listTrashedCaptures>>,
+          TError,
+          Awaited<ReturnType<typeof listTrashedCaptures>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListTrashedCaptures<TData = Awaited<ReturnType<typeof listTrashedCaptures>>, TError = ErrorModel>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listTrashedCaptures>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listTrashedCaptures>>,
+          TError,
+          Awaited<ReturnType<typeof listTrashedCaptures>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListTrashedCaptures<TData = Awaited<ReturnType<typeof listTrashedCaptures>>, TError = ErrorModel>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listTrashedCaptures>>, TError, TData>>, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary List soft-deleted captures
+ */
+
+export function useListTrashedCaptures<TData = Awaited<ReturnType<typeof listTrashedCaptures>>, TError = ErrorModel>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listTrashedCaptures>>, TError, TData>>, }
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getListTrashedCapturesQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+/**
  * @summary Delete a capture
  */
 export const deleteCapture = (
@@ -2723,6 +2840,328 @@ export const useUpdateCapture = <TError = ErrorModel,
     }
 
 /**
+ * @summary List captures explicitly linked to this one
+ */
+export const listCaptureLinks = (
+    id: string,
+ signal?: AbortSignal
+) => {
+
+
+      return api<CaptureBody[] | null>(
+      {url: `/captures/${id}/links`, method: 'GET', signal
+    },
+      );
+    }
+
+
+
+
+export const getListCaptureLinksQueryKey = (id: string,) => {
+    return [
+    `/captures/${id}/links`
+    ] as const;
+    }
+
+
+export const getListCaptureLinksQueryOptions = <TData = Awaited<ReturnType<typeof listCaptureLinks>>, TError = ErrorModel>(id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listCaptureLinks>>, TError, TData>>, }
+) => {
+
+const {query: queryOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListCaptureLinksQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listCaptureLinks>>> = ({ signal }) => listCaptureLinks(id, signal);
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listCaptureLinks>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListCaptureLinksQueryResult = NonNullable<Awaited<ReturnType<typeof listCaptureLinks>>>
+export type ListCaptureLinksQueryError = ErrorModel
+
+
+export function useListCaptureLinks<TData = Awaited<ReturnType<typeof listCaptureLinks>>, TError = ErrorModel>(
+ id: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listCaptureLinks>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listCaptureLinks>>,
+          TError,
+          Awaited<ReturnType<typeof listCaptureLinks>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListCaptureLinks<TData = Awaited<ReturnType<typeof listCaptureLinks>>, TError = ErrorModel>(
+ id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listCaptureLinks>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listCaptureLinks>>,
+          TError,
+          Awaited<ReturnType<typeof listCaptureLinks>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListCaptureLinks<TData = Awaited<ReturnType<typeof listCaptureLinks>>, TError = ErrorModel>(
+ id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listCaptureLinks>>, TError, TData>>, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary List captures explicitly linked to this one
+ */
+
+export function useListCaptureLinks<TData = Awaited<ReturnType<typeof listCaptureLinks>>, TError = ErrorModel>(
+ id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listCaptureLinks>>, TError, TData>>, }
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getListCaptureLinksQueryOptions(id,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+/**
+ * @summary Link this capture to another
+ */
+export const addCaptureLink = (
+    id: string,
+    captureLinkCreateInputBody: NonReadonly<CaptureLinkCreateInputBody>,
+ signal?: AbortSignal
+) => {
+
+
+      return api<void>(
+      {url: `/captures/${id}/links`, method: 'POST',
+      headers: {'Content-Type': 'application/json', },
+      data: captureLinkCreateInputBody, signal
+    },
+      );
+    }
+
+
+
+export const getAddCaptureLinkMutationOptions = <TError = ErrorModel,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof addCaptureLink>>, TError,{id: string;data: NonReadonly<CaptureLinkCreateInputBody>}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof addCaptureLink>>, TError,{id: string;data: NonReadonly<CaptureLinkCreateInputBody>}, TContext> => {
+
+const mutationKey = ['addCaptureLink'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof addCaptureLink>>, {id: string;data: NonReadonly<CaptureLinkCreateInputBody>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  addCaptureLink(id,data,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AddCaptureLinkMutationResult = NonNullable<Awaited<ReturnType<typeof addCaptureLink>>>
+    export type AddCaptureLinkMutationBody = NonReadonly<CaptureLinkCreateInputBody>
+    export type AddCaptureLinkMutationError = ErrorModel
+
+    /**
+ * @summary Link this capture to another
+ */
+export const useAddCaptureLink = <TError = ErrorModel,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof addCaptureLink>>, TError,{id: string;data: NonReadonly<CaptureLinkCreateInputBody>}, TContext>, }
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof addCaptureLink>>,
+        TError,
+        {id: string;data: NonReadonly<CaptureLinkCreateInputBody>},
+        TContext
+      > => {
+      return useMutation(getAddCaptureLinkMutationOptions(options), queryClient);
+    }
+
+/**
+ * @summary Remove a link between two captures
+ */
+export const removeCaptureLink = (
+    id: string,
+    targetId: string,
+ signal?: AbortSignal
+) => {
+
+
+      return api<void>(
+      {url: `/captures/${id}/links/${targetId}`, method: 'DELETE', signal
+    },
+      );
+    }
+
+
+
+export const getRemoveCaptureLinkMutationOptions = <TError = ErrorModel,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof removeCaptureLink>>, TError,{id: string;targetId: string}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof removeCaptureLink>>, TError,{id: string;targetId: string}, TContext> => {
+
+const mutationKey = ['removeCaptureLink'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof removeCaptureLink>>, {id: string;targetId: string}> = (props) => {
+          const {id,targetId} = props ?? {};
+
+          return  removeCaptureLink(id,targetId,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RemoveCaptureLinkMutationResult = NonNullable<Awaited<ReturnType<typeof removeCaptureLink>>>
+
+    export type RemoveCaptureLinkMutationError = ErrorModel
+
+    /**
+ * @summary Remove a link between two captures
+ */
+export const useRemoveCaptureLink = <TError = ErrorModel,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof removeCaptureLink>>, TError,{id: string;targetId: string}, TContext>, }
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof removeCaptureLink>>,
+        TError,
+        {id: string;targetId: string},
+        TContext
+      > => {
+      return useMutation(getRemoveCaptureLinkMutationOptions(options), queryClient);
+    }
+
+/**
+ * @summary Semantic suggestions related to this capture
+ */
+export const relatedCaptures = (
+    id: string,
+    params?: RelatedCapturesParams,
+ signal?: AbortSignal
+) => {
+
+
+      return api<RelatedCapture[] | null>(
+      {url: `/captures/${id}/related`, method: 'GET',
+        params, signal
+    },
+      );
+    }
+
+
+
+
+export const getRelatedCapturesQueryKey = (id: string,
+    params?: RelatedCapturesParams,) => {
+    return [
+    `/captures/${id}/related`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getRelatedCapturesQueryOptions = <TData = Awaited<ReturnType<typeof relatedCaptures>>, TError = ErrorModel>(id: string,
+    params?: RelatedCapturesParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof relatedCaptures>>, TError, TData>>, }
+) => {
+
+const {query: queryOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getRelatedCapturesQueryKey(id,params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof relatedCaptures>>> = ({ signal }) => relatedCaptures(id,params, signal);
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof relatedCaptures>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type RelatedCapturesQueryResult = NonNullable<Awaited<ReturnType<typeof relatedCaptures>>>
+export type RelatedCapturesQueryError = ErrorModel
+
+
+export function useRelatedCaptures<TData = Awaited<ReturnType<typeof relatedCaptures>>, TError = ErrorModel>(
+ id: string,
+    params: undefined |  RelatedCapturesParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof relatedCaptures>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof relatedCaptures>>,
+          TError,
+          Awaited<ReturnType<typeof relatedCaptures>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useRelatedCaptures<TData = Awaited<ReturnType<typeof relatedCaptures>>, TError = ErrorModel>(
+ id: string,
+    params?: RelatedCapturesParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof relatedCaptures>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof relatedCaptures>>,
+          TError,
+          Awaited<ReturnType<typeof relatedCaptures>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useRelatedCaptures<TData = Awaited<ReturnType<typeof relatedCaptures>>, TError = ErrorModel>(
+ id: string,
+    params?: RelatedCapturesParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof relatedCaptures>>, TError, TData>>, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Semantic suggestions related to this capture
+ */
+
+export function useRelatedCaptures<TData = Awaited<ReturnType<typeof relatedCaptures>>, TError = ErrorModel>(
+ id: string,
+    params?: RelatedCapturesParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof relatedCaptures>>, TError, TData>>, }
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getRelatedCapturesQueryOptions(id,params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+/**
  * @summary Set or clear a capture reminder
  */
 export const setCaptureRemind = (
@@ -2788,7 +3227,69 @@ export const useSetCaptureRemind = <TError = ErrorModel,
     }
 
 /**
- * @summary Retry audio transcription
+ * @summary Restore a soft-deleted capture
+ */
+export const restoreCapture = (
+    id: string,
+ signal?: AbortSignal
+) => {
+
+
+      return api<CaptureBody>(
+      {url: `/captures/${id}/restore`, method: 'POST', signal
+    },
+      );
+    }
+
+
+
+export const getRestoreCaptureMutationOptions = <TError = ErrorModel,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof restoreCapture>>, TError,{id: string}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof restoreCapture>>, TError,{id: string}, TContext> => {
+
+const mutationKey = ['restoreCapture'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof restoreCapture>>, {id: string}> = (props) => {
+          const {id} = props ?? {};
+
+          return  restoreCapture(id,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RestoreCaptureMutationResult = NonNullable<Awaited<ReturnType<typeof restoreCapture>>>
+
+    export type RestoreCaptureMutationError = ErrorModel
+
+    /**
+ * @summary Restore a soft-deleted capture
+ */
+export const useRestoreCapture = <TError = ErrorModel,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof restoreCapture>>, TError,{id: string}, TContext>, }
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof restoreCapture>>,
+        TError,
+        {id: string},
+        TContext
+      > => {
+      return useMutation(getRestoreCaptureMutationOptions(options), queryClient);
+    }
+
+/**
+ * @summary Retry audio or image transcription
  */
 export const retryCaptureTranscription = (
     id: string,
@@ -2836,7 +3337,7 @@ const {mutation: mutationOptions} = options ?
     export type RetryCaptureTranscriptionMutationError = ErrorModel
 
     /**
- * @summary Retry audio transcription
+ * @summary Retry audio or image transcription
  */
 export const useRetryCaptureTranscription = <TError = ErrorModel,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof retryCaptureTranscription>>, TError,{id: string}, TContext>, }

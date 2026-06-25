@@ -51,5 +51,23 @@
     "title": "タスクに変換",
     "project": "プロジェクト（任意）",
     "confirm": "変換する"
+  },
+  "related": {
+    "title": "関連",
+    "linked": "リンク済み",
+    "suggestions": "おすすめ",
+    "link": "リンク",
+    "unlink": "リンク解除",
+    "none": "まだ何もリンクされていません。",
+    "noSuggestions": "おすすめはありません。"
+  },
+  "trash": {
+    "link": "ゴミ箱",
+    "title": "ゴミ箱",
+    "subtitle": "削除したキャプチャ。必要なものは復元できます。",
+    "empty": "ゴミ箱は空です。",
+    "restore": "復元",
+    "deletedAt": "{{time}} に削除",
+    "failedToLoad": "ゴミ箱の読み込みに失敗しました"
   }
 }

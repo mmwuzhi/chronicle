@@ -51,5 +51,23 @@
     "title": "Promote to Task",
     "project": "Project (optional)",
     "confirm": "Promote"
+  },
+  "related": {
+    "title": "Related",
+    "linked": "Linked",
+    "suggestions": "Suggestions",
+    "link": "Link",
+    "unlink": "Unlink",
+    "none": "Nothing linked yet.",
+    "noSuggestions": "No suggestions."
+  },
+  "trash": {
+    "link": "Trash",
+    "title": "Trash",
+    "subtitle": "Deleted captures. Restore anything you still need.",
+    "empty": "Trash is empty.",
+    "restore": "Restore",
+    "deletedAt": "Deleted {{time}}",
+    "failedToLoad": "Failed to load trash"
   }
 }

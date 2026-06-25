@@ -51,5 +51,23 @@
     "title": "转换为任务",
     "project": "所属项目（可选）",
     "confirm": "确认转换"
+  },
+  "related": {
+    "title": "相关",
+    "linked": "已关联",
+    "suggestions": "相关建议",
+    "link": "关联",
+    "unlink": "解除关联",
+    "none": "还没有关联任何内容。",
+    "noSuggestions": "暂无建议。"
+  },
+  "trash": {
+    "link": "回收站",
+    "title": "回收站",
+    "subtitle": "已删除的捕获。需要的话可以恢复。",
+    "empty": "回收站是空的。",
+    "restore": "恢复",
+    "deletedAt": "删除于 {{time}}",
+    "failedToLoad": "加载回收站失败"
   }
 }

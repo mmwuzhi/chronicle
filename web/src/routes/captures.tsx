@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
@@ -143,6 +143,9 @@ function Captures() {
           >
             {t("showScheduled")}
           </button>
+          <Link to="/trash" className="ch-navlink">
+            {t("trash.link")}
+          </Link>
         </div>
         <CaptureFeed
           captures={captures}

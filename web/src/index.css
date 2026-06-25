@@ -1215,6 +1215,110 @@ body {
   }
 }
 
+/* ── Related captures ─────────────────────────────────────────────────── */
+.ch-related {
+  margin-top: 8px;
+  padding-top: 20px;
+  border-top: 1px solid var(--hairline);
+}
+.ch-related-title {
+  margin: 0 0 12px;
+  font-size: var(--fs-base);
+  font-weight: 600;
+}
+.ch-related-group {
+  margin-bottom: 18px;
+}
+.ch-related-subtitle {
+  margin: 0 0 8px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-faint);
+}
+.ch-related-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.ch-related-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.ch-related-link {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: baseline;
+  gap: 10px;
+  color: inherit;
+  text-decoration: none;
+}
+.ch-related-link:hover .ch-related-snippet {
+  color: var(--accent-strong);
+}
+.ch-related-time {
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-faint);
+}
+.ch-related-snippet {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-sm);
+}
+
+/* ── Trash ────────────────────────────────────────────────────────────── */
+.ch-trash-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.ch-trash-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+.ch-trash-body {
+  flex: 1;
+  min-width: 0;
+}
+.ch-trash-meta {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-faint);
+}
+.ch-trash-image {
+  display: block;
+  max-width: 100%;
+  max-height: 240px;
+  margin-bottom: 10px;
+  border-radius: var(--radius-sm);
+}
+
 /* ── Empty state ──────────────────────────────────────────────────────── */
 .ch-empty {
   display: flex;
