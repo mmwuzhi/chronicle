@@ -8,6 +8,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var clients: CaptureClients!
     private var panelController: QuickCapturePanelController!
     private var mainWindowController: MainWindowController!
+    private var detailWindowController: CaptureDetailWindowController!
     private var settingsModel: SettingsModel!
     private var settingsWindowController: SettingsWindowController!
     private var hotKeyController: HotKeyController?
@@ -31,6 +32,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             onSubmit: { [weak self] text, remindAt in self?.saveCapture(text, remindAt: remindAt) },
         )
         mainWindowController = MainWindowController(clients: clients)
+        detailWindowController = CaptureDetailWindowController(clients: clients)
         settingsModel = SettingsModel(
             settings: settings,
             localStore: localStore,
@@ -93,6 +95,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     ? WebhookAPIClient(config: config, refresher: authRefresher) : nil
             },
             openSettings: { [weak self] in self?.showSettings() },
+            openDetail: { [weak self] row in self?.detailWindowController?.open(row) },
             localSearch: { [localStore] q in
                 (try? localStore.search(q))?.map(RowItem.init) ?? []
             },

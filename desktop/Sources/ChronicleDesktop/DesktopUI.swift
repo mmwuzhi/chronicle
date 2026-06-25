@@ -16,6 +16,8 @@ final class CaptureClients {
     let recall: () -> RecallAPIClient?
     let webhook: () -> WebhookAPIClient?
     let openSettings: () -> Void
+    // Open the single-capture detail window focused on the given row.
+    let openDetail: (RowItem) -> Void
     // Offline-first local store access — always available, no login required.
     let localSearch: (String) -> [RowItem]
     let localRecent: (Int) -> [RowItem]
@@ -27,6 +29,7 @@ final class CaptureClients {
         recall: @escaping () -> RecallAPIClient?,
         webhook: @escaping () -> WebhookAPIClient?,
         openSettings: @escaping () -> Void,
+        openDetail: @escaping (RowItem) -> Void = { _ in },
         localSearch: @escaping (String) -> [RowItem],
         localRecent: @escaping (Int) -> [RowItem],
         localDelete: @escaping (String) -> Void
@@ -34,6 +37,7 @@ final class CaptureClients {
         self.recall = recall
         self.webhook = webhook
         self.openSettings = openSettings
+        self.openDetail = openDetail
         self.localSearch = localSearch
         self.localRecent = localRecent
         self.localDelete = localDelete
@@ -62,6 +66,13 @@ struct RowItem: Identifiable, Equatable {
         content = capture.content
         createdAt = capture.createdAt
         modality = capture.mediaType
+    }
+
+    init(_ related: RelatedCapture) {
+        id = related.id
+        content = related.content
+        createdAt = related.createdAt
+        modality = related.modality
     }
 
     // From a local record. A synced record keys on its server id so it dedupes
@@ -163,6 +174,7 @@ struct CaptureRow: View {
     var onCopy: () -> Void
     var onDelete: (() -> Void)?
     var onEdit: ((String) -> Void)?
+    var onOpen: (() -> Void)?
 
     @State private var hovering = false
     @State private var editing = false
@@ -207,6 +219,12 @@ struct CaptureRow: View {
                 .buttonStyle(.plain).opacity(0).frame(width: 0, height: 0)
             } else {
                 HStack(spacing: 8) {
+                    if let onOpen {
+                        Button(action: onOpen) { Image(systemName: "arrow.up.forward.square") }
+                            .buttonStyle(.borderless).foregroundStyle(.secondary)
+                            .help("Open")
+                            .opacity(hovering ? 1 : 0)
+                    }
                     Button(action: onCopy) { Image(systemName: "doc.on.doc") }
                         .buttonStyle(.borderless).foregroundStyle(.secondary)
                         .help("Copy")
@@ -218,7 +236,7 @@ struct CaptureRow: View {
                             .opacity(hovering ? 1 : 0)
                     }
                 }
-                .frame(width: onDelete == nil ? 28 : 52, alignment: .trailing)
+                .frame(width: actionSlotWidth, alignment: .trailing)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -232,6 +250,12 @@ struct CaptureRow: View {
         .onHover { hovering = $0 }
     }
 
+    // One fixed slot per visible action so long content never collides with icons.
+    private var actionSlotWidth: CGFloat {
+        let count = 1 + (onOpen == nil ? 0 : 1) + (onDelete == nil ? 0 : 1)
+        return 28 + CGFloat(count - 1) * 24
+    }
+
     private func commitEdit() {
         let next = editText.trimmingCharacters(in: .whitespacesAndNewlines)
         editing = false
@@ -240,6 +264,30 @@ struct CaptureRow: View {
     }
 
     private func cancelEdit() { editing = false }
+}
+
+// MARK: - Undo delete toast
+
+/// Transient confirmation shown after a row is deleted, offering a few seconds to
+/// undo before the soft delete actually commits. The visible button is the primary
+/// action; ⌘Z is wired alongside it by the host view.
+struct UndoDeleteToast: View {
+    var onUndo: () -> Void
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Text("Capture deleted").font(.callout)
+            Button("Undo", action: onUndo)
+                .buttonStyle(.plain)
+                .foregroundStyle(Color.accentColor)
+                .font(.callout.weight(.medium))
+            Text("⌘Z").font(.caption2).foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 16).padding(.vertical, 10)
+        .background(.regularMaterial, in: Capsule())
+        .overlay(Capsule().stroke(Color.primary.opacity(0.1), lineWidth: 1))
+        .shadow(color: .black.opacity(0.18), radius: 10, y: 3)
+    }
 }
 
 // MARK: - Shared mode switcher

@@ -73,6 +73,25 @@ public struct Capture: Codable, Equatable, Identifiable, Sendable {
     }
 }
 
+// One semantic neighbour from GET /captures/{id}/related. Same shape as a search
+// hit minus the `lexical` flag (related results are always vector-ranked), so it
+// needs its own type rather than reusing RecallItem's decoder.
+public struct RelatedCapture: Codable, Equatable, Identifiable, Sendable {
+    public let id: String
+    public let content: String
+    public let createdAt: String
+    public let modality: String
+    public let score: Double
+
+    public init(id: String, content: String, createdAt: String, modality: String, score: Double) {
+        self.id = id
+        self.content = content
+        self.createdAt = createdAt
+        self.modality = modality
+        self.score = score
+    }
+}
+
 public struct CapturePage: Codable, Equatable, Sendable {
     public let items: [Capture]
     public let nextCursor: String?
@@ -212,6 +231,30 @@ public final class RecallAPIClient: @unchecked Sendable {
         let (_, response) = try await AuthedTransport.send(
             request, session: session, refresher: refresher)
         try Self.validate(response)
+    }
+
+    // Semantic neighbours of a capture (GET /captures/{id}/related). The server
+    // already excludes the capture itself and anything explicitly linked, and
+    // returns an empty list (not an error) when embeddings are off or the capture
+    // has no indexable text.
+    public func makeRelatedRequest(id: String, limit: Int = 10) -> URLRequest {
+        var components = URLComponents(
+            url: captureURL(id).appending(path: "related"),
+            resolvingAgainstBaseURL: false,
+        )!
+        components.queryItems = [URLQueryItem(name: "limit", value: String(limit))]
+        var request = URLRequest(url: components.url!)
+        request.httpMethod = "GET"
+        request.setValue("Bearer \(config.token)", forHTTPHeaderField: "Authorization")
+        return request
+    }
+
+    public func related(id: String, limit: Int = 10) async throws -> [RelatedCapture] {
+        let request = makeRelatedRequest(id: id, limit: limit)
+        let (data, response) = try await AuthedTransport.send(
+            request, session: session, refresher: refresher)
+        try Self.validate(response)
+        return try JSONDecoder().decode([RelatedCapture].self, from: data)
     }
 
     private func captureURL(_ id: String) -> URL {

@@ -36,9 +36,18 @@ struct MainView: View {
     // browse falls back to the local store instead of a blank list.
     @State private var offline = false
 
+    // Deferred delete: the row vanishes immediately and an undo toast shows for a
+    // few seconds; the real (soft) delete only fires when that window lapses. While
+    // pending, the id is hidden from `rows` without touching the backing arrays, so
+    // an undo simply un-hides it in place.
+    @State private var pendingDeleteId: String?
+    @State private var pendingDeleteTask: Task<Void, Never>?
+    private static let undoWindow: Duration = .seconds(5)
+
     private var rows: [RowItem] {
-        if searched { return hits }
-        return (signedIn && !offline) ? fragments.map(RowItem.init) : localRows
+        let base = searched ? hits : ((signedIn && !offline) ? fragments.map(RowItem.init) : localRows)
+        guard let pendingDeleteId else { return base }
+        return base.filter { $0.id != pendingDeleteId }
     }
 
     var body: some View {
@@ -73,10 +82,26 @@ struct MainView: View {
         }
         .padding(16)
         .frame(minWidth: 560, minHeight: 420)
+        .overlay(alignment: .bottom) {
+            if pendingDeleteId != nil {
+                UndoDeleteToast(onUndo: undoDelete)
+                    .padding(.bottom, 14)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .background {
+            // ⌘Z undoes while the toast is up; the visible button is the primary path.
+            Button("") { undoDelete() }
+                .keyboardShortcut("z", modifiers: .command)
+                .opacity(0).frame(width: 0, height: 0)
+                .disabled(pendingDeleteId == nil)
+        }
+        .animation(.easeInOut(duration: 0.2), value: pendingDeleteId)
         .task { await loadBrowse(reset: true) }
         .onReceive(NotificationCenter.default.publisher(for: .chronicleMainShown)) { _ in
             if mode == .browse && !searched { Task { await loadBrowse(reset: true) } }
         }
+        .onDisappear { flushPendingDelete() }
     }
 
     @ViewBuilder private var content: some View {
@@ -96,6 +121,7 @@ struct MainView: View {
                     onCopy: { copy(row.content) },
                     onDelete: { delete(row.id) },
                     onEdit: { edit(row.id, $0) },
+                    onOpen: { clients.openDetail(row) },
                 )
                 .onAppear { maybeLoadMore(row) }
                 Divider().opacity(0.5)
@@ -247,22 +273,64 @@ struct MainView: View {
         }
     }
 
+    // Hide the row now; commit the soft delete after the undo window unless undone.
     private func delete(_ id: String) {
-        guard let client = clients.recall() else { return }
-        Task { @MainActor in
-            do {
-                try await client.delete(id: id)
-                // The server soft-deleted it; also drop the cached local row, or it
-                // reappears in offline browse/search (this capture was likely saved
-                // by the desktop and still has a local_captures row).
-                clients.localDelete(id)
-                withAnimation(.easeInOut(duration: 0.2)) {
-                    fragments.removeAll { $0.id == id }
-                    hits.removeAll { $0.id == id }
-                    localRows.removeAll { $0.id == id }
-                }
-            } catch let err { error = describe(err) }
+        // Deletion leads with the server soft-delete. Offline / signed out, skip it
+        // entirely (matches the pre-undo behaviour): dropping only the local row
+        // would hard-delete the sole copy of a local-only / unsynced capture.
+        guard clients.recall() != nil else { return }
+        error = ""
+        // A second delete supersedes the first — commit the earlier one immediately.
+        flushPendingDelete()
+        pendingDeleteId = id
+        pendingDeleteTask = Task { @MainActor in
+            try? await Task.sleep(for: Self.undoWindow)
+            guard !Task.isCancelled else { return }
+            await commitDelete(id)
         }
+    }
+
+    private func undoDelete() {
+        pendingDeleteTask?.cancel()
+        pendingDeleteTask = nil
+        pendingDeleteId = nil
+    }
+
+    // Commit the pending deletion right now (a new delete arrived, or the view is
+    // tearing down). The detached task keeps the row hidden via pendingDeleteId
+    // until commitDelete clears it.
+    private func flushPendingDelete() {
+        guard let id = pendingDeleteId else { return }
+        pendingDeleteTask?.cancel()
+        pendingDeleteTask = nil
+        Task { @MainActor in await commitDelete(id) }
+    }
+
+    @MainActor
+    private func commitDelete(_ id: String) async {
+        guard let client = clients.recall() else {
+            // Session lapsed since the delete was queued: never hard-delete the
+            // local-only copy — restore the row instead.
+            if pendingDeleteId == id { pendingDeleteId = nil; pendingDeleteTask = nil }
+            return
+        }
+        do {
+            try await client.delete(id: id)
+        } catch let err {
+            // Couldn't delete — un-hide the row and surface the error.
+            if pendingDeleteId == id { pendingDeleteId = nil; pendingDeleteTask = nil }
+            error = describe(err)
+            return
+        }
+        // The server soft-deleted it; also drop the cached local row, or it reappears
+        // in offline browse/search (captures saved here keep a local_captures row).
+        clients.localDelete(id)
+        withAnimation(.easeInOut(duration: 0.2)) {
+            fragments.removeAll { $0.id == id }
+            hits.removeAll { $0.id == id }
+            localRows.removeAll { $0.id == id }
+        }
+        if pendingDeleteId == id { pendingDeleteId = nil; pendingDeleteTask = nil }
     }
 
     private func copy(_ s: String) {

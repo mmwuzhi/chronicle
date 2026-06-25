@@ -42,6 +42,44 @@ func askRequestBuildsPOSTWithBearerAndBody() throws {
 }
 
 @Test
+func relatedRequestBuildsGETWithBearerAndLimit() throws {
+    let client = RecallAPIClient(config: testConfig)
+
+    let request = client.makeRelatedRequest(
+        id: "d2ebedc1-c6b2-40f4-a789-8e48064252a1", limit: 8)
+
+    let url = try #require(request.url)
+    let components = try #require(URLComponents(url: url, resolvingAgainstBaseURL: false))
+    #expect(components.path == "/captures/d2ebedc1-c6b2-40f4-a789-8e48064252a1/related")
+    #expect(request.httpMethod == "GET")
+    #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer test-token")
+
+    let items = try #require(components.queryItems)
+    #expect(items.contains(URLQueryItem(name: "limit", value: "8")))
+}
+
+@Test
+func decodesRelatedCaptures() throws {
+    // GET /captures/{id}/related returns a bare array, with no `lexical` flag.
+    let json = Data(
+        """
+        [
+          {"id":"11111111-1111-1111-1111-111111111111","content":"neighbour one",
+           "createdAt":"2026-06-06T16:33:27+09:00","modality":"text","score":0.91}
+        ]
+        """.utf8)
+
+    let decoded = try JSONDecoder().decode([RelatedCapture].self, from: json)
+
+    #expect(decoded.count == 1)
+    let item = try #require(decoded.first)
+    #expect(item.id == "11111111-1111-1111-1111-111111111111")
+    #expect(item.content == "neighbour one")
+    #expect(item.modality == "text")
+    #expect(item.score == 0.91)
+}
+
+@Test
 func decodesFindResponse() throws {
     let json = Data(
         """
