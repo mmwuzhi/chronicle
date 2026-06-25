@@ -313,7 +313,17 @@ def neighbors(user_id: str, query: str, limit: int = 20) -> list[Fragment]:
     qv = embed(query, MODEL_BGE)
     metas, mat = _load_for_search(user_id, len(qv))
     sims = _cosines(mat, qv)
-    order = np.argsort(-sims)[:limit]
+    # Skip zero-vector rows (no active-model embedding yet — backfill pending or
+    # model changed): they score exactly 0 and would otherwise be pulled into the
+    # cluster as bogus neighbours, polluting Ask answers. argsort is descending, so
+    # stop at the first non-positive score. Same filter related() applies.
+    order: list[int] = []
+    for i in np.argsort(-sims):
+        if sims[i] <= 0:
+            break
+        order.append(i)
+        if len(order) >= limit:
+            break
     return [Fragment(metas[i]["id"], metas[i]["content"], metas[i]["created_at"],
                      metas[i]["metadata"], metas[i]["modality"])
             for i in order]
