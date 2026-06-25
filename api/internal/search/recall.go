@@ -70,7 +70,9 @@ func (h *recallHandler) find(ctx context.Context, input *FindInput) (*FindOutput
 	}
 
 	// Sidecar disabled or unreachable: fall back to keyword FTS over captures.
-	rows, ferr := h.q.SearchCaptures(ctx, db.SearchCapturesParams{UserID: uid, Query: query})
+	rows, ferr := h.q.SearchCaptures(ctx, db.SearchCapturesParams{
+		UserID: uid, Query: query, ResultLimit: int32(input.Limit),
+	})
 	if ferr != nil {
 		return nil, huma.Error500InternalServerError("search failed")
 	}

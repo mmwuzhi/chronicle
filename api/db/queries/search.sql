@@ -43,4 +43,4 @@ WITH ranked AS (
 )
 SELECT * FROM ranked
 ORDER BY relevance DESC, created_at DESC
-LIMIT 20;
+LIMIT sqlc.arg('result_limit');

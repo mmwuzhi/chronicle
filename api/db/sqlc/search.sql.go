@@ -17,52 +17,53 @@ WITH ranked AS (
   SELECT
     captures.id, captures.user_id, captures.raw_text, captures.media_url, captures.media_type, captures.classified_as, captures.created_at, captures.source, captures.transcript, captures.transcription_status, captures.transcription_model, captures.transcription_attempts, captures.transcribed_at, captures.next_transcription_at, captures.audio_duration_sec, captures.media_key, captures.remind_at, captures.deleted_at,
     CASE
-      WHEN raw_text ILIKE '%' || $1::text || '%' THEN 'rawText'
-      WHEN transcript ILIKE '%' || $1::text || '%' THEN 'transcript'
+      WHEN raw_text ILIKE '%' || $2::text || '%' THEN 'rawText'
+      WHEN transcript ILIKE '%' || $2::text || '%' THEN 'transcript'
       WHEN ts_rank_cd(
         to_tsvector('simple', COALESCE(raw_text, '')),
-        websearch_to_tsquery('simple', $1::text)
+        websearch_to_tsquery('simple', $2::text)
       ) >= ts_rank_cd(
         to_tsvector('simple', COALESCE(transcript, '')),
-        websearch_to_tsquery('simple', $1::text)
+        websearch_to_tsquery('simple', $2::text)
       ) THEN 'rawText'
       ELSE 'transcript'
     END AS matched_field,
     (
       CASE
-        WHEN raw_text ILIKE '%' || $1::text || '%' THEN 2.0
-        WHEN transcript ILIKE '%' || $1::text || '%' THEN 1.8
+        WHEN raw_text ILIKE '%' || $2::text || '%' THEN 2.0
+        WHEN transcript ILIKE '%' || $2::text || '%' THEN 1.8
         ELSE 0.0
       END
       + GREATEST(
-          similarity(COALESCE(raw_text, ''), $1::text),
-          similarity(COALESCE(transcript, ''), $1::text)
+          similarity(COALESCE(raw_text, ''), $2::text),
+          similarity(COALESCE(transcript, ''), $2::text)
         )
       + ts_rank_cd(
           to_tsvector('simple', COALESCE(raw_text, '') || ' ' || COALESCE(transcript, '')),
-          websearch_to_tsquery('simple', $1::text)
+          websearch_to_tsquery('simple', $2::text)
         )
     )::double precision AS relevance
   FROM captures
-  WHERE user_id = $2
+  WHERE user_id = $3
     AND deleted_at IS NULL
     AND (
-      raw_text ILIKE '%' || $1::text || '%'
-      OR transcript ILIKE '%' || $1::text || '%'
+      raw_text ILIKE '%' || $2::text || '%'
+      OR transcript ILIKE '%' || $2::text || '%'
       OR to_tsvector(
         'simple',
         COALESCE(raw_text, '') || ' ' || COALESCE(transcript, '')
-      ) @@ websearch_to_tsquery('simple', $1::text)
+      ) @@ websearch_to_tsquery('simple', $2::text)
     )
 )
 SELECT id, user_id, raw_text, media_url, media_type, classified_as, created_at, source, transcript, transcription_status, transcription_model, transcription_attempts, transcribed_at, next_transcription_at, audio_duration_sec, media_key, remind_at, deleted_at, matched_field, relevance FROM ranked
 ORDER BY relevance DESC, created_at DESC
-LIMIT 20
+LIMIT $1
 `
 
 type SearchCapturesParams struct {
-	Query  string    `json:"query"`
-	UserID uuid.UUID `json:"user_id"`
+	ResultLimit int32     `json:"result_limit"`
+	Query       string    `json:"query"`
+	UserID      uuid.UUID `json:"user_id"`
 }
 
 type SearchCapturesRow struct {
@@ -89,7 +90,7 @@ type SearchCapturesRow struct {
 }
 
 func (q *Queries) SearchCaptures(ctx context.Context, arg SearchCapturesParams) ([]SearchCapturesRow, error) {
-	rows, err := q.db.Query(ctx, searchCaptures, arg.Query, arg.UserID)
+	rows, err := q.db.Query(ctx, searchCaptures, arg.ResultLimit, arg.Query, arg.UserID)
 	if err != nil {
 		return nil, err
 	}
