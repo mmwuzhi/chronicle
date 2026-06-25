@@ -84,6 +84,14 @@ def find(q: str, limit: int = 10, user_id: str = Header(..., alias="X-User-Id"))
     return search_svc.search(user_id, q, limit)
 
 
+@app.get("/related")
+def related(id: str, limit: int = 10,
+            user_id: str = Header(..., alias="X-User-Id")) -> list[dict]:
+    """Semantic neighbours of one capture (for the 'Related' surface). Empty when
+    embeddings are off or the capture has no text — never an error."""
+    return rag.related(user_id, id, limit)
+
+
 class AskIn(BaseModel):
     question: str
 
@@ -116,7 +124,7 @@ def backfill(user_id: str | None = Header(default=None, alias="X-User-Id")) -> d
             "extracted": extracted, "cleared": cleared}
 
 
-_RERANK_BACKENDS = {"auto", "local", "cross_encoder", "claude", "off"}
+_RERANK_BACKENDS = {"auto", "local", "cross_encoder", "claude", "api", "off"}
 
 
 class ConfigPatch(BaseModel):
@@ -127,6 +135,7 @@ class ConfigPatch(BaseModel):
 def get_config() -> dict:
     backend = rag.config_get("rerank_backend") or search_svc.RERANK_BACKEND
     return {"rerank_backend": backend,
+            "rerank_api_ok": search_svc.rerank_api_ok(),
             "detected": detect.detect_backends(),
             "effective": search_svc.effective_backends()}
 

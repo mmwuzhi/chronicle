@@ -319,6 +319,39 @@ def neighbors(user_id: str, query: str, limit: int = 20) -> list[Fragment]:
             for i in order]
 
 
+def related(user_id: str, capture_id: str, limit: int = 10) -> list[dict]:
+    """Semantic neighbours of ONE capture, for the 'Related' surface. Embeds the
+    capture's own indexable text and cosine-scans the user's other captures,
+    excluding the capture itself. Returns dicts shaped like /find items (no
+    embedding bytes). Empty — never an error — when embeddings are disabled or the
+    capture has no indexable text (media-only / missing); the UI just shows no
+    suggestions."""
+    if not EMBED_ENABLED:
+        return []
+    content = get_content(capture_id, user_id)
+    if not content or not content.strip():
+        return []
+    qv = embed(content, MODEL_BGE)
+    metas, mat = _load_for_search(user_id, len(qv))
+    sims = _cosines(mat, qv)
+    out: list[dict] = []
+    for i in np.argsort(-sims):
+        if metas[i]["id"] == capture_id:
+            continue
+        # Rows with no active-model embedding stay zero vectors (backfill pending,
+        # model changed, media-only, embed failed) and score exactly 0; stop before
+        # them so they never fill the list with non-semantic suggestions. argsort is
+        # descending, so everything past the first non-positive score is also junk.
+        if sims[i] <= 0:
+            break
+        out.append({"id": metas[i]["id"], "content": metas[i]["content"],
+                    "created_at": metas[i]["created_at"],
+                    "modality": metas[i]["modality"], "score": float(sims[i])})
+        if len(out) >= limit:
+            break
+    return out
+
+
 # Vector floor for wide recall (a fallback only; literal hits ignore it).
 # Final relevance is decided by the reranker.
 CANDIDATE_FLOOR = float(os.getenv("CANDIDATE_FLOOR", "0.3"))

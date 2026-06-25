@@ -20,6 +20,7 @@ import re
 import sys
 import threading
 import time
+import urllib.request
 
 import bm25
 import rag
@@ -168,6 +169,43 @@ def _llm_rerank(query: str, cands: list[dict], backend: str) -> list[float] | No
         return None
 
 
+def rerank_api_ok() -> bool:
+    """True when a cloud rerank endpoint + key are configured (env). The `api`
+    rerank backend is only usable then; GET /config exposes this so the UI can
+    offer `api` only when it would actually work."""
+    return bool(os.getenv("RERANK_BASE_URL") and os.getenv("RERANK_API_KEY"))
+
+
+def _rerank_api(query: str, cands: list[dict]) -> list[float] | None:
+    """Generic cloud rerank API (jina / cohere / voyage …): POST
+    {model, query, documents} → {results|data: [{index, relevance_score}]}.
+    Hand-rolled HTTP, zero SDK (same seam discipline as rag._embed_openai),
+    endpoint/key/model configurable, no vendor lock. Unconfigured or any failure
+    → None, so the caller falls back to vector ordering — cloud jitter can never
+    break search."""
+    base = (os.getenv("RERANK_BASE_URL") or "").rstrip("/")
+    key = os.getenv("RERANK_API_KEY") or ""
+    model = os.getenv("RERANK_MODEL_API") or "rerank-2"
+    if not base or not key:
+        return None
+    body = json.dumps({"model": model, "query": query,
+                       "documents": [c["content"][:2000] for c in cands]}).encode()
+    try:
+        req = urllib.request.Request(
+            f"{base}/rerank", data=body,
+            headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=30) as r:
+            data = json.load(r)
+        items = data.get("results") or data.get("data") or []
+        scores = [0.0] * len(cands)
+        for it in items:
+            scores[int(it["index"])] = float(it["relevance_score"])
+        return scores
+    except Exception as e:
+        print(f"[rerank] API failed, falling back to vector order: {e}", file=sys.stderr)
+        return None
+
+
 def _rerank_scores(query: str, cands: list[dict]) -> list[float] | None:
     backend = _resolve_rerank_backend()
     if backend == "off":
@@ -175,6 +213,8 @@ def _rerank_scores(query: str, cands: list[dict]) -> list[float] | None:
     if backend == "cross_encoder":
         preds = _get_reranker().predict([[query, c["content"]] for c in cands])
         return [float(s) for s in preds]
+    if backend == "api":
+        return _rerank_api(query, cands)
     if backend in ("local", "claude"):
         return _llm_rerank(query, cands, backend)
     return None
