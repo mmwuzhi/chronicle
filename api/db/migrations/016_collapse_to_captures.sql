@@ -1,20 +1,26 @@
 -- +goose Up
 
 -- Collapse the productivity model into captures (Chronicle's capture-first
--- direction). Non-deleted tasks and log entries are MIGRATED into captures
--- (data is moved, not lost), preserving the task's status/start/due/project/tracked
--- time as a searchable text footer. weekly_reports / public_shares are
--- derived/sharing surfaces that captures don't carry, so they are archived to
--- recoverable archived_* tables before being dropped (no user data is lost).
+-- direction). Non-deleted tasks and log entries are MIGRATED into captures,
+-- preserving the task's status/start/due/project/tracked time as a searchable
+-- text footer. That footer is lossy, so the full source tables are ALSO archived
+-- to recoverable archived_* tables before being dropped — together that means no
+-- structured field is lost. weekly_reports / public_shares are derived/sharing
+-- surfaces captures don't carry and are archived the same way.
 --
 -- Forward-only: see the Down section. Migrated captures are not yet embedded /
 -- extracted — run the RAG backfill (POST /backfill) afterward to index them.
 
--- Soft-delete-only rule: tasks / log_entries / time_blocks carry deleted_at, and
--- DROP TABLE would hard-delete any soft-deleted rows. Archive those rows first so
--- deleted user data is preserved (recoverable from these tables) rather than lost.
-CREATE TABLE archived_tasks AS SELECT * FROM tasks WHERE deleted_at IS NOT NULL;
-CREATE TABLE archived_log_entries AS SELECT * FROM log_entries WHERE deleted_at IS NOT NULL;
+-- Active tasks / log_entries are migrated into captures below, but the capture
+-- footer is lossy: due_at keeps only its date (the time is dropped), and the task
+-- UUID / project_id link and a log's task_id are not represented at all. DROP TABLE
+-- would then lose those structured fields outright (and hard-delete soft-deleted
+-- rows, which carry deleted_at). Archive the ENTIRE tables first — active,
+-- soft-deleted, and all — so every structured field stays recoverable, the same
+-- wholesale approach used for time_blocks / projects below. The captures are the
+-- capture-first surface; these archive tables are the recoverable source of truth.
+CREATE TABLE archived_tasks AS SELECT * FROM tasks;
+CREATE TABLE archived_log_entries AS SELECT * FROM log_entries;
 -- Archive the ENTIRE time_blocks table before the DROP. The migration only folds
 -- an aggregate [tracked: Xh Ym] per active task into the capture footer, which is
 -- lossy: each block's individual started_at/ended_at and duration would be gone

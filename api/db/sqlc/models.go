@@ -253,6 +253,14 @@ type ArchivedProject struct {
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
 
+type ArchivedPublicShare struct {
+	ID        uuid.UUID          `json:"id"`
+	ReportID  uuid.UUID          `json:"report_id"`
+	Slug      string             `json:"slug"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	UserID    uuid.UUID          `json:"user_id"`
+}
+
 type ArchivedTask struct {
 	ID        uuid.UUID          `json:"id"`
 	UserID    uuid.UUID          `json:"user_id"`
@@ -278,6 +286,14 @@ type ArchivedTimeBlock struct {
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 	DeletedAt   pgtype.Timestamptz `json:"deleted_at"`
 	InputMode   string             `json:"input_mode"`
+}
+
+type ArchivedWeeklyReport struct {
+	ID        uuid.UUID          `json:"id"`
+	UserID    uuid.UUID          `json:"user_id"`
+	WeekStart pgtype.Date        `json:"week_start"`
+	Data      []byte             `json:"data"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
 
 type Capture struct {
