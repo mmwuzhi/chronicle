@@ -243,6 +243,9 @@ pnpm test                         # vitest
 # Desktop (run from desktop/)
 swift test                        # Swift core tests
 swift build                       # compile the menu bar app
+
+# RAG sidecar (run from ragsvc/)
+python -m pytest                  # Python tests (use python -m so top-level imports resolve)
 ```
 
 ## Conventions
@@ -276,6 +279,10 @@ swift build                       # compile the menu bar app
   cd ../desktop
   swift test                      # core tests must pass
   swift build                     # app must compile
+
+  # RAG sidecar (run from ragsvc/)
+  cd ../ragsvc
+  python -m pytest                # Python tests must pass (use python -m, not bare pytest)
   ```
 
   Fix every failure before pushing. CI runs these same steps exactly.

@@ -20,3 +20,6 @@ dev = ["pytest>=8.0"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# Tests import top-level modules (e.g. `import analysis`); put the package root
+# on sys.path so plain `pytest` works, not only `python -m pytest`.
+pythonpath = ["."]
