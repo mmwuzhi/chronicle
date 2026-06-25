@@ -10,6 +10,11 @@ import (
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
+
+	db "github.com/sikaoshenmi/chronicle/db/sqlc"
+	"github.com/sikaoshenmi/chronicle/testutil"
 )
 
 type workerS3 struct {
@@ -123,6 +128,72 @@ func TestVisionTranscribeUsesChatEndpointAndModel(t *testing.T) {
 	}
 	if !hadImage {
 		t.Fatalf("expected a data: image_url part in the request body")
+	}
+}
+
+// Regression for the vision opt-out bypass: VISION_ENABLED=false marks uploaded
+// images as skipped, but RetryCaptureTranscription let any image return to
+// pending, and the worker sent every pending image to the vision provider. The
+// opt-out is now enforced at the sink — a pending image with vision disabled is
+// skipped, never transcribed.
+func TestProcessAvailableSkipsImageWhenVisionDisabled(t *testing.T) {
+	pool := testutil.NewPool(t)
+	testutil.Truncate(t, pool, "captures", "users")
+	ctx := context.Background()
+
+	userID := uuid.New()
+	if _, err := pool.Exec(ctx,
+		"INSERT INTO users (id, email, password_hash) VALUES ($1, $2, 'hash')",
+		userID, userID.String()+"@test.com",
+	); err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+
+	q := db.New(pool)
+	// An image sitting at 'pending' (created when vision was on, or moved back by
+	// retry) — the exact state the bypass exploited.
+	capture, err := q.CreateUploadedCapture(ctx, db.CreateUploadedCaptureParams{
+		UserID:        userID,
+		MediaUrl:      pgtype.Text{String: "https://r2.example/x.jpg", Valid: true},
+		MediaType:     db.CaptureMediaTypeImage,
+		MediaKey:      pgtype.Text{String: "captures/x.jpg", Valid: true},
+		VisionEnabled: true, // create as pending
+	})
+	if err != nil {
+		t.Fatalf("create capture: %v", err)
+	}
+	if capture.TranscriptionStatus != db.TranscriptionStatusPending {
+		t.Fatalf("precondition: expected pending, got %q", capture.TranscriptionStatus)
+	}
+
+	// Any call to the vision provider while disabled is a bypass — fail the test.
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("vision provider must not be called when VISION_ENABLED is off (hit %s)", r.URL.Path)
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	t.Cleanup(server.Close)
+
+	worker := transcriptionWorker{
+		q:             q,
+		s3:            workerS3{body: "image-bytes"},
+		bucket:        "bucket",
+		visionURL:     chatCompletionsEndpoint(server.URL),
+		visionModel:   "test-vision-model",
+		client:        server.Client(),
+		visionEnabled: false,
+	}
+	if err := worker.processAvailable(ctx); err != nil {
+		t.Fatalf("processAvailable: %v", err)
+	}
+
+	var status string
+	if err := pool.QueryRow(ctx,
+		"SELECT transcription_status FROM captures WHERE id = $1", capture.ID,
+	).Scan(&status); err != nil {
+		t.Fatalf("read status: %v", err)
+	}
+	if status != string(db.TranscriptionStatusSkipped) {
+		t.Fatalf("expected image skipped when vision disabled, got %q", status)
 	}
 }
 

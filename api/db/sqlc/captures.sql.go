@@ -725,9 +725,12 @@ SET transcription_status = 'pending',
 WHERE id = $1
   AND user_id = $2
   AND deleted_at IS NULL
-  AND media_type = 'audio'
-  AND audio_duration_sec IS NOT NULL
-  AND audio_duration_sec <= 300
+  AND (
+    -- audio: same size guard the create path applies before queueing
+    (media_type = 'audio' AND audio_duration_sec IS NOT NULL AND audio_duration_sec <= 300)
+    -- image OCR has no duration guard; the worker routes it to vision transcription
+    OR media_type = 'image'
+  )
 RETURNING id, user_id, raw_text, media_url, media_type, classified_as, created_at, source, transcript, transcription_status, transcription_model, transcription_attempts, transcribed_at, next_transcription_at, audio_duration_sec, media_key, remind_at, deleted_at
 `
 
@@ -802,6 +805,22 @@ func (q *Queries) SetCaptureRemind(ctx context.Context, arg SetCaptureRemindPara
 		&i.DeletedAt,
 	)
 	return i, err
+}
+
+const skipCaptureTranscription = `-- name: SkipCaptureTranscription :exec
+UPDATE captures
+SET transcription_status = 'skipped',
+    next_transcription_at = NULL
+WHERE id = $1
+`
+
+// Mark a capture's transcription skipped and clear its retry schedule, so it
+// leaves the worker queue. Used to enforce the vision opt-out at the sink: an
+// image that reached 'pending' (e.g. via retry) while VISION_ENABLED is off is
+// skipped instead of being sent to the vision provider.
+func (q *Queries) SkipCaptureTranscription(ctx context.Context, id uuid.UUID) error {
+	_, err := q.db.Exec(ctx, skipCaptureTranscription, id)
+	return err
 }
 
 const updateCapture = `-- name: UpdateCapture :one

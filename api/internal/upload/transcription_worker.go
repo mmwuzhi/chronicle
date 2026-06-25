@@ -26,16 +26,17 @@ import (
 )
 
 type transcriptionWorker struct {
-	q           *db.Queries
-	s3          S3Client
-	bucket      string
-	apiKey      string
-	apiURL      string
-	model       string
-	visionURL   string
-	visionModel string
-	client      *http.Client
-	rag         *ragclient.Client
+	q             *db.Queries
+	s3            S3Client
+	bucket        string
+	apiKey        string
+	apiURL        string
+	model         string
+	visionURL     string
+	visionModel   string
+	client        *http.Client
+	rag           *ragclient.Client
+	visionEnabled bool
 }
 
 func StartTranscriptionWorker(ctx context.Context, pool *pgxpool.Pool, s3c S3Client, cfg Config, rag *ragclient.Client) {
@@ -43,16 +44,17 @@ func StartTranscriptionWorker(ctx context.Context, pool *pgxpool.Pool, s3c S3Cli
 		return
 	}
 	worker := &transcriptionWorker{
-		q:           db.New(pool),
-		s3:          s3c,
-		bucket:      cfg.R2BucketName,
-		apiKey:      cfg.OpenAIKey,
-		apiURL:      transcriptionEndpoint(cfg.OpenAIBaseURL),
-		model:       cfg.OpenAIModel,
-		visionURL:   chatCompletionsEndpoint(cfg.OpenAIBaseURL),
-		visionModel: cfg.OpenAIVisionModel,
-		client:      &http.Client{Timeout: 90 * time.Second},
-		rag:         rag,
+		q:             db.New(pool),
+		s3:            s3c,
+		bucket:        cfg.R2BucketName,
+		apiKey:        cfg.OpenAIKey,
+		apiURL:        transcriptionEndpoint(cfg.OpenAIBaseURL),
+		model:         cfg.OpenAIModel,
+		visionURL:     chatCompletionsEndpoint(cfg.OpenAIBaseURL),
+		visionModel:   cfg.OpenAIVisionModel,
+		client:        &http.Client{Timeout: 90 * time.Second},
+		rag:           rag,
+		visionEnabled: cfg.VisionEnabled,
 	}
 	go worker.run(ctx)
 }
@@ -81,6 +83,17 @@ func (w *transcriptionWorker) processAvailable(ctx context.Context) error {
 		}
 		if err != nil {
 			return err
+		}
+
+		// Enforce the vision opt-out at the sink. Create marks images skipped when
+		// VISION_ENABLED is off, but a later path (e.g. retry) can move one back to
+		// pending; refuse to send it to the vision provider here too, marking it
+		// skipped so it leaves the queue instead of looping. Audio is unaffected.
+		if capture.MediaType == db.CaptureMediaTypeImage && !w.visionEnabled {
+			if err := w.q.SkipCaptureTranscription(ctx, capture.ID); err != nil {
+				return err
+			}
+			continue
 		}
 
 		transcript, model, err := w.transcribeCapture(ctx, capture)

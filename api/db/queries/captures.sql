@@ -128,9 +128,12 @@ SET transcription_status = 'pending',
 WHERE id = $1
   AND user_id = $2
   AND deleted_at IS NULL
-  AND media_type = 'audio'
-  AND audio_duration_sec IS NOT NULL
-  AND audio_duration_sec <= 300
+  AND (
+    -- audio: same size guard the create path applies before queueing
+    (media_type = 'audio' AND audio_duration_sec IS NOT NULL AND audio_duration_sec <= 300)
+    -- image OCR has no duration guard; the worker routes it to vision transcription
+    OR media_type = 'image'
+  )
 RETURNING *;
 
 -- name: ClaimPendingTranscription :one
@@ -171,6 +174,16 @@ SET transcription_status = CASE
       WHEN 3 THEN now() + interval '30 minutes'
       ELSE NULL
     END
+WHERE id = $1;
+
+-- name: SkipCaptureTranscription :exec
+-- Mark a capture's transcription skipped and clear its retry schedule, so it
+-- leaves the worker queue. Used to enforce the vision opt-out at the sink: an
+-- image that reached 'pending' (e.g. via retry) while VISION_ENABLED is off is
+-- skipped instead of being sent to the vision provider.
+UPDATE captures
+SET transcription_status = 'skipped',
+    next_transcription_at = NULL
 WHERE id = $1;
 
 -- name: DeleteCapture :one

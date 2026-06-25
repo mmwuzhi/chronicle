@@ -98,6 +98,9 @@ export function CaptureCard({
   const [draft, setDraft] = useState(c.rawText ?? "");
   const [editingTranscript, setEditingTranscript] = useState(false);
   const [transcriptDraft, setTranscriptDraft] = useState(c.transcript ?? "");
+  // Both audio and image captures go through the transcription/OCR workflow, so
+  // their processing/failed/retry status surfaces the same way.
+  const transcribable = c.mediaType === "audio" || c.mediaType === "image";
 
   const commitEdit = () => {
     const trimmed = draft.trim();
@@ -139,13 +142,13 @@ export function CaptureCard({
           style={{ width: "100%", height: 32 }}
         />
       )}
-      {c.mediaType === "audio" &&
+      {transcribable &&
         ["pending", "processing"].includes(c.transcriptionStatus) && (
           <div className="ch-transcript-status">
             {t("transcript.processing")}
           </div>
         )}
-      {c.mediaType === "audio" && c.transcriptionStatus === "failed" && (
+      {transcribable && c.transcriptionStatus === "failed" && (
         <div className="ch-transcript-status error">
           <span>{t("transcript.failed")}</span>
           <button
