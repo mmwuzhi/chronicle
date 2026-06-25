@@ -327,6 +327,13 @@ type CaptureEmbedding struct {
 	SourceHash pgtype.Text        `json:"source_hash"`
 }
 
+type CaptureLink struct {
+	AID       uuid.UUID          `json:"a_id"`
+	BID       uuid.UUID          `json:"b_id"`
+	UserID    uuid.UUID          `json:"user_id"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
 type CaptureMetadatum struct {
 	CaptureID  uuid.UUID          `json:"capture_id"`
 	UserID     uuid.UUID          `json:"user_id"`

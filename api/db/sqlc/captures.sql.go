@@ -667,6 +667,52 @@ func (q *Queries) ListCapturesInRange(ctx context.Context, arg ListCapturesInRan
 	return items, nil
 }
 
+const listTrashedCaptures = `-- name: ListTrashedCaptures :many
+SELECT id, user_id, raw_text, media_url, media_type, classified_as, created_at, source, transcript, transcription_status, transcription_model, transcription_attempts, transcribed_at, next_transcription_at, audio_duration_sec, media_key, remind_at, deleted_at FROM captures
+WHERE user_id = $1 AND deleted_at IS NOT NULL
+ORDER BY deleted_at DESC, id DESC
+`
+
+// Soft-deleted captures, for the trash view. Most-recently-deleted first.
+func (q *Queries) ListTrashedCaptures(ctx context.Context, userID uuid.UUID) ([]Capture, error) {
+	rows, err := q.db.Query(ctx, listTrashedCaptures, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Capture
+	for rows.Next() {
+		var i Capture
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.RawText,
+			&i.MediaUrl,
+			&i.MediaType,
+			&i.ClassifiedAs,
+			&i.CreatedAt,
+			&i.Source,
+			&i.Transcript,
+			&i.TranscriptionStatus,
+			&i.TranscriptionModel,
+			&i.TranscriptionAttempts,
+			&i.TranscribedAt,
+			&i.NextTranscriptionAt,
+			&i.AudioDurationSec,
+			&i.MediaKey,
+			&i.RemindAt,
+			&i.DeletedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const pendingReminders = `-- name: PendingReminders :many
 SELECT id, user_id, raw_text, media_url, media_type, classified_as, created_at, source, transcript, transcription_status, transcription_model, transcription_attempts, transcribed_at, next_transcription_at, audio_duration_sec, media_key, remind_at, deleted_at FROM captures
 WHERE user_id = $1
@@ -715,6 +761,47 @@ func (q *Queries) PendingReminders(ctx context.Context, userID uuid.UUID) ([]Cap
 		return nil, err
 	}
 	return items, nil
+}
+
+const restoreCapture = `-- name: RestoreCapture :one
+UPDATE captures
+SET deleted_at = NULL
+WHERE id = $1 AND user_id = $2 AND deleted_at IS NOT NULL
+RETURNING id, user_id, raw_text, media_url, media_type, classified_as, created_at, source, transcript, transcription_status, transcription_model, transcription_attempts, transcribed_at, next_transcription_at, audio_duration_sec, media_key, remind_at, deleted_at
+`
+
+type RestoreCaptureParams struct {
+	ID     uuid.UUID `json:"id"`
+	UserID uuid.UUID `json:"user_id"`
+}
+
+// Undo a soft delete. Idempotent — restoring a live capture matches no row and
+// returns pgx.ErrNoRows, which the handler maps to 404. The embedding/metadata
+// side rows were never dropped on soft delete, so no reindex is needed.
+func (q *Queries) RestoreCapture(ctx context.Context, arg RestoreCaptureParams) (Capture, error) {
+	row := q.db.QueryRow(ctx, restoreCapture, arg.ID, arg.UserID)
+	var i Capture
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.RawText,
+		&i.MediaUrl,
+		&i.MediaType,
+		&i.ClassifiedAs,
+		&i.CreatedAt,
+		&i.Source,
+		&i.Transcript,
+		&i.TranscriptionStatus,
+		&i.TranscriptionModel,
+		&i.TranscriptionAttempts,
+		&i.TranscribedAt,
+		&i.NextTranscriptionAt,
+		&i.AudioDurationSec,
+		&i.MediaKey,
+		&i.RemindAt,
+		&i.DeletedAt,
+	)
+	return i, err
 }
 
 const retryCaptureTranscription = `-- name: RetryCaptureTranscription :one

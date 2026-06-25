@@ -800,6 +800,185 @@ func TestDeleteCapture_HappyPath(t *testing.T) {
 	}
 }
 
+// --- related captures (links + suggestions) ---
+
+func TestCaptureLinks_AddListRemoveBothDirections(t *testing.T) {
+	srv, pool := newServer(t)
+	_, token := createTestUser(t, pool)
+	a := createCapture(t, srv, token, map[string]any{"rawText": "capture A"})
+	b := createCapture(t, srv, token, map[string]any{"rawText": "capture B"})
+
+	// Link A → B.
+	add := do(t, srv.Client(), http.MethodPost, srv.URL+"/captures/"+a+"/links", token, map[string]any{"targetId": b})
+	add.Body.Close()
+	if add.StatusCode != http.StatusNoContent {
+		t.Fatalf("add link: expected 204, got %d", add.StatusCode)
+	}
+
+	// Undirected: B's links must include A, and A's links must include B.
+	linksOf := func(id string) []string {
+		resp := do(t, srv.Client(), http.MethodGet, srv.URL+"/captures/"+id+"/links", token, nil)
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("list links: expected 200, got %d", resp.StatusCode)
+		}
+		var items []struct {
+			ID string `json:"id"`
+		}
+		decodeBody(t, resp, &items)
+		out := make([]string, len(items))
+		for i, it := range items {
+			out[i] = it.ID
+		}
+		return out
+	}
+	if got := linksOf(a); len(got) != 1 || got[0] != b {
+		t.Fatalf("A links: expected [%s], got %v", b, got)
+	}
+	if got := linksOf(b); len(got) != 1 || got[0] != a {
+		t.Fatalf("B links: expected [%s], got %v", a, got)
+	}
+
+	// Remove from the opposite direction (B → A) — same undirected edge.
+	del := do(t, srv.Client(), http.MethodDelete, srv.URL+"/captures/"+b+"/links/"+a, token, nil)
+	del.Body.Close()
+	if del.StatusCode != http.StatusNoContent {
+		t.Fatalf("remove link: expected 204, got %d", del.StatusCode)
+	}
+	if got := linksOf(a); len(got) != 0 {
+		t.Fatalf("A links after remove: expected none, got %v", got)
+	}
+}
+
+func TestCaptureLink_Idempotent(t *testing.T) {
+	srv, pool := newServer(t)
+	_, token := createTestUser(t, pool)
+	a := createCapture(t, srv, token, map[string]any{"rawText": "A"})
+	b := createCapture(t, srv, token, map[string]any{"rawText": "B"})
+
+	for i := 0; i < 2; i++ {
+		resp := do(t, srv.Client(), http.MethodPost, srv.URL+"/captures/"+a+"/links", token, map[string]any{"targetId": b})
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusNoContent {
+			t.Fatalf("add link #%d: expected 204, got %d", i, resp.StatusCode)
+		}
+	}
+	resp := do(t, srv.Client(), http.MethodGet, srv.URL+"/captures/"+a+"/links", token, nil)
+	var items []any
+	decodeBody(t, resp, &items)
+	if len(items) != 1 {
+		t.Fatalf("expected a single link after duplicate adds, got %d", len(items))
+	}
+}
+
+func TestCaptureLink_SelfLinkRejected(t *testing.T) {
+	srv, pool := newServer(t)
+	_, token := createTestUser(t, pool)
+	a := createCapture(t, srv, token, nil)
+
+	resp := do(t, srv.Client(), http.MethodPost, srv.URL+"/captures/"+a+"/links", token, map[string]any{"targetId": a})
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("self-link: expected 422, got %d", resp.StatusCode)
+	}
+}
+
+func TestCaptureLink_TargetNotOwned(t *testing.T) {
+	srv, pool := newServer(t)
+	_, tokenA := createTestUser(t, pool)
+	_, tokenB := createTestUser(t, pool)
+	a := createCapture(t, srv, tokenA, nil)
+	other := createCapture(t, srv, tokenB, nil)
+
+	resp := do(t, srv.Client(), http.MethodPost, srv.URL+"/captures/"+a+"/links", tokenA, map[string]any{"targetId": other})
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("link to another user's capture: expected 404, got %d", resp.StatusCode)
+	}
+}
+
+func TestRelated_DegradesWhenRagDisabled(t *testing.T) {
+	srv, pool := newServer(t) // newServer wires a disabled rag client (ragclient.New(""))
+	_, token := createTestUser(t, pool)
+	a := createCapture(t, srv, token, nil)
+
+	resp := do(t, srv.Client(), http.MethodGet, srv.URL+"/captures/"+a+"/related", token, nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("related (rag disabled): expected 200, got %d", resp.StatusCode)
+	}
+	var items []any
+	decodeBody(t, resp, &items)
+	if len(items) != 0 {
+		t.Fatalf("related (rag disabled): expected empty list, got %d", len(items))
+	}
+}
+
+func TestRelated_NotFound(t *testing.T) {
+	srv, pool := newServer(t)
+	_, token := createTestUser(t, pool)
+
+	resp := do(t, srv.Client(), http.MethodGet, srv.URL+"/captures/"+uuid.New().String()+"/related", token, nil)
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("related for missing capture: expected 404, got %d", resp.StatusCode)
+	}
+}
+
+// --- trash (list + restore) ---
+
+func TestTrash_DeleteListRestore(t *testing.T) {
+	srv, pool := newServer(t)
+	_, token := createTestUser(t, pool)
+	id := createCapture(t, srv, token, map[string]any{"rawText": "recover me"})
+
+	del := do(t, srv.Client(), http.MethodDelete, srv.URL+"/captures/"+id, token, nil)
+	del.Body.Close()
+	if del.StatusCode != http.StatusNoContent {
+		t.Fatalf("delete: expected 204, got %d", del.StatusCode)
+	}
+
+	// Trash lists the deleted capture; the live feed does not.
+	trash := do(t, srv.Client(), http.MethodGet, srv.URL+"/captures/trash", token, nil)
+	var trashed []struct {
+		ID string `json:"id"`
+	}
+	decodeBody(t, trash, &trashed)
+	if len(trashed) != 1 || trashed[0].ID != id {
+		t.Fatalf("trash should list the deleted capture, got %v", trashed)
+	}
+
+	// Restore returns it to the live feed and clears it from trash.
+	restore := do(t, srv.Client(), http.MethodPost, srv.URL+"/captures/"+id+"/restore", token, nil)
+	if restore.StatusCode != http.StatusOK {
+		t.Fatalf("restore: expected 200, got %d", restore.StatusCode)
+	}
+	restore.Body.Close()
+
+	live := do(t, srv.Client(), http.MethodGet, srv.URL+"/captures", token, nil)
+	var liveItems []any
+	decodeBody(t, live, &liveItems)
+	if len(liveItems) != 1 {
+		t.Fatalf("restored capture should be back in the live feed, got %d", len(liveItems))
+	}
+	trash2 := do(t, srv.Client(), http.MethodGet, srv.URL+"/captures/trash", token, nil)
+	var trashed2 []any
+	decodeBody(t, trash2, &trashed2)
+	if len(trashed2) != 0 {
+		t.Fatalf("trash should be empty after restore, got %d", len(trashed2))
+	}
+}
+
+func TestRestore_LiveCaptureNotFound(t *testing.T) {
+	srv, pool := newServer(t)
+	_, token := createTestUser(t, pool)
+	id := createCapture(t, srv, token, nil) // never deleted
+
+	resp := do(t, srv.Client(), http.MethodPost, srv.URL+"/captures/"+id+"/restore", token, nil)
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("restore of a live capture: expected 404, got %d", resp.StatusCode)
+	}
+}
+
 // --- auth ---
 
 func TestCaptures_Unauthenticated(t *testing.T) {

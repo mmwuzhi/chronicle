@@ -132,6 +132,36 @@ func (c *Client) Find(ctx context.Context, userID, query string, limit int) ([]F
 	return items, nil
 }
 
+// Related returns semantic neighbours of one capture (for the "Related" surface).
+// Returns ErrDisabled on a nil client; an empty list (not an error) when the
+// sidecar has no embeddings or the capture has no indexable text.
+func (c *Client) Related(ctx context.Context, userID, captureID string, limit int) ([]FindItem, error) {
+	if c == nil {
+		return nil, ErrDisabled
+	}
+	ctx, cancel := context.WithTimeout(ctx, findTimeout)
+	defer cancel()
+	u := fmt.Sprintf("%s/related?id=%s&limit=%d", c.baseURL, url.QueryEscape(captureID), limit)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("X-User-Id", userID)
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("rag related status %d", resp.StatusCode)
+	}
+	var items []FindItem
+	if err := json.NewDecoder(resp.Body).Decode(&items); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 // Ask runs query-time cluster analysis. Returns ErrDisabled on a nil client.
 func (c *Client) Ask(ctx context.Context, userID, question string) (*AskResult, error) {
 	if c == nil {

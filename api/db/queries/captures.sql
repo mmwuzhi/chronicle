@@ -195,6 +195,21 @@ SET deleted_at = now()
 WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL
 RETURNING id;
 
+-- name: ListTrashedCaptures :many
+-- Soft-deleted captures, for the trash view. Most-recently-deleted first.
+SELECT * FROM captures
+WHERE user_id = $1 AND deleted_at IS NOT NULL
+ORDER BY deleted_at DESC, id DESC;
+
+-- name: RestoreCapture :one
+-- Undo a soft delete. Idempotent — restoring a live capture matches no row and
+-- returns pgx.ErrNoRows, which the handler maps to 404. The embedding/metadata
+-- side rows were never dropped on soft delete, so no reindex is needed.
+UPDATE captures
+SET deleted_at = NULL
+WHERE id = $1 AND user_id = $2 AND deleted_at IS NOT NULL
+RETURNING *;
+
 -- name: ListCapturesInRange :many
 SELECT * FROM captures
 WHERE user_id = $1
