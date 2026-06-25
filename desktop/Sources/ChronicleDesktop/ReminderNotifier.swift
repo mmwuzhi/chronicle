@@ -116,12 +116,37 @@ final class ReminderNotifier {
     func syncFromServer() {
         guard let client = makeClient() else { return }  // not signed in → local only
         Task {
-            let pending = (try? await client.pending()) ?? []
+            // Distinguish "no pending reminders" from "fetch failed": only a
+            // successful pending() is the complete set we can safely reconcile
+            // deletions against — an empty list from a failed request would look
+            // like every reminder was deleted. On failure, skip reconcile and
+            // scheduling (there is nothing to schedule anyway) but still surface
+            // due alerts.
+            let pending = try? await client.pending()
             let due = (try? await client.due(since: nil)) ?? []
             await MainActor.run {
-                for item in pending { self.scheduleFromServer(item) }
+                if let pending {
+                    self.reconcileDeletedServerReminders(
+                        alivePendingServerIds: Set(pending.map(\.id)))
+                    for item in pending { self.scheduleFromServer(item) }
+                }
                 for item in due { self.notifyDueFromServer(item) }
             }
+        }
+    }
+
+    // Cancel + drop reminders that were synced here earlier but have since been
+    // cleared or deleted elsewhere, so their scheduled calendar trigger does not
+    // fire a stale alert (the trigger lives in the OS even after the app closes,
+    // so deleting the local row alone is not enough — it must be cancelled too).
+    // Caller guarantees `alivePendingServerIds` came from a successful pending().
+    private func reconcileDeletedServerReminders(alivePendingServerIds: Set<String>) {
+        let local = (try? store.upcomingReminders()) ?? []
+        for orphan in orphanedServerReminders(
+            local: local, alivePendingServerIds: alivePendingServerIds
+        ) {
+            cancel(id: orphan.notificationId)
+            try? store.delete(id: orphan.serverId)
         }
     }
 

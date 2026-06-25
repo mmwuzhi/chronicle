@@ -68,6 +68,33 @@ func decodesReminderItemsIgnoringExtraCaptureFields() throws {
 }
 
 @Test
+func orphanedServerRemindersTargetsSyncedRemindersMissingFromPending() {
+    let soon = Date().addingTimeInterval(3600)
+    func record(id: String, serverId: String?) -> LocalCaptureRecord {
+        LocalCaptureRecord(
+            id: id,
+            payload: CapturePayload(rawText: "reminder", remindAt: soon),
+            createdAt: Date(), updatedAt: Date(),
+            serverId: serverId, syncedAt: serverId == nil ? nil : Date(),
+            lastError: nil, notifiedAt: nil)
+    }
+
+    let local = [
+        record(id: "l-alive", serverId: "srv-alive"),  // still on server → keep
+        record(id: "l-gone", serverId: "srv-gone"),  // deleted elsewhere → orphan
+        record(id: "l-unsynced", serverId: nil),  // never synced → not reconcilable
+    ]
+
+    // pending() reported only the still-live reminder, so the deleted one is an
+    // orphan and the unsynced one is left alone.
+    let orphans = orphanedServerReminders(
+        local: local, alivePendingServerIds: ["srv-alive"])
+
+    #expect(
+        orphans == [OrphanedReminder(serverId: "srv-gone", notificationId: "rmd-local-l-gone")])
+}
+
+@Test
 func summaryFallsBackToTranscriptThenGeneric() {
     let withTranscript = ReminderItem(
         id: "1", rawText: nil, transcript: "transcribed receipt",

@@ -92,3 +92,36 @@ public final class ReminderAPIClient: @unchecked Sendable {
         }
     }
 }
+
+// A synced reminder that must be cancelled and dropped because it is no longer
+// on the server. `notificationId` is the id its scheduled OS notification was
+// registered under.
+public struct OrphanedReminder: Equatable, Sendable {
+    public let serverId: String
+    public let notificationId: String
+
+    public init(serverId: String, notificationId: String) {
+        self.serverId = serverId
+        self.notificationId = notificationId
+    }
+}
+
+// Pure reconciliation: which locally-synced reminders were cleared or deleted
+// elsewhere. `/reminders/pending` returns the *complete* set of not-yet-due
+// reminders, so any local reminder carrying a server id that is absent from that
+// set is an orphan — its scheduled calendar trigger would otherwise fire a stale
+// alert. Kept free of UNUserNotificationCenter and the store so the invariant is
+// unit-testable (the notifier itself traps under `swift test`).
+//
+// The caller MUST pass server ids from a *successful* pending() fetch; an empty
+// set from a failed request would mark every reminder an orphan.
+public func orphanedServerReminders(
+    local: [LocalCaptureRecord], alivePendingServerIds: Set<String>
+) -> [OrphanedReminder] {
+    local.compactMap { record in
+        guard let serverId = record.serverId,
+            !alivePendingServerIds.contains(serverId)
+        else { return nil }
+        return OrphanedReminder(serverId: serverId, notificationId: record.notificationId)
+    }
+}
