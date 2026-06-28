@@ -206,7 +206,8 @@ Soft delete only — `tasks` and `log_entries` have `deleted_at`. Never issue a 
 
 ## Common Commands
 
-Most things have a `make` shortcut — run `make help` from the repo root to see all targets.
+Most things are implemented in `Justfile`; `Makefile` is a compatibility shim.
+Run `just --list` or `make help` from the repo root to see all targets.
 
 ```bash
 # First-time local setup
@@ -216,6 +217,7 @@ make api                          # run API server
 
 # Daily dev
 make dev                          # full stack via docker compose watch
+make dev-all                      # reload desktop app, then run docker compose watch
 make dev-data                     # just postgres + redis
 make down                         # stop all dev containers
 make api                          # API server only — auto-starts postgres + redis if needed

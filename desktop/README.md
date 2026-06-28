@@ -15,6 +15,8 @@ The app starts in the menu bar. Use Settings to sign in with:
 
 The desktop app stores the returned access token locally. It uses `http://localhost:8080` by default for local development. Set `CHRONICLE_API_URL` when running against another API endpoint. MFA login is not implemented yet.
 
+For a bundled dev run that only restarts the menu bar app when the build output changes, use `make desktop-reload` or `just desktop-reload` from the repo root.
+
 ## Controls
 
 - Menu bar → Quick Capture

@@ -38,7 +38,7 @@ Type safety flows end-to-end: Go structs → huma generates `/openapi.json` → 
 
 ## Local Setup
 
-**Prerequisites:** Docker, Go 1.26+, Node 22+, pnpm 11+
+**Prerequisites:** Docker or OrbStack, Go 1.26+, Node 22+, pnpm 11+, just
 
 ```bash
 # 1. Clone and copy env
@@ -51,7 +51,10 @@ make setup          # copies .env.example → .env, starts postgres + redis, run
 
 # 3. Start everything
 make dev            # full stack via docker compose watch
+make dev-all        # reload desktop app, then start docker compose watch
 ```
+
+Root commands are implemented in `Justfile`; `Makefile` is a compatibility shim, so `make dev` and `just dev` are equivalent.
 
 Or run services separately:
 

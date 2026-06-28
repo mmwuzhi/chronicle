@@ -15,7 +15,8 @@ Frontend for Chronicle — Vite + React + TanStack Router + TanStack Query.
 pnpm install
 ```
 
-Most commands have a `make` shortcut at the repo root — run `make help` there.
+Most repo-root commands are implemented in `Justfile`; `Makefile` is a compatibility shim.
+Run `just --list` or `make help` from the repo root.
 
 ## Commands
 
