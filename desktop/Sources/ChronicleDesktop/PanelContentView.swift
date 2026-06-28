@@ -4,8 +4,8 @@ import ChronicleDesktopCore
 
 // The double-tap-Control quick panel, Claude-desktop style (ported from rag3):
 // one input row up top, a pill toolbar (mode + send hint) below, and a results
-// area that grows downward ONLY when there is something to show. An empty
-// Search/Ask no longer reserves a tall blank list (the #1 complaint).
+// area that grows downward ONLY when there is something to show. Search starts
+// with a small recent-captures preview; Ask stays collapsed until it has work.
 struct PanelContentView: View {
     let clients: CaptureClients
     let onSubmit: (String, Date?) -> Void
@@ -19,6 +19,8 @@ struct PanelContentView: View {
 
     @State private var hits: [RowItem] = []
     @State private var searched = false
+    @State private var recentRows: [RowItem] = []
+    @State private var recentLoaded = false
     @State private var degraded = false
     @State private var answer = ""
     @State private var sources: [AskSource] = []
@@ -30,13 +32,16 @@ struct PanelContentView: View {
     @State private var remindOn = false
     @State private var remindAt = Date().addingTimeInterval(3600)
 
+    private static let recentPreviewLimit = 8
+
     private var text: String { texts[mode] ?? "" }
     private var textBinding: Binding<String> {
         Binding(get: { texts[mode] ?? "" }, set: { texts[mode] = $0 })
     }
 
     private var expanded: Bool {
-        searched || !answer.isEmpty || busy || !error.isEmpty || needsSignIn
+        searched || (mode == .search && recentLoaded) || !answer.isEmpty
+            || busy || !error.isEmpty || needsSignIn
     }
 
     var body: some View {
@@ -137,7 +142,9 @@ struct PanelContentView: View {
         if busy || needsSignIn || !error.isEmpty { return 52 }
         // "No matches" is a single caption line — don't reserve a tall blank box.
         if mode == .search && searched && hits.isEmpty { return 40 }
-        let body = CGFloat(hits.count) * 56 + (answer.isEmpty ? 0 : 120)
+        if mode == .search && !searched && recentLoaded && recentRows.isEmpty { return 40 }
+        let searchRows = searched ? hits : recentRows
+        let body = CGFloat(searchRows.count) * 56 + (answer.isEmpty ? 0 : 120)
         return min(max(body + 20, 52), 320)
     }
 
@@ -165,6 +172,16 @@ struct PanelContentView: View {
             ForEach(hits) { hit in
                 CaptureRow(item: hit, onCopy: { copy(hit.content) }, onDelete: nil, onEdit: nil)
                 Divider().opacity(0.5)
+            }
+        } else if mode == .search && recentLoaded {
+            if recentRows.isEmpty {
+                Text("No recent captures.").font(.caption).foregroundStyle(.secondary)
+            } else {
+                Text("Recent").font(.caption).foregroundStyle(.secondary).padding(.bottom, 4)
+                ForEach(recentRows) { row in
+                    CaptureRow(item: row, onCopy: { copy(row.content) }, onDelete: nil, onEdit: nil)
+                    Divider().opacity(0.5)
+                }
             }
         } else if mode == .ask && !answer.isEmpty {
             answerView
@@ -213,7 +230,10 @@ struct PanelContentView: View {
             remindOn = false
             onClose()
         case .search:
-            guard !q.isEmpty else { return }
+            guard !q.isEmpty else {
+                loadRecentPreview()
+                return
+            }
             runFind(q.replacingOccurrences(of: "\n", with: " "))
         case .ask:
             guard !q.isEmpty else { return }
@@ -224,31 +244,79 @@ struct PanelContentView: View {
     private func runFind(_ query: String) {
         inFlight?.cancel()
         collapseResults()
-        // 1) Local results immediately — offline-first, no login, no network.
+        // 1) Local substring results immediately — offline-first, no login, no network.
         hits = clients.localSearch(query)
         searched = true
-        // 2) Augment with the server's semantic results when signed in.
-        guard let client = clients.recall() else { return }
+        // 2) On-device semantic recall (local Ollama) runs even signed out; the
+        //    server's semantic results merge on top when signed in. Neither needs
+        //    the other, so search keeps improving as far as the environment allows.
+        let client = clients.recall()
         busy = hits.isEmpty
         inFlight = Task { @MainActor in
-            do {
-                let res = try await client.find(q: query)
-                if Task.isCancelled { return }
-                mergeServerHits(res.items.map(RowItem.init))
-                degraded = res.degraded
-            } catch {
-                // Keep local results; a server/auth error must not blank them.
+            let semantic = await clients.localSemanticSearch(query)
+            if Task.isCancelled { return }
+            mergeHits(semantic)
+            if let client {
+                do {
+                    let res = try await client.find(q: query)
+                    if Task.isCancelled { return }
+                    mergeHits(res.items.map(RowItem.init))
+                    degraded = res.degraded
+                } catch {
+                    // Keep local results; a server/auth error must not blank them.
+                }
             }
             busy = false
         }
     }
 
-    private func mergeServerHits(_ server: [RowItem]) {
+    // Append hits not already shown, keyed by id, preserving the order each source
+    // returned them in (local substring, then local semantic, then server).
+    private func mergeHits(_ more: [RowItem]) {
         var seen = Set(hits.map(\.id))
-        for item in server where !seen.contains(item.id) {
+        for item in more where !seen.contains(item.id) {
             hits.append(item)
             seen.insert(item.id)
         }
+    }
+
+    private func loadRecentPreview() {
+        inFlight?.cancel()
+        collapseResults()
+        let local = clients.localRecent(Self.recentPreviewLimit)
+        recentRows = local
+        recentLoaded = !local.isEmpty
+        guard let client = clients.recall() else {
+            recentLoaded = true
+            return
+        }
+        busy = local.isEmpty
+        inFlight = Task { @MainActor in
+            do {
+                let page = try await client.recent(limit: Self.recentPreviewLimit)
+                if Task.isCancelled { return }
+                recentRows = mergeRecentPreview(local: local, remote: page.items.map(RowItem.init))
+                recentLoaded = true
+                error = ""
+            } catch let err {
+                if local.isEmpty { error = describe(err) }
+                recentLoaded = true
+            }
+            busy = false
+        }
+    }
+
+    private func mergeRecentPreview(local: [RowItem], remote: [RowItem]) -> [RowItem] {
+        var seen = Set<String>()
+        var rows: [RowItem] = []
+        for item in remote + local where !seen.contains(item.id) {
+            rows.append(item)
+            seen.insert(item.id)
+        }
+        return Array(rows.sorted { lhs, rhs in
+            (CaptureTime.parse(lhs.createdAt) ?? .distantPast)
+                > (CaptureTime.parse(rhs.createdAt) ?? .distantPast)
+        }.prefix(Self.recentPreviewLimit))
     }
 
     private func runAsk(_ question: String) {
@@ -271,6 +339,7 @@ struct PanelContentView: View {
         inFlight?.cancel()
         mode = m
         collapseResults()
+        if m == .search { loadRecentPreview() }
         DispatchQueue.main.async { focused = true }
     }
 
@@ -279,7 +348,7 @@ struct PanelContentView: View {
     }
 
     private func collapseResults() {
-        hits = []; searched = false; degraded = false
+        hits = []; searched = false; recentRows = []; recentLoaded = false; degraded = false
         answer = ""; sources = []; error = ""; needsSignIn = false; busy = false
     }
 
