@@ -11,7 +11,9 @@ final class QuickCapturePanel: NSPanel {
 final class QuickCapturePanelController: NSWindowController, NSWindowDelegate {
     private let clients: CaptureClients
     private let onSubmit: (String, Date?) -> Void
+    private let focusRestorer = QuickCaptureFocusRestorer()
     private var hostingView: NSHostingView<PanelContentView>!
+    private var isExplicitlyHiding = false
 
     init(clients: CaptureClients, onSubmit: @escaping (String, Date?) -> Void) {
         self.clients = clients
@@ -40,7 +42,7 @@ final class QuickCapturePanelController: NSWindowController, NSWindowDelegate {
         let root = PanelContentView(
             clients: clients,
             onSubmit: { [weak self] text, remindAt in self?.onSubmit(text, remindAt) },
-            onClose: { [weak self] in self?.hide() },
+            onClose: { [weak self] in self?.hide(restoringPreviousFocus: true) },
             onHeightChange: { [weak self] height in self?.resize(to: height) },
         )
         hostingView = NSHostingView(rootView: root)
@@ -55,6 +57,7 @@ final class QuickCapturePanelController: NSWindowController, NSWindowDelegate {
 
     func show() {
         guard let window else { return }
+        focusRestorer.rememberFrontmostApplication()
         // Open on the display the cursor is on, not wherever the panel last showed
         // (window.center() read window.screen, so it stuck to the previous screen).
         // x: centered on that screen. y: TOP edge anchored above center, so the
@@ -71,12 +74,21 @@ final class QuickCapturePanelController: NSWindowController, NSWindowDelegate {
         NotificationCenter.default.post(name: .chroniclePanelShown, object: nil)
     }
 
-    private func hide() {
-        window?.orderOut(nil)
+    private func hide(restoringPreviousFocus: Bool) {
+        guard let window, window.isVisible else { return }
+        isExplicitlyHiding = true
+        window.orderOut(nil)
+        if restoringPreviousFocus {
+            focusRestorer.restore()
+        } else {
+            focusRestorer.discard()
+        }
+        isExplicitlyHiding = false
     }
 
     func windowDidResignKey(_ notification: Notification) {
-        hide()
+        guard !isExplicitlyHiding else { return }
+        hide(restoringPreviousFocus: false)
     }
 
     private func resize(to height: CGFloat) {
@@ -93,5 +105,31 @@ final class QuickCapturePanelController: NSWindowController, NSWindowDelegate {
             frame.origin.y = frame.maxY - height
         }
         window.setFrame(frame, display: true, animate: false)
+    }
+}
+
+@MainActor
+private final class QuickCaptureFocusRestorer {
+    private var state = QuickPanelFocusState()
+    private let currentProcessIdentifier: pid_t
+
+    init(currentProcessIdentifier: pid_t = ProcessInfo.processInfo.processIdentifier) {
+        self.currentProcessIdentifier = currentProcessIdentifier
+    }
+
+    func rememberFrontmostApplication() {
+        state.remember(
+            frontmostApplicationProcessIdentifier: NSWorkspace.shared.frontmostApplication?.processIdentifier,
+            currentApplicationProcessIdentifier: currentProcessIdentifier,
+        )
+    }
+
+    func restore() {
+        guard let processIdentifier = state.consumeForRestore() else { return }
+        NSRunningApplication(processIdentifier: processIdentifier)?.activate(options: [])
+    }
+
+    func discard() {
+        state.discard()
     }
 }

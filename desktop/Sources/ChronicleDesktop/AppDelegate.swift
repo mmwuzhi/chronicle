@@ -202,7 +202,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func quitAction() { NSApp.terminate(nil) }
 
     private func showQuickCapture() {
-        NSApp.activate(ignoringOtherApps: true)
         panelController.show()
     }
 
