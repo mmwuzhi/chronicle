@@ -18,6 +18,9 @@ final class CaptureClients {
     let openSettings: () -> Void
     // Open the single-capture detail window focused on the given row.
     let openDetail: (RowItem) -> Void
+    // Pin / unpin a capture as a desktop sticky, and read whether one is pinned.
+    let togglePin: (RowItem) -> Void
+    let isPinned: (String) -> Bool
     // Offline-first local store access — always available, no login required.
     let localSearch: (String) -> [RowItem]
     let localRecent: (Int) -> [RowItem]
@@ -30,6 +33,8 @@ final class CaptureClients {
         webhook: @escaping () -> WebhookAPIClient?,
         openSettings: @escaping () -> Void,
         openDetail: @escaping (RowItem) -> Void = { _ in },
+        togglePin: @escaping (RowItem) -> Void = { _ in },
+        isPinned: @escaping (String) -> Bool = { _ in false },
         localSearch: @escaping (String) -> [RowItem],
         localRecent: @escaping (Int) -> [RowItem],
         localDelete: @escaping (String) -> Void
@@ -38,6 +43,8 @@ final class CaptureClients {
         self.webhook = webhook
         self.openSettings = openSettings
         self.openDetail = openDetail
+        self.togglePin = togglePin
+        self.isPinned = isPinned
         self.localSearch = localSearch
         self.localRecent = localRecent
         self.localDelete = localDelete
@@ -53,12 +60,17 @@ struct RowItem: Identifiable, Equatable {
     let content: String
     let createdAt: String
     let modality: String
+    // True when this row is backed by a server capture (its id is a real server id).
+    // A not-yet-synced local capture is false: pinning it would persist a local id
+    // the server can't resolve (orphaned/duplicate sticky), so pin is gated on this.
+    let synced: Bool
 
     init(_ hit: RecallItem) {
         id = hit.id
         content = hit.content
         createdAt = hit.createdAt
         modality = hit.modality
+        synced = true
     }
 
     init(_ capture: Capture) {
@@ -66,6 +78,7 @@ struct RowItem: Identifiable, Equatable {
         content = capture.content
         createdAt = capture.createdAt
         modality = capture.mediaType
+        synced = true
     }
 
     init(_ related: RelatedCapture) {
@@ -73,6 +86,7 @@ struct RowItem: Identifiable, Equatable {
         content = related.content
         createdAt = related.createdAt
         modality = related.modality
+        synced = true
     }
 
     // From a local record. A synced record keys on its server id so it dedupes
@@ -83,6 +97,7 @@ struct RowItem: Identifiable, Equatable {
         content = record.payload.rawText
         createdAt = RowItem.iso.string(from: record.createdAt)
         modality = record.payload.mediaType
+        synced = record.serverId != nil
     }
 
     nonisolated(unsafe) private static let iso: ISO8601DateFormatter = {
@@ -175,6 +190,13 @@ struct CaptureRow: View {
     var onDelete: (() -> Void)?
     var onEdit: ((String) -> Void)?
     var onOpen: (() -> Void)?
+    // Remove an explicit link to this row. Distinct from onDelete: it severs the
+    // relation, it does not delete the capture (so it never shows a trash icon).
+    var onUnlink: (() -> Void)?
+    // Pin / unpin this capture as a desktop sticky. When pinned the icon stays lit
+    // even without hover, so the list shows at a glance what is on the desktop.
+    var onPin: (() -> Void)?
+    var isPinned: Bool = false
 
     @State private var hovering = false
     @State private var editing = false
@@ -235,6 +257,19 @@ struct CaptureRow: View {
                             .help("Delete")
                             .opacity(hovering ? 1 : 0)
                     }
+                    if let onUnlink {
+                        Button(action: onUnlink) { Image(systemName: "minus.circle") }
+                            .buttonStyle(.borderless).foregroundStyle(.secondary)
+                            .help("Remove link")
+                            .opacity(hovering ? 1 : 0)
+                    }
+                    if let onPin {
+                        Button(action: onPin) { Image(systemName: isPinned ? "pin.fill" : "pin") }
+                            .buttonStyle(.borderless)
+                            .foregroundStyle(isPinned ? Color.accentColor : .secondary)
+                            .help(isPinned ? "Unpin from desktop" : "Pin to desktop")
+                            .opacity(hovering || isPinned ? 1 : 0)
+                    }
                 }
                 .frame(width: actionSlotWidth, alignment: .trailing)
             }
@@ -253,6 +288,7 @@ struct CaptureRow: View {
     // One fixed slot per visible action so long content never collides with icons.
     private var actionSlotWidth: CGFloat {
         let count = 1 + (onOpen == nil ? 0 : 1) + (onDelete == nil ? 0 : 1)
+            + (onUnlink == nil ? 0 : 1) + (onPin == nil ? 0 : 1)
         return 28 + CGFloat(count - 1) * 24
     }
 

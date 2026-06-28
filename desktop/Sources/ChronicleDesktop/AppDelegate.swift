@@ -9,6 +9,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var panelController: QuickCapturePanelController!
     private var mainWindowController: MainWindowController!
     private var detailWindowController: CaptureDetailWindowController!
+    private var pinnedStickyController: PinnedStickyController!
     private var settingsModel: SettingsModel!
     private var settingsWindowController: SettingsWindowController!
     private var hotKeyController: HotKeyController?
@@ -33,6 +34,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
         mainWindowController = MainWindowController(clients: clients)
         detailWindowController = CaptureDetailWindowController(clients: clients)
+        pinnedStickyController = PinnedStickyController(recall: clients.recall)
         settingsModel = SettingsModel(
             settings: settings,
             localStore: localStore,
@@ -47,6 +49,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         installHotKey()
         installReminderNotifier()
         refreshSessionIfPossible()
+        // Rebuild pinned stickies from cache now (works offline); refreshSessionIfPossible
+        // → handleSignInChanged refreshes their content once a token lands.
+        pinnedStickyController.restore()
 
         if settings.load().isUsable == false {
             showSettings()
@@ -96,6 +101,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             },
             openSettings: { [weak self] in self?.showSettings() },
             openDetail: { [weak self] row in self?.detailWindowController?.open(row) },
+            togglePin: { [weak self] row in self?.pinnedStickyController?.toggle(row) },
+            isPinned: { [weak self] id in self?.pinnedStickyController?.isPinned(id) ?? false },
             localSearch: { [localStore] q in
                 (try? localStore.search(q))?.map(RowItem.init) ?? []
             },
@@ -206,6 +213,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // Re-sync reminders + offline captures after the signed-in state changes.
     private func handleSignInChanged() {
         reminderNotifier?.syncFromServer()
+        // Refresh pinned stickies' content now that a token is available (on launch
+        // they restore from cache before the silent refresh completes).
+        pinnedStickyController?.refreshAll()
         Task { @MainActor in
             if let client = makeClient() {
                 _ = await syncPendingCaptures(using: client)

@@ -210,6 +210,19 @@ public final class RecallAPIClient: @unchecked Sendable {
         return try JSONDecoder().decode(CapturePage.self, from: data)
     }
 
+    // Fetch a single capture by id (GET /captures/{id}). Used to refresh a pinned
+    // sticky's content on launch; a deleted or not-owned capture is a 404, surfaced
+    // as CaptureAPIError.httpStatus(404) so callers can drop a stale pin.
+    public func capture(id: String) async throws -> Capture {
+        var request = URLRequest(url: captureURL(id))
+        request.httpMethod = "GET"
+        request.setValue("Bearer \(config.token)", forHTTPHeaderField: "Authorization")
+        let (data, response) = try await AuthedTransport.send(
+            request, session: session, refresher: refresher)
+        try Self.validate(response)
+        return try JSONDecoder().decode(Capture.self, from: data)
+    }
+
     // Edit a capture's text (PATCH /captures/{id}); the server re-embeds + re-extracts.
     public func update(id: String, rawText: String) async throws -> Capture {
         var request = URLRequest(url: captureURL(id))
@@ -255,6 +268,45 @@ public final class RecallAPIClient: @unchecked Sendable {
             request, session: session, refresher: refresher)
         try Self.validate(response)
         return try JSONDecoder().decode([RelatedCapture].self, from: data)
+    }
+
+    // MARK: - Explicit links (durable user-made relations)
+
+    // The captures explicitly linked to this one (GET /captures/{id}/links). Same
+    // CaptureBody shape as a browsed capture, so it decodes into the shared Capture
+    // type. Links are undirected on the server: linking A→B surfaces on both ends.
+    public func links(id: String) async throws -> [Capture] {
+        var request = URLRequest(url: captureURL(id).appending(path: "links"))
+        request.httpMethod = "GET"
+        request.setValue("Bearer \(config.token)", forHTTPHeaderField: "Authorization")
+        let (data, response) = try await AuthedTransport.send(
+            request, session: session, refresher: refresher)
+        try Self.validate(response)
+        return try JSONDecoder().decode([Capture].self, from: data)
+    }
+
+    // Link this capture to another (POST /captures/{id}/links). Idempotent on the
+    // server; both ends must be the caller's own live captures, or it 404s.
+    public func addLink(id: String, targetId: String) async throws {
+        var request = URLRequest(url: captureURL(id).appending(path: "links"))
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(config.token)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONEncoder().encode(["targetId": targetId])
+        let (_, response) = try await AuthedTransport.send(
+            request, session: session, refresher: refresher)
+        try Self.validate(response)
+    }
+
+    // Remove the link between two captures (DELETE /captures/{id}/links/{targetId}).
+    public func removeLink(id: String, targetId: String) async throws {
+        let url = captureURL(id).appending(path: "links").appending(path: targetId)
+        var request = URLRequest(url: url)
+        request.httpMethod = "DELETE"
+        request.setValue("Bearer \(config.token)", forHTTPHeaderField: "Authorization")
+        let (_, response) = try await AuthedTransport.send(
+            request, session: session, refresher: refresher)
+        try Self.validate(response)
     }
 
     private func captureURL(_ id: String) -> URL {

@@ -44,6 +44,10 @@ struct MainView: View {
     @State private var pendingDeleteTask: Task<Void, Never>?
     private static let undoWindow: Duration = .seconds(5)
 
+    // Bumped on .chroniclePinsChanged to re-read clients.isPinned for each row, so
+    // pinning/unpinning anywhere keeps every row's pin indicator in sync.
+    @State private var pinTick = 0
+
     private var rows: [RowItem] {
         let base = searched ? hits : ((signedIn && !offline) ? fragments.map(RowItem.init) : localRows)
         guard let pendingDeleteId else { return base }
@@ -101,6 +105,9 @@ struct MainView: View {
         .onReceive(NotificationCenter.default.publisher(for: .chronicleMainShown)) { _ in
             if mode == .browse && !searched { Task { await loadBrowse(reset: true) } }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .chroniclePinsChanged)) { _ in
+            pinTick &+= 1
+        }
         .onDisappear { flushPendingDelete() }
     }
 
@@ -122,6 +129,10 @@ struct MainView: View {
                     onDelete: { delete(row.id) },
                     onEdit: { edit(row.id, $0) },
                     onOpen: { clients.openDetail(row) },
+                    // Only synced captures can be pinned: a local-only id can't be
+                    // re-fetched by GET /captures/{id}, so it would orphan the sticky.
+                    onPin: row.synced ? { clients.togglePin(row) } : nil,
+                    isPinned: clients.isPinned(row.id),
                 )
                 .onAppear { maybeLoadMore(row) }
                 Divider().opacity(0.5)

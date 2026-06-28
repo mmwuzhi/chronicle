@@ -319,6 +319,9 @@ extension Notification.Name {
     static let chroniclePanelShown = Notification.Name("chroniclePanelShown")
     /// Posted each time the main window is shown (MainView refreshes its browse list).
     static let chronicleMainShown = Notification.Name("chronicleMainShown")
+    /// Posted when the set of pinned desktop stickies changes, so capture rows can
+    /// re-read their pinned state and update the pin indicator.
+    static let chroniclePinsChanged = Notification.Name("chroniclePinsChanged")
 }
 
 extension View {
