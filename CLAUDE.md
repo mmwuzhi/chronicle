@@ -129,7 +129,7 @@ Do not introduce deferred features unless explicitly requested.
 - `api/db/queries/` — sqlc `.sql` query files (source of truth for DB queries)
 - `api/db/sqlc/` — generated Go code from sqlc, never edit by hand
 - `desktop/` — Swift macOS menu bar quick-capture app
-- `desktop/Sources/ChronicleDesktopCore/` — testable capture payload, API client, queue, and path helpers
+- `desktop/Sources/ChronicleDesktopCore/` — testable capture payload, API client, queue, path helpers, and on-device offline semantic search (local Ollama embedder + SQLite vector cache)
 - `desktop/Sources/ChronicleDesktop/` — AppKit menu bar UI, global hotkey, settings, and quick-capture panel
 - `web/` — Vite frontend
 - `web/src/api/` — orval-generated TanStack Query hooks, never edit by hand

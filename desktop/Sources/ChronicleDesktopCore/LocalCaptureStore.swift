@@ -95,6 +95,78 @@ public final class LocalCaptureStore: @unchecked Sendable {
         }
     }
 
+    // MARK: - On-device semantic index (offline vector search)
+
+    // Rows whose embedding is missing or came from a different model, newest
+    // first. Media-only captures (no indexable text) are skipped — there is
+    // nothing to embed. Caller embeds these and writes back via setEmbedding.
+    public func rowsNeedingEmbedding(model: String, limit: Int = 200) throws -> [LocalCaptureRecord] {
+        try query(
+            """
+            SELECT id, server_id, raw_text, media_type, classified_as, source,
+                   remind_at, created_at, updated_at, synced_at, last_error, notified_at
+            FROM local_captures
+            WHERE trim(raw_text) <> ''
+              AND (embedding IS NULL OR embed_model IS NOT ?)
+            ORDER BY created_at DESC
+            LIMIT ?
+            """,
+        ) { stmt in
+            bindText(stmt, 1, model)
+            sqlite3_bind_int(stmt, 2, Int32(limit))
+        }
+    }
+
+    // Cache one capture's embedding (raw float32 bytes) and its producing model.
+    public func setEmbedding(id: String, model: String, vector: [Float]) throws {
+        let data = vector.withUnsafeBytes { Data($0) }
+        try withDatabase { db in
+            try executeStatement(
+                db, "UPDATE local_captures SET embedding = ?, embed_model = ? WHERE id = ?"
+            ) { stmt in
+                data.withUnsafeBytes { raw in
+                    _ = sqlite3_bind_blob(stmt, 1, raw.baseAddress, Int32(data.count), sqliteTransient)
+                }
+                bindText(stmt, 2, model)
+                bindText(stmt, 3, id)
+            }
+        }
+    }
+
+    // Every locally-cached capture with a current-model embedding, paired with its
+    // vector — the corpus the caller ranks a query against. Small by nature (the
+    // on-device store), so loading all vectors and ranking in memory is fine.
+    public func embeddedRows(model: String) throws -> [(record: LocalCaptureRecord, vector: [Float])] {
+        try withDatabase { db in
+            let sql = """
+                SELECT id, server_id, raw_text, media_type, classified_as, source,
+                       remind_at, created_at, updated_at, synced_at, last_error, notified_at,
+                       embedding
+                FROM local_captures
+                WHERE embed_model = ? AND embedding IS NOT NULL
+                """
+            var stmt: OpaquePointer?
+            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+                throw LocalCaptureStoreError.prepareFailed(lastError(db))
+            }
+            defer { sqlite3_finalize(stmt) }
+            bindText(stmt, 1, model)
+
+            var rows: [(record: LocalCaptureRecord, vector: [Float])] = []
+            while true {
+                let result = sqlite3_step(stmt)
+                if result == SQLITE_DONE { return rows }
+                guard result == SQLITE_ROW else {
+                    throw LocalCaptureStoreError.stepFailed(lastError(db))
+                }
+                let vector = columnFloatArray(stmt, 12)
+                if !vector.isEmpty {
+                    rows.append((try decodeRecord(stmt), vector))
+                }
+            }
+        }
+    }
+
     // All local captures, newest first — the offline browse list.
     public func recent(limit: Int = 50, offset: Int = 0) throws -> [LocalCaptureRecord] {
         try query(
@@ -382,6 +454,11 @@ public final class LocalCaptureStore: @unchecked Sendable {
             throw LocalCaptureStoreError.execFailed(lastError(db))
         }
         try ensureColumn(db, table: "local_captures", column: "notified_at", definition: "TEXT")
+        // On-device semantic search cache: the capture's embedding (raw float32
+        // bytes) and the model that produced it. embed_model lets a model swap
+        // invalidate stale vectors (rowsNeedingEmbedding re-embeds them).
+        try ensureColumn(db, table: "local_captures", column: "embedding", definition: "BLOB")
+        try ensureColumn(db, table: "local_captures", column: "embed_model", definition: "TEXT")
     }
 
     private func ensureColumn(
@@ -475,6 +552,21 @@ private func columnText(_ stmt: OpaquePointer?, _ index: Int32) -> String? {
 private func columnDate(_ stmt: OpaquePointer?, _ index: Int32) throws -> Date? {
     guard let text = columnText(stmt, index) else { return nil }
     return DateCodec.date(from: text)
+}
+
+// Decode a BLOB column of raw float32 bytes back into [Float]. Empty when the
+// column is NULL/non-blob or its length is not a whole number of floats (a
+// corrupt cache row is skipped, not crashed on).
+private func columnFloatArray(_ stmt: OpaquePointer?, _ index: Int32) -> [Float] {
+    guard sqlite3_column_type(stmt, index) == SQLITE_BLOB,
+          let bytes = sqlite3_column_blob(stmt, index)
+    else {
+        return []
+    }
+    let byteCount = Int(sqlite3_column_bytes(stmt, index))
+    guard byteCount > 0, byteCount % MemoryLayout<Float>.stride == 0 else { return [] }
+    let buffer = UnsafeRawBufferPointer(start: bytes, count: byteCount)
+    return Array(buffer.bindMemory(to: Float.self))
 }
 
 private func lastError(_ db: OpaquePointer?) -> String {

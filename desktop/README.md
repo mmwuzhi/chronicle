@@ -29,6 +29,16 @@ If the API is unavailable or the token is missing, captures are stored locally i
 ~/Library/Application Support/Chronicle/chronicle-local.sqlite3
 ```
 
+## Search
+
+Search runs in independent layers, merged by capture id (no layer depends on another):
+
+- **Keyword (offline, no login)** — substring match over the local SQLite cache. Always on.
+- **On-device semantic (offline, no login)** — opt-in. If a local [Ollama](https://ollama.com) is running with `bge-m3` (`ollama pull bge-m3`), captures and the query are embedded locally and ranked by cosine, so meaning-based search works with no account and no network ("吃面" finds a "拉面" note). It targets `http://127.0.0.1:11434` and falls back to keyword silently when Ollama is absent — offline semantic is the user's own setup, not a requirement.
+- **Server semantic** — when signed in, the API's `/find` results merge on top.
+
+The on-device and server channels each use their own embedding model and vector space; they coexist by id-dedup rather than a shared space, so the online service is free to use the best embedding (e.g. Voyage) independent of the local one.
+
 ## Tests
 
 ```bash

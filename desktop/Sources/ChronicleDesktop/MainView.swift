@@ -194,26 +194,33 @@ struct MainView: View {
             Task { await loadBrowse(reset: true) }
             return
         }
-        // Local results immediately — offline-first, no login.
+        // Local substring results immediately — offline-first, no login.
         hits = clients.localSearch(q)
         searched = true
-        guard let client = clients.recall() else { return }
+        // On-device semantic recall runs even signed out; server semantic merges
+        // on top when signed in. Neither depends on the other.
+        let client = clients.recall()
         busy = hits.isEmpty
         Task { @MainActor in
-            do {
-                let res = try await client.find(q: q)
-                mergeServerHits(res.items.map(RowItem.init))
-                degraded = res.degraded
-            } catch {
-                // Keep local results; a server/auth error must not blank them.
+            mergeHits(await clients.localSemanticSearch(q))
+            if let client {
+                do {
+                    let res = try await client.find(q: q)
+                    mergeHits(res.items.map(RowItem.init))
+                    degraded = res.degraded
+                } catch {
+                    // Keep local results; a server/auth error must not blank them.
+                }
             }
             busy = false
         }
     }
 
-    private func mergeServerHits(_ server: [RowItem]) {
+    // Append hits not already shown, keyed by id (local substring, then local
+    // semantic, then server).
+    private func mergeHits(_ more: [RowItem]) {
         var seen = Set(hits.map(\.id))
-        for item in server where !seen.contains(item.id) {
+        for item in more where !seen.contains(item.id) {
             hits.append(item)
             seen.insert(item.id)
         }

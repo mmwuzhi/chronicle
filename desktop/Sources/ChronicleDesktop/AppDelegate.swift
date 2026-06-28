@@ -15,6 +15,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var hotKeyController: HotKeyController?
     private let settings = SettingsStore()
     private let localStore = LocalCaptureStore(fileURL: ChronicleDesktopPaths.defaultLocalDatabaseURL())
+    // Offline semantic search over the local cache via a local Ollama. Lazy so it
+    // can reference localStore; degrades to keyword search when Ollama is absent.
+    private lazy var localSemantic = LocalSemanticSearch(store: localStore, embedder: LocalEmbedder())
     private var reminderNotifier: ReminderNotifier?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -27,6 +30,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         installApplicationMenu()
         drainLegacyQueue()
+        // Warm the on-device semantic index in the background (embeds any captures
+        // missing a vector, including ones just drained from the legacy queue).
+        Task { await localSemantic.ensureIndexed() }
         clients = makeClients()
         panelController = QuickCapturePanelController(
             clients: clients,
@@ -105,6 +111,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             isPinned: { [weak self] id in self?.pinnedStickyController?.isPinned(id) ?? false },
             localSearch: { [localStore] q in
                 (try? localStore.search(q))?.map(RowItem.init) ?? []
+            },
+            localSemanticSearch: { [localSemantic] q in
+                (await localSemantic.search(q))?.map(RowItem.init) ?? []
             },
             localRecent: { [localStore] limit in
                 (try? localStore.recent(limit: limit))?.map(RowItem.init) ?? []
@@ -243,6 +252,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         do {
             let record = try persistCapture(payload)
             reminderNotifier?.schedule(record)
+            // Embed the new capture in the background so it becomes semantically
+            // searchable offline, independent of whether it ever syncs.
+            Task { await localSemantic.ensureIndexed() }
 
             guard let client = makeClient() else {
                 showNotification(title: "Saved locally — sign in to sync", body: trimmed)
