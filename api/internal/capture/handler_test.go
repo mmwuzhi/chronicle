@@ -777,6 +777,53 @@ func TestUpdateCapture_NotOwned(t *testing.T) {
 	}
 }
 
+// --- get one ---
+
+func TestGetCapture(t *testing.T) {
+	srv, pool := newServer(t)
+	_, tokenA := createTestUser(t, pool)
+	_, tokenB := createTestUser(t, pool)
+
+	id := createCapture(t, srv, tokenA, map[string]any{"rawText": "find me by id"})
+
+	// Owner gets the capture, content intact.
+	resp := do(t, srv.Client(), http.MethodGet, srv.URL+"/captures/"+id, tokenA, nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("get own capture: expected 200, got %d", resp.StatusCode)
+	}
+	var body struct {
+		ID      string  `json:"id"`
+		RawText *string `json:"rawText"`
+	}
+	decodeBody(t, resp, &body)
+	if body.ID != id || body.RawText == nil || *body.RawText != "find me by id" {
+		t.Fatalf("get own capture: unexpected body %+v", body)
+	}
+
+	// Another user cannot read it (scoped to owner, so a 404 not a leak).
+	other := do(t, srv.Client(), http.MethodGet, srv.URL+"/captures/"+id, tokenB, nil)
+	other.Body.Close()
+	if other.StatusCode != http.StatusNotFound {
+		t.Fatalf("get another user's capture: expected 404, got %d", other.StatusCode)
+	}
+
+	// Unknown id is a 404.
+	missing := do(t, srv.Client(), http.MethodGet, srv.URL+"/captures/"+uuid.New().String(), tokenA, nil)
+	missing.Body.Close()
+	if missing.StatusCode != http.StatusNotFound {
+		t.Fatalf("get missing capture: expected 404, got %d", missing.StatusCode)
+	}
+
+	// A soft-deleted capture is a 404 (GetCapture excludes deleted_at rows).
+	del := do(t, srv.Client(), http.MethodDelete, srv.URL+"/captures/"+id, tokenA, nil)
+	del.Body.Close()
+	deleted := do(t, srv.Client(), http.MethodGet, srv.URL+"/captures/"+id, tokenA, nil)
+	deleted.Body.Close()
+	if deleted.StatusCode != http.StatusNotFound {
+		t.Fatalf("get soft-deleted capture: expected 404, got %d", deleted.StatusCode)
+	}
+}
+
 // --- delete ---
 
 func TestDeleteCapture_HappyPath(t *testing.T) {

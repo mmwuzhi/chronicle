@@ -48,6 +48,7 @@ func Register(api huma.API, pool *pgxpool.Pool, rag *ragclient.Client, authMW, c
 	createOp := op("create-capture", http.MethodPost, "/captures", "Create a capture")
 	createOp.Middlewares = huma.Middlewares{createMW}
 	huma.Register(api, createOp, h.create)
+	huma.Register(api, op("get-capture", http.MethodGet, "/captures/{id}", "Get a single capture"), h.get)
 	huma.Register(api, op("update-capture", http.MethodPatch, "/captures/{id}", "Update a capture"), h.update)
 	huma.Register(api, op("retry-capture-transcription", http.MethodPost, "/captures/{id}/transcription/retry", "Retry audio or image transcription"), h.retryTranscription)
 	huma.Register(api, op("set-capture-remind", http.MethodPost, "/captures/{id}/remind", "Set or clear a capture reminder"), h.setRemind)
@@ -258,6 +259,36 @@ func (h *handler) update(ctx context.Context, input *CaptureUpdateInput) (*Updat
 	// (classifiedAs, taskId) must not trigger embedding + extraction.
 	if input.Body.RawText != nil || input.Body.Transcript != nil {
 		h.rag.Index(uid.String(), c.ID.String())
+	}
+	return &UpdateOutput{Body: toBody(c)}, nil
+}
+
+// --- get one ---
+//
+// Fetch a single capture by id. The desktop sticky surface uses this to refresh a
+// pinned capture's content on launch; it also backs id-addressed deep links.
+// GetCapture is scoped to the owner and excludes soft-deleted rows, so another
+// user's capture or a trashed one is a 404, never a leak.
+
+type CaptureGetInput struct {
+	ID string `path:"id" format:"uuid"`
+}
+
+func (h *handler) get(ctx context.Context, input *CaptureGetInput) (*UpdateOutput, error) {
+	uid, err := userID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	id, err := uuid.Parse(input.ID)
+	if err != nil {
+		return nil, huma.Error422UnprocessableEntity("invalid id")
+	}
+	c, err := h.q.GetCapture(ctx, db.GetCaptureParams{ID: id, UserID: uid})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, huma.Error404NotFound("capture not found")
+		}
+		return nil, huma.Error500InternalServerError("internal error")
 	}
 	return &UpdateOutput{Body: toBody(c)}, nil
 }

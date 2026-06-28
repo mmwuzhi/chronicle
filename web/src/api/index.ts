@@ -2775,6 +2775,99 @@ export const useDeleteCapture = <TError = ErrorModel,
     }
 
 /**
+ * @summary Get a single capture
+ */
+export const getCapture = (
+    id: string,
+ signal?: AbortSignal
+) => {
+
+
+      return api<CaptureBody>(
+      {url: `/captures/${id}`, method: 'GET', signal
+    },
+      );
+    }
+
+
+
+
+export const getGetCaptureQueryKey = (id: string,) => {
+    return [
+    `/captures/${id}`
+    ] as const;
+    }
+
+
+export const getGetCaptureQueryOptions = <TData = Awaited<ReturnType<typeof getCapture>>, TError = ErrorModel>(id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getCapture>>, TError, TData>>, }
+) => {
+
+const {query: queryOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetCaptureQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getCapture>>> = ({ signal }) => getCapture(id, signal);
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getCapture>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetCaptureQueryResult = NonNullable<Awaited<ReturnType<typeof getCapture>>>
+export type GetCaptureQueryError = ErrorModel
+
+
+export function useGetCapture<TData = Awaited<ReturnType<typeof getCapture>>, TError = ErrorModel>(
+ id: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getCapture>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getCapture>>,
+          TError,
+          Awaited<ReturnType<typeof getCapture>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetCapture<TData = Awaited<ReturnType<typeof getCapture>>, TError = ErrorModel>(
+ id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getCapture>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getCapture>>,
+          TError,
+          Awaited<ReturnType<typeof getCapture>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetCapture<TData = Awaited<ReturnType<typeof getCapture>>, TError = ErrorModel>(
+ id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getCapture>>, TError, TData>>, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Get a single capture
+ */
+
+export function useGetCapture<TData = Awaited<ReturnType<typeof getCapture>>, TError = ErrorModel>(
+ id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getCapture>>, TError, TData>>, }
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetCaptureQueryOptions(id,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+/**
  * @summary Update a capture
  */
 export const updateCapture = (
