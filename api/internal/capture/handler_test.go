@@ -847,6 +847,155 @@ func TestDeleteCapture_HappyPath(t *testing.T) {
 	}
 }
 
+// --- external attachments ---
+
+func TestCaptureAttachments_AddListDelete(t *testing.T) {
+	srv, pool := newServer(t)
+	_, token := createTestUser(t, pool)
+	id := createCapture(t, srv, token, nil)
+
+	resp := do(t, srv.Client(), http.MethodPost, srv.URL+"/captures/"+id+"/attachments", token, map[string]any{
+		"provider":       "google_drive",
+		"providerFileId": "drive-file-123",
+		"name":           "receipt.pdf",
+		"mimeType":       "application/pdf",
+		"sizeBytes":      2048,
+		"webUrl":         "https://drive.google.com/file/d/drive-file-123/view",
+	})
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("add attachment: expected 200, got %d", resp.StatusCode)
+	}
+	var created struct {
+		ID             string `json:"id"`
+		CaptureID      string `json:"captureId"`
+		Provider       string `json:"provider"`
+		ProviderFileID string `json:"providerFileId"`
+		Name           string `json:"name"`
+		MimeType       string `json:"mimeType"`
+		SizeBytes      int64  `json:"sizeBytes"`
+		WebURL         string `json:"webUrl"`
+	}
+	decodeBody(t, resp, &created)
+	if created.ID == "" || created.CaptureID != id {
+		t.Fatalf("unexpected attachment identity: %+v", created)
+	}
+	if created.Provider != "google_drive" || created.ProviderFileID != "drive-file-123" {
+		t.Fatalf("unexpected provider fields: %+v", created)
+	}
+	if created.Name != "receipt.pdf" || created.MimeType != "application/pdf" || created.SizeBytes != 2048 {
+		t.Fatalf("unexpected display fields: %+v", created)
+	}
+
+	list := do(t, srv.Client(), http.MethodGet, srv.URL+"/captures/"+id+"/attachments", token, nil)
+	if list.StatusCode != http.StatusOK {
+		t.Fatalf("list attachments: expected 200, got %d", list.StatusCode)
+	}
+	var items []struct {
+		ID string `json:"id"`
+	}
+	decodeBody(t, list, &items)
+	if len(items) != 1 || items[0].ID != created.ID {
+		t.Fatalf("expected listed attachment %s, got %+v", created.ID, items)
+	}
+
+	del := do(t, srv.Client(), http.MethodDelete, srv.URL+"/captures/"+id+"/attachments/"+created.ID, token, nil)
+	del.Body.Close()
+	if del.StatusCode != http.StatusNoContent {
+		t.Fatalf("delete attachment: expected 204, got %d", del.StatusCode)
+	}
+
+	list = do(t, srv.Client(), http.MethodGet, srv.URL+"/captures/"+id+"/attachments", token, nil)
+	var after []any
+	decodeBody(t, list, &after)
+	if len(after) != 0 {
+		t.Fatalf("expected no live attachments after delete, got %d", len(after))
+	}
+}
+
+func TestCaptureAttachments_ValidationAndDuplicate(t *testing.T) {
+	srv, pool := newServer(t)
+	_, token := createTestUser(t, pool)
+	id := createCapture(t, srv, token, nil)
+	base := map[string]any{
+		"provider":       "dropbox",
+		"providerFileId": "dropbox-file-123",
+		"name":           "contract.txt",
+		"webUrl":         "https://dropbox.com/s/dropbox-file-123/contract.txt",
+	}
+
+	resp := do(t, srv.Client(), http.MethodPost, srv.URL+"/captures/"+id+"/attachments", token, base)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("first add: expected 200, got %d", resp.StatusCode)
+	}
+	dup := do(t, srv.Client(), http.MethodPost, srv.URL+"/captures/"+id+"/attachments", token, base)
+	dup.Body.Close()
+	if dup.StatusCode != http.StatusConflict {
+		t.Fatalf("duplicate add: expected 409, got %d", dup.StatusCode)
+	}
+
+	for _, test := range []struct {
+		name string
+		body map[string]any
+	}{
+		{
+			name: "bad provider",
+			body: map[string]any{
+				"provider":       "icloud_drive",
+				"providerFileId": "file-1",
+				"name":           "x.txt",
+				"webUrl":         "https://example.test/x.txt",
+			},
+		},
+		{
+			name: "bad url scheme",
+			body: map[string]any{
+				"provider":       "onedrive",
+				"providerFileId": "file-1",
+				"name":           "x.txt",
+				"webUrl":         "file:///tmp/x.txt",
+			},
+		},
+		{
+			name: "negative size",
+			body: map[string]any{
+				"provider":       "onedrive",
+				"providerFileId": "file-1",
+				"name":           "x.txt",
+				"sizeBytes":      -1,
+				"webUrl":         "https://example.test/x.txt",
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			resp := do(t, srv.Client(), http.MethodPost, srv.URL+"/captures/"+id+"/attachments", token, test.body)
+			defer resp.Body.Close()
+			if resp.StatusCode != http.StatusUnprocessableEntity {
+				t.Fatalf("expected 422, got %d", resp.StatusCode)
+			}
+		})
+	}
+}
+
+func TestCaptureAttachments_NotOwnedOrMissing(t *testing.T) {
+	srv, pool := newServer(t)
+	_, tokenA := createTestUser(t, pool)
+	_, tokenB := createTestUser(t, pool)
+	id := createCapture(t, srv, tokenA, nil)
+
+	resp := do(t, srv.Client(), http.MethodGet, srv.URL+"/captures/"+id+"/attachments", tokenB, nil)
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("another user's attachments: expected 404, got %d", resp.StatusCode)
+	}
+
+	missing := do(t, srv.Client(), http.MethodGet, srv.URL+"/captures/"+uuid.New().String()+"/attachments", tokenA, nil)
+	defer missing.Body.Close()
+	if missing.StatusCode != http.StatusNotFound {
+		t.Fatalf("missing capture attachments: expected 404, got %d", missing.StatusCode)
+	}
+}
+
 // --- related captures (links + suggestions) ---
 
 func TestCaptureLinks_AddListRemoveBothDirections(t *testing.T) {

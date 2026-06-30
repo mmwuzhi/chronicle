@@ -100,6 +100,49 @@ func (ns NullCaptureMediaType) Value() (driver.Value, error) {
 	return string(ns.CaptureMediaType), nil
 }
 
+type CloudDriveProvider string
+
+const (
+	CloudDriveProviderGoogleDrive CloudDriveProvider = "google_drive"
+	CloudDriveProviderOnedrive    CloudDriveProvider = "onedrive"
+	CloudDriveProviderDropbox     CloudDriveProvider = "dropbox"
+)
+
+func (e *CloudDriveProvider) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = CloudDriveProvider(s)
+	case string:
+		*e = CloudDriveProvider(s)
+	default:
+		return fmt.Errorf("unsupported scan type for CloudDriveProvider: %T", src)
+	}
+	return nil
+}
+
+type NullCloudDriveProvider struct {
+	CloudDriveProvider CloudDriveProvider `json:"cloud_drive_provider"`
+	Valid              bool               `json:"valid"` // Valid is true if CloudDriveProvider is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullCloudDriveProvider) Scan(value interface{}) error {
+	if value == nil {
+		ns.CloudDriveProvider, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.CloudDriveProvider.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullCloudDriveProvider) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.CloudDriveProvider), nil
+}
+
 type TaskStatus string
 
 const (
@@ -315,6 +358,20 @@ type Capture struct {
 	MediaKey              pgtype.Text         `json:"media_key"`
 	RemindAt              pgtype.Timestamptz  `json:"remind_at"`
 	DeletedAt             pgtype.Timestamptz  `json:"deleted_at"`
+}
+
+type CaptureAttachment struct {
+	ID             uuid.UUID          `json:"id"`
+	UserID         uuid.UUID          `json:"user_id"`
+	CaptureID      uuid.UUID          `json:"capture_id"`
+	Provider       CloudDriveProvider `json:"provider"`
+	ProviderFileID string             `json:"provider_file_id"`
+	Name           string             `json:"name"`
+	MimeType       pgtype.Text        `json:"mime_type"`
+	SizeBytes      pgtype.Int8        `json:"size_bytes"`
+	WebUrl         string             `json:"web_url"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
 }
 
 type CaptureEmbedding struct {

@@ -126,3 +126,16 @@ func TestCaptureToken_CannotDeleteCapture(t *testing.T) {
 		t.Fatalf("expected 401 deleting with capture token, got %d", resp.StatusCode)
 	}
 }
+
+func TestCaptureToken_CannotListAttachments(t *testing.T) {
+	srv, pool := newServer(t)
+	userID, jwtToken := createTestUser(t, pool)
+	capToken := mintCaptureToken(t, pool, userID)
+	id := createCapture(t, srv, jwtToken, nil)
+
+	resp := do(t, srv.Client(), http.MethodGet, srv.URL+"/captures/"+id+"/attachments", capToken, nil)
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("expected 401 listing attachments with capture token, got %d", resp.StatusCode)
+	}
+}
