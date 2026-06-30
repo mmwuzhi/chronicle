@@ -81,6 +81,42 @@ export interface AskOutputBody {
   sources: AskSource[] | null;
 }
 
+export interface CaptureAttachmentBody {
+  /** A URL to the JSON Schema for this object. */
+  readonly $schema?: string;
+  captureId: string;
+  createdAt: string;
+  id: string;
+  /** @nullable */
+  mimeType: string | null;
+  name: string;
+  provider: string;
+  providerFileId: string;
+  /** @nullable */
+  sizeBytes: number | null;
+  webUrl: string;
+}
+
+export type CaptureAttachmentCreateInputBodyProvider = typeof CaptureAttachmentCreateInputBodyProvider[keyof typeof CaptureAttachmentCreateInputBodyProvider];
+
+
+export const CaptureAttachmentCreateInputBodyProvider = {
+  google_drive: 'google_drive',
+  onedrive: 'onedrive',
+  dropbox: 'dropbox',
+} as const;
+
+export interface CaptureAttachmentCreateInputBody {
+  /** A URL to the JSON Schema for this object. */
+  readonly $schema?: string;
+  mimeType?: string;
+  name: string;
+  provider: CaptureAttachmentCreateInputBodyProvider;
+  providerFileId: string;
+  sizeBytes?: number;
+  webUrl: string;
+}
+
 export interface CaptureBody {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
@@ -2930,6 +2966,227 @@ export const useUpdateCapture = <TError = ErrorModel,
         TContext
       > => {
       return useMutation(getUpdateCaptureMutationOptions(options), queryClient);
+    }
+
+/**
+ * @summary List external file references
+ */
+export const listCaptureAttachments = (
+    id: string,
+ signal?: AbortSignal
+) => {
+
+
+      return api<CaptureAttachmentBody[] | null>(
+      {url: `/captures/${id}/attachments`, method: 'GET', signal
+    },
+      );
+    }
+
+
+
+
+export const getListCaptureAttachmentsQueryKey = (id: string,) => {
+    return [
+    `/captures/${id}/attachments`
+    ] as const;
+    }
+
+
+export const getListCaptureAttachmentsQueryOptions = <TData = Awaited<ReturnType<typeof listCaptureAttachments>>, TError = ErrorModel>(id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listCaptureAttachments>>, TError, TData>>, }
+) => {
+
+const {query: queryOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListCaptureAttachmentsQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listCaptureAttachments>>> = ({ signal }) => listCaptureAttachments(id, signal);
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listCaptureAttachments>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListCaptureAttachmentsQueryResult = NonNullable<Awaited<ReturnType<typeof listCaptureAttachments>>>
+export type ListCaptureAttachmentsQueryError = ErrorModel
+
+
+export function useListCaptureAttachments<TData = Awaited<ReturnType<typeof listCaptureAttachments>>, TError = ErrorModel>(
+ id: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listCaptureAttachments>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listCaptureAttachments>>,
+          TError,
+          Awaited<ReturnType<typeof listCaptureAttachments>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListCaptureAttachments<TData = Awaited<ReturnType<typeof listCaptureAttachments>>, TError = ErrorModel>(
+ id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listCaptureAttachments>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listCaptureAttachments>>,
+          TError,
+          Awaited<ReturnType<typeof listCaptureAttachments>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListCaptureAttachments<TData = Awaited<ReturnType<typeof listCaptureAttachments>>, TError = ErrorModel>(
+ id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listCaptureAttachments>>, TError, TData>>, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary List external file references
+ */
+
+export function useListCaptureAttachments<TData = Awaited<ReturnType<typeof listCaptureAttachments>>, TError = ErrorModel>(
+ id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listCaptureAttachments>>, TError, TData>>, }
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getListCaptureAttachmentsQueryOptions(id,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+/**
+ * @summary Attach an external file reference
+ */
+export const addCaptureAttachment = (
+    id: string,
+    captureAttachmentCreateInputBody: NonReadonly<CaptureAttachmentCreateInputBody>,
+ signal?: AbortSignal
+) => {
+
+
+      return api<CaptureAttachmentBody>(
+      {url: `/captures/${id}/attachments`, method: 'POST',
+      headers: {'Content-Type': 'application/json', },
+      data: captureAttachmentCreateInputBody, signal
+    },
+      );
+    }
+
+
+
+export const getAddCaptureAttachmentMutationOptions = <TError = ErrorModel,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof addCaptureAttachment>>, TError,{id: string;data: NonReadonly<CaptureAttachmentCreateInputBody>}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof addCaptureAttachment>>, TError,{id: string;data: NonReadonly<CaptureAttachmentCreateInputBody>}, TContext> => {
+
+const mutationKey = ['addCaptureAttachment'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof addCaptureAttachment>>, {id: string;data: NonReadonly<CaptureAttachmentCreateInputBody>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  addCaptureAttachment(id,data,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AddCaptureAttachmentMutationResult = NonNullable<Awaited<ReturnType<typeof addCaptureAttachment>>>
+    export type AddCaptureAttachmentMutationBody = NonReadonly<CaptureAttachmentCreateInputBody>
+    export type AddCaptureAttachmentMutationError = ErrorModel
+
+    /**
+ * @summary Attach an external file reference
+ */
+export const useAddCaptureAttachment = <TError = ErrorModel,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof addCaptureAttachment>>, TError,{id: string;data: NonReadonly<CaptureAttachmentCreateInputBody>}, TContext>, }
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof addCaptureAttachment>>,
+        TError,
+        {id: string;data: NonReadonly<CaptureAttachmentCreateInputBody>},
+        TContext
+      > => {
+      return useMutation(getAddCaptureAttachmentMutationOptions(options), queryClient);
+    }
+
+/**
+ * @summary Remove an external file reference
+ */
+export const deleteCaptureAttachment = (
+    id: string,
+    attachmentId: string,
+ signal?: AbortSignal
+) => {
+
+
+      return api<void>(
+      {url: `/captures/${id}/attachments/${attachmentId}`, method: 'DELETE', signal
+    },
+      );
+    }
+
+
+
+export const getDeleteCaptureAttachmentMutationOptions = <TError = ErrorModel,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteCaptureAttachment>>, TError,{id: string;attachmentId: string}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof deleteCaptureAttachment>>, TError,{id: string;attachmentId: string}, TContext> => {
+
+const mutationKey = ['deleteCaptureAttachment'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteCaptureAttachment>>, {id: string;attachmentId: string}> = (props) => {
+          const {id,attachmentId} = props ?? {};
+
+          return  deleteCaptureAttachment(id,attachmentId,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteCaptureAttachmentMutationResult = NonNullable<Awaited<ReturnType<typeof deleteCaptureAttachment>>>
+
+    export type DeleteCaptureAttachmentMutationError = ErrorModel
+
+    /**
+ * @summary Remove an external file reference
+ */
+export const useDeleteCaptureAttachment = <TError = ErrorModel,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteCaptureAttachment>>, TError,{id: string;attachmentId: string}, TContext>, }
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof deleteCaptureAttachment>>,
+        TError,
+        {id: string;attachmentId: string},
+        TContext
+      > => {
+      return useMutation(getDeleteCaptureAttachmentMutationOptions(options), queryClient);
     }
 
 /**

@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import {
+  getCloudDriveProvider,
+  isCloudDriveError,
+  type CloudAttachmentDraft,
+} from "../lib/cloudDrive";
 import { apiClient } from "../lib/axios";
 import { Composer } from "./Composer";
 
@@ -12,22 +17,30 @@ const MAX_RECORDING_SECONDS = 5 * 60;
 interface CaptureComposerProps {
   creating: boolean;
   onCreate: (text: string, onSuccess: () => void) => void;
+  onCreateAttachmentCapture: (text: string) => Promise<string>;
+  onAttachCloudFile: (
+    captureId: string,
+    attachment: CloudAttachmentDraft,
+  ) => Promise<void>;
   onUploaded: () => void;
 }
 
 export function CaptureComposer({
   creating,
   onCreate,
+  onCreateAttachmentCapture,
+  onAttachCloudFile,
   onUploaded,
 }: CaptureComposerProps): React.JSX.Element {
   const { t } = useTranslation("captures");
   const { t: tc } = useTranslation("common");
   const [text, setText] = useState("");
   const [uploading, setUploading] = useState(false);
-  const [uploadError, setUploadError] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
   const [recording, setRecording] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const imageInputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const recordingStartedAtRef = useRef(0);
@@ -62,7 +75,7 @@ export function CaptureComposer({
     filename?: string,
     durationSec?: number,
   ) => {
-    setUploadError(false);
+    setUploadError(null);
     setUploading(true);
     try {
       const form = new FormData();
@@ -76,8 +89,8 @@ export function CaptureComposer({
       await apiClient.post<UploadResult>("/captures/upload", form);
       onUploaded();
     } catch {
-      setUploadError(true);
-      window.setTimeout(() => setUploadError(false), 3000);
+      setUploadError(t("uploadFailed"));
+      window.setTimeout(() => setUploadError(null), 3000);
     } finally {
       setUploading(false);
     }
@@ -87,6 +100,31 @@ export function CaptureComposer({
     const file = event.target.files?.[0];
     if (file) void upload(file);
     event.target.value = "";
+  };
+
+  const handleCloudFileUpload = async (
+    event: React.ChangeEvent<HTMLInputElement>,
+  ) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    setUploadError(null);
+    setUploading(true);
+    try {
+      const adapter = getCloudDriveProvider("google_drive");
+      const attachment = await adapter.upload(file);
+      const captureId = await onCreateAttachmentCapture(
+        text.trim() || file.name,
+      );
+      await onAttachCloudFile(captureId, attachment);
+      setText("");
+      onUploaded();
+    } catch (error) {
+      setUploadError(t(cloudUploadErrorKey(error)));
+      window.setTimeout(() => setUploadError(null), 4000);
+    } finally {
+      setUploading(false);
+    }
   };
 
   const handleAudioToggle = async () => {
@@ -137,8 +175,8 @@ export function CaptureComposer({
         if (recorder.state === "recording") recorder.stop();
       }, MAX_RECORDING_SECONDS * 1000);
     } catch {
-      setUploadError(true);
-      window.setTimeout(() => setUploadError(false), 3000);
+      setUploadError(t("uploadFailed"));
+      window.setTimeout(() => setUploadError(null), 3000);
     }
   };
 
@@ -163,8 +201,10 @@ export function CaptureComposer({
       submitDisabled={creating}
       onPolish={handlePolish}
       onAttach={() => imageInputRef.current?.click()}
+      onFile={() => fileInputRef.current?.click()}
       onRecord={() => void handleAudioToggle()}
-      attachLabel={t("attach")}
+      attachLabel={t("uploadImage")}
+      fileLabel={t("uploadFile")}
       recordLabel={
         recording
           ? `${t("stopRecording")} ${Math.floor(recordingSeconds / 60)}:${String(recordingSeconds % 60).padStart(2, "0")} / 5:00`
@@ -173,16 +213,39 @@ export function CaptureComposer({
       recording={recording}
       busy={uploading || recording}
       busyLabel={recording ? t("recording") : t("uploading")}
-      error={uploadError ? t("uploadFailed") : null}
+      error={uploadError}
       attachmentInput={
-        <input
-          ref={imageInputRef}
-          type="file"
-          accept="image/*"
-          className="ch-hidden-input"
-          onChange={handleImageUpload}
-        />
+        <>
+          <input
+            ref={imageInputRef}
+            type="file"
+            accept="image/*"
+            className="ch-hidden-input"
+            onChange={handleImageUpload}
+          />
+          <input
+            ref={fileInputRef}
+            type="file"
+            className="ch-hidden-input"
+            onChange={(event) => void handleCloudFileUpload(event)}
+          />
+        </>
       }
     />
   );
+}
+
+function cloudUploadErrorKey(error: unknown): string {
+  if (!isCloudDriveError(error)) return "cloudFile.uploadFailed";
+  switch (error.code) {
+    case "missing_client_id":
+      return "cloudFile.missingClientId";
+    case "file_too_large":
+      return "cloudFile.tooLarge";
+    case "auth_failed":
+      return "cloudFile.authFailed";
+    case "upload_failed":
+    case "unsupported_provider":
+      return "cloudFile.uploadFailed";
+  }
 }

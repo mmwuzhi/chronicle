@@ -1,8 +1,16 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
-import type { CaptureBody, CaptureUpdateInputBodyClassifiedAs } from "../api";
-import { fmtShortDateTime } from "../utils/format";
+import { useQueryClient } from "@tanstack/react-query";
+import {
+  getListCaptureAttachmentsQueryKey,
+  useDeleteCaptureAttachment,
+  useListCaptureAttachments,
+  type CaptureAttachmentBody,
+  type CaptureBody,
+  type CaptureUpdateInputBodyClassifiedAs,
+} from "../api";
+import { fmtFileSize, fmtShortDateTime } from "../utils/format";
 import { Markdown } from "./Markdown";
 import { RemindControl } from "./RemindControl";
 
@@ -82,6 +90,7 @@ export function CaptureCard({
   onUseTranscript,
   onRetryTranscription,
   onSetRemind,
+  onMutationError,
 }: {
   c: CaptureBody;
   onReclassify: (id: string, v: CaptureUpdateInputBodyClassifiedAs) => void;
@@ -91,9 +100,11 @@ export function CaptureCard({
   onUseTranscript: (id: string, mode: "append" | "replace") => void;
   onRetryTranscription: (id: string) => void;
   onSetRemind: (id: string, at: string | null) => void;
+  onMutationError: () => void;
 }): React.JSX.Element {
   const { t } = useTranslation("captures");
   const { t: tc } = useTranslation("common");
+  const queryClient = useQueryClient();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(c.rawText ?? "");
   const [editingTranscript, setEditingTranscript] = useState(false);
@@ -101,6 +112,20 @@ export function CaptureCard({
   // Both audio and image captures go through the transcription/OCR workflow, so
   // their processing/failed/retry status surfaces the same way.
   const transcribable = c.mediaType === "audio" || c.mediaType === "image";
+  const attachmentsQuery = useListCaptureAttachments(c.id, {
+    query: { staleTime: 60_000 },
+  });
+  const deleteAttachment = useDeleteCaptureAttachment({
+    mutation: {
+      onSuccess: () => {
+        queryClient.invalidateQueries({
+          queryKey: getListCaptureAttachmentsQueryKey(c.id),
+        });
+      },
+      onError: onMutationError,
+    },
+  });
+  const attachments = attachmentsQuery.data ?? [];
 
   const commitEdit = () => {
     const trimmed = draft.trim();
@@ -264,6 +289,16 @@ export function CaptureCard({
           )}
         </div>
       )}
+      {(attachments.length > 0 || attachmentsQuery.isError) && (
+        <CaptureAttachments
+          attachments={attachments}
+          failed={attachmentsQuery.isError}
+          deleting={deleteAttachment.isPending}
+          onDelete={(attachmentId) =>
+            deleteAttachment.mutate({ id: c.id, attachmentId })
+          }
+        />
+      )}
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
         <select
           value={c.classifiedAs}
@@ -337,4 +372,88 @@ export function CaptureCard({
       </div>
     </li>
   );
+}
+
+function CaptureAttachments({
+  attachments,
+  failed,
+  deleting,
+  onDelete,
+}: {
+  attachments: CaptureAttachmentBody[];
+  failed: boolean;
+  deleting: boolean;
+  onDelete: (attachmentId: string) => void;
+}): React.JSX.Element {
+  const { t } = useTranslation("captures");
+
+  if (failed) {
+    return (
+      <div className="ch-attachments">
+        <span className="ch-inline-error">{t("attachments.loadFailed")}</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="ch-attachments">
+      <div className="ch-attachments-title">{t("attachments.title")}</div>
+      {attachments.map((attachment) => (
+        <div className="ch-attachment-row" key={attachment.id}>
+          <div className="ch-attachment-file-icon" aria-hidden="true">
+            {providerInitial(attachment.provider)}
+          </div>
+          <div className="ch-attachment-main">
+            <a
+              className="ch-attachment-name"
+              href={attachment.webUrl}
+              target="_blank"
+              rel="noreferrer"
+            >
+              {attachment.name}
+            </a>
+            <span className="ch-meta">
+              {providerLabel(attachment.provider)}
+              {attachment.sizeBytes != null
+                ? ` · ${fmtFileSize(attachment.sizeBytes)}`
+                : ""}
+            </span>
+          </div>
+          <a
+            className="ch-btn ch-btn-ghost ch-btn-sm"
+            href={attachment.webUrl}
+            target="_blank"
+            rel="noreferrer"
+          >
+            {t("attachments.open")}
+          </a>
+          <button
+            className="ch-btn ch-btn-danger ch-btn-sm"
+            disabled={deleting}
+            onClick={() => onDelete(attachment.id)}
+          >
+            {t("attachments.removeReference")}
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function providerLabel(provider: string): string {
+  switch (provider) {
+    case "google_drive":
+      return "Google Drive";
+    case "onedrive":
+      return "OneDrive";
+    case "dropbox":
+      return "Dropbox";
+    default:
+      return provider;
+  }
+}
+
+function providerInitial(provider: string): string {
+  const label = providerLabel(provider);
+  return label.slice(0, 1).toUpperCase();
 }

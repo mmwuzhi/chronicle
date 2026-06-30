@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { fmtShortDateTime, timeAgo } from "./format";
+import { fmtFileSize, fmtShortDateTime, timeAgo } from "./format";
 
 describe("fmtShortDateTime", () => {
   it("formats compact date and time", () => {
@@ -17,5 +17,18 @@ describe("timeAgo", () => {
     expect(timeAgo("2026-06-03T08:30:00.000Z", "en")).toBe("30 minutes ago");
 
     vi.useRealTimers();
+  });
+});
+
+describe("fmtFileSize", () => {
+  it("formats bytes and larger units compactly", () => {
+    expect(fmtFileSize(512)).toBe("512 B");
+    expect(fmtFileSize(1536)).toBe("1.5 KB");
+    expect(fmtFileSize(5 * 1024 * 1024)).toBe("5 MB");
+  });
+
+  it("returns an empty label for invalid sizes", () => {
+    expect(fmtFileSize(-1)).toBe("");
+    expect(fmtFileSize(Number.NaN)).toBe("");
   });
 });

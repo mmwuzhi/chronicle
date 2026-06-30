@@ -4,6 +4,8 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import {
   getListCapturePageInfiniteQueryKey,
+  getListCaptureAttachmentsQueryKey,
+  useAddCaptureAttachment,
   useCreateCapture,
   useDeleteCapture,
   useListCapturePageInfinite,
@@ -17,6 +19,7 @@ import { MutationToast } from "../components/mutation-toast";
 import { Nav } from "../components/nav";
 import { useConfirm } from "../components/confirm-dialog";
 import { useMutationToast } from "../hooks/use-mutation-toast";
+import type { CloudAttachmentDraft } from "../lib/cloudDrive";
 
 export const Route = createFileRoute("/captures")({ component: Captures });
 
@@ -94,6 +97,16 @@ function Captures() {
       onError: () => mutationToast.show(tc("errors.mutationFailed")),
     },
   });
+  const addAttachment = useAddCaptureAttachment({
+    mutation: {
+      onSuccess: (_attachment, variables) => {
+        queryClient.invalidateQueries({
+          queryKey: getListCaptureAttachmentsQueryKey(variables.id),
+        });
+      },
+      onError: () => mutationToast.show(tc("errors.mutationFailed")),
+    },
+  });
   if (captureQuery.error) {
     if (captureQuery.error.status === 401) {
       void navigate({ to: "/login" });
@@ -124,6 +137,25 @@ function Captures() {
               { onSuccess },
             )
           }
+          onCreateAttachmentCapture={async (rawText) => {
+            const capture = await create.mutateAsync({
+              data: {
+                rawText,
+                mediaType: "text",
+                classifiedAs: "unclassified",
+              },
+            });
+            return capture.id;
+          }}
+          onAttachCloudFile={async (
+            captureId,
+            attachment: CloudAttachmentDraft,
+          ) => {
+            await addAttachment.mutateAsync({
+              id: captureId,
+              data: attachment,
+            });
+          }}
           onUploaded={invalidateCaptures}
         />
         <div className="ch-filter-tabs">
@@ -181,6 +213,9 @@ function Captures() {
           onRetryTranscription={(id) => retryTranscription.mutate({ id })}
           onSetRemind={(id, at) =>
             setRemind.mutate({ id, data: { at: at ?? undefined } })
+          }
+          onMutationError={() =>
+            mutationToast.show(tc("errors.mutationFailed"))
           }
         />
       </main>

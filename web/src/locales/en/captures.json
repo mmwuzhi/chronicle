@@ -15,11 +15,24 @@
   "attach": "Attach",
   "record": "Record",
   "uploadImage": "Image",
+  "uploadFile": "File",
   "uploadAudio": "Record",
   "recording": "Recording…",
   "stopRecording": "Stop",
   "uploading": "Uploading…",
   "uploadFailed": "Upload failed",
+  "cloudFile": {
+    "missingClientId": "Google Drive is not configured",
+    "tooLarge": "Files can be up to 100 MB for now",
+    "authFailed": "Google Drive authorization failed",
+    "uploadFailed": "Cloud upload failed"
+  },
+  "attachments": {
+    "title": "Files",
+    "loadFailed": "Could not load files",
+    "open": "Open",
+    "removeReference": "Remove"
+  },
   "loadMore": "Load more",
   "showScheduled": "Show scheduled",
   "scheduledHint": "Captures with a future reminder are hidden until due. Show them to edit or clear the reminder.",

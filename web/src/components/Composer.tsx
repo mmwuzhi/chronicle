@@ -39,6 +39,29 @@ const MicIcon = () => (
   </svg>
 );
 
+const FileIcon = () => (
+  <svg
+    width="14"
+    height="14"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={1.75}
+    viewBox="0 0 24 24"
+    style={{ flexShrink: 0 }}
+  >
+    <path
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      d="M14.25 2.25H6.75A2.25 2.25 0 0 0 4.5 4.5v15a2.25 2.25 0 0 0 2.25 2.25h10.5a2.25 2.25 0 0 0 2.25-2.25V7.5l-5.25-5.25Z"
+    />
+    <path
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      d="M14.25 2.25V7.5h5.25"
+    />
+  </svg>
+);
+
 type ComposerProps = {
   value: string;
   onChange: (value: string) => void;
@@ -49,8 +72,10 @@ type ComposerProps = {
   onPolish?: (value: string) => Promise<string>;
   polishDisabled?: boolean;
   onAttach?: () => void;
+  onFile?: () => void;
   onRecord?: () => void;
   attachLabel?: string;
+  fileLabel?: string;
   recordLabel?: string;
   recording?: boolean;
   busy?: boolean;
@@ -72,8 +97,10 @@ export function Composer({
   onPolish,
   polishDisabled,
   onAttach,
+  onFile,
   onRecord,
   attachLabel,
+  fileLabel,
   recordLabel,
   recording,
   busy,
@@ -198,6 +225,16 @@ export function Composer({
             style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
           >
             <AttachIcon /> {attachLabel}
+          </button>
+        )}
+        {onFile && (
+          <button
+            className="ch-btn ch-btn-sm"
+            onClick={onFile}
+            disabled={busy || recording}
+            style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
+          >
+            <FileIcon /> {fileLabel}
           </button>
         )}
         {onRecord && (

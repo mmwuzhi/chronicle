@@ -41,3 +41,17 @@ export function timeAgo(iso: string, locale: string): string {
   if (h < 24) return rtf.format(-h, "hour");
   return rtf.format(-Math.floor(h / 24), "day");
 }
+
+export function fmtFileSize(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes < 0) return "";
+  const units = ["B", "KB", "MB", "GB"];
+  let value = bytes;
+  let unitIndex = 0;
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex += 1;
+  }
+  const digits =
+    value >= 10 || unitIndex === 0 || Number.isInteger(value) ? 0 : 1;
+  return `${value.toFixed(digits)} ${units[unitIndex]}`;
+}

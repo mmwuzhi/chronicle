@@ -15,11 +15,24 @@
   "attach": "附件",
   "record": "录音",
   "uploadImage": "图片",
+  "uploadFile": "文件",
   "uploadAudio": "录音",
   "recording": "录音中…",
   "stopRecording": "停止",
   "uploading": "上传中…",
   "uploadFailed": "上传失败",
+  "cloudFile": {
+    "missingClientId": "尚未配置 Google Drive",
+    "tooLarge": "当前文件最大支持 100 MB",
+    "authFailed": "Google Drive 授权失败",
+    "uploadFailed": "云盘上传失败"
+  },
+  "attachments": {
+    "title": "文件",
+    "loadFailed": "文件加载失败",
+    "open": "打开",
+    "removeReference": "移除"
+  },
   "loadMore": "加载更多",
   "showScheduled": "显示已安排提醒",
   "scheduledHint": "设有未来提醒的捕获在到期前会被隐藏。显示它们以编辑或清除提醒。",

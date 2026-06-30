@@ -1444,6 +1444,62 @@ body {
 .ch-transcript-status.error {
   color: #c2410c;
 }
+.ch-attachments {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+.ch-attachments-title {
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  color: var(--text-muted);
+}
+.ch-attachment-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.ch-attachment-file-icon {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  border-radius: 7px;
+  background: var(--accent-weak);
+  color: var(--accent-strong);
+  font-size: var(--fs-xs);
+  font-weight: 800;
+}
+.ch-attachment-main {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  gap: 2px;
+}
+.ch-attachment-name {
+  overflow: hidden;
+  color: var(--text);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@media (max-width: 520px) {
+  .ch-attachment-row {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+  .ch-attachment-main {
+    min-width: calc(100% - 38px);
+  }
+}
 .ch-log-time-editor {
   display: flex;
   flex-wrap: wrap;

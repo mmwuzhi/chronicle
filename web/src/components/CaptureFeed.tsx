@@ -15,6 +15,7 @@ interface CaptureFeedProps {
   onUseTranscript: (id: string, mode: "append" | "replace") => void;
   onRetryTranscription: (id: string) => void;
   onSetRemind: (id: string, at: string | null) => void;
+  onMutationError: () => void;
 }
 
 export function CaptureFeed({
