@@ -28,6 +28,7 @@ struct PanelContentView: View {
     @State private var error = ""
     @State private var needsSignIn = false
     @State private var inFlight: Task<Void, Never>?
+    @State private var pinTick = 0
 
     @State private var remindOn = false
     @State private var remindAt = Date().addingTimeInterval(3600)
@@ -90,6 +91,9 @@ struct PanelContentView: View {
         .onAppear { DispatchQueue.main.async { focused = true } }
         .onReceive(NotificationCenter.default.publisher(for: .chroniclePanelShown)) { _ in
             reset()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .chroniclePinsChanged)) { _ in
+            pinTick &+= 1
         }
     }
 
@@ -170,7 +174,7 @@ struct PanelContentView: View {
                 Text("No matches.").font(.caption).foregroundStyle(.secondary)
             }
             ForEach(hits) { hit in
-                CaptureRow(item: hit, onCopy: { copy(hit.content) }, onDelete: nil, onEdit: nil)
+                searchRow(hit)
                 Divider().opacity(0.5)
             }
         } else if mode == .search && recentLoaded {
@@ -179,13 +183,30 @@ struct PanelContentView: View {
             } else {
                 Text("Recent").font(.caption).foregroundStyle(.secondary).padding(.bottom, 4)
                 ForEach(recentRows) { row in
-                    CaptureRow(item: row, onCopy: { copy(row.content) }, onDelete: nil, onEdit: nil)
+                    searchRow(row)
                     Divider().opacity(0.5)
                 }
             }
         } else if mode == .ask && !answer.isEmpty {
             answerView
         }
+    }
+
+    private func searchRow(_ row: RowItem) -> some View {
+        let isPinned = clients.isPinned(row.id)
+        _ = pinTick
+        return CaptureRow(
+            item: row,
+            onCopy: { copy(row.content) },
+            onDelete: { delete(row.id) },
+            onEdit: nil,
+            onOpen: { clients.openDetail(row) },
+            onPin: {
+                clients.togglePin(row)
+                pinTick &+= 1
+            },
+            isPinned: isPinned,
+        )
     }
 
     @ViewBuilder private var answerView: some View {
@@ -365,6 +386,23 @@ struct PanelContentView: View {
     private func copy(_ s: String) {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(s, forType: .string)
+    }
+
+    private func delete(_ id: String) {
+        guard let client = clients.recall() else { return }
+        error = ""
+        Task { @MainActor in
+            do {
+                try await client.delete(id: id)
+                clients.localDelete(id)
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    hits.removeAll { $0.id == id }
+                    recentRows.removeAll { $0.id == id }
+                }
+            } catch let err {
+                error = describe(err)
+            }
+        }
     }
 
     private func describe(_ error: Error) -> String {

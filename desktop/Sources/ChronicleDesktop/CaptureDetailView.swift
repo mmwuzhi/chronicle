@@ -52,12 +52,15 @@ final class CaptureDetailModel: ObservableObject {
         linked = []
         related = []
         error = ""
-        guard clients.recall() != nil else { return }
         let id = capture.id
         loading = true
         loadTask = Task { @MainActor in
             defer { loading = false }
-            await self.loadLinksAndRelated(for: id)
+            if clients.recall() == nil {
+                await self.loadLocalRelated(for: self.capture)
+            } else {
+                await self.loadLinksAndRelated(for: id)
+            }
         }
     }
 
@@ -80,6 +83,22 @@ final class CaptureDetailModel: ObservableObject {
             guard !Task.isCancelled, id == capture.id else { return }
             related = items.map(RowItem.init)
         }
+        if related.isEmpty {
+            await loadLocalRelated(for: capture)
+        }
+    }
+
+    // Offline/default suggestions: use the on-device semantic index to surface
+    // possible neighbours even when the user is signed out or the server has no
+    // embedding result. Explicit links and the current capture are filtered out.
+    private func loadLocalRelated(for row: RowItem) async {
+        let q = row.content.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty else { return }
+        let excluded = Set(linked.map(\.id)).union([row.id])
+        let local = await clients.localSemanticSearch(q)
+            .filter { !excluded.contains($0.id) }
+        guard !Task.isCancelled, row.id == capture.id else { return }
+        related = Array(local.prefix(10))
     }
 
     // Add/remove an explicit link, then re-sync both lists from the server so the
@@ -152,17 +171,13 @@ struct CaptureDetailView: View {
                 }
                 Text("Capture").font(.headline)
                 Spacer()
-                // Pin only synced captures: a local-only id can't be re-fetched, so
-                // pinning it would orphan the sticky (matches the main window's gate).
-                if model.capture.synced {
-                    Button { model.togglePin() } label: {
-                        Label(model.isPinned ? "Pinned" : "Pin",
-                              systemImage: model.isPinned ? "pin.fill" : "pin")
-                    }
-                    .buttonStyle(.borderless).font(.caption)
-                    .foregroundStyle(model.isPinned ? Color.accentColor : .secondary)
-                    .help(model.isPinned ? "Unpin from desktop" : "Pin to desktop")
+                Button { model.togglePin() } label: {
+                    Label(model.isPinned ? "Pinned" : "Pin",
+                          systemImage: model.isPinned ? "pin.fill" : "pin")
                 }
+                .buttonStyle(.borderless).font(.caption)
+                .foregroundStyle(model.isPinned ? Color.accentColor : .secondary)
+                .help(model.isPinned ? "Unpin from desktop" : "Pin to desktop")
                 Button { onCopy(model.capture.content) } label: {
                     Label("Copy", systemImage: "doc.on.doc")
                 }
@@ -252,10 +267,7 @@ struct CaptureDetailView: View {
     }
 
     @ViewBuilder private var relatedSection: some View {
-        if !model.signedIn {
-            Text("Sign in to see related captures.")
-                .foregroundStyle(.secondary).font(.caption)
-        } else if model.related.isEmpty {
+        if model.related.isEmpty {
             Text("No related captures yet.")
                 .foregroundStyle(.secondary).font(.caption)
         } else {

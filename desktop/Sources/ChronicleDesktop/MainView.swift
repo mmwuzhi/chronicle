@@ -8,13 +8,21 @@ import ChronicleDesktopCore
 // and deletable (hover), both wired to the capture API.
 struct MainView: View {
     let clients: CaptureClients
+    @ObservedObject var navigation: MainWindowNavigation
+    @ObservedObject var settingsModel: SettingsModel
 
     enum Mode: String, CaseIterable, Identifiable {
-        case browse = "Browse", ask = "Ask"
+        case browse = "Browse", ask = "Ask", settings = "Settings"
         var id: String { rawValue }
-    }
 
-    @State private var mode: Mode = .browse
+        var icon: String {
+            switch self {
+            case .browse: "tray.full"
+            case .ask: "sparkles"
+            case .settings: "gearshape"
+            }
+        }
+    }
 
     @State private var query = ""
     @State private var fragments: [Capture] = []
@@ -55,37 +63,37 @@ struct MainView: View {
     }
 
     var body: some View {
-        VStack(spacing: 12) {
-            HStack {
-                PillModePicker(
-                    segments: Mode.allCases.map { (id: $0, title: $0.rawValue, hint: nil) },
-                    selected: mode,
-                    onSelect: { mode = $0 },
+        ZStack(alignment: .leading) {
+            HStack(spacing: 0) {
+                MainTabRail(
+                    modes: Mode.allCases,
+                    selected: navigation.mode,
+                    floating: false,
+                    onHover: { navigation.setTabsRailHovering($0) },
+                    onSelect: select,
                 )
-                Spacer()
+                .frame(width: navigation.tabsExpanded ? MainTabRail.width : 0, alignment: .leading)
+                .clipped()
+
+                tabContent
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
 
-            switch mode {
-            case .browse:
-                WorkspaceField(prompt: "Search (empty = show everything)",
-                               text: $query, onSubmit: runBrowse, disabled: busy)
-            case .ask:
-                WorkspaceField(prompt: "Ask a question, e.g. what did I work on this week",
-                               text: $askQuery, onSubmit: runAsk, disabled: busy)
-            }
-
-            if busy { ProgressView().frame(maxWidth: .infinity) }
-            if !error.isEmpty {
-                Text(error).foregroundStyle(.red).font(.caption)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-
-            ScrollView {
-                content.frame(maxWidth: .infinity, alignment: .leading).padding(.trailing, 8)
+            if navigation.tabsPeeking && navigation.tabsExpanded == false {
+                MainTabRail(
+                    modes: Mode.allCases,
+                    selected: navigation.mode,
+                    floating: true,
+                    onHover: { navigation.setTabsRailHovering($0) },
+                    onSelect: select,
+                )
+                .zIndex(1)
+                .transaction { transaction in
+                    transaction.animation = nil
+                }
             }
         }
-        .padding(16)
-        .frame(minWidth: 560, minHeight: 420)
+        .frame(minWidth: 700, minHeight: 520)
         .overlay(alignment: .bottom) {
             if pendingDeleteId != nil {
                 UndoDeleteToast(onUndo: undoDelete)
@@ -101,9 +109,10 @@ struct MainView: View {
                 .disabled(pendingDeleteId == nil)
         }
         .animation(.easeInOut(duration: 0.2), value: pendingDeleteId)
+        .animation(navigation.tabsRailPeeking ? nil : .spring(response: 0.3, dampingFraction: 0.92), value: navigation.tabsExpanded)
         .task { await loadBrowse(reset: true) }
         .onReceive(NotificationCenter.default.publisher(for: .chronicleMainShown)) { _ in
-            if mode == .browse && !searched { Task { await loadBrowse(reset: true) } }
+            if navigation.mode == .browse && !searched { Task { await loadBrowse(reset: true) } }
         }
         .onReceive(NotificationCenter.default.publisher(for: .chroniclePinsChanged)) { _ in
             pinTick &+= 1
@@ -111,8 +120,54 @@ struct MainView: View {
         .onDisappear { flushPendingDelete() }
     }
 
+    @ViewBuilder private var tabContent: some View {
+        switch navigation.mode {
+        case .browse, .ask:
+            VStack(spacing: 12) {
+                contentHeader
+
+                if busy { ProgressView().frame(maxWidth: .infinity) }
+                if !error.isEmpty {
+                    Text(error).foregroundStyle(.red).font(.caption)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+
+                ScrollView {
+                    content.frame(maxWidth: .infinity, alignment: .leading).padding(.trailing, 8)
+                }
+            }
+            .padding(16)
+        case .settings:
+            VStack(spacing: 0) {
+                contentHeader
+                    .padding(.horizontal, 16)
+                    .padding(.top, 14)
+                    .padding(.bottom, 10)
+                Divider()
+                SettingsView(model: settingsModel)
+            }
+        }
+    }
+
+    @ViewBuilder private var contentHeader: some View {
+        HStack(spacing: 10) {
+            switch navigation.mode {
+            case .browse:
+                WorkspaceField(prompt: "Search (empty = show everything)",
+                               text: $query, onSubmit: runBrowse, disabled: busy)
+            case .ask:
+                WorkspaceField(prompt: "Ask a question, e.g. what did I work on this week",
+                               text: $askQuery, onSubmit: runAsk, disabled: busy)
+            case .settings:
+                Text("Settings")
+                    .font(.headline)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+    }
+
     @ViewBuilder private var content: some View {
-        if mode == .browse {
+        if navigation.mode == .browse {
             // Browse + search work offline against the local store; the server's
             // semantic results merge in on top when signed in.
             if searched && rows.isEmpty && !busy {
@@ -129,9 +184,7 @@ struct MainView: View {
                     onDelete: { delete(row.id) },
                     onEdit: { edit(row.id, $0) },
                     onOpen: { clients.openDetail(row) },
-                    // Only synced captures can be pinned: a local-only id can't be
-                    // re-fetched by GET /captures/{id}, so it would orphan the sticky.
-                    onPin: row.synced ? { clients.togglePin(row) } : nil,
+                    onPin: { clients.togglePin(row) },
                     isPinned: clients.isPinned(row.id),
                 )
                 .onAppear { maybeLoadMore(row) }
@@ -179,9 +232,16 @@ struct MainView: View {
             Text("Sign in to ask across your captures.").foregroundStyle(.secondary)
             Text("Browse and search work offline; Ask needs the server.")
                 .font(.caption).foregroundStyle(.tertiary)
-            Button("Open Settings") { clients.openSettings() }.buttonStyle(.link)
+            Button("Open Settings") { select(.settings) }.buttonStyle(.link)
         }
         .frame(maxWidth: .infinity).padding(.vertical, 40)
+    }
+
+    private func select(_ next: Mode) {
+        navigation.mode = next
+        if next == .settings {
+            settingsModel.refreshPending()
+        }
     }
 
     // MARK: - Browse
@@ -366,13 +426,172 @@ struct MainView: View {
 }
 
 @MainActor
-final class MainWindowController {
+final class MainWindowNavigation: ObservableObject {
+    private static let modeKey = "ChronicleMainWindowMode"
+    private static let tabsExpandedKey = "ChronicleMainWindowTabsExpanded"
+
+    @Published var mode: MainView.Mode {
+        didSet { UserDefaults.standard.set(mode.rawValue, forKey: Self.modeKey) }
+    }
+
+    @Published var tabsExpanded: Bool {
+        didSet { UserDefaults.standard.set(tabsExpanded, forKey: Self.tabsExpandedKey) }
+    }
+
+    @Published private var tabsButtonHovering = false
+    @Published private var tabsRailHovering = false
+    @Published private var tabsHoverGrace = false
+    @Published private var tabsHoverSuppressed = false
+    private var tabsHoverGraceTask: Task<Void, Never>?
+
+    var tabsPeeking: Bool {
+        tabsHoverSuppressed == false && (tabsButtonHovering || tabsRailHovering || tabsHoverGrace)
+    }
+
+    var tabsRailPeeking: Bool {
+        tabsHoverSuppressed == false && tabsRailHovering
+    }
+
+    init() {
+        let defaults = UserDefaults.standard
+        if let raw = defaults.string(forKey: Self.modeKey),
+           let savedMode = MainView.Mode(rawValue: raw) {
+            mode = savedMode
+        } else {
+            mode = .browse
+        }
+        if defaults.object(forKey: Self.tabsExpandedKey) == nil {
+            tabsExpanded = true
+        } else {
+            tabsExpanded = defaults.bool(forKey: Self.tabsExpandedKey)
+        }
+    }
+
+    func setTabsButtonHovering(_ hovering: Bool) {
+        if hovering == false {
+            tabsHoverSuppressed = false
+        }
+        setTabsHovering(hovering) { self.tabsButtonHovering = $0 }
+    }
+
+    func setTabsRailHovering(_ hovering: Bool) {
+        setTabsHovering(hovering) { self.tabsRailHovering = $0 }
+    }
+
+    private func setTabsHovering(_ hovering: Bool, assign: @escaping (Bool) -> Void) {
+        if hovering {
+            tabsHoverGraceTask?.cancel()
+            tabsHoverGrace = false
+            assign(true)
+        } else {
+            assign(false)
+            holdTabsOpenBriefly()
+        }
+    }
+
+    private func holdTabsOpenBriefly() {
+        guard tabsButtonHovering == false, tabsRailHovering == false else { return }
+        tabsHoverGraceTask?.cancel()
+        tabsHoverGrace = true
+        tabsHoverGraceTask = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(180))
+            guard Task.isCancelled == false else { return }
+            tabsHoverGrace = false
+        }
+    }
+
+    func toggleTabsExpanded() {
+        tabsExpanded.toggle()
+        if tabsExpanded {
+            tabsHoverSuppressed = false
+        } else {
+            tabsHoverGraceTask?.cancel()
+            tabsHoverGrace = false
+            tabsHoverSuppressed = true
+        }
+    }
+}
+
+private struct MainTabRail: View {
+    static let width: CGFloat = 148
+
+    let modes: [MainView.Mode]
+    let selected: MainView.Mode
+    let floating: Bool
+    let onHover: (Bool) -> Void
+    let onSelect: (MainView.Mode) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach(modes.filter { $0 != .settings }) { mode in
+                tabButton(mode)
+            }
+
+            Spacer()
+
+            if modes.contains(.settings) {
+                tabButton(.settings)
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 14)
+        .frame(width: Self.width)
+        .frame(maxHeight: .infinity)
+        .background(floating ? AnyShapeStyle(.regularMaterial) : AnyShapeStyle(Color.primary.opacity(0.025)))
+        .overlay(alignment: .trailing) {
+            Divider()
+        }
+        .shadow(color: Color.black.opacity(floating ? 0.12 : 0), radius: floating ? 18 : 0, x: floating ? 8 : 0, y: 0)
+        .onHover(perform: onHover)
+    }
+
+    private func tabButton(_ mode: MainView.Mode) -> some View {
+        let isSelected = selected == mode
+        return Button { onSelect(mode) } label: {
+            HStack(spacing: 10) {
+                Image(systemName: mode.icon)
+                    .font(.system(size: 14, weight: .medium))
+                    .frame(width: 20, height: 20)
+                Text(mode.rawValue)
+                    .font(.system(size: 13, weight: .medium))
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .foregroundStyle(isSelected ? Color.primary : Color.secondary)
+            .background(
+                isSelected ? AnyShapeStyle(Color.accentColor.opacity(0.22))
+                           : AnyShapeStyle(Color.clear),
+                in: RoundedRectangle(cornerRadius: 8),
+            )
+        }
+        .buttonStyle(.plain)
+        .help(mode.rawValue)
+    }
+}
+
+@MainActor
+final class MainWindowController: NSObject {
     private var window: NSWindow?
     private let clients: CaptureClients
+    private let settingsModel: SettingsModel
+    private let navigation = MainWindowNavigation()
+    private weak var titlebarSidebarButton: NSButton?
+    private weak var titlebarTitleLabel: NSTextField?
 
-    init(clients: CaptureClients) { self.clients = clients }
+    init(clients: CaptureClients, settingsModel: SettingsModel) {
+        self.clients = clients
+        self.settingsModel = settingsModel
+        super.init()
+    }
 
-    func show() {
+    func show(mode: MainView.Mode? = nil) {
+        if let mode {
+            navigation.mode = mode
+            if mode == .settings { settingsModel.refreshPending() }
+        }
         let w = window ?? makeWindow()
         window = w
         ScreenPlacement.centerOnActiveScreen(w)
@@ -388,6 +607,7 @@ final class MainWindowController {
             backing: .buffered, defer: false,
         )
         w.title = "Chronicle"
+        w.titleVisibility = .hidden
         w.center()
         w.setFrameAutosaveName("ChronicleMainWindow")
         w.isReleasedWhenClosed = false
@@ -395,7 +615,95 @@ final class MainWindowController {
         // instead of yanking them back to the Space where the window was last
         // shown — e.g. a fullscreen app's dedicated Space.
         w.collectionBehavior.insert(.moveToActiveSpace)
-        w.contentView = NSHostingView(rootView: MainView(clients: clients))
+        w.contentView = NSHostingView(
+            rootView: MainView(clients: clients, navigation: navigation, settingsModel: settingsModel),
+        )
+        installTitlebarControls(on: w)
         return w
+    }
+
+    private func installTitlebarControls(on window: NSWindow) {
+        guard titlebarSidebarButton == nil,
+              let zoomButton = window.standardWindowButton(.zoomButton),
+              let titlebar = zoomButton.superview
+        else { return }
+        let button = HoverSidebarButton(
+            image: sidebarImage(),
+            target: self,
+            action: #selector(toggleSidebarTabs),
+        )
+        button.bezelStyle = .texturedRounded
+        button.imagePosition = .imageOnly
+        button.setButtonType(.momentaryPushIn)
+        button.toolTip = navigation.tabsExpanded ? "Collapse tabs" : "Expand tabs"
+        button.onHoverChange = { [weak self] hovering in
+            self?.navigation.setTabsButtonHovering(hovering)
+        }
+        button.translatesAutoresizingMaskIntoConstraints = false
+        titlebar.addSubview(button)
+        NSLayoutConstraint.activate([
+            button.leadingAnchor.constraint(equalTo: zoomButton.trailingAnchor, constant: 20),
+            button.centerYAnchor.constraint(equalTo: zoomButton.centerYAnchor),
+            button.widthAnchor.constraint(equalToConstant: 32),
+            button.heightAnchor.constraint(equalToConstant: 28),
+        ])
+        titlebarSidebarButton = button
+
+        let titleLabel = NSTextField(labelWithString: "Chronicle")
+        titleLabel.font = .systemFont(ofSize: NSFont.systemFontSize + 1, weight: .semibold)
+        titleLabel.textColor = .labelColor
+        titleLabel.lineBreakMode = .byTruncatingTail
+        titleLabel.translatesAutoresizingMaskIntoConstraints = false
+        titlebar.addSubview(titleLabel)
+        NSLayoutConstraint.activate([
+            titleLabel.leadingAnchor.constraint(equalTo: button.trailingAnchor, constant: 14),
+            titleLabel.centerYAnchor.constraint(equalTo: zoomButton.centerYAnchor),
+            titleLabel.trailingAnchor.constraint(lessThanOrEqualTo: titlebar.trailingAnchor, constant: -16),
+        ])
+        titlebarTitleLabel = titleLabel
+    }
+
+    @objc private func toggleSidebarTabs() {
+        navigation.toggleTabsExpanded()
+        titlebarSidebarButton?.image = sidebarImage()
+        titlebarSidebarButton?.toolTip = navigation.tabsExpanded ? "Collapse tabs" : "Expand tabs"
+    }
+
+    private func sidebarImage() -> NSImage {
+        NSImage(
+            systemSymbolName: navigation.tabsExpanded ? "sidebar.left" : "sidebar.right",
+            accessibilityDescription: navigation.tabsExpanded ? "Collapse tabs" : "Expand tabs",
+        ) ?? NSImage()
+    }
+}
+
+private final class HoverSidebarButton: NSButton {
+    var onHoverChange: ((Bool) -> Void)?
+
+    private var hoverTrackingArea: NSTrackingArea?
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let hoverTrackingArea {
+            removeTrackingArea(hoverTrackingArea)
+        }
+        let trackingArea = NSTrackingArea(
+            rect: bounds,
+            options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+            owner: self,
+            userInfo: nil,
+        )
+        addTrackingArea(trackingArea)
+        hoverTrackingArea = trackingArea
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        super.mouseEntered(with: event)
+        onHoverChange?(true)
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        super.mouseExited(with: event)
+        onHoverChange?(false)
     }
 }

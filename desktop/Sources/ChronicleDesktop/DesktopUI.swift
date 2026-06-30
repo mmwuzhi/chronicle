@@ -66,9 +66,13 @@ struct RowItem: Identifiable, Equatable {
     let createdAt: String
     let modality: String
     // True when this row is backed by a server capture (its id is a real server id).
-    // A not-yet-synced local capture is false: pinning it would persist a local id
-    // the server can't resolve (orphaned/duplicate sticky), so pin is gated on this.
+    // Server-only actions can gate on this; desktop pins are allowed for local rows
+    // because the sticky persists the capture content and can render offline.
     let synced: Bool
+    // Remote media URL (R2) for image/audio captures, when known. Search hits and
+    // local records don't carry it (nil); a desktop sticky fills it in on refresh
+    // from GET /captures/{id} so it can show an image thumbnail.
+    let mediaUrl: String?
 
     init(_ hit: RecallItem) {
         id = hit.id
@@ -76,6 +80,7 @@ struct RowItem: Identifiable, Equatable {
         createdAt = hit.createdAt
         modality = hit.modality
         synced = true
+        mediaUrl = nil
     }
 
     init(_ capture: Capture) {
@@ -84,6 +89,7 @@ struct RowItem: Identifiable, Equatable {
         createdAt = capture.createdAt
         modality = capture.mediaType
         synced = true
+        mediaUrl = capture.mediaUrl
     }
 
     init(_ related: RelatedCapture) {
@@ -92,6 +98,18 @@ struct RowItem: Identifiable, Equatable {
         createdAt = related.createdAt
         modality = related.modality
         synced = true
+        mediaUrl = nil
+    }
+
+    // Build a row from a pinned sticky's cached fields, so double-clicking a sticky
+    // can open the capture's detail window.
+    init(id: String, content: String, createdAt: String, modality: String, mediaUrl: String?) {
+        self.id = id
+        self.content = content
+        self.createdAt = createdAt
+        self.modality = modality
+        self.synced = true
+        self.mediaUrl = mediaUrl
     }
 
     // From a local record. A synced record keys on its server id so it dedupes
@@ -103,6 +121,7 @@ struct RowItem: Identifiable, Equatable {
         createdAt = RowItem.iso.string(from: record.createdAt)
         modality = record.payload.mediaType
         synced = record.serverId != nil
+        mediaUrl = nil
     }
 
     nonisolated(unsafe) private static let iso: ISO8601DateFormatter = {
@@ -186,7 +205,75 @@ enum CaptureTime {
 
 // MARK: - Capture row
 
-/// One capture/hit row: content, timestamp, hover-revealed copy + delete, and
+/// Shared hover action group for capture rows. Keeping this separate prevents the
+/// main window and quick search panel from drifting into different button sets.
+struct CaptureRowActions: View {
+    var hovering: Bool
+    var onCopy: () -> Void
+    var onDelete: (() -> Void)?
+    var onOpen: (() -> Void)?
+    var onUnlink: (() -> Void)?
+    var onPin: (() -> Void)?
+    var isPinned: Bool = false
+
+    var body: some View {
+        HStack(spacing: 8) {
+            if let onOpen {
+                Button(action: onOpen) { Image(systemName: "arrow.up.forward.square") }
+                    .buttonStyle(.borderless)
+                    .foregroundStyle(.secondary)
+                    .help("Open")
+                    .opacity(hovering ? 1 : 0)
+            }
+            if let onPin {
+                Button(action: onPin) { Image(systemName: isPinned ? "pin.fill" : "pin") }
+                    .buttonStyle(.borderless)
+                    .foregroundStyle(isPinned ? Color.accentColor : .secondary)
+                    .help(isPinned ? "Unpin from desktop" : "Pin to desktop")
+                    .opacity(hovering || isPinned ? 1 : 0)
+            }
+            Button(action: onCopy) { Image(systemName: "doc.on.doc") }
+                .buttonStyle(.borderless)
+                .foregroundStyle(.secondary)
+                .help("Copy")
+                .opacity(hovering ? 1 : 0)
+            if let onDelete {
+                Button(action: onDelete) { Image(systemName: "trash") }
+                    .buttonStyle(.borderless)
+                    .foregroundStyle(.secondary)
+                    .help("Delete")
+                    .opacity(hovering ? 1 : 0)
+            }
+            if let onUnlink {
+                Button(action: onUnlink) { Image(systemName: "minus.circle") }
+                    .buttonStyle(.borderless)
+                    .foregroundStyle(.secondary)
+                    .help("Remove link")
+                    .opacity(hovering ? 1 : 0)
+            }
+        }
+        .frame(width: Self.slotWidth(
+            onOpen: onOpen,
+            onDelete: onDelete,
+            onUnlink: onUnlink,
+            onPin: onPin
+        ), alignment: .trailing)
+    }
+
+    // One fixed slot per visible action so long content never collides with icons.
+    static func slotWidth(
+        onOpen: (() -> Void)?,
+        onDelete: (() -> Void)?,
+        onUnlink: (() -> Void)?,
+        onPin: (() -> Void)?
+    ) -> CGFloat {
+        let count = 1 + (onOpen == nil ? 0 : 1) + (onDelete == nil ? 0 : 1)
+            + (onUnlink == nil ? 0 : 1) + (onPin == nil ? 0 : 1)
+        return 28 + CGFloat(count - 1) * 24
+    }
+}
+
+/// One capture/hit row: content, timestamp, hover-revealed shared actions, and
 /// double-click-to-edit (when `onEdit` is provided). Matches rag's row geometry:
 /// fixed right-hand action slot so long content never collides with the icons.
 struct CaptureRow: View {
@@ -245,38 +332,15 @@ struct CaptureRow: View {
                 }
                 .buttonStyle(.plain).opacity(0).frame(width: 0, height: 0)
             } else {
-                HStack(spacing: 8) {
-                    if let onOpen {
-                        Button(action: onOpen) { Image(systemName: "arrow.up.forward.square") }
-                            .buttonStyle(.borderless).foregroundStyle(.secondary)
-                            .help("Open")
-                            .opacity(hovering ? 1 : 0)
-                    }
-                    Button(action: onCopy) { Image(systemName: "doc.on.doc") }
-                        .buttonStyle(.borderless).foregroundStyle(.secondary)
-                        .help("Copy")
-                        .opacity(hovering ? 1 : 0)
-                    if let onDelete {
-                        Button(action: onDelete) { Image(systemName: "trash") }
-                            .buttonStyle(.borderless).foregroundStyle(.secondary)
-                            .help("Delete")
-                            .opacity(hovering ? 1 : 0)
-                    }
-                    if let onUnlink {
-                        Button(action: onUnlink) { Image(systemName: "minus.circle") }
-                            .buttonStyle(.borderless).foregroundStyle(.secondary)
-                            .help("Remove link")
-                            .opacity(hovering ? 1 : 0)
-                    }
-                    if let onPin {
-                        Button(action: onPin) { Image(systemName: isPinned ? "pin.fill" : "pin") }
-                            .buttonStyle(.borderless)
-                            .foregroundStyle(isPinned ? Color.accentColor : .secondary)
-                            .help(isPinned ? "Unpin from desktop" : "Pin to desktop")
-                            .opacity(hovering || isPinned ? 1 : 0)
-                    }
-                }
-                .frame(width: actionSlotWidth, alignment: .trailing)
+                CaptureRowActions(
+                    hovering: hovering,
+                    onCopy: onCopy,
+                    onDelete: onDelete,
+                    onOpen: onOpen,
+                    onUnlink: onUnlink,
+                    onPin: onPin,
+                    isPinned: isPinned,
+                )
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -288,13 +352,6 @@ struct CaptureRow: View {
             editing = true
         })
         .onHover { hovering = $0 }
-    }
-
-    // One fixed slot per visible action so long content never collides with icons.
-    private var actionSlotWidth: CGFloat {
-        let count = 1 + (onOpen == nil ? 0 : 1) + (onDelete == nil ? 0 : 1)
-            + (onUnlink == nil ? 0 : 1) + (onPin == nil ? 0 : 1)
-        return 28 + CGFloat(count - 1) * 24
     }
 
     private func commitEdit() {

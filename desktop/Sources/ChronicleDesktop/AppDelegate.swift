@@ -11,7 +11,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var detailWindowController: CaptureDetailWindowController!
     private var pinnedStickyController: PinnedStickyController!
     private var settingsModel: SettingsModel!
-    private var settingsWindowController: SettingsWindowController!
     private var hotKeyController: HotKeyController?
     private let settings = SettingsStore()
     private let localStore = LocalCaptureStore(fileURL: ChronicleDesktopPaths.defaultLocalDatabaseURL())
@@ -38,9 +37,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             clients: clients,
             onSubmit: { [weak self] text, remindAt in self?.saveCapture(text, remindAt: remindAt) },
         )
-        mainWindowController = MainWindowController(clients: clients)
         detailWindowController = CaptureDetailWindowController(clients: clients)
         pinnedStickyController = PinnedStickyController(recall: clients.recall)
+        // Double-clicking a sticky opens that capture in a detail window.
+        pinnedStickyController.onOpen = { [weak self] row in self?.detailWindowController?.open(row) }
         settingsModel = SettingsModel(
             settings: settings,
             localStore: localStore,
@@ -49,7 +49,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             onSignInChanged: { [weak self] in self?.handleSignInChanged() },
             retry: { [weak self] in await self?.retrySummary() ?? (0, 0) },
         )
-        settingsWindowController = SettingsWindowController(model: settingsModel)
+        mainWindowController = MainWindowController(clients: clients, settingsModel: settingsModel)
 
         installStatusItem()
         installHotKey()
@@ -60,7 +60,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         pinnedStickyController.restore()
 
         if settings.load().isUsable == false {
-            showSettings()
+            mainWindowController.show()
         }
     }
 
@@ -215,7 +215,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func showSettings() {
-        settingsWindowController.show()
+        mainWindowController.show(mode: .settings)
     }
 
     // Re-sync reminders + offline captures after the signed-in state changes.
