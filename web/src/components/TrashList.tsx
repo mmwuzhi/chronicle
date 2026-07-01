@@ -16,12 +16,14 @@ interface TrashListProps {
   captures: CaptureBody[];
   restoringId: string | null;
   onRestore: (id: string) => void;
+  onPermanentDelete: (id: string) => void;
 }
 
 export function TrashList({
   captures,
   restoringId,
   onRestore,
+  onPermanentDelete,
 }: TrashListProps): React.JSX.Element {
   const { t } = useTranslation("captures");
 
@@ -47,13 +49,22 @@ export function TrashList({
               )}
               {text && <Markdown>{text}</Markdown>}
             </div>
-            <button
-              className="ch-btn ch-btn-ghost ch-btn-sm"
-              onClick={() => onRestore(capture.id)}
-              disabled={restoringId === capture.id}
-            >
-              {t("trash.restore")}
-            </button>
+            <div className="ch-trash-actions">
+              <button
+                className="ch-btn ch-btn-ghost ch-btn-sm"
+                onClick={() => onRestore(capture.id)}
+                disabled={restoringId === capture.id}
+              >
+                {t("trash.restore")}
+              </button>
+              <button
+                className="ch-btn ch-btn-ghost ch-btn-sm ch-btn-danger"
+                onClick={() => onPermanentDelete(capture.id)}
+                disabled={restoringId === capture.id}
+              >
+                {t("trash.deletePermanently")}
+              </button>
+            </div>
           </li>
         );
       })}

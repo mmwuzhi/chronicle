@@ -1318,6 +1318,12 @@ body {
   margin-bottom: 10px;
   border-radius: var(--radius-sm);
 }
+.ch-trash-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex-shrink: 0;
+}
 
 /* ── Empty state ──────────────────────────────────────────────────────── */
 .ch-empty {

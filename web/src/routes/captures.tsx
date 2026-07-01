@@ -211,8 +211,8 @@ function Captures() {
             update.mutate({ id, data: { rawText } });
           }}
           onRetryTranscription={(id) => retryTranscription.mutate({ id })}
-          onSetRemind={(id, at) =>
-            setRemind.mutate({ id, data: { at: at ?? undefined } })
+          onSetRemind={(id, at, hide) =>
+            setRemind.mutate({ id, data: { at: at ?? undefined, hide } })
           }
           onMutationError={() =>
             mutationToast.show(tc("errors.mutationFailed"))

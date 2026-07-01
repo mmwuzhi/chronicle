@@ -99,7 +99,7 @@ export function CaptureCard({
   onSaveTranscript: (id: string, transcript: string) => void;
   onUseTranscript: (id: string, mode: "append" | "replace") => void;
   onRetryTranscription: (id: string) => void;
-  onSetRemind: (id: string, at: string | null) => void;
+  onSetRemind: (id: string, at: string | null, hide: boolean) => void;
   onMutationError: () => void;
 }): React.JSX.Element {
   const { t } = useTranslation("captures");
@@ -337,7 +337,8 @@ export function CaptureCard({
           <>
             <RemindControl
               remindAt={c.remindAt}
-              onSet={(at) => onSetRemind(c.id, at)}
+              remindHide={c.remindHide}
+              onSet={(at, hide) => onSetRemind(c.id, at, hide)}
             />
             {c.createdAt && (
               <span className="ch-meta">{fmtShortDateTime(c.createdAt)}</span>

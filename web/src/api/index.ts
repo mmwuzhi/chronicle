@@ -134,6 +134,8 @@ export interface CaptureBody {
   rawText: string | null;
   /** @nullable */
   remindAt: string | null;
+  /** When a reminder is set: true (default) hides the capture from browse until due; false keeps it visible and only notifies (notify-only) */
+  remindHide: boolean;
   source: string;
   /** @nullable */
   transcribedAt: string | null;
@@ -183,6 +185,8 @@ export interface CaptureCreateInputBody {
   rawText?: string;
   /** RFC3339 time to resurface this capture */
   remindAt?: string;
+  /** With remindAt: true (default) hides until due; false is notify-only (stays visible, still notifies) */
+  remindHide?: boolean;
   /** Capture source, for example web or desktop_quick_capture */
   source?: string;
 }
@@ -208,6 +212,8 @@ export interface CaptureRemindInputBody {
   readonly $schema?: string;
   /** RFC3339 time to resurface this capture; omit or null to clear the reminder */
   at?: string;
+  /** true (default) hides the capture from browse until due; false is notify-only (stays visible, still notifies) */
+  hide?: boolean;
 }
 
 export interface CaptureTokenCreateInputBody {
@@ -261,6 +267,13 @@ export interface CaptureUpdateInputBody {
   classifiedAs?: CaptureUpdateInputBodyClassifiedAs;
   rawText?: string;
   transcript?: string;
+}
+
+export interface EmptyTrashOutputBody {
+  /** A URL to the JSON Schema for this object. */
+  readonly $schema?: string;
+  /** Number of captures permanently removed */
+  purged: number;
 }
 
 export interface ErrorDetail {
@@ -3411,6 +3424,68 @@ export const useRemoveCaptureLink = <TError = ErrorModel,
     }
 
 /**
+ * @summary Permanently delete a trashed capture
+ */
+export const permanentlyDeleteCapture = (
+    id: string,
+ signal?: AbortSignal
+) => {
+
+
+      return api<void>(
+      {url: `/captures/${id}/permanent`, method: 'DELETE', signal
+    },
+      );
+    }
+
+
+
+export const getPermanentlyDeleteCaptureMutationOptions = <TError = ErrorModel,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof permanentlyDeleteCapture>>, TError,{id: string}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof permanentlyDeleteCapture>>, TError,{id: string}, TContext> => {
+
+const mutationKey = ['permanentlyDeleteCapture'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof permanentlyDeleteCapture>>, {id: string}> = (props) => {
+          const {id} = props ?? {};
+
+          return  permanentlyDeleteCapture(id,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type PermanentlyDeleteCaptureMutationResult = NonNullable<Awaited<ReturnType<typeof permanentlyDeleteCapture>>>
+
+    export type PermanentlyDeleteCaptureMutationError = ErrorModel
+
+    /**
+ * @summary Permanently delete a trashed capture
+ */
+export const usePermanentlyDeleteCapture = <TError = ErrorModel,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof permanentlyDeleteCapture>>, TError,{id: string}, TContext>, }
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof permanentlyDeleteCapture>>,
+        TError,
+        {id: string},
+        TContext
+      > => {
+      return useMutation(getPermanentlyDeleteCaptureMutationOptions(options), queryClient);
+    }
+
+/**
  * @summary Semantic suggestions related to this capture
  */
 export const relatedCaptures = (
@@ -3980,6 +4055,68 @@ export function usePendingReminders<TData = Awaited<ReturnType<typeof pendingRem
 
 
 
+
+/**
+ * @summary Permanently delete every trashed capture
+ */
+export const emptyTrash = (
+
+ signal?: AbortSignal
+) => {
+
+
+      return api<EmptyTrashOutputBody>(
+      {url: `/trash/empty`, method: 'POST', signal
+    },
+      );
+    }
+
+
+
+export const getEmptyTrashMutationOptions = <TError = ErrorModel,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof emptyTrash>>, TError,void, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof emptyTrash>>, TError,void, TContext> => {
+
+const mutationKey = ['emptyTrash'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof emptyTrash>>, void> = () => {
+
+
+          return  emptyTrash()
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type EmptyTrashMutationResult = NonNullable<Awaited<ReturnType<typeof emptyTrash>>>
+
+    export type EmptyTrashMutationError = ErrorModel
+
+    /**
+ * @summary Permanently delete every trashed capture
+ */
+export const useEmptyTrash = <TError = ErrorModel,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof emptyTrash>>, TError,void, TContext>, }
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof emptyTrash>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getEmptyTrashMutationOptions(options), queryClient);
+    }
 
 /**
  * @summary Delete the authenticated user's account and all their data

@@ -57,7 +57,9 @@
     "set": "Remind",
     "at": "Remind at {{time}}",
     "clear": "Clear",
-    "cancel": "Cancel"
+    "cancel": "Cancel",
+    "keepVisible": "Keep visible",
+    "keepVisibleHint": "Notify only — stays in browse instead of hiding until due"
   },
   "promoteToTask": "Turn into task",
   "promoteDialog": {
@@ -80,6 +82,10 @@
     "subtitle": "Deleted captures. Restore anything you still need.",
     "empty": "Trash is empty.",
     "restore": "Restore",
+    "deletePermanently": "Delete permanently",
+    "deletePermanentlyConfirm": "Permanently delete this capture? This can't be undone.",
+    "emptyAll": "Empty trash",
+    "emptyConfirm": "Permanently delete all captures in the trash? This can't be undone.",
     "deletedAt": "Deleted {{time}}",
     "failedToLoad": "Failed to load trash"
   }

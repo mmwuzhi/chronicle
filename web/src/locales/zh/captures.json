@@ -57,7 +57,9 @@
     "set": "提醒",
     "at": "提醒于 {{time}}",
     "clear": "取消提醒",
-    "cancel": "取消"
+    "cancel": "取消",
+    "keepVisible": "保持可见",
+    "keepVisibleHint": "仅通知——保持在浏览列表中，不到点前隐藏"
   },
   "promoteToTask": "转为任务",
   "promoteDialog": {
@@ -80,6 +82,10 @@
     "subtitle": "已删除的捕获。需要的话可以恢复。",
     "empty": "回收站是空的。",
     "restore": "恢复",
+    "deletePermanently": "彻底删除",
+    "deletePermanentlyConfirm": "彻底删除这条捕获？此操作无法撤销。",
+    "emptyAll": "清空回收站",
+    "emptyConfirm": "彻底删除回收站中的所有捕获？此操作无法撤销。",
     "deletedAt": "删除于 {{time}}",
     "failedToLoad": "加载回收站失败"
   }

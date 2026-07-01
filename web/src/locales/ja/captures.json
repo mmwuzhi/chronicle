@@ -57,7 +57,9 @@
     "set": "リマインド",
     "at": "{{time}} に通知",
     "clear": "解除",
-    "cancel": "キャンセル"
+    "cancel": "キャンセル",
+    "keepVisible": "表示したまま",
+    "keepVisibleHint": "通知のみ — 期限まで隠さずブラウズに表示し続けます"
   },
   "promoteToTask": "タスクに変換",
   "promoteDialog": {
@@ -80,6 +82,10 @@
     "subtitle": "削除したキャプチャ。必要なものは復元できます。",
     "empty": "ゴミ箱は空です。",
     "restore": "復元",
+    "deletePermanently": "完全に削除",
+    "deletePermanentlyConfirm": "このキャプチャを完全に削除しますか？この操作は取り消せません。",
+    "emptyAll": "ゴミ箱を空にする",
+    "emptyConfirm": "ゴミ箱内のすべてのキャプチャを完全に削除しますか？この操作は取り消せません。",
     "deletedAt": "{{time}} に削除",
     "failedToLoad": "ゴミ箱の読み込みに失敗しました"
   }
