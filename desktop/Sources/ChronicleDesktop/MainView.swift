@@ -12,13 +12,14 @@ struct MainView: View {
     @ObservedObject var settingsModel: SettingsModel
 
     enum Mode: String, CaseIterable, Identifiable {
-        case browse = "Browse", ask = "Ask", settings = "Settings"
+        case browse = "Browse", ask = "Ask", trash = "Trash", settings = "Settings"
         var id: String { rawValue }
 
         var icon: String {
             switch self {
             case .browse: "tray.full"
             case .ask: "sparkles"
+            case .trash: "trash"
             case .settings: "gearshape"
             }
         }
@@ -36,6 +37,11 @@ struct MainView: View {
     @State private var askQuery = ""
     @State private var answer = ""
     @State private var sources: [AskSource] = []
+
+    // Trash: soft-deleted captures, filtered instantly on the loaded list.
+    @State private var trash: [Capture] = []
+    @State private var trashQuery = ""
+    @State private var confirmingEmptyTrash = false
 
     @State private var busy = false
     @State private var error = ""
@@ -110,9 +116,13 @@ struct MainView: View {
         }
         .animation(.easeInOut(duration: 0.2), value: pendingDeleteId)
         .animation(navigation.tabsRailPeeking ? nil : .spring(response: 0.3, dampingFraction: 0.92), value: navigation.tabsExpanded)
-        .task { await loadBrowse(reset: true) }
+        .task {
+            await loadBrowse(reset: true)
+            if navigation.mode == .trash { await loadTrash() }
+        }
         .onReceive(NotificationCenter.default.publisher(for: .chronicleMainShown)) { _ in
             if navigation.mode == .browse && !searched { Task { await loadBrowse(reset: true) } }
+            if navigation.mode == .trash { Task { await loadTrash() } }
         }
         .onReceive(NotificationCenter.default.publisher(for: .chroniclePinsChanged)) { _ in
             pinTick &+= 1
@@ -122,7 +132,7 @@ struct MainView: View {
 
     @ViewBuilder private var tabContent: some View {
         switch navigation.mode {
-        case .browse, .ask:
+        case .browse, .ask, .trash:
             VStack(spacing: 12) {
                 contentHeader
 
@@ -158,6 +168,21 @@ struct MainView: View {
             case .ask:
                 WorkspaceField(prompt: "Ask a question, e.g. what did I work on this week",
                                text: $askQuery, onSubmit: runAsk, disabled: busy)
+            case .trash:
+                WorkspaceField(prompt: "Filter trash", text: $trashQuery, disabled: busy)
+                if !trash.isEmpty {
+                    Button("Empty", role: .destructive) { confirmingEmptyTrash = true }
+                        .buttonStyle(.borderless).font(.caption).foregroundStyle(.red)
+                        .confirmationDialog(
+                            "Permanently delete all \(trash.count) captures in the trash?",
+                            isPresented: $confirmingEmptyTrash, titleVisibility: .visible,
+                        ) {
+                            Button("Empty Trash", role: .destructive) { emptyTrash() }
+                            Button("Cancel", role: .cancel) {}
+                        } message: {
+                            Text("This can't be undone.")
+                        }
+                }
             case .settings:
                 Text("Settings")
                     .font(.headline)
@@ -191,10 +216,110 @@ struct MainView: View {
                 Divider().opacity(0.5)
             }
             if loadingMore { ProgressView().controlSize(.small).frame(maxWidth: .infinity) }
+        } else if navigation.mode == .trash {
+            trashContent
         } else if !signedIn {
             signInPrompt
         } else {
             askContent
+        }
+    }
+
+    // MARK: - Trash
+
+    // Instant keyword filter over the loaded trash — a "find the one I deleted"
+    // surface, plain substring, never semantic (so a trashed row can't leak into a
+    // recall path). Empty query shows everything.
+    private var filteredTrash: [Capture] {
+        let q = trashQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty else { return trash }
+        return trash.filter { $0.content.localizedCaseInsensitiveContains(q) }
+    }
+
+    @ViewBuilder private var trashContent: some View {
+        let items = filteredTrash
+        if items.isEmpty {
+            Text(trashQuery.isEmpty ? "Trash is empty." : "No trashed captures match.")
+                .foregroundStyle(.secondary).padding(.top, 8)
+        } else {
+            ForEach(items) { trashRow($0) }
+        }
+    }
+
+    @ViewBuilder private func trashRow(_ capture: Capture) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            if capture.mediaType != "text" && capture.content.isEmpty {
+                Image(systemName: capture.mediaType == "audio" ? "waveform" : "photo")
+                    .font(.caption).foregroundStyle(.secondary).padding(.top, 3)
+            }
+            VStack(alignment: .leading, spacing: 3) {
+                Text(capture.content.isEmpty ? "(media capture)" : capture.content)
+                    .textSelection(.enabled).lineLimit(6)
+                    .foregroundStyle(capture.content.isEmpty ? .secondary : .primary)
+                HStack(spacing: 8) {
+                    Text("Deleted \(CaptureTime.display(capture.deletedAt ?? capture.createdAt))")
+                        .font(.caption2).foregroundStyle(.secondary)
+                    Spacer(minLength: 8)
+                    Button { restore(capture.id) } label: {
+                        Label("Restore", systemImage: "arrow.uturn.backward")
+                    }
+                    .buttonStyle(.borderless).font(.caption)
+                    Button(role: .destructive) { permanentlyDelete(capture.id) } label: {
+                        Label("Delete", systemImage: "trash")
+                    }
+                    .buttonStyle(.borderless).font(.caption).foregroundStyle(.red)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 8)
+        Divider().opacity(0.5)
+    }
+
+    private func loadTrash() async {
+        guard let client = clients.recall() else { trash = []; return }
+        do {
+            let items = try await client.trash()
+            withAnimation(.easeInOut(duration: 0.2)) { trash = items }
+            error = ""
+        } catch let err { error = describe(err) }
+    }
+
+    // Restore returns the capture (with its links + reminder) to browse. Drop it
+    // from the local trash list and let the next browse load pick it back up.
+    private func restore(_ id: String) {
+        guard let client = clients.recall() else { return }
+        Task { @MainActor in
+            do {
+                try await client.restore(id: id)
+                withAnimation(.easeInOut(duration: 0.2)) { trash.removeAll { $0.id == id } }
+            } catch let err { error = describe(err) }
+        }
+    }
+
+    // Permanent delete is irreversible; the trash is itself the undo buffer, so
+    // there's no toast — just drop the row.
+    private func permanentlyDelete(_ id: String) {
+        guard let client = clients.recall() else { return }
+        Task { @MainActor in
+            do {
+                try await client.permanentDelete(id: id)
+                clients.localDelete(id)
+                withAnimation(.easeInOut(duration: 0.2)) { trash.removeAll { $0.id == id } }
+            } catch let err { error = describe(err) }
+        }
+    }
+
+    private func emptyTrash() {
+        guard let client = clients.recall() else { return }
+        let ids = trash.map(\.id)
+        Task { @MainActor in
+            do {
+                _ = try await client.emptyTrash()
+                for id in ids { clients.localDelete(id) }
+                withAnimation(.easeInOut(duration: 0.2)) { trash = [] }
+            } catch let err { error = describe(err) }
         }
     }
 
@@ -239,8 +364,18 @@ struct MainView: View {
 
     private func select(_ next: Mode) {
         navigation.mode = next
-        if next == .settings {
+        switch next {
+        case .settings:
             settingsModel.refreshPending()
+        case .trash:
+            trashQuery = ""
+            Task { await loadTrash() }
+        case .browse:
+            // Returning from the trash: a restore/permanent-delete may have changed
+            // the live set, so re-sync browse (unless a search is showing).
+            if !searched { Task { await loadBrowse(reset: true) } }
+        case .ask:
+            break
         }
     }
 

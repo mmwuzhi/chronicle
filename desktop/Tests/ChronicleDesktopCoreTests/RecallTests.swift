@@ -117,3 +117,34 @@ func decodesAskResponse() throws {
     #expect(decoded.sources.first?.n == 1)
     #expect(decoded.sources.last?.id == "22222222-2222-2222-2222-222222222222")
 }
+
+@Test
+func decodesTrashedCaptureWithDeletedAtAndRemindHide() throws {
+    // GET /captures/trash returns CaptureBody rows carrying deletedAt; a notify-only
+    // capture carries remindHide=false. Both new fields must decode.
+    let json = Data(
+        """
+        [
+          {"id":"33333333-3333-3333-3333-333333333333","rawText":"deleted note",
+           "transcript":null,"mediaType":"text","mediaUrl":null,
+           "classifiedAs":"unclassified","source":"web","remindAt":null,
+           "remindHide":true,"createdAt":"2026-06-06T16:33:27+09:00",
+           "deletedAt":"2026-06-30T09:00:00+09:00"},
+          {"id":"44444444-4444-4444-4444-444444444444","rawText":"pinned sticky",
+           "transcript":null,"mediaType":"text","mediaUrl":null,
+           "classifiedAs":"unclassified","source":"web",
+           "remindAt":"2026-07-05T09:00:00+09:00","remindHide":false,
+           "createdAt":"2026-06-06T16:33:27+09:00","deletedAt":null}
+        ]
+        """.utf8)
+
+    let decoded = try JSONDecoder().decode([Capture].self, from: json)
+
+    #expect(decoded.count == 2)
+    let trashed = try #require(decoded.first)
+    #expect(trashed.deletedAt == "2026-06-30T09:00:00+09:00")
+    #expect(trashed.remindHide == true)
+    let notifyOnly = decoded[1]
+    #expect(notifyOnly.remindHide == false)
+    #expect(notifyOnly.deletedAt == nil)
+}

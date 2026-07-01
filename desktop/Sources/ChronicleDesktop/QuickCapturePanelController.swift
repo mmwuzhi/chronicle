@@ -10,12 +10,12 @@ final class QuickCapturePanel: NSPanel {
 @MainActor
 final class QuickCapturePanelController: NSWindowController, NSWindowDelegate {
     private let clients: CaptureClients
-    private let onSubmit: (String, Date?) -> Void
+    private let onSubmit: (String, Date?, Bool) -> Void
     private let focusRestorer = QuickCaptureFocusRestorer()
     private var hostingView: NSHostingView<PanelContentView>!
     private var isExplicitlyHiding = false
 
-    init(clients: CaptureClients, onSubmit: @escaping (String, Date?) -> Void) {
+    init(clients: CaptureClients, onSubmit: @escaping (String, Date?, Bool) -> Void) {
         self.clients = clients
         self.onSubmit = onSubmit
 
@@ -41,7 +41,7 @@ final class QuickCapturePanelController: NSWindowController, NSWindowDelegate {
 
         let root = PanelContentView(
             clients: clients,
-            onSubmit: { [weak self] text, remindAt in self?.onSubmit(text, remindAt) },
+            onSubmit: { [weak self] text, remindAt, keepVisible in self?.onSubmit(text, remindAt, keepVisible) },
             onClose: { [weak self] in self?.hide(restoringPreviousFocus: true) },
             onHeightChange: { [weak self] height in self?.resize(to: height) },
         )

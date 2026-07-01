@@ -48,12 +48,18 @@ public struct Capture: Codable, Equatable, Identifiable, Sendable {
     public let classifiedAs: String
     public let source: String
     public let remindAt: String?
+    // With a reminder set: true (default) hides from browse until due; false is
+    // notify-only (stays visible, still notified). Absent/nil when unknown.
+    public let remindHide: Bool?
+    // Soft-delete time; nil on live captures, set on rows returned by the trash.
+    public let deletedAt: String?
     public let createdAt: String
 
     public init(
         id: String, rawText: String?, transcript: String?, mediaType: String,
         mediaUrl: String?, classifiedAs: String, source: String,
-        remindAt: String?, createdAt: String
+        remindAt: String?, createdAt: String,
+        remindHide: Bool? = nil, deletedAt: String? = nil
     ) {
         self.id = id
         self.rawText = rawText
@@ -63,6 +69,8 @@ public struct Capture: Codable, Equatable, Identifiable, Sendable {
         self.classifiedAs = classifiedAs
         self.source = source
         self.remindAt = remindAt
+        self.remindHide = remindHide
+        self.deletedAt = deletedAt
         self.createdAt = createdAt
     }
 
@@ -244,6 +252,58 @@ public final class RecallAPIClient: @unchecked Sendable {
         let (_, response) = try await AuthedTransport.send(
             request, session: session, refresher: refresher)
         try Self.validate(response)
+    }
+
+    // MARK: - Trash (recover or permanently remove soft-deleted captures)
+
+    // Soft-deleted captures, most-recently-deleted first (GET /captures/trash).
+    // Same CaptureBody shape as browse, so it decodes into [Capture]; the rows
+    // carry deletedAt.
+    public func trash() async throws -> [Capture] {
+        var request = URLRequest(url: config.apiURL.appending(path: "captures/trash"))
+        request.httpMethod = "GET"
+        request.setValue("Bearer \(config.token)", forHTTPHeaderField: "Authorization")
+        let (data, response) = try await AuthedTransport.send(
+            request, session: session, refresher: refresher)
+        try Self.validate(response)
+        return try JSONDecoder().decode([Capture].self, from: data)
+    }
+
+    // Restore a soft-deleted capture (POST /captures/{id}/restore); links and the
+    // reminder come back with it. 404 if it isn't in the trash.
+    public func restore(id: String) async throws {
+        var request = URLRequest(url: captureURL(id).appending(path: "restore"))
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(config.token)", forHTTPHeaderField: "Authorization")
+        let (_, response) = try await AuthedTransport.send(
+            request, session: session, refresher: refresher)
+        try Self.validate(response)
+    }
+
+    // Permanently delete a trashed capture (DELETE /captures/{id}/permanent):
+    // irreversible, cascades links, purges media. Only valid from the trash — a
+    // live capture is a 404.
+    public func permanentDelete(id: String) async throws {
+        var request = URLRequest(url: captureURL(id).appending(path: "permanent"))
+        request.httpMethod = "DELETE"
+        request.setValue("Bearer \(config.token)", forHTTPHeaderField: "Authorization")
+        let (_, response) = try await AuthedTransport.send(
+            request, session: session, refresher: refresher)
+        try Self.validate(response)
+    }
+
+    // Permanently delete every trashed capture (POST /trash/empty). Returns the
+    // number purged.
+    @discardableResult
+    public func emptyTrash() async throws -> Int {
+        struct EmptyTrashResponse: Decodable { let purged: Int }
+        var request = URLRequest(url: config.apiURL.appending(path: "trash/empty"))
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(config.token)", forHTTPHeaderField: "Authorization")
+        let (data, response) = try await AuthedTransport.send(
+            request, session: session, refresher: refresher)
+        try Self.validate(response)
+        return try JSONDecoder().decode(EmptyTrashResponse.self, from: data).purged
     }
 
     // Semantic neighbours of a capture (GET /captures/{id}/related). The server

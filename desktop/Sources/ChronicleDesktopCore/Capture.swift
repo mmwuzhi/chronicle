@@ -8,19 +8,25 @@ public struct CapturePayload: Codable, Equatable, Sendable {
     public var classifiedAs: String
     public var source: String
     public var remindAt: Date?
+    // Only meaningful with remindAt set. nil (default) → hide until due; false →
+    // notify-only (the sticky stays visible and still pings). Encoded only when
+    // present, so the server default (hide) applies when it's nil.
+    public var remindHide: Bool?
 
     public init(
         rawText: String,
         mediaType: String = "text",
         classifiedAs: String = "unclassified",
         source: String = desktopQuickCaptureSource,
-        remindAt: Date? = nil
+        remindAt: Date? = nil,
+        remindHide: Bool? = nil
     ) {
         self.rawText = rawText
         self.mediaType = mediaType
         self.classifiedAs = classifiedAs
         self.source = source
         self.remindAt = remindAt
+        self.remindHide = remindHide
     }
 }
 

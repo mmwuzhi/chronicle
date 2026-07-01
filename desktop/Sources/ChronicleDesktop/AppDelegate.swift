@@ -35,7 +35,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         clients = makeClients()
         panelController = QuickCapturePanelController(
             clients: clients,
-            onSubmit: { [weak self] text, remindAt in self?.saveCapture(text, remindAt: remindAt) },
+            onSubmit: { [weak self] text, remindAt, keepVisible in
+                self?.saveCapture(text, remindAt: remindAt, keepVisible: keepVisible)
+            },
         )
         detailWindowController = CaptureDetailWindowController(clients: clients)
         pinnedStickyController = PinnedStickyController(recall: clients.recall)
@@ -240,7 +242,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return (result.sent, result.remaining)
     }
 
-    private func saveCapture(_ text: String, remindAt: Date?) {
+    private func saveCapture(_ text: String, remindAt: Date?, keepVisible: Bool) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             return
@@ -248,6 +250,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         var payload = CapturePayload(rawText: trimmed)
         payload.remindAt = remindAt
+        // Notify-only: keep it visible in browse. Only meaningful with a reminder;
+        // nil otherwise lets the server default (hide until due) stand.
+        if remindAt != nil && keepVisible {
+            payload.remindHide = false
+        }
 
         do {
             let record = try persistCapture(payload)

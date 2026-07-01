@@ -8,7 +8,8 @@ import ChronicleDesktopCore
 // with a small recent-captures preview; Ask stays collapsed until it has work.
 struct PanelContentView: View {
     let clients: CaptureClients
-    let onSubmit: (String, Date?) -> Void
+    // text, reminder time (nil = none), keepVisible (notify-only: stay in browse).
+    let onSubmit: (String, Date?, Bool) -> Void
     let onClose: () -> Void
     let onHeightChange: (CGFloat) -> Void
 
@@ -32,6 +33,8 @@ struct PanelContentView: View {
 
     @State private var remindOn = false
     @State private var remindAt = Date().addingTimeInterval(3600)
+    // Notify-only: keep the capture in browse instead of hiding it until due.
+    @State private var remindKeepVisible = false
 
     private static let recentPreviewLimit = 8
 
@@ -65,6 +68,9 @@ struct PanelContentView: View {
                     DatePicker("", selection: $remindAt, in: Date()...)
                         .labelsHidden().datePickerStyle(.field).controlSize(.small)
                     Spacer()
+                    Toggle("Keep visible", isOn: $remindKeepVisible)
+                        .toggleStyle(.checkbox).controlSize(.small).font(.caption)
+                        .help("Notify only — the capture stays in browse instead of hiding until due")
                 }
                 .padding(.horizontal, 16)
                 .padding(.bottom, 6)
@@ -246,9 +252,10 @@ struct PanelContentView: View {
         switch mode {
         case .capture:
             guard !q.isEmpty else { return }
-            onSubmit(q, remindOn ? remindAt : nil)
+            onSubmit(q, remindOn ? remindAt : nil, remindOn ? remindKeepVisible : false)
             texts[.capture] = ""
             remindOn = false
+            remindKeepVisible = false
             onClose()
         case .search:
             guard !q.isEmpty else {
@@ -378,6 +385,7 @@ struct PanelContentView: View {
         if !hasContent {
             mode = .capture
             remindOn = false
+            remindKeepVisible = false
             collapseResults()
         }
         DispatchQueue.main.async { focused = true }
