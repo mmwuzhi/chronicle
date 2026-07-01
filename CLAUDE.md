@@ -202,7 +202,7 @@ Notes:
 - projects are expected to evolve toward contexts.
 - existing tables are implementation details, not product direction.
 
-Soft delete only — `tasks` and `log_entries` have `deleted_at`. Never issue a hard DELETE on user data.
+Soft delete only — `tasks`, `log_entries`, and `captures` have `deleted_at`. Never issue a hard DELETE on user data. The one carve-out is the trash's explicit **permanent delete / empty trash**: a deliberate, trash-only user action on already-soft-deleted captures (the macOS "Recently Deleted" model), for content the user truly wants gone. Everything else stays soft.
 
 ## Common Commands
 
@@ -255,7 +255,7 @@ python -m pytest                  # Python tests (use python -m so top-level imp
 - **All DB queries live in `api/db/queries/*.sql`.** sqlc generates the Go code. Never write raw SQL in Go files.
 - **All route input/output types are defined on the huma route.** huma auto-generates the OpenAPI spec. Swagger UI is at `/docs`.
 - **Every log line from the API includes `traceId`.** Get it from context — never generate a new one mid-request.
-- **Soft delete only.** Set `deleted_at = now()`. Never run a hard DELETE on user data tables.
+- **Soft delete only.** Set `deleted_at = now()`. Never run a hard DELETE on user data tables. Sole exception: the trash's explicit permanent-delete / empty-trash on already-trashed captures (deliberate user action; FK `ON DELETE CASCADE` clears derived rows, R2 media purged best-effort).
 - **Rate limiting runs before auth.** Per-IP for public routes, per-user for authenticated routes.
 - **Never edit generated files.** `api/db/sqlc/` and `web/src/api/` are codegen output. Run `sqlc generate` or `pnpm orval` instead.
 - **Prefix huma handler I/O types with the resource name.** huma uses a global schema registry — `CreateInput` in two packages collides. Use `ProjectCreateInput`, `TaskCreateInput`, etc.

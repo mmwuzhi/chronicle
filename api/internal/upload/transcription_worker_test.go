@@ -31,6 +31,10 @@ func (s workerS3) GetObject(context.Context, *s3.GetObjectInput, ...func(*s3.Opt
 	}, nil
 }
 
+func (s workerS3) DeleteObject(context.Context, *s3.DeleteObjectInput, ...func(*s3.Options)) (*s3.DeleteObjectOutput, error) {
+	return &s3.DeleteObjectOutput{}, nil
+}
+
 func TestTranscribeUsesConfiguredEndpointAndModel(t *testing.T) {
 	var receivedPath string
 	var receivedModel string

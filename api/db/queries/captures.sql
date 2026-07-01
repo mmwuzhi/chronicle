@@ -3,7 +3,7 @@ SELECT * FROM captures
 WHERE user_id = $1
   AND deleted_at IS NULL
   AND (sqlc.narg('classified_as')::text IS NULL OR classified_as::text = sqlc.narg('classified_as')::text)
-  AND (sqlc.arg('include_reminded')::boolean OR remind_at IS NULL OR remind_at <= now())
+  AND (sqlc.arg('include_reminded')::boolean OR remind_at IS NULL OR remind_at <= now() OR NOT remind_hide)
 ORDER BY created_at DESC;
 
 -- name: ListCapturePage :many
@@ -25,6 +25,7 @@ WHERE user_id = sqlc.arg('user_id')
     sqlc.arg('include_reminded')::boolean
     OR remind_at IS NULL
     OR remind_at <= now()
+    OR NOT remind_hide
   )
 ORDER BY created_at DESC, id DESC
 LIMIT sqlc.arg('page_size');
@@ -210,6 +211,26 @@ SET deleted_at = NULL
 WHERE id = $1 AND user_id = $2 AND deleted_at IS NOT NULL
 RETURNING *;
 
+-- name: PermanentDeleteCapture :one
+-- Hard delete, allowed ONLY from the trash (deleted_at IS NOT NULL) as an
+-- explicit user action — the macOS "Recently Deleted" model: normal delete is
+-- soft, the trash offers permanent removal for content the user truly wants gone
+-- (a mistaken or sensitive capture). FK ON DELETE CASCADE clears the derived rows
+-- (capture_links, capture_attachments, capture_embeddings, capture_metadata).
+-- Returns media_key so the handler can best-effort delete the R2 object too.
+-- No row (live capture or wrong owner) → pgx.ErrNoRows → 404.
+DELETE FROM captures
+WHERE id = $1 AND user_id = $2 AND deleted_at IS NOT NULL
+RETURNING media_key;
+
+-- name: EmptyTrash :many
+-- Hard delete every trashed capture for the user (explicit "empty trash").
+-- Same cascade semantics as PermanentDeleteCapture. Returns each media_key so the
+-- handler can best-effort purge the R2 objects; the row count is the purged total.
+DELETE FROM captures
+WHERE user_id = $1 AND deleted_at IS NOT NULL
+RETURNING media_key;
+
 -- name: ListCapturesInRange :many
 SELECT * FROM captures
 WHERE user_id = $1
@@ -222,8 +243,14 @@ ORDER BY created_at;
 -- Set or clear (remind_at = NULL) a capture's reminder. Independent of content
 -- edits so the semantics stay separate. Only the browse path filters on this;
 -- search/recall never do.
+--
+-- remind_hide splits notify from hide: true (default) hides the capture from
+-- browse until due; false keeps it visible the whole time yet still notifies
+-- (notify-only). When the reminder is cleared (remind_at = NULL) the flag is
+-- moot — a null remind_at is always shown regardless of remind_hide.
 UPDATE captures
-SET remind_at = sqlc.narg('remind_at')::timestamptz
+SET remind_at = sqlc.narg('remind_at')::timestamptz,
+    remind_hide = sqlc.arg('remind_hide')::boolean
 WHERE id = sqlc.arg('id') AND user_id = sqlc.arg('user_id') AND deleted_at IS NULL
 RETURNING *;
 

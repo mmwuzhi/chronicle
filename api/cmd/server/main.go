@@ -142,7 +142,7 @@ func main() {
 	}
 	upload.Register(r, pool, s3client, uploadConfig, auth.ValidateToken(cfg.JWTSecret))
 	upload.StartTranscriptionWorker(ctx, pool, s3client, uploadConfig, rag)
-	capture.Register(api, pool, rag, authMW, captureCreateMW)
+	capture.Register(api, pool, rag, s3client, cfg.R2BucketName, authMW, captureCreateMW)
 	user.Register(api, pool, authMW)
 	ai.Register(api, cfg.GeminiKey, authMW)
 	search.Register(api, pool, rag, authMW)

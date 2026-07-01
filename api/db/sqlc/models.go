@@ -358,6 +358,7 @@ type Capture struct {
 	MediaKey              pgtype.Text         `json:"media_key"`
 	RemindAt              pgtype.Timestamptz  `json:"remind_at"`
 	DeletedAt             pgtype.Timestamptz  `json:"deleted_at"`
+	RemindHide            bool                `json:"remind_hide"`
 }
 
 type CaptureAttachment struct {

@@ -37,7 +37,7 @@ func (q *Queries) AddCaptureLink(ctx context.Context, arg AddCaptureLinkParams) 
 }
 
 const listLinkedCaptures = `-- name: ListLinkedCaptures :many
-SELECT c.id, c.user_id, c.raw_text, c.media_url, c.media_type, c.classified_as, c.created_at, c.source, c.transcript, c.transcription_status, c.transcription_model, c.transcription_attempts, c.transcribed_at, c.next_transcription_at, c.audio_duration_sec, c.media_key, c.remind_at, c.deleted_at
+SELECT c.id, c.user_id, c.raw_text, c.media_url, c.media_type, c.classified_as, c.created_at, c.source, c.transcript, c.transcription_status, c.transcription_model, c.transcription_attempts, c.transcribed_at, c.next_transcription_at, c.audio_duration_sec, c.media_key, c.remind_at, c.deleted_at, c.remind_hide
 FROM captures c
 JOIN capture_links l
   ON (l.a_id = c.id AND l.b_id = $1::uuid)
@@ -83,6 +83,7 @@ func (q *Queries) ListLinkedCaptures(ctx context.Context, arg ListLinkedCaptures
 			&i.MediaKey,
 			&i.RemindAt,
 			&i.DeletedAt,
+			&i.RemindHide,
 		); err != nil {
 			return nil, err
 		}

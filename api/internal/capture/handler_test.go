@@ -51,7 +51,9 @@ func newServer(t *testing.T) (*httptest.Server, *pgxpool.Pool) {
 	// create accepts a JWT or a capture token (the real create-only validator);
 	// read/mutate routes stay JWT-only via authMW.
 	createMW := middleware.RequireAuthHumaCtx(auth.ValidateTokenOrPAT(testutil.TestJWTSecret, db.New(pool)))
-	capture.Register(api, pool, ragclient.New(""), authMW, createMW)
+	// nil store + empty bucket: permanent delete still hard-deletes the row; R2
+	// media cleanup is simply skipped (no object storage wired in tests).
+	capture.Register(api, pool, ragclient.New(""), nil, "", authMW, createMW)
 
 	srv := httptest.NewServer(r)
 	t.Cleanup(srv.Close)
@@ -426,7 +428,7 @@ func TestCaptureReminderBrowseAndRecall(t *testing.T) {
 	}
 	setRemind := func(c db.Capture, at pgtype.Timestamptz) {
 		if _, err := queries.SetCaptureRemind(ctx, db.SetCaptureRemindParams{
-			ID: c.ID, UserID: uid, RemindAt: at,
+			ID: c.ID, UserID: uid, RemindAt: at, RemindHide: true,
 		}); err != nil {
 			t.Fatalf("set remind: %v", err)
 		}
@@ -496,6 +498,136 @@ func TestCaptureReminderBrowseAndRecall(t *testing.T) {
 	}
 	if !ids(browse2)[future.ID] {
 		t.Fatalf("cleared reminder should reappear in default browse")
+	}
+}
+
+func TestNotifyOnlyReminderStaysVisible(t *testing.T) {
+	srv, pool := newServer(t)
+	_, token := createTestUser(t, pool)
+
+	notifyOnly := createCapture(t, srv, token, map[string]any{"rawText": "pinned sticky"})
+	hidden := createCapture(t, srv, token, map[string]any{"rawText": "resurface later"})
+	future := time.Now().Add(time.Hour).UTC().Format(time.RFC3339)
+
+	// hide:false = notify-only; hide omitted defaults to true (hide until due).
+	r1 := do(t, srv.Client(), http.MethodPost, srv.URL+"/captures/"+notifyOnly+"/remind", token,
+		map[string]any{"at": future, "hide": false})
+	r1.Body.Close()
+	if r1.StatusCode != http.StatusOK {
+		t.Fatalf("set notify-only remind: got %d", r1.StatusCode)
+	}
+	r2 := do(t, srv.Client(), http.MethodPost, srv.URL+"/captures/"+hidden+"/remind", token,
+		map[string]any{"at": future})
+	r2.Body.Close()
+	if r2.StatusCode != http.StatusOK {
+		t.Fatalf("set default remind: got %d", r2.StatusCode)
+	}
+
+	// Default browse: notify-only stays; the default future reminder is hidden.
+	browse := do(t, srv.Client(), http.MethodGet, srv.URL+"/captures", token, nil)
+	var items []struct {
+		ID         string `json:"id"`
+		RemindHide bool   `json:"remindHide"`
+	}
+	decodeBody(t, browse, &items)
+	seen := map[string]bool{}
+	for _, it := range items {
+		seen[it.ID] = true
+	}
+	if !seen[notifyOnly] {
+		t.Fatalf("notify-only capture should stay in default browse")
+	}
+	if seen[hidden] {
+		t.Fatalf("default (hide) future reminder should be hidden from browse")
+	}
+
+	// notify-only never bypasses notification scheduling: both future reminders
+	// are pending regardless of remind_hide.
+	pending := do(t, srv.Client(), http.MethodGet, srv.URL+"/reminders/pending", token, nil)
+	var pend []struct {
+		ID string `json:"id"`
+	}
+	decodeBody(t, pending, &pend)
+	pendSeen := map[string]bool{}
+	for _, p := range pend {
+		pendSeen[p.ID] = true
+	}
+	if !pendSeen[notifyOnly] || !pendSeen[hidden] {
+		t.Fatalf("both future reminders must be pending (remind_hide must not affect scheduling), got %v", pendSeen)
+	}
+}
+
+func TestPermanentDelete_RequiresTrashAndCascadesLinks(t *testing.T) {
+	srv, pool := newServer(t)
+	_, token := createTestUser(t, pool)
+	a := createCapture(t, srv, token, map[string]any{"rawText": "delete me for good"})
+	b := createCapture(t, srv, token, map[string]any{"rawText": "keep me"})
+
+	link := do(t, srv.Client(), http.MethodPost, srv.URL+"/captures/"+a+"/links", token, map[string]any{"targetId": b})
+	link.Body.Close()
+
+	// A live capture cannot be permanently deleted — only trashed ones can.
+	live := do(t, srv.Client(), http.MethodDelete, srv.URL+"/captures/"+a+"/permanent", token, nil)
+	live.Body.Close()
+	if live.StatusCode != http.StatusNotFound {
+		t.Fatalf("permanent delete of a live capture: expected 404, got %d", live.StatusCode)
+	}
+
+	// Soft delete, then permanent delete succeeds and cascades the link off B.
+	soft := do(t, srv.Client(), http.MethodDelete, srv.URL+"/captures/"+a, token, nil)
+	soft.Body.Close()
+	perm := do(t, srv.Client(), http.MethodDelete, srv.URL+"/captures/"+a+"/permanent", token, nil)
+	perm.Body.Close()
+	if perm.StatusCode != http.StatusNoContent {
+		t.Fatalf("permanent delete: expected 204, got %d", perm.StatusCode)
+	}
+
+	linksOfB := do(t, srv.Client(), http.MethodGet, srv.URL+"/captures/"+b+"/links", token, nil)
+	var links []any
+	decodeBody(t, linksOfB, &links)
+	if len(links) != 0 {
+		t.Fatalf("permanent delete should cascade the link off B, got %d", len(links))
+	}
+
+	trash := do(t, srv.Client(), http.MethodGet, srv.URL+"/captures/trash", token, nil)
+	var trashed []any
+	decodeBody(t, trash, &trashed)
+	if len(trashed) != 0 {
+		t.Fatalf("permanently deleted capture should be gone from trash, got %d", len(trashed))
+	}
+}
+
+func TestEmptyTrash_PurgesOnlyTrashed(t *testing.T) {
+	srv, pool := newServer(t)
+	_, token := createTestUser(t, pool)
+	a := createCapture(t, srv, token, map[string]any{"rawText": "trash a"})
+	b := createCapture(t, srv, token, map[string]any{"rawText": "trash b"})
+	createCapture(t, srv, token, map[string]any{"rawText": "still live"})
+
+	for _, id := range []string{a, b} {
+		do(t, srv.Client(), http.MethodDelete, srv.URL+"/captures/"+id, token, nil).Body.Close()
+	}
+
+	empty := do(t, srv.Client(), http.MethodPost, srv.URL+"/trash/empty", token, nil)
+	var res struct {
+		Purged int `json:"purged"`
+	}
+	decodeBody(t, empty, &res)
+	if res.Purged != 2 {
+		t.Fatalf("empty trash: expected purged 2, got %d", res.Purged)
+	}
+
+	trash := do(t, srv.Client(), http.MethodGet, srv.URL+"/captures/trash", token, nil)
+	var trashed []any
+	decodeBody(t, trash, &trashed)
+	if len(trashed) != 0 {
+		t.Fatalf("trash should be empty after empty-trash, got %d", len(trashed))
+	}
+	live := do(t, srv.Client(), http.MethodGet, srv.URL+"/captures", token, nil)
+	var liveItems []any
+	decodeBody(t, live, &liveItems)
+	if len(liveItems) != 1 {
+		t.Fatalf("empty trash must not touch live captures, got %d", len(liveItems))
 	}
 }
 

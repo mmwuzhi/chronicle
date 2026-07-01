@@ -25,10 +25,12 @@ import (
 
 const maxUploadSize = 20 << 20 // 20 MB
 
-// S3Client is the subset of aws s3.Client used by uploads and transcription.
+// S3Client is the subset of aws s3.Client used by uploads, transcription, and
+// permanent-delete media cleanup.
 type S3Client interface {
 	PutObject(ctx context.Context, input *s3.PutObjectInput, opts ...func(*s3.Options)) (*s3.PutObjectOutput, error)
 	GetObject(ctx context.Context, input *s3.GetObjectInput, opts ...func(*s3.Options)) (*s3.GetObjectOutput, error)
+	DeleteObject(ctx context.Context, input *s3.DeleteObjectInput, opts ...func(*s3.Options)) (*s3.DeleteObjectOutput, error)
 }
 
 type Config struct {

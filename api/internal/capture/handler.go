@@ -3,12 +3,15 @@ package capture
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"regexp"
 	"strings"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -22,16 +25,28 @@ import (
 )
 
 type handler struct {
-	q   *db.Queries
-	rag *ragclient.Client
+	q      *db.Queries
+	rag    *ragclient.Client
+	store  objectDeleter
+	bucket string
+}
+
+// objectDeleter is the sliver of the R2/S3 client the capture handler needs to
+// purge media on a permanent delete. Nil when R2 is not configured, in which case
+// media cleanup is skipped (the DB delete is still authoritative).
+type objectDeleter interface {
+	DeleteObject(ctx context.Context, in *s3.DeleteObjectInput, opts ...func(*s3.Options)) (*s3.DeleteObjectOutput, error)
 }
 
 // Register wires the capture routes. authMW (JWT only) guards every read/mutate
 // route; createMW additionally accepts long-lived capture tokens (see
 // auth.ValidateTokenOrPAT) and is applied ONLY to POST /captures, so a headless
 // quick-capture token can append captures but cannot read, update, or delete.
-func Register(api huma.API, pool *pgxpool.Pool, rag *ragclient.Client, authMW, createMW func(huma.Context, func(huma.Context))) {
-	h := &handler{q: db.New(pool), rag: rag}
+//
+// store/bucket back best-effort R2 media cleanup on permanent delete; pass a nil
+// store when R2 is not configured.
+func Register(api huma.API, pool *pgxpool.Pool, rag *ragclient.Client, store objectDeleter, bucket string, authMW, createMW func(huma.Context, func(huma.Context))) {
+	h := &handler{q: db.New(pool), rag: rag, store: store, bucket: bucket}
 
 	op := func(id, method, path, summary string) huma.Operation {
 		return huma.Operation{
@@ -59,6 +74,8 @@ func Register(api huma.API, pool *pgxpool.Pool, rag *ragclient.Client, authMW, c
 	huma.Register(api, op("delete-capture", http.MethodDelete, "/captures/{id}", "Delete a capture"), h.delete)
 	huma.Register(api, op("list-trashed-captures", http.MethodGet, "/captures/trash", "List soft-deleted captures"), h.listTrash)
 	huma.Register(api, op("restore-capture", http.MethodPost, "/captures/{id}/restore", "Restore a soft-deleted capture"), h.restore)
+	huma.Register(api, op("permanently-delete-capture", http.MethodDelete, "/captures/{id}/permanent", "Permanently delete a trashed capture"), h.permanentDelete)
+	huma.Register(api, op("empty-trash", http.MethodPost, "/trash/empty", "Permanently delete every trashed capture"), h.emptyTrash)
 	huma.Register(api, op("list-capture-attachments", http.MethodGet, "/captures/{id}/attachments", "List external file references"), h.listAttachments)
 	huma.Register(api, op("add-capture-attachment", http.MethodPost, "/captures/{id}/attachments", "Attach an external file reference"), h.addAttachment)
 	huma.Register(api, op("delete-capture-attachment", http.MethodDelete, "/captures/{id}/attachments/{attachmentId}", "Remove an external file reference"), h.deleteAttachment)
@@ -83,6 +100,7 @@ type CaptureBody struct {
 	TranscribedAt       *string `json:"transcribedAt"`
 	AudioDurationSec    *int32  `json:"audioDurationSec"`
 	RemindAt            *string `json:"remindAt"`
+	RemindHide          bool    `json:"remindHide" doc:"When a reminder is set: true (default) hides the capture from browse until due; false keeps it visible and only notifies (notify-only)"`
 	CreatedAt           string  `json:"createdAt"`
 	DeletedAt           *string `json:"deletedAt"`
 }
@@ -119,6 +137,7 @@ func toBody(c db.Capture) CaptureBody {
 		s := c.RemindAt.Time.UTC().Format(time.RFC3339)
 		b.RemindAt = &s
 	}
+	b.RemindHide = c.RemindHide
 	if c.DeletedAt.Valid {
 		s := c.DeletedAt.Time.UTC().Format(time.RFC3339)
 		b.DeletedAt = &s
@@ -167,6 +186,7 @@ type CaptureCreateInput struct {
 		ClassifiedAs string  `json:"classifiedAs,omitempty" enum:"task,idea,routine,log,unclassified" default:"unclassified"`
 		Source       string  `json:"source,omitempty" default:"web" doc:"Capture source, for example web or desktop_quick_capture"`
 		RemindAt     *string `json:"remindAt,omitempty" doc:"RFC3339 time to resurface this capture"`
+		RemindHide   *bool   `json:"remindHide,omitempty" doc:"With remindAt: true (default) hides until due; false is notify-only (stays visible, still notifies)"`
 	}
 }
 
@@ -207,9 +227,10 @@ func (h *handler) create(ctx context.Context, input *CaptureCreateInput) (*Creat
 	}
 	if remindAt.Valid {
 		c, err = h.q.SetCaptureRemind(ctx, db.SetCaptureRemindParams{
-			ID:       c.ID,
-			UserID:   uid,
-			RemindAt: remindAt,
+			ID:         c.ID,
+			UserID:     uid,
+			RemindAt:   remindAt,
+			RemindHide: remindHideDefault(input.Body.RemindHide),
 		})
 		if err != nil {
 			return nil, huma.Error500InternalServerError("internal error")
@@ -329,7 +350,8 @@ func (h *handler) retryTranscription(ctx context.Context, input *CaptureRetryTra
 type CaptureRemindInput struct {
 	ID   string `path:"id" format:"uuid"`
 	Body struct {
-		At *string `json:"at,omitempty" doc:"RFC3339 time to resurface this capture; omit or null to clear the reminder"`
+		At   *string `json:"at,omitempty" doc:"RFC3339 time to resurface this capture; omit or null to clear the reminder"`
+		Hide *bool   `json:"hide,omitempty" doc:"true (default) hides the capture from browse until due; false is notify-only (stays visible, still notifies)"`
 	}
 }
 
@@ -347,9 +369,10 @@ func (h *handler) setRemind(ctx context.Context, input *CaptureRemindInput) (*Up
 		return nil, err
 	}
 	c, err := h.q.SetCaptureRemind(ctx, db.SetCaptureRemindParams{
-		ID:       id,
-		UserID:   uid,
-		RemindAt: at,
+		ID:         id,
+		UserID:     uid,
+		RemindAt:   at,
+		RemindHide: remindHideDefault(input.Body.Hide),
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -358,6 +381,15 @@ func (h *handler) setRemind(ctx context.Context, input *CaptureRemindInput) (*Up
 		return nil, huma.Error500InternalServerError("internal error")
 	}
 	return &UpdateOutput{Body: toBody(c)}, nil
+}
+
+// remindHideDefault resolves the optional hide flag: absent → true (hide until
+// due, the historical behaviour); present → the caller's choice.
+func remindHideDefault(hide *bool) bool {
+	if hide == nil {
+		return true
+	}
+	return *hide
 }
 
 type RemindersDueInput struct {
@@ -444,12 +476,16 @@ func (h *handler) delete(ctx context.Context, input *CaptureDeleteInput) (*struc
 	return nil, nil
 }
 
-// --- trash (recover soft-deleted captures) ---
+// --- trash (recover or permanently remove soft-deleted captures) ---
 //
-// Soft delete is the only deletion (project guardrail: never hard-DELETE user
-// data). The trash exposes the recovery side of that: list what's deleted and
-// restore it. There is deliberately no "permanent delete" / "empty trash" — that
-// would be a hard DELETE.
+// Normal delete is always soft (project guardrail: the DELETE route never hard-
+// DELETEs user data). The trash is the recovery surface: list what's deleted and
+// restore it. It also offers the escape hatch the guardrail carves out — an
+// explicit, trash-only permanent delete / empty-trash for content the user truly
+// wants gone (a mistaken or sensitive capture). This mirrors the macOS "Recently
+// Deleted" model: soft by default, hard only on a deliberate second action from
+// inside the trash. FK ON DELETE CASCADE clears the derived rows; media in R2 is
+// purged best-effort (the DB delete stays authoritative if R2 cleanup fails).
 
 type CaptureTrashListInput struct{}
 
@@ -490,6 +526,72 @@ func (h *handler) restore(ctx context.Context, input *CaptureRestoreInput) (*Upd
 		return nil, huma.Error500InternalServerError("internal error")
 	}
 	return &UpdateOutput{Body: toBody(c)}, nil
+}
+
+type CapturePermanentDeleteInput struct {
+	ID string `path:"id" format:"uuid"`
+}
+
+func (h *handler) permanentDelete(ctx context.Context, input *CapturePermanentDeleteInput) (*struct{}, error) {
+	uid, err := userID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	id, err := uuid.Parse(input.ID)
+	if err != nil {
+		return nil, huma.Error422UnprocessableEntity("invalid id")
+	}
+	mediaKey, err := h.q.PermanentDeleteCapture(ctx, db.PermanentDeleteCaptureParams{ID: id, UserID: uid})
+	if err != nil {
+		// No row means the capture is not in the trash (live, already purged, or
+		// another owner's) — never a hard delete of a live capture.
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, huma.Error404NotFound("trashed capture not found")
+		}
+		return nil, huma.Error500InternalServerError("internal error")
+	}
+	h.purgeMedia(ctx, mediaKey)
+	return nil, nil
+}
+
+type CaptureEmptyTrashInput struct{}
+
+type EmptyTrashOutput struct {
+	Body struct {
+		Purged int `json:"purged" doc:"Number of captures permanently removed"`
+	}
+}
+
+func (h *handler) emptyTrash(ctx context.Context, _ *CaptureEmptyTrashInput) (*EmptyTrashOutput, error) {
+	uid, err := userID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	keys, err := h.q.EmptyTrash(ctx, uid)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("internal error")
+	}
+	for _, k := range keys {
+		h.purgeMedia(ctx, k)
+	}
+	out := &EmptyTrashOutput{}
+	out.Body.Purged = len(keys)
+	return out, nil
+}
+
+// purgeMedia best-effort deletes a capture's R2 object after a permanent delete.
+// The DB row is already gone (authoritative); a failed object delete leaves a
+// storage orphan but never blocks or reverses the delete, so we only log it.
+func (h *handler) purgeMedia(ctx context.Context, key pgtype.Text) {
+	if h.store == nil || h.bucket == "" || !key.Valid || key.String == "" {
+		return
+	}
+	if _, err := h.store.DeleteObject(ctx, &s3.DeleteObjectInput{
+		Bucket: aws.String(h.bucket),
+		Key:    aws.String(key.String),
+	}); err != nil {
+		slog.WarnContext(ctx, "permanent delete: R2 object cleanup failed", "err", err, "key", key.String)
+	}
 }
 
 // --- external attachments (cloud-drive references) ---
