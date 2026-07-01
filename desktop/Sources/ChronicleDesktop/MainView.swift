@@ -42,6 +42,8 @@ struct MainView: View {
     @State private var trash: [Capture] = []
     @State private var trashQuery = ""
     @State private var confirmingEmptyTrash = false
+    // Set to the capture id awaiting a permanent-delete confirmation (irreversible).
+    @State private var pendingPermanentDeleteId: String?
 
     @State private var busy = false
     @State private var error = ""
@@ -147,6 +149,19 @@ struct MainView: View {
                 }
             }
             .padding(16)
+            // Per-row permanent delete is irreversible; confirm before hard-deleting,
+            // matching Empty Trash and the web flow.
+            .confirmationDialog(
+                "Delete this capture permanently? This can't be undone.",
+                isPresented: Binding(
+                    get: { pendingPermanentDeleteId != nil },
+                    set: { if !$0 { pendingPermanentDeleteId = nil } },
+                ),
+                presenting: pendingPermanentDeleteId,
+            ) { id in
+                Button("Delete Permanently", role: .destructive) { permanentlyDelete(id) }
+                Button("Cancel", role: .cancel) {}
+            }
         case .settings:
             VStack(spacing: 0) {
                 contentHeader
@@ -264,7 +279,7 @@ struct MainView: View {
                         Label("Restore", systemImage: "arrow.uturn.backward")
                     }
                     .buttonStyle(.borderless).font(.caption)
-                    Button(role: .destructive) { permanentlyDelete(capture.id) } label: {
+                    Button(role: .destructive) { pendingPermanentDeleteId = capture.id } label: {
                         Label("Delete", systemImage: "trash")
                     }
                     .buttonStyle(.borderless).font(.caption).foregroundStyle(.red)

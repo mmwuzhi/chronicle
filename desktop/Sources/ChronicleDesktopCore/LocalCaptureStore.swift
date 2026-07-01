@@ -52,8 +52,9 @@ public final class LocalCaptureStore: @unchecked Sendable {
             let sql = """
                 INSERT INTO local_captures (
                     id, server_id, raw_text, media_type, classified_as, source,
-                    remind_at, created_at, updated_at, synced_at, last_error, notified_at
-                ) VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL)
+                    remind_at, created_at, updated_at, synced_at, last_error, notified_at,
+                    remind_hide
+                ) VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, ?)
                 """
             try executeStatement(db, sql) { stmt in
                 bindText(stmt, 1, record.id)
@@ -64,6 +65,7 @@ public final class LocalCaptureStore: @unchecked Sendable {
                 bindOptionalDate(stmt, 6, payload.remindAt)
                 bindDate(stmt, 7, record.createdAt)
                 bindDate(stmt, 8, record.updatedAt)
+                bindOptionalBool(stmt, 9, payload.remindHide)
             }
         }
         return record
@@ -83,7 +85,8 @@ public final class LocalCaptureStore: @unchecked Sendable {
         return try query(
             """
             SELECT id, server_id, raw_text, media_type, classified_as, source,
-                   remind_at, created_at, updated_at, synced_at, last_error, notified_at
+                   remind_at, created_at, updated_at, synced_at, last_error, notified_at,
+                   remind_hide
             FROM local_captures
             WHERE raw_text LIKE ? ESCAPE '\\'
             ORDER BY created_at DESC
@@ -104,7 +107,8 @@ public final class LocalCaptureStore: @unchecked Sendable {
         try query(
             """
             SELECT id, server_id, raw_text, media_type, classified_as, source,
-                   remind_at, created_at, updated_at, synced_at, last_error, notified_at
+                   remind_at, created_at, updated_at, synced_at, last_error, notified_at,
+                   remind_hide
             FROM local_captures
             WHERE trim(raw_text) <> ''
               AND (embedding IS NULL OR embed_model IS NOT ?)
@@ -141,7 +145,7 @@ public final class LocalCaptureStore: @unchecked Sendable {
             let sql = """
                 SELECT id, server_id, raw_text, media_type, classified_as, source,
                        remind_at, created_at, updated_at, synced_at, last_error, notified_at,
-                       embedding
+                       remind_hide, embedding
                 FROM local_captures
                 WHERE embed_model = ? AND embedding IS NOT NULL
                 """
@@ -159,7 +163,7 @@ public final class LocalCaptureStore: @unchecked Sendable {
                 guard result == SQLITE_ROW else {
                     throw LocalCaptureStoreError.stepFailed(lastError(db))
                 }
-                let vector = columnFloatArray(stmt, 12)
+                let vector = columnFloatArray(stmt, 13)
                 if !vector.isEmpty {
                     rows.append((try decodeRecord(stmt), vector))
                 }
@@ -172,7 +176,8 @@ public final class LocalCaptureStore: @unchecked Sendable {
         try query(
             """
             SELECT id, server_id, raw_text, media_type, classified_as, source,
-                   remind_at, created_at, updated_at, synced_at, last_error, notified_at
+                   remind_at, created_at, updated_at, synced_at, last_error, notified_at,
+                   remind_hide
             FROM local_captures
             ORDER BY created_at DESC
             LIMIT ? OFFSET ?
@@ -187,7 +192,8 @@ public final class LocalCaptureStore: @unchecked Sendable {
         try query(
             """
             SELECT id, server_id, raw_text, media_type, classified_as, source,
-                   remind_at, created_at, updated_at, synced_at, last_error, notified_at
+                   remind_at, created_at, updated_at, synced_at, last_error, notified_at,
+                   remind_hide
             FROM local_captures
             WHERE server_id IS NULL
             ORDER BY created_at
@@ -202,7 +208,8 @@ public final class LocalCaptureStore: @unchecked Sendable {
         try query(
             """
             SELECT id, server_id, raw_text, media_type, classified_as, source,
-                   remind_at, created_at, updated_at, synced_at, last_error, notified_at
+                   remind_at, created_at, updated_at, synced_at, last_error, notified_at,
+                   remind_hide
             FROM local_captures
             WHERE remind_at IS NOT NULL AND remind_at > ?
             ORDER BY remind_at
@@ -305,7 +312,8 @@ public final class LocalCaptureStore: @unchecked Sendable {
         try query(
             """
             SELECT id, server_id, raw_text, media_type, classified_as, source,
-                   remind_at, created_at, updated_at, synced_at, last_error, notified_at
+                   remind_at, created_at, updated_at, synced_at, last_error, notified_at,
+                   remind_hide
             FROM local_captures
             WHERE server_id = ?
             LIMIT 1
@@ -441,7 +449,8 @@ public final class LocalCaptureStore: @unchecked Sendable {
                 updated_at TEXT NOT NULL,
                 synced_at TEXT,
                 last_error TEXT,
-                notified_at TEXT
+                notified_at TEXT,
+                remind_hide INTEGER
             );
             CREATE INDEX IF NOT EXISTS local_captures_pending_sync_idx
                 ON local_captures(created_at)
@@ -454,6 +463,10 @@ public final class LocalCaptureStore: @unchecked Sendable {
             throw LocalCaptureStoreError.execFailed(lastError(db))
         }
         try ensureColumn(db, table: "local_captures", column: "notified_at", definition: "TEXT")
+        // notify-only flag for offline-first captures: without it, a Keep-visible
+        // capture saved offline would sync later with the hide default and vanish
+        // from browse until due. NULL = unknown → server default (hide).
+        try ensureColumn(db, table: "local_captures", column: "remind_hide", definition: "INTEGER")
         // On-device semantic search cache: the capture's embedding (raw float32
         // bytes) and the model that produced it. embed_model lets a model swap
         // invalidate stale vectors (rowsNeedingEmbedding re-embeds them).
@@ -505,12 +518,16 @@ private func executeStatement(
 private func decodeRecord(_ stmt: OpaquePointer?) throws -> LocalCaptureRecord {
     let rawText = columnText(stmt, 2) ?? ""
     let remindAt = try columnDate(stmt, 6)
+    // Column 12 across every decode SELECT (embeddedRows keeps its embedding blob
+    // at 13). NULL for rows written before this column existed or by the
+    // server-reminder path → nil → the server's hide default applies.
     let payload = CapturePayload(
         rawText: rawText,
         mediaType: columnText(stmt, 3) ?? "text",
         classifiedAs: columnText(stmt, 4) ?? "unclassified",
         source: columnText(stmt, 5) ?? desktopQuickCaptureSource,
         remindAt: remindAt,
+        remindHide: columnOptionalBool(stmt, 12),
     )
     return LocalCaptureRecord(
         id: columnText(stmt, 0) ?? "",
@@ -540,6 +557,14 @@ private func bindOptionalDate(_ stmt: OpaquePointer?, _ index: Int32, _ value: D
     bindDate(stmt, index, value)
 }
 
+private func bindOptionalBool(_ stmt: OpaquePointer?, _ index: Int32, _ value: Bool?) {
+    guard let value else {
+        sqlite3_bind_null(stmt, index)
+        return
+    }
+    sqlite3_bind_int(stmt, index, value ? 1 : 0)
+}
+
 private func columnText(_ stmt: OpaquePointer?, _ index: Int32) -> String? {
     guard sqlite3_column_type(stmt, index) != SQLITE_NULL,
           let text = sqlite3_column_text(stmt, index)
@@ -552,6 +577,11 @@ private func columnText(_ stmt: OpaquePointer?, _ index: Int32) -> String? {
 private func columnDate(_ stmt: OpaquePointer?, _ index: Int32) throws -> Date? {
     guard let text = columnText(stmt, index) else { return nil }
     return DateCodec.date(from: text)
+}
+
+private func columnOptionalBool(_ stmt: OpaquePointer?, _ index: Int32) -> Bool? {
+    guard sqlite3_column_type(stmt, index) != SQLITE_NULL else { return nil }
+    return sqlite3_column_int(stmt, index) != 0
 }
 
 // Decode a BLOB column of raw float32 bytes back into [Float]. Empty when the

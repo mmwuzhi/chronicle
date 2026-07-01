@@ -125,6 +125,28 @@ func localCaptureStorePersistsPendingCaptureAndReminder() throws {
 }
 
 @Test
+func localCaptureStorePersistsNotifyOnlyAcrossReload() throws {
+    // A Keep-visible (notify-only) capture saved offline must round-trip its flag
+    // through the local store so a later sync retry still sends hide=false; without
+    // persistence it would default to hide and vanish from browse until due.
+    let url = temporaryDatabaseURL()
+    let notifyOnly = try LocalCaptureStore(fileURL: url).create(
+        CapturePayload(rawText: "pinned sticky", remindAt: Date(timeIntervalSince1970: 5_000), remindHide: false),
+    )
+    let hidden = try LocalCaptureStore(fileURL: url).create(
+        CapturePayload(rawText: "resurface later", remindAt: Date(timeIntervalSince1970: 5_000)),
+    )
+
+    // Re-open the store (fresh instance) to prove it survives a relaunch, and read
+    // through pendingSync — the exact path the offline retry uses.
+    let pending = try LocalCaptureStore(fileURL: url).pendingSync()
+    let reloadedNotifyOnly = try #require(pending.first { $0.id == notifyOnly.id })
+    let reloadedHidden = try #require(pending.first { $0.id == hidden.id })
+    #expect(reloadedNotifyOnly.payload.remindHide == false)
+    #expect(reloadedHidden.payload.remindHide == nil) // default → server applies hide
+}
+
+@Test
 func localCaptureStoreMarksCaptureSynced() throws {
     let store = LocalCaptureStore(fileURL: temporaryDatabaseURL())
     let record = try store.create(CapturePayload(rawText: "Sync me"))
