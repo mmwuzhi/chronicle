@@ -78,7 +78,12 @@ export function RemindControl({
   return (
     <button
       className="ch-btn ch-btn-ghost ch-btn-sm"
-      onClick={() => setEditing(true)}
+      onClick={() => {
+        // Re-derive from the capture's current state each time, so the checkbox
+        // isn't stale after a prior set→clear on this same card.
+        setKeepVisible(remindHide === false);
+        setEditing(true);
+      }}
     >
       ⏰ {t("remind.set")}
     </button>
