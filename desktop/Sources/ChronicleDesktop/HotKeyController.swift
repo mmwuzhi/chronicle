@@ -8,8 +8,13 @@ final class HotKeyController: @unchecked Sendable {
     private var globalMonitor: Any?
     private var localMonitor: Any?
     private var previousFlags: NSEvent.ModifierFlags = []
-    private var lastControlDownAt: Date?
+    private var detector = DoubleTapDetector(window: 0.35)
     private let handler: @MainActor @Sendable () -> Void
+
+    // The "real" modifiers a Control tap must not be combined with. Fn/CapsLock
+    // aren't in here — they never form an intentional chord with the gesture —
+    // but a change in any of them still invalidates the pair (see handleEvent).
+    private static let realModifiers: NSEvent.ModifierFlags = [.shift, .control, .option, .command]
 
     init(spec: ShortcutSpec, handler: @escaping @MainActor @Sendable () -> Void) {
         self.handler = handler
@@ -38,37 +43,60 @@ final class HotKeyController: @unchecked Sendable {
     }
 
     private func installDoubleControlMonitor() {
-        globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
-            self?.handleFlagsChanged(event)
+        // keyDown joins flagsChanged so any ordinary keystroke between the two
+        // Control taps can invalidate the gesture (it must be a clean repeat).
+        let mask: NSEvent.EventTypeMask = [.flagsChanged, .keyDown]
+        globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: mask) { [weak self] event in
+            self?.handleEvent(event)
         }
-        localMonitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
-            self?.handleFlagsChanged(event)
+        localMonitor = NSEvent.addLocalMonitorForEvents(matching: mask) { [weak self] event in
+            self?.handleEvent(event)
             return event
+        }
+    }
+
+    private func handleEvent(_ event: NSEvent) {
+        switch event.type {
+        case .keyDown:
+            // A plain key pressed between the two Control taps breaks the pair.
+            detector.reset()
+        case .flagsChanged:
+            handleFlagsChanged(event)
+        default:
+            break
         }
     }
 
     private func handleFlagsChanged(_ event: NSEvent) {
         let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-        let controlIsDown = flags.contains(.control)
-        let controlWasDown = previousFlags.contains(.control)
+        let previous = previousFlags
         previousFlags = flags
 
-        guard controlIsDown, !controlWasDown else {
+        // A non-Control modifier (Shift/Option/Command/Fn/CapsLock) changed between
+        // taps → not a clean single-key repeat, so drop the pending tap.
+        if flags.subtracting(.control) != previous.subtracting(.control) {
+            detector.reset()
             return
         }
 
-        let now = Date()
-        if let lastControlDownAt,
-           now.timeIntervalSince(lastControlDownAt) <= 0.35
-        {
-            self.lastControlDownAt = nil
+        // Only the Control press edge counts (ignore its release and no-ops).
+        guard flags.contains(.control), !previous.contains(.control) else {
+            return
+        }
+
+        // Control must be pressed ALONE — if another real modifier is held at the
+        // same moment (Ctrl+Shift and friends), it's a chord, not the gesture.
+        guard flags.intersection(Self.realModifiers) == .control else {
+            detector.reset()
+            return
+        }
+
+        if detector.register(at: ProcessInfo.processInfo.systemUptime) {
             DispatchQueue.main.async {
                 Task { @MainActor in
                     self.handler()
                 }
             }
-        } else {
-            lastControlDownAt = now
         }
     }
 
