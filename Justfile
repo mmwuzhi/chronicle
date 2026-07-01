@@ -22,11 +22,29 @@ setup: docker-check
 
 # start full stack (docker compose watch)
 dev: docker-check
-    docker compose watch
+    @interrupted=0; \
+    trap 'interrupted=1' INT TERM; \
+    set +e; \
+    docker compose watch 2> >(grep -v -E 'context canceled|operation canceled' >&2); \
+    status=$?; \
+    set -e; \
+    if [ "$interrupted" -eq 1 ] || [ "$status" -eq 130 ] || [ "$status" -eq 143 ]; then \
+      exit 0; \
+    fi; \
+    exit "$status"
 
 # build/reload the macOS app, then start docker backend+web+data with watch
 dev-all: docker-check desktop-reload
-    docker compose watch
+    @interrupted=0; \
+    trap 'interrupted=1' INT TERM; \
+    set +e; \
+    docker compose watch 2> >(grep -v -E 'context canceled|operation canceled' >&2); \
+    status=$?; \
+    set -e; \
+    if [ "$interrupted" -eq 1 ] || [ "$status" -eq 130 ] || [ "$status" -eq 143 ]; then \
+      exit 0; \
+    fi; \
+    exit "$status"
 
 # start only postgres + redis
 dev-data: docker-check
@@ -39,11 +57,29 @@ down: docker-check
 # run API server locally (starts postgres + redis if needed)
 api: dev-data
     @lsof -ti :${PORT:-8080} | xargs kill -9 2>/dev/null || true
-    cd {{ api_dir }} && go run cmd/server/main.go
+    @interrupted=0; \
+    trap 'interrupted=1' INT TERM; \
+    set +e; \
+    cd {{ api_dir }} && go run cmd/server/main.go; \
+    status=$?; \
+    set -e; \
+    if [ "$interrupted" -eq 1 ] || [ "$status" -eq 130 ] || [ "$status" -eq 143 ]; then \
+      exit 0; \
+    fi; \
+    exit "$status"
 
 # run Vite dev server
 web:
-    cd {{ web_dir }} && pnpm dev
+    @interrupted=0; \
+    trap 'interrupted=1' INT TERM; \
+    set +e; \
+    cd {{ web_dir }} && pnpm dev; \
+    status=$?; \
+    set -e; \
+    if [ "$interrupted" -eq 1 ] || [ "$status" -eq 130 ] || [ "$status" -eq 143 ]; then \
+      exit 0; \
+    fi; \
+    exit "$status"
 
 # run the macOS menu bar quick-capture app
 desktop-capture:
@@ -93,7 +129,16 @@ rag-setup:
 # run the Python RAG sidecar (embeddings + retrieval + analysis)
 rag: dev-data
     @test -d {{ rag_dir }}/.venv || just rag-setup
-    cd {{ rag_dir }} && .venv/bin/python app.py
+    @interrupted=0; \
+    trap 'interrupted=1' INT TERM; \
+    set +e; \
+    cd {{ rag_dir }} && .venv/bin/python app.py; \
+    status=$?; \
+    set -e; \
+    if [ "$interrupted" -eq 1 ] || [ "$status" -eq 130 ] || [ "$status" -eq 143 ]; then \
+      exit 0; \
+    fi; \
+    exit "$status"
 
 # index + extract all existing captures (RAG sidecar must be running)
 rag-backfill:
