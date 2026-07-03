@@ -127,12 +127,12 @@ func decodesTrashedCaptureWithDeletedAtAndRemindHide() throws {
         [
           {"id":"33333333-3333-3333-3333-333333333333","rawText":"deleted note",
            "transcript":null,"mediaType":"text","mediaUrl":null,
-           "classifiedAs":"unclassified","source":"web","remindAt":null,
+           "source":"web","remindAt":null,
            "remindHide":true,"createdAt":"2026-06-06T16:33:27+09:00",
            "deletedAt":"2026-06-30T09:00:00+09:00"},
           {"id":"44444444-4444-4444-4444-444444444444","rawText":"pinned sticky",
            "transcript":null,"mediaType":"text","mediaUrl":null,
-           "classifiedAs":"unclassified","source":"web",
+           "source":"web",
            "remindAt":"2026-07-05T09:00:00+09:00","remindHide":false,
            "createdAt":"2026-06-06T16:33:27+09:00","deletedAt":null}
         ]

@@ -11,7 +11,7 @@ func decodesCapturePageWithCursor() throws {
         """
         {"items":[
           {"id":"d2ebedc1-c6b2-40f4-a789-8e48064252a1","rawText":"alpha","mediaUrl":null,
-           "mediaType":"text","classifiedAs":"unclassified","source":"web",
+           "mediaType":"text","source":"web",
            "transcript":null,"transcriptionStatus":"none","remindAt":null,
            "createdAt":"2026-06-06T16:33:27Z"}
         ],"nextCursor":"abc123"}
@@ -23,7 +23,7 @@ func decodesCapturePageWithCursor() throws {
     #expect(page.items.count == 1)
     let first = try #require(page.items.first)
     #expect(first.content == "alpha")
-    #expect(first.classifiedAs == "unclassified")
+    #expect(first.source == "web")
 }
 
 @Test
@@ -38,19 +38,19 @@ func capturePageLastPageHasNilCursor() throws {
 func captureContentPrefersTranscriptThenRawText() {
     let audio = Capture(
         id: "1", rawText: nil, transcript: "spoken words", mediaType: "audio",
-        mediaUrl: "https://r2/x.m4a", classifiedAs: "log", source: "web",
+        mediaUrl: "https://r2/x.m4a", source: "web",
         remindAt: nil, createdAt: "2026-06-06T16:33:27Z")
     #expect(audio.content == "spoken words")
 
     let text = Capture(
         id: "2", rawText: "typed note", transcript: nil, mediaType: "text",
-        mediaUrl: nil, classifiedAs: "idea", source: "desktop_quick_capture",
+        mediaUrl: nil, source: "desktop_quick_capture",
         remindAt: nil, createdAt: "2026-06-06T16:33:27Z")
     #expect(text.content == "typed note")
 
     let empty = Capture(
         id: "3", rawText: nil, transcript: "", mediaType: "image",
-        mediaUrl: "https://r2/x.png", classifiedAs: "unclassified", source: "web",
+        mediaUrl: "https://r2/x.png", source: "web",
         remindAt: nil, createdAt: "2026-06-06T16:33:27Z")
     #expect(empty.content == "")
 }

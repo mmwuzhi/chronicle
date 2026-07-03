@@ -5,7 +5,6 @@ public let desktopQuickCaptureSource = "desktop_quick_capture"
 public struct CapturePayload: Codable, Equatable, Sendable {
     public var rawText: String
     public var mediaType: String
-    public var classifiedAs: String
     public var source: String
     public var remindAt: Date?
     // Only meaningful with remindAt set. nil (default) → hide until due; false →
@@ -16,14 +15,12 @@ public struct CapturePayload: Codable, Equatable, Sendable {
     public init(
         rawText: String,
         mediaType: String = "text",
-        classifiedAs: String = "unclassified",
         source: String = desktopQuickCaptureSource,
         remindAt: Date? = nil,
         remindHide: Bool? = nil
     ) {
         self.rawText = rawText
         self.mediaType = mediaType
-        self.classifiedAs = classifiedAs
         self.source = source
         self.remindAt = remindAt
         self.remindHide = remindHide

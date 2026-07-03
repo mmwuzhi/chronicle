@@ -114,5 +114,9 @@
   "language": {
     "title": "言語",
     "description": "使用する言語を選択してください。この設定はローカルに保存されます。"
+  },
+  "todoFeature": {
+    "title": "TODO機能",
+    "hint": "TODOのチェックボックス・タブ・進捗を表示"
   }
 }

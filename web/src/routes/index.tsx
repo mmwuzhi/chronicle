@@ -8,17 +8,8 @@ import { timeAgo } from "../utils/format";
 
 export const Route = createFileRoute("/")({ component: Index });
 
-const CL_CLASS: Record<string, string> = {
-  unclassified: "cl-unclassified",
-  idea: "cl-idea",
-  task: "cl-task",
-  routine: "cl-routine",
-  log: "cl-log",
-};
-
 function Dashboard() {
   const { t, i18n } = useTranslation("dashboard");
-  const { t: tc } = useTranslation("common");
 
   const { data: me } = useGetMe();
   const { data: capturePage } = useListCapturePage(
@@ -96,11 +87,6 @@ function Dashboard() {
                   {c.rawText ?? c.transcript ?? "—"}
                 </p>
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <span
-                    className={`ch-pill ${CL_CLASS[c.classifiedAs] ?? "cl-unclassified"}`}
-                  >
-                    {tc(`classification.${c.classifiedAs}`)}
-                  </span>
                   {c.createdAt && (
                     <span className="ch-meta" style={{ marginLeft: "auto" }}>
                       {timeAgo(c.createdAt, i18n.language)}

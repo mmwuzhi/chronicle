@@ -61,7 +61,6 @@ type uploadResponse struct {
 	ID                  string  `json:"id,omitempty"`
 	MediaUrl            string  `json:"mediaUrl"`
 	MediaType           string  `json:"mediaType"`
-	ClassifiedAs        string  `json:"classifiedAs,omitempty"`
 	Source              string  `json:"source,omitempty"`
 	Transcript          *string `json:"transcript,omitempty"`
 	TranscriptionStatus string  `json:"transcriptionStatus,omitempty"`
@@ -194,7 +193,6 @@ func (h *handler) upload(w http.ResponseWriter, r *http.Request) {
 		ID:                  c.ID.String(),
 		MediaUrl:            publicURL,
 		MediaType:           mediaType,
-		ClassifiedAs:        string(c.ClassifiedAs),
 		Source:              c.Source,
 		TranscriptionStatus: string(c.TranscriptionStatus),
 		CreatedAt:           c.CreatedAt.Time.UTC().Format(time.RFC3339),

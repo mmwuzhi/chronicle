@@ -1,14 +1,10 @@
 {
   "title": "キャプチャ",
-  "subtitle": "まず書き留めて、あとで分類しよう。",
+  "subtitle": "思いついたら記録、あとで見つける。",
   "placeholder": "何を考えていますか？",
   "tabs": {
     "all": "すべて",
-    "unclassified": "未分類",
-    "idea": "アイデア",
-    "task": "タスク",
-    "routine": "ルーティン",
-    "log": "ログ"
+    "todo": "TODO"
   },
   "nothingHere": "まだ何もありません。",
   "failedToLoad": "キャプチャの読み込みに失敗しました",
@@ -74,7 +70,8 @@
     "link": "リンク",
     "unlink": "リンク解除",
     "none": "まだ何もリンクされていません。",
-    "noSuggestions": "おすすめはありません。"
+    "noSuggestions": "おすすめはありません。",
+    "todoProgress": "TODO {{done}}/{{total}} 完了"
   },
   "trash": {
     "link": "ゴミ箱",
@@ -88,5 +85,11 @@
     "emptyConfirm": "ゴミ箱内のすべてのキャプチャを完全に削除しますか？この操作は取り消せません。",
     "deletedAt": "{{time}} に削除",
     "failedToLoad": "ゴミ箱の読み込みに失敗しました"
+  },
+  "todo": {
+    "flag": "TODO",
+    "open": "未完了",
+    "done": "完了",
+    "remove": "TODOフラグを解除"
   }
 }

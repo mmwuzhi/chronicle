@@ -28,13 +28,6 @@
     "done": "完了",
     "archived": "アーカイブ"
   },
-  "classification": {
-    "unclassified": "未分類",
-    "idea": "アイデア",
-    "task": "タスク",
-    "routine": "ルーティン",
-    "log": "ログ"
-  },
   "actions": {
     "save": "保存",
     "cancel": "キャンセル",

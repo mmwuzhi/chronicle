@@ -60,7 +60,10 @@ public final class LocalCaptureStore: @unchecked Sendable {
                 bindText(stmt, 1, record.id)
                 bindText(stmt, 2, payload.rawText)
                 bindText(stmt, 3, payload.mediaType)
-                bindText(stmt, 4, payload.classifiedAs)
+                // Legacy cache column (classified_as TEXT NOT NULL, from before the
+                // server's todo-facet migration). Kept to avoid a cache schema
+                // migration — the cache is rebuildable; the value is never read back.
+                bindText(stmt, 4, "unclassified")
                 bindText(stmt, 5, payload.source)
                 bindOptionalDate(stmt, 6, payload.remindAt)
                 bindDate(stmt, 7, record.createdAt)
@@ -521,10 +524,12 @@ private func decodeRecord(_ stmt: OpaquePointer?) throws -> LocalCaptureRecord {
     // Column 12 across every decode SELECT (embeddedRows keeps its embedding blob
     // at 13). NULL for rows written before this column existed or by the
     // server-reminder path → nil → the server's hide default applies.
+    // Column 4 (legacy classified_as) is skipped: it stays in the schema and in
+    // every SELECT so the positional indexes here keep working, but the payload
+    // no longer carries it.
     let payload = CapturePayload(
         rawText: rawText,
         mediaType: columnText(stmt, 3) ?? "text",
-        classifiedAs: columnText(stmt, 4) ?? "unclassified",
         source: columnText(stmt, 5) ?? desktopQuickCaptureSource,
         remindAt: remindAt,
         remindHide: columnOptionalBool(stmt, 12),

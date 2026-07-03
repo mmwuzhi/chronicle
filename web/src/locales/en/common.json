@@ -28,13 +28,6 @@
     "done": "Done",
     "archived": "Archived"
   },
-  "classification": {
-    "unclassified": "Unclassified",
-    "idea": "Idea",
-    "task": "Task",
-    "routine": "Routine",
-    "log": "Log"
-  },
   "actions": {
     "save": "Save",
     "cancel": "Cancel",

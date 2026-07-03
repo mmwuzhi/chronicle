@@ -16,6 +16,7 @@ import { MFASection } from "../components/settings/MFASection";
 import { DangerSection } from "../components/settings/DangerSection";
 import { WebhooksSection } from "../components/settings/WebhooksSection";
 import { QuickCaptureTokenSection } from "../components/settings/QuickCaptureTokenSection";
+import { setTodoEnabled, useTodoEnabled } from "../hooks/use-todo-enabled";
 import { apiFetch } from "../lib/apiFetch";
 
 export const Route = createFileRoute("/settings")({
@@ -120,6 +121,7 @@ function AccountSection() {
           </button>
         </div>
         <LanguageRow />
+        <TodoFeatureRow />
       </div>
 
       <LinkedAccountsSection />
@@ -154,6 +156,25 @@ function LanguageRow() {
           </option>
         ))}
       </select>
+    </div>
+  );
+}
+
+function TodoFeatureRow() {
+  const { t } = useTranslation("settings");
+  const enabled = useTodoEnabled();
+  return (
+    <div className="ch-setrow">
+      <div className="lbl">
+        <span>{t("todoFeature.title")}</span>
+        <span className="ch-meta">{t("todoFeature.hint")}</span>
+      </div>
+      <input
+        type="checkbox"
+        checked={enabled}
+        onChange={(e) => setTodoEnabled(e.target.checked)}
+        style={{ width: 16, height: 16, cursor: "pointer" }}
+      />
     </div>
   );
 }

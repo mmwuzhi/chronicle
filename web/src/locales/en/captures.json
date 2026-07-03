@@ -1,14 +1,10 @@
 {
   "title": "Captures",
-  "subtitle": "Dump a thought now, classify it later.",
+  "subtitle": "Dump a thought now, find it later.",
   "placeholder": "What's on your mind?",
   "tabs": {
     "all": "All",
-    "unclassified": "Unclassified",
-    "idea": "Idea",
-    "task": "Task",
-    "routine": "Routine",
-    "log": "Log"
+    "todo": "Todo"
   },
   "nothingHere": "Nothing here yet.",
   "failedToLoad": "Failed to load captures",
@@ -74,7 +70,8 @@
     "link": "Link",
     "unlink": "Unlink",
     "none": "Nothing linked yet.",
-    "noSuggestions": "No suggestions."
+    "noSuggestions": "No suggestions.",
+    "todoProgress": "Todos: {{done}}/{{total}} done"
   },
   "trash": {
     "link": "Trash",
@@ -88,5 +85,11 @@
     "emptyConfirm": "Permanently delete all captures in the trash? This can't be undone.",
     "deletedAt": "Deleted {{time}}",
     "failedToLoad": "Failed to load trash"
+  },
+  "todo": {
+    "flag": "Todo",
+    "open": "Open",
+    "done": "Done",
+    "remove": "Remove todo flag"
   }
 }

@@ -114,5 +114,9 @@
   "language": {
     "title": "语言",
     "description": "选择你的首选语言。此设置保存在本地。"
+  },
+  "todoFeature": {
+    "title": "待办功能",
+    "hint": "显示待办勾选框、标签页与进度"
   }
 }

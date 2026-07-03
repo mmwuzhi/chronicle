@@ -15,7 +15,7 @@ import (
 const searchCaptures = `-- name: SearchCaptures :many
 WITH ranked AS (
   SELECT
-    captures.id, captures.user_id, captures.raw_text, captures.media_url, captures.media_type, captures.classified_as, captures.created_at, captures.source, captures.transcript, captures.transcription_status, captures.transcription_model, captures.transcription_attempts, captures.transcribed_at, captures.next_transcription_at, captures.audio_duration_sec, captures.media_key, captures.remind_at, captures.deleted_at, captures.remind_hide,
+    captures.id, captures.user_id, captures.raw_text, captures.media_url, captures.media_type, captures.created_at, captures.source, captures.transcript, captures.transcription_status, captures.transcription_model, captures.transcription_attempts, captures.transcribed_at, captures.next_transcription_at, captures.audio_duration_sec, captures.media_key, captures.remind_at, captures.deleted_at, captures.remind_hide, captures.todo_at, captures.done_at,
     CASE
       WHEN raw_text ILIKE '%' || $2::text || '%' THEN 'rawText'
       WHEN transcript ILIKE '%' || $2::text || '%' THEN 'transcript'
@@ -55,7 +55,7 @@ WITH ranked AS (
       ) @@ websearch_to_tsquery('simple', $2::text)
     )
 )
-SELECT id, user_id, raw_text, media_url, media_type, classified_as, created_at, source, transcript, transcription_status, transcription_model, transcription_attempts, transcribed_at, next_transcription_at, audio_duration_sec, media_key, remind_at, deleted_at, remind_hide, matched_field, relevance FROM ranked
+SELECT id, user_id, raw_text, media_url, media_type, created_at, source, transcript, transcription_status, transcription_model, transcription_attempts, transcribed_at, next_transcription_at, audio_duration_sec, media_key, remind_at, deleted_at, remind_hide, todo_at, done_at, matched_field, relevance FROM ranked
 ORDER BY relevance DESC, created_at DESC
 LIMIT $1
 `
@@ -72,7 +72,6 @@ type SearchCapturesRow struct {
 	RawText               pgtype.Text         `json:"raw_text"`
 	MediaUrl              pgtype.Text         `json:"media_url"`
 	MediaType             CaptureMediaType    `json:"media_type"`
-	ClassifiedAs          CaptureClassifiedAs `json:"classified_as"`
 	CreatedAt             pgtype.Timestamptz  `json:"created_at"`
 	Source                string              `json:"source"`
 	Transcript            pgtype.Text         `json:"transcript"`
@@ -86,6 +85,8 @@ type SearchCapturesRow struct {
 	RemindAt              pgtype.Timestamptz  `json:"remind_at"`
 	DeletedAt             pgtype.Timestamptz  `json:"deleted_at"`
 	RemindHide            bool                `json:"remind_hide"`
+	TodoAt                pgtype.Timestamptz  `json:"todo_at"`
+	DoneAt                pgtype.Timestamptz  `json:"done_at"`
 	MatchedField          string              `json:"matched_field"`
 	Relevance             float64             `json:"relevance"`
 }
@@ -105,7 +106,6 @@ func (q *Queries) SearchCaptures(ctx context.Context, arg SearchCapturesParams) 
 			&i.RawText,
 			&i.MediaUrl,
 			&i.MediaType,
-			&i.ClassifiedAs,
 			&i.CreatedAt,
 			&i.Source,
 			&i.Transcript,
@@ -119,6 +119,8 @@ func (q *Queries) SearchCaptures(ctx context.Context, arg SearchCapturesParams) 
 			&i.RemindAt,
 			&i.DeletedAt,
 			&i.RemindHide,
+			&i.TodoAt,
+			&i.DoneAt,
 			&i.MatchedField,
 			&i.Relevance,
 		); err != nil {

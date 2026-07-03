@@ -11,6 +11,8 @@ import {
   type CaptureBody,
 } from "../api";
 import { fmtShortDateTime } from "../utils/format";
+import { todoProgress } from "../utils/todo";
+import { useTodoEnabled } from "../hooks/use-todo-enabled";
 
 const RELATED_LIMIT = 10;
 const SNIPPET_MAX = 140;
@@ -66,13 +68,27 @@ export function CaptureRelated({
 
   const linked = linksQuery.data ?? [];
   const suggestions = relatedQuery.data ?? [];
+  const todosEnabled = useTodoEnabled();
+  // Derived at read time from the linked captures — the lightweight "project"
+  // view: an anchor capture plus its linked todos, never a stored aggregate.
+  const progress = todoProgress(linked);
 
   return (
     <section className="ch-related">
       <h2 className="ch-related-title">{t("related.title")}</h2>
 
       <div className="ch-related-group">
-        <h3 className="ch-related-subtitle">{t("related.linked")}</h3>
+        <h3 className="ch-related-subtitle">
+          {t("related.linked")}
+          {todosEnabled && progress.total > 0 && (
+            <span className="ch-related-progress">
+              {t("related.todoProgress", {
+                done: progress.done,
+                total: progress.total,
+              })}
+            </span>
+          )}
+        </h3>
         {linked.length === 0 ? (
           <p className="ch-meta">{t("related.none")}</p>
         ) : (

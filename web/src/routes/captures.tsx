@@ -11,6 +11,7 @@ import {
   useListCapturePageInfinite,
   useRetryCaptureTranscription,
   useSetCaptureRemind,
+  useSetCaptureTodo,
   useUpdateCapture,
 } from "../api";
 import { CaptureComposer } from "../components/CaptureComposer";
@@ -19,12 +20,12 @@ import { MutationToast } from "../components/mutation-toast";
 import { Nav } from "../components/nav";
 import { useConfirm } from "../components/confirm-dialog";
 import { useMutationToast } from "../hooks/use-mutation-toast";
+import { useTodoEnabled } from "../hooks/use-todo-enabled";
 import type { CloudAttachmentDraft } from "../lib/cloudDrive";
 
 export const Route = createFileRoute("/captures")({ component: Captures });
 
-type Tab = "all" | "unclassified" | "idea" | "task" | "routine" | "log";
-const TABS: Tab[] = ["all", "unclassified", "idea", "task", "routine", "log"];
+type Tab = "all" | "todo";
 
 function Captures() {
   const { t } = useTranslation("captures");
@@ -33,13 +34,17 @@ function Captures() {
   const queryClient = useQueryClient();
   const confirm = useConfirm();
   const mutationToast = useMutationToast();
+  const todosEnabled = useTodoEnabled();
   const [tab, setTab] = useState<Tab>("all");
   // Captures with a future reminder are filtered out of the list until they come
   // due; this opt-in surfaces them so the reminder can be edited or cleared.
   const [showScheduled, setShowScheduled] = useState(false);
+  const tabs: Tab[] = todosEnabled ? ["all", "todo"] : ["all"];
   const params = {
     limit: 30,
-    ...(tab === "all" ? {} : { classifiedAs: tab }),
+    // The todo tab lists open todos; completed ones stay in "all" with a
+    // checked box.
+    ...(tab === "todo" && todosEnabled ? { todo: "open" } : {}),
     ...(showScheduled ? { includeReminded: true } : {}),
   };
   const captureQuery = useListCapturePageInfinite(params, {
@@ -97,6 +102,12 @@ function Captures() {
       onError: () => mutationToast.show(tc("errors.mutationFailed")),
     },
   });
+  const setTodo = useSetCaptureTodo({
+    mutation: {
+      onSuccess: invalidateCaptures,
+      onError: () => mutationToast.show(tc("errors.mutationFailed")),
+    },
+  });
   const addAttachment = useAddCaptureAttachment({
     mutation: {
       onSuccess: (_attachment, variables) => {
@@ -127,23 +138,13 @@ function Captures() {
           creating={create.isPending}
           onCreate={(rawText, onSuccess) =>
             create.mutate(
-              {
-                data: {
-                  rawText,
-                  mediaType: "text",
-                  classifiedAs: "unclassified",
-                },
-              },
+              { data: { rawText, mediaType: "text" } },
               { onSuccess },
             )
           }
           onCreateAttachmentCapture={async (rawText) => {
             const capture = await create.mutateAsync({
-              data: {
-                rawText,
-                mediaType: "text",
-                classifiedAs: "unclassified",
-              },
+              data: { rawText, mediaType: "text" },
             });
             return capture.id;
           }}
@@ -159,7 +160,7 @@ function Captures() {
           onUploaded={invalidateCaptures}
         />
         <div className="ch-filter-tabs">
-          {TABS.map((id) => (
+          {tabs.map((id) => (
             <button
               key={id}
               className={`ch-navlink${tab === id ? " active" : ""}`}
@@ -185,9 +186,7 @@ function Captures() {
           hasMore={captureQuery.hasNextPage}
           loadingMore={captureQuery.isFetchingNextPage}
           onLoadMore={() => void captureQuery.fetchNextPage()}
-          onReclassify={(id, classifiedAs) =>
-            update.mutate({ id, data: { classifiedAs } })
-          }
+          onSetTodo={(id, state) => setTodo.mutate({ id, data: { state } })}
           onDelete={async (id) => {
             const confirmed = await confirm({
               title: tc("confirm.deleteCapture"),

@@ -12,51 +12,6 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-type CaptureClassifiedAs string
-
-const (
-	CaptureClassifiedAsTask         CaptureClassifiedAs = "task"
-	CaptureClassifiedAsIdea         CaptureClassifiedAs = "idea"
-	CaptureClassifiedAsRoutine      CaptureClassifiedAs = "routine"
-	CaptureClassifiedAsLog          CaptureClassifiedAs = "log"
-	CaptureClassifiedAsUnclassified CaptureClassifiedAs = "unclassified"
-)
-
-func (e *CaptureClassifiedAs) Scan(src interface{}) error {
-	switch s := src.(type) {
-	case []byte:
-		*e = CaptureClassifiedAs(s)
-	case string:
-		*e = CaptureClassifiedAs(s)
-	default:
-		return fmt.Errorf("unsupported scan type for CaptureClassifiedAs: %T", src)
-	}
-	return nil
-}
-
-type NullCaptureClassifiedAs struct {
-	CaptureClassifiedAs CaptureClassifiedAs `json:"capture_classified_as"`
-	Valid               bool                `json:"valid"` // Valid is true if CaptureClassifiedAs is not NULL
-}
-
-// Scan implements the Scanner interface.
-func (ns *NullCaptureClassifiedAs) Scan(value interface{}) error {
-	if value == nil {
-		ns.CaptureClassifiedAs, ns.Valid = "", false
-		return nil
-	}
-	ns.Valid = true
-	return ns.CaptureClassifiedAs.Scan(value)
-}
-
-// Value implements the driver Valuer interface.
-func (ns NullCaptureClassifiedAs) Value() (driver.Value, error) {
-	if !ns.Valid {
-		return nil, nil
-	}
-	return string(ns.CaptureClassifiedAs), nil
-}
-
 type CaptureMediaType string
 
 const (
@@ -345,7 +300,6 @@ type Capture struct {
 	RawText               pgtype.Text         `json:"raw_text"`
 	MediaUrl              pgtype.Text         `json:"media_url"`
 	MediaType             CaptureMediaType    `json:"media_type"`
-	ClassifiedAs          CaptureClassifiedAs `json:"classified_as"`
 	CreatedAt             pgtype.Timestamptz  `json:"created_at"`
 	Source                string              `json:"source"`
 	Transcript            pgtype.Text         `json:"transcript"`
@@ -359,6 +313,8 @@ type Capture struct {
 	RemindAt              pgtype.Timestamptz  `json:"remind_at"`
 	DeletedAt             pgtype.Timestamptz  `json:"deleted_at"`
 	RemindHide            bool                `json:"remind_hide"`
+	TodoAt                pgtype.Timestamptz  `json:"todo_at"`
+	DoneAt                pgtype.Timestamptz  `json:"done_at"`
 }
 
 type CaptureAttachment struct {

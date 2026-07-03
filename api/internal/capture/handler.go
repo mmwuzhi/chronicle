@@ -69,6 +69,7 @@ func Register(api huma.API, pool *pgxpool.Pool, rag *ragclient.Client, store obj
 	huma.Register(api, op("update-capture", http.MethodPatch, "/captures/{id}", "Update a capture"), h.update)
 	huma.Register(api, op("retry-capture-transcription", http.MethodPost, "/captures/{id}/transcription/retry", "Retry audio or image transcription"), h.retryTranscription)
 	huma.Register(api, op("set-capture-remind", http.MethodPost, "/captures/{id}/remind", "Set or clear a capture reminder"), h.setRemind)
+	huma.Register(api, op("set-capture-todo", http.MethodPost, "/captures/{id}/todo", "Set or clear a capture's todo state"), h.setTodo)
 	huma.Register(api, op("due-reminders", http.MethodGet, "/reminders/due", "List reminders that have come due"), h.dueReminders)
 	huma.Register(api, op("pending-reminders", http.MethodGet, "/reminders/pending", "List not-yet-due reminders"), h.pendingReminders)
 	huma.Register(api, op("delete-capture", http.MethodDelete, "/captures/{id}", "Delete a capture"), h.delete)
@@ -92,8 +93,9 @@ type CaptureBody struct {
 	RawText             *string `json:"rawText"`
 	MediaUrl            *string `json:"mediaUrl"`
 	MediaType           string  `json:"mediaType"`
-	ClassifiedAs        string  `json:"classifiedAs"`
 	Source              string  `json:"source"`
+	TodoAt              *string `json:"todoAt" doc:"When the capture was flagged as a todo; null means it is not a todo"`
+	DoneAt              *string `json:"doneAt" doc:"When the todo was completed; null means not done (or not a todo)"`
 	Transcript          *string `json:"transcript"`
 	TranscriptionStatus string  `json:"transcriptionStatus"`
 	TranscriptionModel  *string `json:"transcriptionModel"`
@@ -109,7 +111,6 @@ func toBody(c db.Capture) CaptureBody {
 	b := CaptureBody{
 		ID:                  c.ID.String(),
 		MediaType:           string(c.MediaType),
-		ClassifiedAs:        string(c.ClassifiedAs),
 		Source:              c.Source,
 		TranscriptionStatus: string(c.TranscriptionStatus),
 		CreatedAt:           c.CreatedAt.Time.UTC().Format(time.RFC3339),
@@ -137,6 +138,14 @@ func toBody(c db.Capture) CaptureBody {
 		s := c.RemindAt.Time.UTC().Format(time.RFC3339)
 		b.RemindAt = &s
 	}
+	if c.TodoAt.Valid {
+		s := c.TodoAt.Time.UTC().Format(time.RFC3339)
+		b.TodoAt = &s
+	}
+	if c.DoneAt.Valid {
+		s := c.DoneAt.Time.UTC().Format(time.RFC3339)
+		b.DoneAt = &s
+	}
 	b.RemindHide = c.RemindHide
 	if c.DeletedAt.Valid {
 		s := c.DeletedAt.Time.UTC().Format(time.RFC3339)
@@ -148,7 +157,7 @@ func toBody(c db.Capture) CaptureBody {
 // --- list ---
 
 type CaptureListInput struct {
-	ClassifiedAs    string `query:"classifiedAs" doc:"Filter by classification: task, idea, routine, log, unclassified"`
+	Todo            string `query:"todo" doc:"Filter by todo state: open (flagged, not done) or done; omit for all captures"`
 	IncludeReminded bool   `query:"includeReminded" doc:"Include captures with a future reminder (hidden by default until due); set true for a reminder-management view"`
 }
 
@@ -163,7 +172,7 @@ func (h *handler) list(ctx context.Context, input *CaptureListInput) (*ListOutpu
 	}
 	rows, err := h.q.ListCaptures(ctx, db.ListCapturesParams{
 		UserID:          uid,
-		ClassifiedAs:    nullText(strPtr(input.ClassifiedAs)),
+		Todo:            nullText(strPtr(input.Todo)),
 		IncludeReminded: input.IncludeReminded,
 	})
 	if err != nil {
@@ -183,7 +192,7 @@ type CaptureCreateInput struct {
 		RawText      *string `json:"rawText,omitempty"`
 		MediaUrl     *string `json:"mediaUrl,omitempty"`
 		MediaType    string  `json:"mediaType" enum:"text,image,audio"`
-		ClassifiedAs string  `json:"classifiedAs,omitempty" enum:"task,idea,routine,log,unclassified" default:"unclassified"`
+		ClassifiedAs *string `json:"classifiedAs,omitempty" doc:"Deprecated and ignored. Kept so pre-todo-facet clients (queued desktop offline captures) still validate."`
 		Source       string  `json:"source,omitempty" default:"web" doc:"Capture source, for example web or desktop_quick_capture"`
 		RemindAt     *string `json:"remindAt,omitempty" doc:"RFC3339 time to resurface this capture"`
 		RemindHide   *bool   `json:"remindHide,omitempty" doc:"With remindAt: true (default) hides until due; false is notify-only (stays visible, still notifies)"`
@@ -199,10 +208,6 @@ func (h *handler) create(ctx context.Context, input *CaptureCreateInput) (*Creat
 	if err != nil {
 		return nil, err
 	}
-	classifiedAs := input.Body.ClassifiedAs
-	if classifiedAs == "" {
-		classifiedAs = "unclassified"
-	}
 	source, err := normalizeSource(input.Body.Source)
 	if err != nil {
 		return nil, err
@@ -215,12 +220,11 @@ func (h *handler) create(ctx context.Context, input *CaptureCreateInput) (*Creat
 		return nil, err
 	}
 	c, err := h.q.CreateCapture(ctx, db.CreateCaptureParams{
-		UserID:       uid,
-		RawText:      nullText(input.Body.RawText),
-		MediaUrl:     nullText(input.Body.MediaUrl),
-		MediaType:    db.CaptureMediaType(input.Body.MediaType),
-		ClassifiedAs: db.CaptureClassifiedAs(classifiedAs),
-		Source:       source,
+		UserID:    uid,
+		RawText:   nullText(input.Body.RawText),
+		MediaUrl:  nullText(input.Body.MediaUrl),
+		MediaType: db.CaptureMediaType(input.Body.MediaType),
+		Source:    source,
 	})
 	if err != nil {
 		return nil, huma.Error500InternalServerError("internal error")
@@ -249,9 +253,8 @@ func (h *handler) create(ctx context.Context, input *CaptureCreateInput) (*Creat
 type CaptureUpdateInput struct {
 	ID   string `path:"id" format:"uuid"`
 	Body struct {
-		RawText      *string `json:"rawText,omitempty"`
-		Transcript   *string `json:"transcript,omitempty"`
-		ClassifiedAs *string `json:"classifiedAs,omitempty" enum:"task,idea,routine,log,unclassified"`
+		RawText    *string `json:"rawText,omitempty"`
+		Transcript *string `json:"transcript,omitempty"`
 	}
 }
 
@@ -269,11 +272,10 @@ func (h *handler) update(ctx context.Context, input *CaptureUpdateInput) (*Updat
 		return nil, huma.Error422UnprocessableEntity("invalid id")
 	}
 	c, err := h.q.UpdateCapture(ctx, db.UpdateCaptureParams{
-		ID:           id,
-		UserID:       uid,
-		RawText:      nullText(input.Body.RawText),
-		Transcript:   nullText(input.Body.Transcript),
-		ClassifiedAs: nullText(input.Body.ClassifiedAs),
+		ID:         id,
+		UserID:     uid,
+		RawText:    nullText(input.Body.RawText),
+		Transcript: nullText(input.Body.Transcript),
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -281,8 +283,8 @@ func (h *handler) update(ctx context.Context, input *CaptureUpdateInput) (*Updat
 		}
 		return nil, huma.Error500InternalServerError("internal error")
 	}
-	// Reindex only when the indexable text actually changed — metadata-only edits
-	// (classifiedAs, taskId) must not trigger embedding + extraction.
+	// Reindex only when the indexable text actually changed — an empty PATCH
+	// must not trigger embedding + extraction.
 	if input.Body.RawText != nil || input.Body.Transcript != nil {
 		h.rag.Index(uid.String(), c.ID.String())
 	}
@@ -390,6 +392,42 @@ func remindHideDefault(hide *bool) bool {
 		return true
 	}
 	return *hide
+}
+
+// --- todo facet ---
+//
+// A capture becomes a todo the moment the user treats it as one — capture time
+// never asks. Todo-ness only gates the checkbox and derived progress counts;
+// misclassification costs one click to undo.
+
+type CaptureTodoInput struct {
+	ID   string `path:"id" format:"uuid"`
+	Body struct {
+		State string `json:"state" enum:"none,open,done" doc:"none clears the todo flag, open flags it as a todo, done completes it"`
+	}
+}
+
+func (h *handler) setTodo(ctx context.Context, input *CaptureTodoInput) (*UpdateOutput, error) {
+	uid, err := userID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	id, err := uuid.Parse(input.ID)
+	if err != nil {
+		return nil, huma.Error422UnprocessableEntity("invalid id")
+	}
+	c, err := h.q.SetCaptureTodo(ctx, db.SetCaptureTodoParams{
+		ID:     id,
+		UserID: uid,
+		State:  input.Body.State,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, huma.Error404NotFound("capture not found")
+		}
+		return nil, huma.Error500InternalServerError("internal error")
+	}
+	return &UpdateOutput{Body: toBody(c)}, nil
 }
 
 type RemindersDueInput struct {

@@ -108,9 +108,9 @@ func TestFindFallbackMatchesTranscriptAndMultilingualSubstrings(t *testing.T) {
 	captureID := uuid.New()
 	_, err := pool.Exec(context.Background(), `
 		INSERT INTO captures (
-			id, user_id, raw_text, transcript, media_type, classified_as, source,
+			id, user_id, raw_text, transcript, media_type, source,
 			transcription_status
-		) VALUES ($1, $2, 'voice note', '東京で設計会議をした', 'audio', 'unclassified',
+		) VALUES ($1, $2, 'voice note', '東京で設計会議をした', 'audio',
 			'web', 'completed')`,
 		captureID, userID,
 	)

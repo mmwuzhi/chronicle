@@ -177,32 +177,40 @@ Do not assume the current schema represents the final product model.
 
 ## Data Model
 
-Current implementation:
+Current implementation (post migration 016, which collapsed the old
+projects/tasks/time_blocks/log_entries productivity model into captures, and
+024, which replaced the classification enum with the todo facet):
 
 ```
-users           id, email, password_hash, created_at, email_verified, email_verify_token, password_reset_token, password_reset_expires, totp_secret, totp_enabled
-projects        id, user_id, name, color, archived, created_at
-tasks           id, user_id, project_id, title, type, status, due_at, created_at, deleted_at, media_url, media_type
-time_blocks     id, task_id, user_id, started_at, ended_at, duration_sec
-log_entries     id, task_id, user_id, body, created_at, deleted_at
-captures        id, user_id, raw_text, media_url, media_type, classified_as, source, created_at
-weekly_reports  id, user_id, week_start, data jsonb, created_at
-public_shares   id, report_id, slug, created_at
-refresh_tokens  id, user_id, token_hash, expires_at, revoked
-oauth_accounts  id, user_id, provider, provider_id, created_at
-passkeys        id, user_id, credential_id, public_key, aaguid, sign_count, name, created_at
-recovery_codes  id, user_id, code_hash, used
+users                id, email, password_hash, created_at, email_verified, email_verify_token, password_reset_token, password_reset_expires, totp_secret, totp_enabled
+captures             id, user_id, raw_text, media_url, media_key, media_type, source, created_at, deleted_at,
+                     transcript + transcription_* (Whisper/OCR pipeline), audio_duration_sec,
+                     remind_at, remind_hide (time-based recall),
+                     todo_at, done_at (todo facet; CHECK done_at IS NULL OR todo_at IS NOT NULL)
+capture_links        a_id, b_id, user_id, created_at  (undirected, a_id < b_id)
+capture_attachments  external file references (Google Drive etc.)
+capture_embeddings   per-capture vector (RAG index)
+capture_metadata     per-capture extracted JSONB (RAG index)
+capture_tokens       create-only personal access tokens (iOS Shortcut / quick capture)
+capture_webhooks     keyword/semantic outbound webhooks
+rag_config           per-user RAG settings
+refresh_tokens       id, user_id, token_hash, expires_at, revoked
+oauth_accounts       id, user_id, provider, provider_id, created_at
+passkeys             id, user_id, credential_id, public_key, aaguid, sign_count, name, created_at
+recovery_codes       id, user_id, code_hash, used
+archived_*           frozen pre-016 tables (tasks, log_entries, time_blocks, …) kept for recovery; never queried
 ```
 
 Notes:
 
-- captures are the conceptual center of the system.
-- all long-term value should originate from captures.
-- tasks are actionable captures.
-- projects are expected to evolve toward contexts.
+- captures are the conceptual center of the system; all long-term value originates from them.
+- **The todo facet is not a classification.** There is no capture "type": a capture becomes a todo the moment the user flags it (`todo_at`), and completes via `done_at` — the Gmail-star model. Capture time never asks what something is.
+- **Classification values are behavior switches.** The old classified_as enum (task/idea/routine/log) was dropped in 024 because only "actionable" ever gated behavior. Add a new facet column only together with the behavior that needs it, never ahead of it.
+- User labels live in the text itself (`#tag` + full-text/semantic search), not in schema.
+- A lightweight "project" = a pinned anchor capture + capture_links; progress ("n/m done") is derived at read time from the linked captures, never stored.
 - existing tables are implementation details, not product direction.
 
-Soft delete only — `tasks`, `log_entries`, and `captures` have `deleted_at`. Never issue a hard DELETE on user data. The one carve-out is the trash's explicit **permanent delete / empty trash**: a deliberate, trash-only user action on already-soft-deleted captures (the macOS "Recently Deleted" model), for content the user truly wants gone. Everything else stays soft.
+Soft delete only — `captures` has `deleted_at`. Never issue a hard DELETE on user data. The one carve-out is the trash's explicit **permanent delete / empty trash**: a deliberate, trash-only user action on already-soft-deleted captures (the macOS "Recently Deleted" model), for content the user truly wants gone. Everything else stays soft.
 
 ## Common Commands
 

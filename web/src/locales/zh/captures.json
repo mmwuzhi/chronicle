@@ -1,14 +1,10 @@
 {
   "title": "捕获",
-  "subtitle": "先把想法记下来，之后再分类。",
+  "subtitle": "想到就记，回头再找。",
   "placeholder": "在想什么？",
   "tabs": {
     "all": "全部",
-    "unclassified": "未分类",
-    "idea": "想法",
-    "task": "任务",
-    "routine": "日常",
-    "log": "日志"
+    "todo": "待办"
   },
   "nothingHere": "这里还没有内容。",
   "failedToLoad": "加载捕获失败",
@@ -74,7 +70,8 @@
     "link": "关联",
     "unlink": "解除关联",
     "none": "还没有关联任何内容。",
-    "noSuggestions": "暂无建议。"
+    "noSuggestions": "暂无建议。",
+    "todoProgress": "待办 {{done}}/{{total}} 已完成"
   },
   "trash": {
     "link": "回收站",
@@ -88,5 +85,11 @@
     "emptyConfirm": "彻底删除回收站中的所有捕获？此操作无法撤销。",
     "deletedAt": "删除于 {{time}}",
     "failedToLoad": "加载回收站失败"
+  },
+  "todo": {
+    "flag": "待办",
+    "open": "未完成",
+    "done": "已完成",
+    "remove": "移除待办标记"
   }
 }

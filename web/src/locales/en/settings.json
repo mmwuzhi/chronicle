@@ -114,5 +114,9 @@
   "language": {
     "title": "Language",
     "description": "Choose your preferred language. This setting is saved locally."
+  },
+  "todoFeature": {
+    "title": "Todo feature",
+    "hint": "Show the todo checkbox, tab, and progress"
   }
 }

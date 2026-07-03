@@ -655,26 +655,40 @@ body {
   color: var(--text-faint);
 }
 
-/* Classification */
-.cl-unclassified {
-  background: var(--bg-tint);
+/* Todo facet */
+.ch-todo-flag {
+  /* Quiet flag-as-todo affordance: only revealed while hovering the card, so
+     plain captures don't all whisper "I might be a todo". */
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+.ch-row:hover .ch-todo-flag,
+.ch-todo-flag:focus-visible {
+  opacity: 1;
+}
+.ch-todo-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--fs-xs);
   color: var(--text-muted);
+  cursor: pointer;
+  user-select: none;
 }
-.cl-idea {
-  background: #f1e9fb;
-  color: #7c3aed;
+.ch-todo-check input {
+  width: 14px;
+  height: 14px;
+  cursor: pointer;
+  accent-color: var(--accent-strong);
 }
-.cl-task {
-  background: var(--accent-weak);
-  color: var(--accent-strong);
+.ch-todo-check.done {
+  color: var(--text-faint);
 }
-.cl-routine {
-  background: #e3f3f6;
-  color: #0e7490;
-}
-.cl-log {
-  background: #fbf0dd;
-  color: #b45309;
+.ch-related-progress {
+  margin-left: 8px;
+  font-size: var(--fs-xs);
+  font-weight: 400;
+  color: var(--text-muted);
 }
 
 /* Due badge */

@@ -27,7 +27,7 @@ type captureCursor struct {
 }
 
 type CapturePageInput struct {
-	ClassifiedAs    string `query:"classifiedAs" doc:"Filter by classification: task, idea, routine, log, unclassified"`
+	Todo            string `query:"todo" doc:"Filter by todo state: open (flagged, not done) or done; omit for all captures"`
 	Cursor          string `query:"cursor"`
 	Limit           int    `query:"limit" minimum:"1" maximum:"100" default:"30"`
 	IncludeReminded bool   `query:"includeReminded" doc:"Include captures with a future reminder (hidden by default until due); set true for a reminder-management view"`
@@ -68,7 +68,7 @@ func (h *handler) listPage(ctx context.Context, input *CapturePageInput) (*Captu
 
 	rows, err := h.q.ListCapturePage(ctx, db.ListCapturePageParams{
 		UserID:          uid,
-		ClassifiedAs:    nullText(strPtr(input.ClassifiedAs)),
+		Todo:            nullText(strPtr(input.Todo)),
 		CursorCreatedAt: cursorCreatedAt,
 		CursorID:        cursorID,
 		PageSize:        int32(limit + 1),

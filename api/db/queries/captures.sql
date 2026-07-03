@@ -2,7 +2,11 @@
 SELECT * FROM captures
 WHERE user_id = $1
   AND deleted_at IS NULL
-  AND (sqlc.narg('classified_as')::text IS NULL OR classified_as::text = sqlc.narg('classified_as')::text)
+  AND (
+    sqlc.narg('todo')::text IS NULL
+    OR (sqlc.narg('todo')::text = 'open' AND todo_at IS NOT NULL AND done_at IS NULL)
+    OR (sqlc.narg('todo')::text = 'done' AND done_at IS NOT NULL)
+  )
   AND (sqlc.arg('include_reminded')::boolean OR remind_at IS NULL OR remind_at <= now() OR NOT remind_hide)
 ORDER BY created_at DESC;
 
@@ -11,8 +15,9 @@ SELECT * FROM captures
 WHERE user_id = sqlc.arg('user_id')
   AND deleted_at IS NULL
   AND (
-    sqlc.narg('classified_as')::text IS NULL
-    OR classified_as::text = sqlc.narg('classified_as')::text
+    sqlc.narg('todo')::text IS NULL
+    OR (sqlc.narg('todo')::text = 'open' AND todo_at IS NOT NULL AND done_at IS NULL)
+    OR (sqlc.narg('todo')::text = 'done' AND done_at IS NOT NULL)
   )
   AND (
     sqlc.narg('cursor_created_at')::timestamptz IS NULL
@@ -57,8 +62,8 @@ ORDER BY created_at ASC, id ASC
 LIMIT sqlc.arg('window_size');
 
 -- name: CreateCapture :one
-INSERT INTO captures (user_id, raw_text, media_url, media_type, classified_as, source)
-VALUES ($1, $2, $3, $4, $5, $6)
+INSERT INTO captures (user_id, raw_text, media_url, media_type, source)
+VALUES ($1, $2, $3, $4, $5)
 RETURNING *;
 
 -- name: CreateUploadedCapture :one
@@ -66,7 +71,6 @@ INSERT INTO captures (
   user_id,
   media_url,
   media_type,
-  classified_as,
   source,
   media_key,
   audio_duration_sec,
@@ -77,7 +81,6 @@ VALUES (
   $1,
   $2,
   $3,
-  'unclassified',
   'web',
   $4,
   $5,
@@ -113,11 +116,8 @@ RETURNING *;
 -- name: UpdateCapture :one
 UPDATE captures
 SET
-  raw_text      = COALESCE(sqlc.narg('raw_text')::text,           raw_text),
-  transcript    = COALESCE(sqlc.narg('transcript')::text,         transcript),
-  classified_as = CASE WHEN sqlc.narg('classified_as')::text IS NOT NULL
-                  THEN sqlc.narg('classified_as')::capture_classified_as
-                  ELSE classified_as END
+  raw_text      = COALESCE(sqlc.narg('raw_text')::text,   raw_text),
+  transcript    = COALESCE(sqlc.narg('transcript')::text, transcript)
 WHERE id = sqlc.arg('id') AND user_id = sqlc.arg('user_id') AND deleted_at IS NULL
 RETURNING *;
 
@@ -251,6 +251,24 @@ ORDER BY created_at;
 UPDATE captures
 SET remind_at = sqlc.narg('remind_at')::timestamptz,
     remind_hide = sqlc.arg('remind_hide')::boolean
+WHERE id = sqlc.arg('id') AND user_id = sqlc.arg('user_id') AND deleted_at IS NULL
+RETURNING *;
+
+-- name: SetCaptureTodo :one
+-- Set a capture's todo facet. 'none' clears both stamps (no longer a todo),
+-- 'open' flags it as a todo (COALESCE keeps the original flag time on re-open),
+-- 'done' completes it (COALESCE keeps the first completion time on repeat).
+-- Independent of content edits, like SetCaptureRemind. The CHECK
+-- (done_at IS NULL OR todo_at IS NOT NULL) holds: 'done' coalesces todo_at too.
+UPDATE captures
+SET todo_at = CASE sqlc.arg('state')::text
+      WHEN 'none' THEN NULL
+      ELSE COALESCE(todo_at, now())
+    END,
+    done_at = CASE sqlc.arg('state')::text
+      WHEN 'done' THEN COALESCE(done_at, now())
+      ELSE NULL
+    END
 WHERE id = sqlc.arg('id') AND user_id = sqlc.arg('user_id') AND deleted_at IS NULL
 RETURNING *;
 

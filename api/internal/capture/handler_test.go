@@ -108,9 +108,8 @@ func decodeBody(t *testing.T, resp *http.Response, dst any) {
 func createCapture(t *testing.T, srv *httptest.Server, token string, extras map[string]any) string {
 	t.Helper()
 	body := map[string]any{
-		"mediaType":    "text",
-		"classifiedAs": "unclassified",
-		"rawText":      "test capture",
+		"mediaType": "text",
+		"rawText":   "test capture",
 	}
 	for k, v := range extras {
 		body[k] = v
@@ -134,9 +133,8 @@ func TestCreateCapture_TextHappyPath(t *testing.T) {
 	_, token := createTestUser(t, pool)
 
 	resp := do(t, srv.Client(), http.MethodPost, srv.URL+"/captures", token, map[string]any{
-		"mediaType":    "text",
-		"classifiedAs": "idea",
-		"rawText":      "Build a time-lapse camera from a Raspberry Pi",
+		"mediaType": "text",
+		"rawText":   "Build a time-lapse camera from a Raspberry Pi",
 	})
 
 	if resp.StatusCode != http.StatusOK {
@@ -144,11 +142,12 @@ func TestCreateCapture_TextHappyPath(t *testing.T) {
 	}
 
 	var body struct {
-		ID           string  `json:"id"`
-		RawText      *string `json:"rawText"`
-		MediaType    string  `json:"mediaType"`
-		ClassifiedAs string  `json:"classifiedAs"`
-		Source       string  `json:"source"`
+		ID        string  `json:"id"`
+		RawText   *string `json:"rawText"`
+		MediaType string  `json:"mediaType"`
+		Source    string  `json:"source"`
+		TodoAt    *string `json:"todoAt"`
+		DoneAt    *string `json:"doneAt"`
 	}
 	decodeBody(t, resp, &body)
 
@@ -161,11 +160,35 @@ func TestCreateCapture_TextHappyPath(t *testing.T) {
 	if body.MediaType != "text" {
 		t.Fatalf("expected mediaType 'text', got %q", body.MediaType)
 	}
-	if body.ClassifiedAs != "idea" {
-		t.Fatalf("expected classifiedAs 'idea', got %q", body.ClassifiedAs)
-	}
 	if body.Source != "web" {
 		t.Fatalf("expected default source 'web', got %q", body.Source)
+	}
+	if body.TodoAt != nil || body.DoneAt != nil {
+		t.Fatalf("a fresh capture must not be a todo, got todoAt=%v doneAt=%v", body.TodoAt, body.DoneAt)
+	}
+}
+
+// Pre-todo-facet clients (e.g. queued desktop offline captures) still send the
+// removed classifiedAs field; it must be accepted and ignored, not rejected by
+// schema validation.
+func TestCreateCapture_LegacyClassifiedAsIgnored(t *testing.T) {
+	srv, pool := newServer(t)
+	_, token := createTestUser(t, pool)
+
+	resp := do(t, srv.Client(), http.MethodPost, srv.URL+"/captures", token, map[string]any{
+		"mediaType":    "text",
+		"classifiedAs": "unclassified",
+		"rawText":      "replayed from an old offline queue",
+	})
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+	var body struct {
+		TodoAt *string `json:"todoAt"`
+	}
+	decodeBody(t, resp, &body)
+	if body.TodoAt != nil {
+		t.Fatalf("legacy classifiedAs must be ignored, got todoAt=%v", body.TodoAt)
 	}
 }
 
@@ -174,10 +197,9 @@ func TestCreateCapture_DesktopSource(t *testing.T) {
 	_, token := createTestUser(t, pool)
 
 	resp := do(t, srv.Client(), http.MethodPost, srv.URL+"/captures", token, map[string]any{
-		"mediaType":    "text",
-		"classifiedAs": "unclassified",
-		"rawText":      "Captured from a global shortcut",
-		"source":       "desktop_quick_capture",
+		"mediaType": "text",
+		"rawText":   "Captured from a global shortcut",
+		"source":    "desktop_quick_capture",
 	})
 
 	if resp.StatusCode != http.StatusOK {
@@ -200,10 +222,9 @@ func TestCreateCapture_WithReminder(t *testing.T) {
 	remindAt := time.Now().Add(time.Hour).UTC().Truncate(time.Second).Format(time.RFC3339)
 
 	resp := do(t, srv.Client(), http.MethodPost, srv.URL+"/captures", token, map[string]any{
-		"mediaType":    "text",
-		"classifiedAs": "unclassified",
-		"rawText":      "Remind me from desktop",
-		"remindAt":     remindAt,
+		"mediaType": "text",
+		"rawText":   "Remind me from desktop",
+		"remindAt":  remindAt,
 	})
 
 	if resp.StatusCode != http.StatusOK {
@@ -236,10 +257,9 @@ func TestCreateCapture_InvalidReminderDoesNotCreateCapture(t *testing.T) {
 	userID, token := createTestUser(t, pool)
 
 	resp := do(t, srv.Client(), http.MethodPost, srv.URL+"/captures", token, map[string]any{
-		"mediaType":    "text",
-		"classifiedAs": "unclassified",
-		"rawText":      "Bad reminder",
-		"remindAt":     "tomorrow-ish",
+		"mediaType": "text",
+		"rawText":   "Bad reminder",
+		"remindAt":  "tomorrow-ish",
 	})
 	defer resp.Body.Close()
 
@@ -263,8 +283,7 @@ func TestCreateCapture_InvalidMediaType(t *testing.T) {
 	_, token := createTestUser(t, pool)
 
 	resp := do(t, srv.Client(), http.MethodPost, srv.URL+"/captures", token, map[string]any{
-		"mediaType":    "video",
-		"classifiedAs": "unclassified",
+		"mediaType": "video",
 	})
 	defer resp.Body.Close()
 
@@ -278,9 +297,8 @@ func TestCreateCapture_TextRequiresRawText(t *testing.T) {
 	_, token := createTestUser(t, pool)
 
 	resp := do(t, srv.Client(), http.MethodPost, srv.URL+"/captures", token, map[string]any{
-		"mediaType":    "text",
-		"classifiedAs": "unclassified",
-		"rawText":      "   ",
+		"mediaType": "text",
+		"rawText":   "   ",
 	})
 	defer resp.Body.Close()
 
@@ -319,10 +337,10 @@ func TestRetryCaptureTranscription(t *testing.T) {
 	id := uuid.New()
 	_, err := pool.Exec(context.Background(), `
 		INSERT INTO captures (
-			id, user_id, media_type, classified_as, source, media_url, media_key,
+			id, user_id, media_type, source, media_url, media_key,
 			audio_duration_sec, transcription_status, transcription_attempts
 		)
-		VALUES ($1, $2, 'audio', 'unclassified', 'web', 'https://example.test/audio.webm',
+		VALUES ($1, $2, 'audio', 'web', 'https://example.test/audio.webm',
 			'captures/audio.webm', 120, 'failed', 4)`,
 		id, userID,
 	)
@@ -415,11 +433,10 @@ func TestCaptureReminderBrowseAndRecall(t *testing.T) {
 
 	mk := func(text string) db.Capture {
 		c, err := queries.CreateCapture(ctx, db.CreateCaptureParams{
-			UserID:       uid,
-			RawText:      pgtype.Text{String: text, Valid: true},
-			MediaType:    db.CaptureMediaTypeText,
-			ClassifiedAs: db.CaptureClassifiedAsUnclassified,
-			Source:       "web",
+			UserID:    uid,
+			RawText:   pgtype.Text{String: text, Valid: true},
+			MediaType: db.CaptureMediaTypeText,
+			Source:    "web",
 		})
 		if err != nil {
 			t.Fatalf("create capture %q: %v", text, err)
@@ -654,29 +671,56 @@ func TestListCaptures_IsolatedByUser(t *testing.T) {
 	}
 }
 
-func TestListCaptures_FilterByClassifiedAs(t *testing.T) {
+func TestListCaptures_FilterByTodo(t *testing.T) {
 	srv, pool := newServer(t)
 	_, token := createTestUser(t, pool)
 
-	createCapture(t, srv, token, map[string]any{"classifiedAs": "idea"})
-	createCapture(t, srv, token, map[string]any{"classifiedAs": "task"})
+	createCapture(t, srv, token, map[string]any{"rawText": "plain note"})
+	openID := createCapture(t, srv, token, map[string]any{"rawText": "an open todo"})
+	doneID := createCapture(t, srv, token, map[string]any{"rawText": "a finished todo"})
+	setTodo(t, srv, token, openID, "open")
+	setTodo(t, srv, token, doneID, "done")
 
-	resp := do(t, srv.Client(), http.MethodGet, srv.URL+"/captures?classifiedAs=idea", token, nil)
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	open := listCaptureIDs(t, srv, token, "/captures?todo=open")
+	if len(open) != 1 || open[0] != openID {
+		t.Fatalf("expected only the open todo, got %v", open)
 	}
 
+	done := listCaptureIDs(t, srv, token, "/captures?todo=done")
+	if len(done) != 1 || done[0] != doneID {
+		t.Fatalf("expected only the done todo, got %v", done)
+	}
+
+	all := listCaptureIDs(t, srv, token, "/captures")
+	if len(all) != 3 {
+		t.Fatalf("unfiltered list must include everything, got %d", len(all))
+	}
+}
+
+func setTodo(t *testing.T, srv *httptest.Server, token, id, state string) {
+	t.Helper()
+	resp := do(t, srv.Client(), http.MethodPost, srv.URL+"/captures/"+id+"/todo", token, map[string]any{"state": state})
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("setup: set todo %s: got %d", state, resp.StatusCode)
+	}
+}
+
+func listCaptureIDs(t *testing.T, srv *httptest.Server, token, path string) []string {
+	t.Helper()
+	resp := do(t, srv.Client(), http.MethodGet, srv.URL+path, token, nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("list %s: got %d", path, resp.StatusCode)
+	}
 	var captures []struct {
-		ClassifiedAs string `json:"classifiedAs"`
+		ID string `json:"id"`
 	}
 	decodeBody(t, resp, &captures)
-
-	if len(captures) != 1 {
-		t.Fatalf("expected 1 idea capture, got %d", len(captures))
+	ids := make([]string, len(captures))
+	for i, c := range captures {
+		ids[i] = c.ID
 	}
-	if captures[0].ClassifiedAs != "idea" {
-		t.Fatalf("expected classifiedAs 'idea', got %q", captures[0].ClassifiedAs)
-	}
+	return ids
 }
 
 func TestListCaptures_IncludeReminded(t *testing.T) {
@@ -747,8 +791,8 @@ func TestListCapturePage_UsesStableCursor(t *testing.T) {
 	ids := []uuid.UUID{uuid.New(), uuid.New(), uuid.New()}
 	for _, id := range ids {
 		_, err := pool.Exec(context.Background(), `
-			INSERT INTO captures (id, user_id, raw_text, media_type, classified_as, source, created_at)
-			VALUES ($1, $2, $3, 'text', 'unclassified', 'web', $4)`,
+			INSERT INTO captures (id, user_id, raw_text, media_type, source, created_at)
+			VALUES ($1, $2, $3, 'text', 'web', $4)`,
 			id, uid, id.String(), createdAt,
 		)
 		if err != nil {
@@ -818,8 +862,8 @@ func TestCaptureContext_ReturnsWindowInChronologicalOrder(t *testing.T) {
 	for i := range ids {
 		ids[i] = uuid.New()
 		_, err := pool.Exec(context.Background(), `
-			INSERT INTO captures (id, user_id, raw_text, media_type, classified_as, source, created_at)
-			VALUES ($1, $2, $3, 'text', 'unclassified', 'web', $4)`,
+			INSERT INTO captures (id, user_id, raw_text, media_type, source, created_at)
+			VALUES ($1, $2, $3, 'text', 'web', $4)`,
 			ids[i], uid, fmt.Sprintf("capture-%d", i),
 			time.Date(2026, time.June, 6, 12, i, 0, 0, time.UTC),
 		)
@@ -867,27 +911,82 @@ func TestCaptureContext_DoesNotExposeAnotherUsersAnchor(t *testing.T) {
 
 // --- update ---
 
-func TestUpdateCapture_Reclassify(t *testing.T) {
+// --- todo facet ---
+
+func TestSetCaptureTodo_StateMachine(t *testing.T) {
 	srv, pool := newServer(t)
 	_, token := createTestUser(t, pool)
 
-	id := createCapture(t, srv, token, map[string]any{"classifiedAs": "unclassified"})
+	id := createCapture(t, srv, token, nil)
 
-	newClass := "task"
-	resp := do(t, srv.Client(), http.MethodPatch, srv.URL+"/captures/"+id, token, map[string]*string{
-		"classifiedAs": &newClass,
-	})
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	type todoBody struct {
+		TodoAt *string `json:"todoAt"`
+		DoneAt *string `json:"doneAt"`
+	}
+	set := func(state string) todoBody {
+		resp := do(t, srv.Client(), http.MethodPost, srv.URL+"/captures/"+id+"/todo", token, map[string]any{"state": state})
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("set todo %s: expected 200, got %d", state, resp.StatusCode)
+		}
+		var body todoBody
+		decodeBody(t, resp, &body)
+		return body
 	}
 
-	var body struct {
-		ClassifiedAs string `json:"classifiedAs"`
+	open := set("open")
+	if open.TodoAt == nil || open.DoneAt != nil {
+		t.Fatalf("open: expected todoAt set and doneAt null, got %+v", open)
 	}
-	decodeBody(t, resp, &body)
 
-	if body.ClassifiedAs != "task" {
-		t.Fatalf("expected 'task', got %q", body.ClassifiedAs)
+	done := set("done")
+	if done.DoneAt == nil {
+		t.Fatalf("done: expected doneAt set, got %+v", done)
+	}
+	// The flag time survives completion: checking the box must not re-date the todo.
+	if done.TodoAt == nil || *done.TodoAt != *open.TodoAt {
+		t.Fatalf("done: expected original todoAt %v kept, got %v", open.TodoAt, done.TodoAt)
+	}
+
+	reopened := set("open")
+	if reopened.TodoAt == nil || reopened.DoneAt != nil {
+		t.Fatalf("reopen: expected doneAt cleared, got %+v", reopened)
+	}
+
+	cleared := set("none")
+	if cleared.TodoAt != nil || cleared.DoneAt != nil {
+		t.Fatalf("none: expected both stamps cleared, got %+v", cleared)
+	}
+
+	// Checking a plain capture directly is the check-is-classify path: done from
+	// scratch must set both stamps at once (the DB CHECK enforces the pairing).
+	direct := set("done")
+	if direct.TodoAt == nil || direct.DoneAt == nil {
+		t.Fatalf("direct done: expected both stamps set, got %+v", direct)
+	}
+}
+
+func TestSetCaptureTodo_InvalidState(t *testing.T) {
+	srv, pool := newServer(t)
+	_, token := createTestUser(t, pool)
+
+	id := createCapture(t, srv, token, nil)
+	resp := do(t, srv.Client(), http.MethodPost, srv.URL+"/captures/"+id+"/todo", token, map[string]any{"state": "blocked"})
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("expected 422, got %d", resp.StatusCode)
+	}
+}
+
+func TestSetCaptureTodo_NotOwned(t *testing.T) {
+	srv, pool := newServer(t)
+	_, tokenA := createTestUser(t, pool)
+	_, tokenB := createTestUser(t, pool)
+
+	id := createCapture(t, srv, tokenA, nil)
+	resp := do(t, srv.Client(), http.MethodPost, srv.URL+"/captures/"+id+"/todo", tokenB, map[string]any{"state": "open"})
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", resp.StatusCode)
 	}
 }
 
@@ -898,9 +997,9 @@ func TestUpdateCapture_NotOwned(t *testing.T) {
 
 	id := createCapture(t, srv, tokenA, nil)
 
-	newClass := "task"
+	newText := "hijacked"
 	resp := do(t, srv.Client(), http.MethodPatch, srv.URL+"/captures/"+id, tokenB, map[string]*string{
-		"classifiedAs": &newClass,
+		"rawText": &newText,
 	})
 	defer resp.Body.Close()
 

@@ -8,27 +8,13 @@ import {
   useListCaptureAttachments,
   type CaptureAttachmentBody,
   type CaptureBody,
-  type CaptureUpdateInputBodyClassifiedAs,
 } from "../api";
 import { fmtFileSize, fmtShortDateTime } from "../utils/format";
+import type { TodoState } from "../utils/todo";
+import { useTodoEnabled } from "../hooks/use-todo-enabled";
 import { Markdown } from "./Markdown";
 import { RemindControl } from "./RemindControl";
-
-const CL_CLASS: Record<string, string> = {
-  unclassified: "cl-unclassified",
-  idea: "cl-idea",
-  task: "cl-task",
-  routine: "cl-routine",
-  log: "cl-log",
-};
-
-const RECLASSIFY_OPTIONS: CaptureUpdateInputBodyClassifiedAs[] = [
-  "unclassified",
-  "idea",
-  "task",
-  "routine",
-  "log",
-];
+import { TodoControl } from "./TodoControl";
 
 export function AutoTextarea({
   value,
@@ -83,7 +69,7 @@ export function AutoTextarea({
 
 export function CaptureCard({
   c,
-  onReclassify,
+  onSetTodo,
   onDelete,
   onSaveText,
   onSaveTranscript,
@@ -93,7 +79,7 @@ export function CaptureCard({
   onMutationError,
 }: {
   c: CaptureBody;
-  onReclassify: (id: string, v: CaptureUpdateInputBodyClassifiedAs) => void;
+  onSetTodo: (id: string, state: TodoState) => void;
   onDelete: (id: string) => void;
   onSaveText: (id: string, text: string) => void;
   onSaveTranscript: (id: string, transcript: string) => void;
@@ -105,6 +91,7 @@ export function CaptureCard({
   const { t } = useTranslation("captures");
   const { t: tc } = useTranslation("common");
   const queryClient = useQueryClient();
+  const todosEnabled = useTodoEnabled();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(c.rawText ?? "");
   const [editingTranscript, setEditingTranscript] = useState(false);
@@ -300,23 +287,13 @@ export function CaptureCard({
         />
       )}
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-        <select
-          value={c.classifiedAs}
-          onChange={(e) =>
-            onReclassify(
-              c.id,
-              e.target.value as CaptureUpdateInputBodyClassifiedAs,
-            )
-          }
-          className={`ch-pill ${CL_CLASS[c.classifiedAs] ?? "cl-unclassified"}`}
-          style={{ border: "none", cursor: "pointer", appearance: "none" }}
-        >
-          {RECLASSIFY_OPTIONS.map((opt) => (
-            <option key={opt} value={opt}>
-              {tc(`classification.${opt}`)}
-            </option>
-          ))}
-        </select>
+        {todosEnabled && (
+          <TodoControl
+            todoAt={c.todoAt}
+            doneAt={c.doneAt}
+            onSet={(state) => onSetTodo(c.id, state)}
+          />
+        )}
         <span style={{ flex: 1 }} />
         {editing ? (
           <>
@@ -359,6 +336,14 @@ export function CaptureCard({
                   align="end"
                   sideOffset={4}
                 >
+                  {todosEnabled && c.todoAt && (
+                    <DropdownMenu.Item
+                      className="ch-dropdown-item"
+                      onSelect={() => onSetTodo(c.id, "none")}
+                    >
+                      {t("todo.remove")}
+                    </DropdownMenu.Item>
+                  )}
                   <DropdownMenu.Item
                     className="ch-dropdown-item danger"
                     onSelect={() => onDelete(c.id)}

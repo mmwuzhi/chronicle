@@ -45,7 +45,6 @@ public struct Capture: Codable, Equatable, Identifiable, Sendable {
     public let transcript: String?
     public let mediaType: String
     public let mediaUrl: String?
-    public let classifiedAs: String
     public let source: String
     public let remindAt: String?
     // With a reminder set: true (default) hides from browse until due; false is
@@ -57,7 +56,7 @@ public struct Capture: Codable, Equatable, Identifiable, Sendable {
 
     public init(
         id: String, rawText: String?, transcript: String?, mediaType: String,
-        mediaUrl: String?, classifiedAs: String, source: String,
+        mediaUrl: String?, source: String,
         remindAt: String?, createdAt: String,
         remindHide: Bool? = nil, deletedAt: String? = nil
     ) {
@@ -66,7 +65,6 @@ public struct Capture: Codable, Equatable, Identifiable, Sendable {
         self.transcript = transcript
         self.mediaType = mediaType
         self.mediaUrl = mediaUrl
-        self.classifiedAs = classifiedAs
         self.source = source
         self.remindAt = remindAt
         self.remindHide = remindHide

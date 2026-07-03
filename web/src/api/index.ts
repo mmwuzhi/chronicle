@@ -122,10 +122,14 @@ export interface CaptureBody {
   readonly $schema?: string;
   /** @nullable */
   audioDurationSec: number | null;
-  classifiedAs: string;
   createdAt: string;
   /** @nullable */
   deletedAt: string | null;
+  /**
+     * When the todo was completed; null means not done (or not a todo)
+     * @nullable
+     */
+  doneAt: string | null;
   id: string;
   mediaType: string;
   /** @nullable */
@@ -137,6 +141,11 @@ export interface CaptureBody {
   /** When a reminder is set: true (default) hides the capture from browse until due; false keeps it visible and only notifies (notify-only) */
   remindHide: boolean;
   source: string;
+  /**
+     * When the capture was flagged as a todo; null means it is not a todo
+     * @nullable
+     */
+  todoAt: string | null;
   /** @nullable */
   transcribedAt: string | null;
   /** @nullable */
@@ -156,17 +165,6 @@ export interface CaptureContextBody {
   items: CaptureBody[] | null;
 }
 
-export type CaptureCreateInputBodyClassifiedAs = typeof CaptureCreateInputBodyClassifiedAs[keyof typeof CaptureCreateInputBodyClassifiedAs];
-
-
-export const CaptureCreateInputBodyClassifiedAs = {
-  task: 'task',
-  idea: 'idea',
-  routine: 'routine',
-  log: 'log',
-  unclassified: 'unclassified',
-} as const;
-
 export type CaptureCreateInputBodyMediaType = typeof CaptureCreateInputBodyMediaType[keyof typeof CaptureCreateInputBodyMediaType];
 
 
@@ -179,7 +177,8 @@ export const CaptureCreateInputBodyMediaType = {
 export interface CaptureCreateInputBody {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
-  classifiedAs?: CaptureCreateInputBodyClassifiedAs;
+  /** Deprecated and ignored. Kept so pre-todo-facet clients (queued desktop offline captures) still validate. */
+  classifiedAs?: string;
   mediaType: CaptureCreateInputBodyMediaType;
   mediaUrl?: string;
   rawText?: string;
@@ -216,6 +215,25 @@ export interface CaptureRemindInputBody {
   hide?: boolean;
 }
 
+/**
+ * none clears the todo flag, open flags it as a todo, done completes it
+ */
+export type CaptureTodoInputBodyState = typeof CaptureTodoInputBodyState[keyof typeof CaptureTodoInputBodyState];
+
+
+export const CaptureTodoInputBodyState = {
+  none: 'none',
+  open: 'open',
+  done: 'done',
+} as const;
+
+export interface CaptureTodoInputBody {
+  /** A URL to the JSON Schema for this object. */
+  readonly $schema?: string;
+  /** none clears the todo flag, open flags it as a todo, done completes it */
+  state: CaptureTodoInputBodyState;
+}
+
 export interface CaptureTokenCreateInputBody {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
@@ -250,21 +268,9 @@ export interface CaptureTokenListOutputBody {
   tokens: CaptureTokenSummary[] | null;
 }
 
-export type CaptureUpdateInputBodyClassifiedAs = typeof CaptureUpdateInputBodyClassifiedAs[keyof typeof CaptureUpdateInputBodyClassifiedAs];
-
-
-export const CaptureUpdateInputBodyClassifiedAs = {
-  task: 'task',
-  idea: 'idea',
-  routine: 'routine',
-  log: 'log',
-  unclassified: 'unclassified',
-} as const;
-
 export interface CaptureUpdateInputBody {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
-  classifiedAs?: CaptureUpdateInputBodyClassifiedAs;
   rawText?: string;
   transcript?: string;
 }
@@ -603,9 +609,9 @@ export interface WebhookTestOutputBody {
 
 export type ListCapturesParams = {
 /**
- * Filter by classification: task, idea, routine, log, unclassified
+ * Filter by todo state: open (flagged, not done) or done; omit for all captures
  */
-classifiedAs?: string;
+todo?: string;
 /**
  * Include captures with a future reminder (hidden by default until due); set true for a reminder-management view
  */
@@ -628,9 +634,9 @@ after?: number;
 
 export type ListCapturePageParams = {
 /**
- * Filter by classification: task, idea, routine, log, unclassified
+ * Filter by todo state: open (flagged, not done) or done; omit for all captures
  */
-classifiedAs?: string;
+todo?: string;
 cursor?: string;
 /**
  * @minimum 1
@@ -3711,6 +3717,71 @@ export const useRestoreCapture = <TError = ErrorModel,
         TContext
       > => {
       return useMutation(getRestoreCaptureMutationOptions(options), queryClient);
+    }
+
+/**
+ * @summary Set or clear a capture's todo state
+ */
+export const setCaptureTodo = (
+    id: string,
+    captureTodoInputBody: NonReadonly<CaptureTodoInputBody>,
+ signal?: AbortSignal
+) => {
+
+
+      return api<CaptureBody>(
+      {url: `/captures/${id}/todo`, method: 'POST',
+      headers: {'Content-Type': 'application/json', },
+      data: captureTodoInputBody, signal
+    },
+      );
+    }
+
+
+
+export const getSetCaptureTodoMutationOptions = <TError = ErrorModel,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setCaptureTodo>>, TError,{id: string;data: NonReadonly<CaptureTodoInputBody>}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof setCaptureTodo>>, TError,{id: string;data: NonReadonly<CaptureTodoInputBody>}, TContext> => {
+
+const mutationKey = ['setCaptureTodo'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof setCaptureTodo>>, {id: string;data: NonReadonly<CaptureTodoInputBody>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  setCaptureTodo(id,data,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SetCaptureTodoMutationResult = NonNullable<Awaited<ReturnType<typeof setCaptureTodo>>>
+    export type SetCaptureTodoMutationBody = NonReadonly<CaptureTodoInputBody>
+    export type SetCaptureTodoMutationError = ErrorModel
+
+    /**
+ * @summary Set or clear a capture's todo state
+ */
+export const useSetCaptureTodo = <TError = ErrorModel,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setCaptureTodo>>, TError,{id: string;data: NonReadonly<CaptureTodoInputBody>}, TContext>, }
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof setCaptureTodo>>,
+        TError,
+        {id: string;data: NonReadonly<CaptureTodoInputBody>},
+        TContext
+      > => {
+      return useMutation(getSetCaptureTodoMutationOptions(options), queryClient);
     }
 
 /**

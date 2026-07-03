@@ -28,13 +28,6 @@
     "done": "已完成",
     "archived": "已归档"
   },
-  "classification": {
-    "unclassified": "未分类",
-    "idea": "想法",
-    "task": "任务",
-    "routine": "日常",
-    "log": "日志"
-  },
   "actions": {
     "save": "保存",
     "cancel": "取消",

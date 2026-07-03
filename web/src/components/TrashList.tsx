@@ -42,7 +42,6 @@ export function TrashList({
                     })}
                   </span>
                 )}
-                <span>{capture.classifiedAs}</span>
               </div>
               {capture.mediaUrl && capture.mediaType === "image" && (
                 <img src={capture.mediaUrl} alt="" className="ch-trash-image" />

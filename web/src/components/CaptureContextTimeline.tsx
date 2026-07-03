@@ -53,7 +53,6 @@ export function CaptureContextTimeline({
                 )}
                 <div className="ch-context-meta">
                   <span>{capture.source}</span>
-                  <span>{capture.classifiedAs}</span>
                 </div>
                 {capture.mediaUrl && capture.mediaType === "image" && (
                   <img

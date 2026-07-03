@@ -227,10 +227,12 @@ test("captures: recording can be stopped", async ({ page }) => {
   await expect(page.getByRole("button", { name: /^record$/i })).toBeVisible();
 });
 
-test("captures: filter tabs include routine and log", async ({ page }) => {
+test("captures: filter tabs include all and todo", async ({ page }) => {
   await goto(page, "/captures");
-  await expect(page.getByRole("button", { name: /^routine$/i })).toBeVisible();
-  await expect(page.getByRole("button", { name: /^log$/i })).toBeVisible();
+  await expect(page.getByRole("button", { name: /^all$/i })).toBeVisible();
+  await expect(page.getByRole("button", { name: /^todo$/i })).toBeVisible();
+  await expect(page.getByRole("button", { name: /^routine$/i })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /^log$/i })).toHaveCount(0);
 });
 
 test("captures: no direct Delete button on rows", async ({ page }) => {

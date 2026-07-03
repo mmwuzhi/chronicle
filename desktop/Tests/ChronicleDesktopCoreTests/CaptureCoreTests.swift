@@ -8,8 +8,24 @@ func capturePayloadUsesDesktopDefaults() {
     let payload = CapturePayload(rawText: "Follow up on report")
 
     #expect(payload.mediaType == "text")
-    #expect(payload.classifiedAs == "unclassified")
     #expect(payload.source == desktopQuickCaptureSource)
+}
+
+@Test
+func decodesQueuedCaptureFromBeforeTodoFacet() throws {
+    // Offline queues serialized by pre-todo-facet builds carry the removed
+    // classifiedAs field; replaying them must decode (unknown keys ignored).
+    let json = Data(
+        """
+        {"payload":{"rawText":"queued while offline","mediaType":"text",
+         "classifiedAs":"unclassified","source":"desktop_quick_capture"},
+         "queuedAt":712345678.0}
+        """.utf8)
+
+    let queued = try JSONDecoder().decode(QueuedCapture.self, from: json)
+
+    #expect(queued.payload.rawText == "queued while offline")
+    #expect(queued.payload.source == desktopQuickCaptureSource)
 }
 
 @Test
