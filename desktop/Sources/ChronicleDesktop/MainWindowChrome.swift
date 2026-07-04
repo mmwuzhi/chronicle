@@ -185,7 +185,6 @@ final class MainWindowController: NSObject {
     private let settingsModel: SettingsModel
     private let navigation = MainWindowNavigation()
     private weak var titlebarSidebarButton: NSButton?
-    private weak var titlebarTitleLabel: NSTextField?
 
     init(clients: CaptureClients, settingsModel: SettingsModel) {
         self.clients = clients
@@ -254,19 +253,9 @@ final class MainWindowController: NSObject {
             button.heightAnchor.constraint(equalToConstant: 28),
         ])
         titlebarSidebarButton = button
-
-        let titleLabel = NSTextField(labelWithString: "Chronicle")
-        titleLabel.font = .systemFont(ofSize: NSFont.systemFontSize + 1, weight: .semibold)
-        titleLabel.textColor = .labelColor
-        titleLabel.lineBreakMode = .byTruncatingTail
-        titleLabel.translatesAutoresizingMaskIntoConstraints = false
-        titlebar.addSubview(titleLabel)
-        NSLayoutConstraint.activate([
-            titleLabel.leadingAnchor.constraint(equalTo: button.trailingAnchor, constant: 14),
-            titleLabel.centerYAnchor.constraint(equalTo: zoomButton.centerYAnchor),
-            titleLabel.trailingAnchor.constraint(lessThanOrEqualTo: titlebar.trailingAnchor, constant: -16),
-        ])
-        titlebarTitleLabel = titleLabel
+        // No visible "Chronicle" label: the window title stays set for Mission
+        // Control and accessibility, but the titlebar itself shows only the
+        // traffic lights and the sidebar toggle — the app is its one window.
     }
 
     @objc private func toggleSidebarTabs() {

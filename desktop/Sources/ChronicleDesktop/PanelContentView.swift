@@ -154,7 +154,7 @@ struct PanelContentView: View {
         if mode == .search && searched && hits.isEmpty { return 40 }
         if mode == .search && !searched && recentLoaded && recentRows.isEmpty { return 40 }
         let searchRows = searched ? hits : recentRows
-        let body = CGFloat(searchRows.count) * 56 + (answer.isEmpty ? 0 : 120)
+        let body = CGFloat(searchRows.count) * 48 + (answer.isEmpty ? 0 : 120)
         return min(max(body + 20, 52), 320)
     }
 
@@ -181,7 +181,6 @@ struct PanelContentView: View {
             }
             ForEach(hits) { hit in
                 searchRow(hit)
-                Divider().opacity(0.5)
             }
         } else if mode == .search && recentLoaded {
             if recentRows.isEmpty {
@@ -190,7 +189,6 @@ struct PanelContentView: View {
                 Text("Recent").font(.caption).foregroundStyle(.secondary).padding(.bottom, 4)
                 ForEach(recentRows) { row in
                     searchRow(row)
-                    Divider().opacity(0.5)
                 }
             }
         } else if mode == .ask && !answer.isEmpty {
@@ -204,7 +202,7 @@ struct PanelContentView: View {
         return CaptureRow(
             item: row,
             onCopy: { copy(row.content) },
-            onDelete: { delete(row.id) },
+            onDelete: { delete(row) },
             onEdit: nil,
             onOpen: { clients.openDetail(row) },
             onPin: {
@@ -389,20 +387,32 @@ struct PanelContentView: View {
         NSPasteboard.general.setString(s, forType: .string)
     }
 
-    private func delete(_ id: String) {
-        guard let client = clients.recall() else { return }
+    private func delete(_ row: RowItem) {
+        let plan = captureDeletePlan(for: row, hasServerClient: clients.recall() != nil)
+        guard plan != .unavailable else { return }
         error = ""
         Task { @MainActor in
+            let id: String
             do {
-                try await client.delete(id: id)
+                switch plan {
+                case .serverThenLocal(let captureId):
+                    guard let client = clients.recall() else { return }
+                    try await client.delete(id: captureId)
+                    id = captureId
+                case .localOnly(let localId):
+                    id = localId
+                case .unavailable:
+                    return
+                }
                 clients.localDelete(id)
                 CaptureEvents.postChanged()
-                withAnimation(.easeInOut(duration: 0.2)) {
-                    hits.removeAll { $0.id == id }
-                    recentRows.removeAll { $0.id == id }
-                }
             } catch let err {
                 error = describeCaptureError(err)
+                return
+            }
+            withAnimation(.easeInOut(duration: 0.2)) {
+                hits.removeAll { $0.id == id }
+                recentRows.removeAll { $0.id == id }
             }
         }
     }

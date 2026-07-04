@@ -62,7 +62,8 @@ struct MainTrashPane: View {
 
     @ViewBuilder private var header: some View {
         HStack(spacing: 10) {
-            WorkspaceField(prompt: "Filter trash", text: $trashQuery, disabled: false)
+            WorkspaceField(icon: "magnifyingglass", prompt: "Filter trash",
+                           text: $trashQuery, disabled: false)
             if !trash.isEmpty {
                 Button("Empty", role: .destructive) { confirmingEmptyTrash = true }
                     .buttonStyle(.borderless).font(.caption).foregroundStyle(.red)
@@ -127,8 +128,8 @@ struct MainTrashPane: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.vertical, 8)
-        Divider().opacity(0.5)
+        .padding(.vertical, 6)
+        .rowHoverWash()
     }
 
     private func load() async {

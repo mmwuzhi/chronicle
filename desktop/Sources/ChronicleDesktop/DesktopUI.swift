@@ -139,6 +139,35 @@ struct RowItem: Identifiable, Equatable {
     }()
 }
 
+struct CaptureEditDraft: Equatable {
+    var item: RowItem
+    var text: String
+
+    init(item: RowItem) {
+        self.item = item
+        self.text = item.content
+    }
+
+    var id: String { item.id }
+    var originalText: String { item.content }
+    var isDirty: Bool {
+        text.trimmingCharacters(in: .whitespacesAndNewlines) != originalText
+    }
+}
+
+enum CaptureDeletePlan: Equatable {
+    case serverThenLocal(id: String)
+    case localOnly(id: String)
+    case unavailable
+}
+
+func captureDeletePlan(for row: RowItem, hasServerClient: Bool) -> CaptureDeletePlan {
+    if row.synced {
+        return hasServerClient ? .serverThenLocal(id: row.id) : .unavailable
+    }
+    return .localOnly(id: row.id)
+}
+
 // MARK: - Errors
 
 /// One user-facing line for a capture-API failure, shared by every surface
@@ -225,6 +254,76 @@ enum CaptureTime {
 
 // MARK: - Capture row
 
+/// Row hover geometry shared by every list surface (browse, quick panel, trash,
+/// detail) so rows speak one hover language: no dividers, a rounded wash marks
+/// the row under the cursor and visually claims its trailing actions.
+enum RowStyle {
+    static let washOpacity = 0.05
+    static let cornerRadius: CGFloat = 8
+    static let horizontalInset: CGFloat = 10
+}
+
+/// Rounded hover wash for list rows that don't go through CaptureRow (the trash
+/// pane's custom rows). CaptureRow inlines the same treatment because it already
+/// tracks hover for its actions and timestamp.
+struct RowHoverWash: ViewModifier {
+    @State private var hovering = false
+
+    func body(content: Content) -> some View {
+        content
+            .padding(.horizontal, RowStyle.horizontalInset)
+            .background(
+                Color.primary.opacity(hovering ? RowStyle.washOpacity : 0),
+                in: RoundedRectangle(cornerRadius: RowStyle.cornerRadius),
+            )
+            .onHover { hovering = $0 }
+    }
+}
+
+extension View {
+    func rowHoverWash() -> some View { modifier(RowHoverWash()) }
+}
+
+/// One icon action in a row's trailing slot: fixed 24×22 footprint, its own
+/// hover/pressed wash, and no hit testing while hidden (an invisible button
+/// must not swallow clicks on the empty space beside a row).
+private struct RowActionButton: View {
+    let systemImage: String
+    let help: String
+    var tint: Color?
+    var visible: Bool
+    let action: () -> Void
+
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(tint ?? .secondary)
+        }
+        .buttonStyle(RowActionButtonStyle(hovering: hovering))
+        .onHover { hovering = $0 }
+        .help(help)
+        .opacity(visible ? 1 : 0)
+        .allowsHitTesting(visible)
+    }
+}
+
+private struct RowActionButtonStyle: ButtonStyle {
+    var hovering: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .frame(width: 24, height: 22)
+            .background(
+                Color.primary.opacity(configuration.isPressed ? 0.12 : (hovering ? 0.07 : 0)),
+                in: RoundedRectangle(cornerRadius: 6),
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 6))
+    }
+}
+
 /// Shared hover action group for capture rows. Keeping this separate prevents the
 /// main window and quick search panel from drifting into different button sets.
 struct CaptureRowActions: View {
@@ -237,41 +336,29 @@ struct CaptureRowActions: View {
     var isPinned: Bool = false
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 2) {
             if let onOpen {
-                Button(action: onOpen) { Image(systemName: "arrow.up.forward.square") }
-                    .buttonStyle(.borderless)
-                    .foregroundStyle(.secondary)
-                    .help("Open")
-                    .opacity(hovering ? 1 : 0)
+                RowActionButton(systemImage: "arrow.up.forward.square", help: "Open",
+                                visible: hovering, action: onOpen)
             }
             if let onPin {
-                Button(action: onPin) { Image(systemName: isPinned ? "pin.fill" : "pin") }
-                    .buttonStyle(.borderless)
-                    .foregroundStyle(isPinned ? Color.accentColor : .secondary)
-                    .help(isPinned ? "Unpin from desktop" : "Pin to desktop")
-                    .opacity(hovering || isPinned ? 1 : 0)
+                RowActionButton(systemImage: isPinned ? "pin.fill" : "pin",
+                                help: isPinned ? "Unpin from desktop" : "Pin to desktop",
+                                tint: isPinned ? Color.accentColor : nil,
+                                visible: hovering || isPinned, action: onPin)
             }
-            Button(action: onCopy) { Image(systemName: "doc.on.doc") }
-                .buttonStyle(.borderless)
-                .foregroundStyle(.secondary)
-                .help("Copy")
-                .opacity(hovering ? 1 : 0)
+            RowActionButton(systemImage: "doc.on.doc", help: "Copy",
+                            visible: hovering, action: onCopy)
             if let onDelete {
-                Button(action: onDelete) { Image(systemName: "trash") }
-                    .buttonStyle(.borderless)
-                    .foregroundStyle(.secondary)
-                    .help("Delete")
-                    .opacity(hovering ? 1 : 0)
+                RowActionButton(systemImage: "trash", help: "Delete",
+                                visible: hovering, action: onDelete)
             }
             if let onUnlink {
-                Button(action: onUnlink) { Image(systemName: "minus.circle") }
-                    .buttonStyle(.borderless)
-                    .foregroundStyle(.secondary)
-                    .help("Remove link")
-                    .opacity(hovering ? 1 : 0)
+                RowActionButton(systemImage: "minus.circle", help: "Remove link",
+                                visible: hovering, action: onUnlink)
             }
         }
+        .animation(.easeOut(duration: 0.12), value: hovering)
         .frame(width: Self.slotWidth(
             onOpen: onOpen,
             onDelete: onDelete,
@@ -289,7 +376,71 @@ struct CaptureRowActions: View {
     ) -> CGFloat {
         let count = 1 + (onOpen == nil ? 0 : 1) + (onDelete == nil ? 0 : 1)
             + (onUnlink == nil ? 0 : 1) + (onPin == nil ? 0 : 1)
-        return 28 + CGFloat(count - 1) * 24
+        return CGFloat(count) * 24 + CGFloat(count - 1) * 2
+    }
+}
+
+/// Row body text: native click-drag selection without surrendering double-click.
+/// SwiftUI's `.textSelection` wraps the glyphs in an AppKit host that consumes
+/// double-clicks for word selection before any SwiftUI gesture can run, so rows
+/// could never open their editor from the text itself. This NSTextView keeps
+/// single-click selection and hands `clickCount == 2` to the row's edit action;
+/// rows without one (link picker, drafts) keep the native word selection.
+struct SelectableRowText: NSViewRepresentable {
+    let text: String
+    var onDoubleClick: (() -> Void)?
+
+    func makeNSView(context: Context) -> RowTextView {
+        let tv = RowTextView()
+        tv.isEditable = false
+        tv.isSelectable = true
+        tv.drawsBackground = false
+        tv.textContainerInset = .zero
+        tv.textContainer?.lineFragmentPadding = 0
+        tv.font = .preferredFont(forTextStyle: .body)
+        tv.textColor = .labelColor
+        tv.isVerticallyResizable = false
+        tv.isHorizontallyResizable = false
+        return tv
+    }
+
+    func updateNSView(_ tv: RowTextView, context: Context) {
+        tv.onDoubleClick = onDoubleClick
+        if tv.string != text { tv.string = text }
+    }
+
+    // Measurement must not touch the text view's own container: SwiftUI probes
+    // several proposal widths per pass, and whatever width the container was left
+    // with would win over the placed width (wrapping at the wrong column). The
+    // container tracks the placed frame width instead (widthTracksTextView), and
+    // this measures the same wrap statelessly.
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView tv: RowTextView, context: Context) -> CGSize? {
+        let font = tv.font ?? .preferredFont(forTextStyle: .body)
+        let proposed = proposal.width ?? .infinity
+        let wrapWidth = proposed.isFinite && proposed > 0 ? proposed : .greatestFiniteMagnitude
+        let measured = (text as NSString).boundingRect(
+            with: NSSize(width: wrapWidth, height: .greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin, .usesFontLeading],
+            attributes: [.font: font],
+        ).size
+        let width = wrapWidth == .greatestFiniteMagnitude ? ceil(measured.width) : wrapWidth
+        return CGSize(width: width, height: ceil(measured.height))
+    }
+
+    final class RowTextView: NSTextView {
+        var onDoubleClick: (() -> Void)?
+
+        // The main window may not be key (quick panel, stickies); without this the
+        // first click only activates the window and selection needs a second try.
+        override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+        override func mouseDown(with event: NSEvent) {
+            if event.clickCount == 2, let onDoubleClick {
+                onDoubleClick()
+                return
+            }
+            super.mouseDown(with: event)
+        }
     }
 }
 
@@ -309,79 +460,251 @@ struct CaptureRow: View {
     // even without hover, so the list shows at a glance what is on the desktop.
     var onPin: (() -> Void)?
     var isPinned: Bool = false
+    var isEditing: Bool = false
+    var draftText: String = ""
+    var showsUnsavedPrompt: Bool = false
+    var onBeginEdit: (() -> Void)?
+    var onDraftChange: ((String) -> Void)?
+    var onCommitEdit: (() -> Void)?
+    var onCancelEdit: (() -> Void)?
+    var onSaveAndContinue: (() -> Void)?
+    var onDiscardAndContinue: (() -> Void)?
+    var onKeepEditing: (() -> Void)?
 
     @State private var hovering = false
-    @State private var editing = false
-    @State private var editText = ""
+    @State private var fallbackEditing = false
+    @State private var fallbackText = ""
+    @FocusState private var draftFocused: Bool
+
+    private var rowIsEditing: Bool {
+        isEditing || fallbackEditing
+    }
+
+    private var currentDraftText: String {
+        isEditing ? draftText : fallbackText
+    }
+
+    private var draftBinding: Binding<String> {
+        Binding(
+            get: { currentDraftText },
+            set: { text in
+                if isEditing {
+                    onDraftChange?(text)
+                } else {
+                    fallbackText = text
+                }
+            }
+        )
+    }
+
+    private var canSaveDraft: Bool {
+        let next = currentDraftText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let original = item.content.trimmingCharacters(in: .whitespacesAndNewlines)
+        return !next.isEmpty && next != original
+    }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 8) {
-            if item.modality != "text" && item.content.isEmpty {
-                Image(systemName: item.modality == "audio" ? "waveform" : "photo")
-                    .font(.caption).foregroundStyle(.secondary).padding(.top, 3)
-            }
-            VStack(alignment: .leading, spacing: 3) {
-                if editing {
-                    TextField("", text: $editText, axis: .vertical)
-                        .textFieldStyle(.plain)
-                        .lineLimit(1...10)
-                        .overlay {
-                            RoundedRectangle(cornerRadius: 6)
-                                .stroke(Color.secondary.opacity(0.35), lineWidth: 1)
-                                .padding(.horizontal, -5)
-                                .padding(.vertical, -3)
-                        }
-                    Text("⌘↩ save · esc cancel")
-                        .font(.caption2).foregroundStyle(.tertiary)
-                        .frame(maxWidth: .infinity, alignment: .trailing)
-                } else {
-                    Text(item.content.isEmpty ? "(media capture)" : item.content)
-                        .textSelection(.enabled)
-                        .foregroundStyle(item.content.isEmpty ? .secondary : .primary)
-                    Text(hovering ? CaptureTime.precise(item.createdAt)
-                                  : CaptureTime.display(item.createdAt))
-                        .font(.caption2).foregroundStyle(.secondary)
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-
-            if editing {
-                Group {
-                    Button("") { commitEdit() }.keyboardShortcut(.return, modifiers: .command)
-                    Button("") { cancelEdit() }.keyboardShortcut(.cancelAction)
-                }
-                .buttonStyle(.plain).opacity(0).frame(width: 0, height: 0)
+        Group {
+            if rowIsEditing {
+                editContainer
             } else {
-                CaptureRowActions(
-                    hovering: hovering,
-                    onCopy: onCopy,
-                    onDelete: onDelete,
-                    onOpen: onOpen,
-                    onUnlink: onUnlink,
-                    onPin: onPin,
-                    isPinned: isPinned,
-                )
+                HStack(alignment: .top, spacing: 8) {
+                    if item.modality != "text" && item.content.isEmpty {
+                        Image(systemName: item.modality == "audio" ? "waveform" : "photo")
+                            .font(.caption).foregroundStyle(.secondary).padding(.top, 3)
+                    }
+                    VStack(alignment: .leading, spacing: 3) {
+                        restingContent
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                    // simultaneousGesture, not onTapGesture: the selectable Text
+                    // consumes double-clicks for word selection on macOS, so a
+                    // plain tap gesture on it never fires.
+                    .simultaneousGesture(TapGesture(count: 2).onEnded { beginEditingFromContent() })
+
+                    CaptureRowActions(
+                        hovering: hovering,
+                        onCopy: onCopy,
+                        onDelete: onDelete,
+                        onOpen: onOpen,
+                        onUnlink: onUnlink,
+                        onPin: onPin,
+                        isPinned: isPinned,
+                    )
+                }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 6)
+        // The edit bubble carries its own inset; resting rows take the shared one
+        // so the hover wash lines up across surfaces.
+        .padding(.horizontal, rowIsEditing ? 0 : RowStyle.horizontalInset)
         .contentShape(Rectangle())
-        .padding(.vertical, 8)
-        .simultaneousGesture(TapGesture(count: 2).onEnded {
-            guard onEdit != nil, !editing, !item.content.isEmpty else { return }
-            editText = item.content
-            editing = true
-        })
+        .background(
+            Color.primary.opacity(hovering && !rowIsEditing ? RowStyle.washOpacity : 0),
+            in: RoundedRectangle(cornerRadius: RowStyle.cornerRadius),
+        )
         .onHover { hovering = $0 }
     }
 
-    private func commitEdit() {
-        let next = editText.trimmingCharacters(in: .whitespacesAndNewlines)
-        editing = false
+    @ViewBuilder
+    private var restingContent: some View {
+        if item.content.isEmpty {
+            Text("(media capture)")
+                .foregroundStyle(.secondary)
+        } else {
+            SelectableRowText(
+                text: item.content,
+                onDoubleClick: onEdit != nil ? { beginEditingFromContent() } : nil,
+            )
+        }
+        // Resting metadata stays tertiary; the precise stamp firms up to secondary
+        // on hover because that's the moment the user is actually reading it.
+        Text(hovering ? CaptureTime.precise(item.createdAt)
+                      : CaptureTime.display(item.createdAt))
+            .font(.caption2)
+            .foregroundStyle(hovering ? HierarchicalShapeStyle.secondary : .tertiary)
+    }
+
+    private var editContainer: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            TextField("", text: draftBinding, axis: .vertical)
+                .textFieldStyle(.plain)
+                .font(.system(size: 15))
+                .lineLimit(1...10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .focused($draftFocused)
+
+            if showsUnsavedPrompt {
+                unsavedPrompt
+            }
+
+            HStack(spacing: 8) {
+                Spacer(minLength: 12)
+                Button { cancelDraft() } label: {
+                    CaptureDraftButtonLabel(title: "Cancel", shortcut: "esc")
+                }
+                    .keyboardShortcut(.cancelAction)
+                    .buttonStyle(CaptureDraftButtonStyle(kind: .secondary))
+                Button { commitDraft() } label: {
+                    CaptureDraftButtonLabel(title: "Save", shortcut: "⌘↩")
+                }
+                    .keyboardShortcut(.return, modifiers: .command)
+                    .buttonStyle(CaptureDraftButtonStyle(kind: .primary))
+                    .disabled(!canSaveDraft)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 11)
+        .background(Color.primary.opacity(0.055), in: RoundedRectangle(cornerRadius: 18))
+        .onAppear { draftFocused = true }
+    }
+
+    private var unsavedPrompt: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "exclamationmark.circle")
+                .foregroundStyle(Color.accentColor)
+            Text("Unsaved changes")
+                .font(.caption.weight(.medium))
+            Spacer(minLength: 12)
+            Button("Keep editing") { onKeepEditing?() }
+                .buttonStyle(CaptureDraftButtonStyle(kind: .secondary))
+            Button("Discard") { onDiscardAndContinue?() }
+                .buttonStyle(CaptureDraftButtonStyle(kind: .secondary))
+            Button("Save") { onSaveAndContinue?() }
+                .buttonStyle(CaptureDraftButtonStyle(kind: .primary))
+                .disabled(!canSaveDraft)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(Color.accentColor.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
+    }
+
+    private func commitDraft() {
+        if isEditing {
+            onCommitEdit?()
+            return
+        }
+        let next = fallbackText.trimmingCharacters(in: .whitespacesAndNewlines)
+        fallbackEditing = false
         guard !next.isEmpty, next != item.content else { return }
         onEdit?(next)
     }
 
-    private func cancelEdit() { editing = false }
+    private func beginEditingFromContent() {
+        guard onEdit != nil, !rowIsEditing, !item.content.isEmpty else { return }
+        if let onBeginEdit {
+            onBeginEdit()
+        } else {
+            fallbackText = item.content
+            fallbackEditing = true
+        }
+    }
+
+    private func cancelDraft() {
+        if isEditing {
+            onCancelEdit?()
+            return
+        }
+        fallbackEditing = false
+    }
+}
+
+private struct CaptureDraftButtonLabel: View {
+    var title: String
+    var shortcut: String
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Text(title)
+            Text(shortcut)
+                .font(.system(size: 11, weight: .medium))
+                .opacity(0.58)
+        }
+    }
+}
+
+struct CaptureDraftButtonStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
+
+    enum Kind {
+        case primary
+        case secondary
+    }
+
+    var kind: Kind
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 13, weight: .medium))
+            .foregroundStyle(foreground)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(background(isPressed: configuration.isPressed), in: Capsule())
+            .overlay {
+                if kind == .secondary {
+                    Capsule().stroke(Color.primary.opacity(0.09), lineWidth: 1)
+                }
+            }
+            .opacity(isEnabled ? (configuration.isPressed ? 0.72 : 1) : 0.42)
+    }
+
+    private var foreground: Color {
+        switch kind {
+        case .primary: .white
+        case .secondary: .primary
+        }
+    }
+
+    private func background(isPressed: Bool) -> Color {
+        switch kind {
+        case .primary:
+            Color.primary.opacity(isPressed ? 0.78 : 0.92)
+        case .secondary:
+            Color(nsColor: .controlBackgroundColor)
+        }
+    }
 }
 
 // MARK: - Undo delete toast
@@ -447,9 +770,10 @@ struct PillModePicker<ID: Hashable>: View {
 /// Borderless, lightly-filled input shared by the solid main window and the
 /// settings forms. Mirrors the quick panel's chrome-free input (no system bezel)
 /// while keeping a faint fill so the field still reads against an opaque
-/// workspace. `compact` is the denser form-row size; `secure` swaps in a
-/// SecureField for passwords.
+/// workspace. `icon` marks search/filter fields with a leading symbol; `compact`
+/// is the denser form-row size; `secure` swaps in a SecureField for passwords.
 struct WorkspaceField: View {
+    var icon: String?
     let prompt: String
     @Binding var text: String
     var secure: Bool = false
@@ -460,17 +784,24 @@ struct WorkspaceField: View {
     private var radius: CGFloat { compact ? 8 : 10 }
 
     var body: some View {
-        Group {
-            if secure {
-                SecureField(prompt, text: $text)
-            } else {
-                TextField(prompt, text: $text)
+        HStack(spacing: 6) {
+            if let icon {
+                Image(systemName: icon)
+                    .font(.system(size: compact ? 11 : 12))
+                    .foregroundStyle(.tertiary)
             }
+            Group {
+                if secure {
+                    SecureField(prompt, text: $text)
+                } else {
+                    TextField(prompt, text: $text)
+                }
+            }
+            .textFieldStyle(.plain)
+            .font(.system(size: 13))
         }
-        .textFieldStyle(.plain)
-        .font(.system(size: compact ? 13 : 15))
-        .padding(.horizontal, compact ? 10 : 12)
-        .padding(.vertical, compact ? 6 : 8)
+        .padding(.horizontal, 10)
+        .padding(.vertical, compact ? 6 : 7)
         .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: radius))
         .overlay(
             RoundedRectangle(cornerRadius: radius)

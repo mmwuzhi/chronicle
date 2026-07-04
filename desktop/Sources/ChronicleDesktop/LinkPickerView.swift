@@ -31,7 +31,7 @@ struct LinkPickerView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            WorkspaceField(prompt: "Search captures to link…", text: $query,
+            WorkspaceField(icon: "magnifyingglass", prompt: "Search captures to link…", text: $query,
                            compact: true, onSubmit: runSearch)
 
             if searching {

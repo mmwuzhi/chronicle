@@ -261,7 +261,6 @@ struct CaptureDetailView: View {
                     onOpen: { model.open(row) },
                     onUnlink: { model.removeLink(row.id) },
                 )
-                Divider().opacity(0.5)
             }
         }
     }
@@ -277,7 +276,6 @@ struct CaptureDetailView: View {
                     onCopy: { onCopy(row.content) },
                     onOpen: { model.open(row) },
                 )
-                Divider().opacity(0.5)
             }
         }
     }

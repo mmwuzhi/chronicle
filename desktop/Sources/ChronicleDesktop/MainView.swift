@@ -37,6 +37,8 @@ struct MainView: View {
     @State private var degraded = false
     @State private var nextCursor: String?
     @State private var loadingMore = false
+    @State private var editDraft: CaptureEditDraft?
+    @State private var pendingEditTarget: RowItem?
 
     @State private var askQuery = ""
     @State private var answer = ""
@@ -54,6 +56,7 @@ struct MainView: View {
     // pending, the id is hidden from `rows` without touching the backing arrays, so
     // an undo simply un-hides it in place.
     @State private var pendingDeleteId: String?
+    @State private var pendingDeletePlan: CaptureDeletePlan?
     @State private var pendingDeleteTask: Task<Void, Never>?
     private static let undoWindow: Duration = .seconds(5)
 
@@ -173,7 +176,9 @@ struct MainView: View {
             VStack(spacing: 12) {
                 contentHeader
 
-                if busy { ProgressView().frame(maxWidth: .infinity) }
+                if busy && !(navigation.mode == .browse && editDraft != nil) {
+                    ProgressView().frame(maxWidth: .infinity)
+                }
                 if !error.isEmpty {
                     Text(error).foregroundStyle(.red).font(.caption)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -202,10 +207,11 @@ struct MainView: View {
         HStack(spacing: 10) {
             switch navigation.mode {
             case .browse:
-                WorkspaceField(prompt: "Search (empty = show everything)",
+                WorkspaceField(icon: "magnifyingglass", prompt: "Search captures…",
                                text: $query, onSubmit: runBrowse, disabled: busy)
             case .ask:
-                WorkspaceField(prompt: "Ask a question, e.g. what did I work on this week",
+                WorkspaceField(icon: "sparkles",
+                               prompt: "Ask a question, e.g. what did I work on this week",
                                text: $askQuery, onSubmit: runAsk, disabled: busy)
             case .trash:
                 // Never rendered — trash mode mounts MainTrashPane, which brings
@@ -223,25 +229,46 @@ struct MainView: View {
         if navigation.mode == .browse {
             // Browse + search work offline against the local store; the server's
             // semantic results merge in on top when signed in.
-            if searched && rows.isEmpty && !busy {
-                Text("No matches.").foregroundStyle(.secondary).padding(.top, 8)
-            }
-            if rows.isEmpty && !searched && !busy {
+            if rows.isEmpty && editDraft == nil && !searched && !busy {
                 Text((signedIn && !offline) ? "No captures yet." : "No local captures yet — capture something or sign in to sync.")
                     .foregroundStyle(.secondary).padding(.top, 8)
             }
+            // The draft edits in place inside the ForEach. This fallback only
+            // renders when the edited row left the list mid-edit (e.g. a new
+            // search filtered it out), so the draft can't get lost off-list.
+            if let draft = editDraft, !rows.contains(where: { $0.id == draft.id }) {
+                editRow(draft)
+                    .padding(.bottom, 4)
+            }
+            if busy && editDraft != nil {
+                ProgressView()
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+            }
+            if searched && rows.isEmpty && !busy {
+                Text("No matches.")
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.top, editDraft == nil ? 8 : 0)
+            }
             ForEach(rows) { row in
-                CaptureRow(
-                    item: row,
-                    onCopy: { copy(row.content) },
-                    onDelete: { delete(row.id) },
-                    onEdit: { edit(row.id, $0) },
-                    onOpen: { clients.openDetail(row) },
-                    onPin: { clients.togglePin(row) },
-                    isPinned: clients.isPinned(row.id),
-                )
+                Group {
+                    if let draft = editDraft, draft.id == row.id {
+                        editRow(draft)
+                    } else {
+                        CaptureRow(
+                            item: row,
+                            onCopy: { copy(row.content) },
+                            onDelete: { delete(row) },
+                            onEdit: { edit(row.id, $0) },
+                            onOpen: { clients.openDetail(row) },
+                            onPin: { clients.togglePin(row) },
+                            isPinned: clients.isPinned(row.id),
+                            onBeginEdit: { beginEdit(row) },
+                        )
+                    }
+                }
                 .onAppear { maybeLoadMore(row) }
-                Divider().opacity(0.5)
             }
             if loadingMore { ProgressView().controlSize(.small).frame(maxWidth: .infinity) }
         } else if !signedIn {
@@ -422,7 +449,86 @@ struct MainView: View {
         }
     }
 
+    // The one active edit draft, rendered as an edit bubble in the row's own
+    // list position (or above the list via the fallback in `content`).
+    private func editRow(_ draft: CaptureEditDraft) -> some View {
+        CaptureRow(
+            item: draft.item,
+            onCopy: { copy(draft.text) },
+            onDelete: nil,
+            onEdit: { _ in },
+            onOpen: { clients.openDetail(draft.item) },
+            onPin: { clients.togglePin(draft.item) },
+            isPinned: clients.isPinned(draft.id),
+            isEditing: true,
+            draftText: draft.text,
+            showsUnsavedPrompt: pendingEditTarget != nil && draft.isDirty,
+            onBeginEdit: nil,
+            onDraftChange: updateEditDraft,
+            onCommitEdit: { commitActiveEdit() },
+            onCancelEdit: cancelActiveEdit,
+            onSaveAndContinue: saveAndContinuePendingEdit,
+            onDiscardAndContinue: discardAndContinuePendingEdit,
+            onKeepEditing: keepEditingCurrentDraft,
+        )
+    }
+
     // MARK: - Row actions
+
+    private func beginEdit(_ row: RowItem) {
+        guard !row.content.isEmpty else { return }
+        if let draft = editDraft {
+            guard draft.id != row.id else { return }
+            if draft.isDirty {
+                pendingEditTarget = row
+                return
+            }
+        }
+        editDraft = CaptureEditDraft(item: row)
+        pendingEditTarget = nil
+    }
+
+    private func updateEditDraft(_ text: String) {
+        editDraft?.text = text
+        if editDraft?.isDirty == false {
+            pendingEditTarget = nil
+        }
+    }
+
+    private func commitActiveEdit() {
+        guard let draft = editDraft else { return }
+        let next = draft.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        editDraft = nil
+        pendingEditTarget = nil
+        guard !next.isEmpty, next != draft.originalText else { return }
+        edit(draft.id, next)
+    }
+
+    private func cancelActiveEdit() {
+        editDraft = nil
+        pendingEditTarget = nil
+    }
+
+    private func saveAndContinuePendingEdit() {
+        guard let target = pendingEditTarget else { return }
+        let current = editDraft
+        editDraft = CaptureEditDraft(item: target)
+        pendingEditTarget = nil
+        guard let current else { return }
+        let next = current.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !next.isEmpty, next != current.originalText else { return }
+        edit(current.id, next)
+    }
+
+    private func discardAndContinuePendingEdit() {
+        guard let target = pendingEditTarget else { return }
+        editDraft = CaptureEditDraft(item: target)
+        pendingEditTarget = nil
+    }
+
+    private func keepEditingCurrentDraft() {
+        pendingEditTarget = nil
+    }
 
     private func edit(_ id: String, _ text: String) {
         guard let client = clients.recall() else { return }
@@ -436,19 +542,18 @@ struct MainView: View {
     }
 
     // Hide the row now; commit the soft delete after the undo window unless undone.
-    private func delete(_ id: String) {
-        // Deletion leads with the server soft-delete. Offline / signed out, skip it
-        // entirely (matches the pre-undo behaviour): dropping only the local row
-        // would hard-delete the sole copy of a local-only / unsynced capture.
-        guard clients.recall() != nil else { return }
+    private func delete(_ row: RowItem) {
+        let plan = captureDeletePlan(for: row, hasServerClient: clients.recall() != nil)
+        guard plan != .unavailable else { return }
         error = ""
         // A second delete supersedes the first — commit the earlier one immediately.
         flushPendingDelete()
-        pendingDeleteId = id
+        pendingDeleteId = row.id
+        pendingDeletePlan = plan
         pendingDeleteTask = Task { @MainActor in
             try? await Task.sleep(for: Self.undoWindow)
             guard !Task.isCancelled else { return }
-            await commitDelete(id)
+            await commitDelete(plan)
         }
     }
 
@@ -456,36 +561,47 @@ struct MainView: View {
         pendingDeleteTask?.cancel()
         pendingDeleteTask = nil
         pendingDeleteId = nil
+        pendingDeletePlan = nil
     }
 
     // Commit the pending deletion right now (a new delete arrived, or the view is
     // tearing down). The detached task keeps the row hidden via pendingDeleteId
     // until commitDelete clears it.
     private func flushPendingDelete() {
-        guard let id = pendingDeleteId else { return }
+        guard let plan = pendingDeletePlan else { return }
         pendingDeleteTask?.cancel()
         pendingDeleteTask = nil
-        Task { @MainActor in await commitDelete(id) }
+        Task { @MainActor in await commitDelete(plan) }
     }
 
     @MainActor
-    private func commitDelete(_ id: String) async {
-        guard let client = clients.recall() else {
-            // Session lapsed since the delete was queued: never hard-delete the
-            // local-only copy — restore the row instead.
-            if pendingDeleteId == id { pendingDeleteId = nil; pendingDeleteTask = nil }
-            return
-        }
-        do {
-            try await client.delete(id: id)
-        } catch let err {
-            // Couldn't delete — un-hide the row and surface the error.
-            if pendingDeleteId == id { pendingDeleteId = nil; pendingDeleteTask = nil }
-            error = describeCaptureError(err)
+    private func commitDelete(_ plan: CaptureDeletePlan) async {
+        let id: String
+        switch plan {
+        case .serverThenLocal(let captureId):
+            guard let client = clients.recall() else {
+                // Session lapsed since the delete was queued: keep the local cache
+                // because the server copy was not moved to trash.
+                clearPendingDelete(for: captureId)
+                return
+            }
+            do {
+                try await client.delete(id: captureId)
+            } catch let err {
+                // Couldn't delete — un-hide the row and surface the error.
+                clearPendingDelete(for: captureId)
+                error = describeCaptureError(err)
+                return
+            }
+            id = captureId
+        case .localOnly(let localId):
+            id = localId
+        case .unavailable:
             return
         }
         // The server soft-deleted it; also drop the cached local row, or it reappears
-        // in offline browse/search (captures saved here keep a local_captures row).
+        // in offline browse/search. Local-only rows have no server trash yet, so the
+        // deferred local delete is the whole operation.
         clients.localDelete(id)
         CaptureEvents.postChanged(from: captureEventToken)
         withAnimation(.easeInOut(duration: 0.2)) {
@@ -494,7 +610,15 @@ struct MainView: View {
             localRows.removeAll { $0.id == id }
             rebuildBrowseRows()
         }
-        if pendingDeleteId == id { pendingDeleteId = nil; pendingDeleteTask = nil }
+        clearPendingDelete(for: id)
+    }
+
+    private func clearPendingDelete(for id: String) {
+        if pendingDeleteId == id {
+            pendingDeleteId = nil
+            pendingDeletePlan = nil
+            pendingDeleteTask = nil
+        }
     }
 
     private func copy(_ s: String) {
