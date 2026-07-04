@@ -23,6 +23,7 @@ final class ChronicleDesktopE2ETests: XCTestCase {
         defer { server.stop() }
 
         let dbURL = temporaryDatabaseURL()
+        let notificationCountURL = temporaryNotificationCountURL()
         let remindAt = "2026-06-18T09:00:00Z"
         let text = "synced capture \(UUID().uuidString)"
 
@@ -33,6 +34,7 @@ final class ChronicleDesktopE2ETests: XCTestCase {
             token: "test-token",
             text: text,
             remindAt: remindAt,
+            notificationCountURL: notificationCountURL,
         )
 
         let request = try XCTUnwrap(server.requests.first(where: { $0.method == "POST" && $0.path == "/captures" }))
@@ -45,6 +47,7 @@ final class ChronicleDesktopE2ETests: XCTestCase {
         let synced = try XCTUnwrap(LocalCaptureStore(fileURL: dbURL).find(serverId: "server-capture-1"))
         XCTAssertEqual(synced.payload.rawText, text)
         XCTAssertNotNil(synced.syncedAt)
+        XCTAssertEqual(try notificationCount(at: notificationCountURL), 2)
     }
 
     func testReminderSyncStoresPendingServerReminder() throws {
@@ -95,6 +98,7 @@ final class ChronicleDesktopE2ETests: XCTestCase {
         token: String? = nil,
         text: String = "e2e capture",
         remindAt: String? = nil,
+        notificationCountURL: URL? = nil,
         file: StaticString = #filePath,
         line: UInt = #line
     ) throws {
@@ -115,6 +119,9 @@ final class ChronicleDesktopE2ETests: XCTestCase {
         }
         if let remindAt {
             environment["CHRONICLE_DESKTOP_E2E_REMIND_AT"] = remindAt
+        }
+        if let notificationCountURL {
+            environment["CHRONICLE_DESKTOP_E2E_CAPTURE_CHANGE_COUNT_PATH"] = notificationCountURL.path
         }
         process.environment = environment
 
@@ -314,6 +321,17 @@ private func temporaryDatabaseURL() -> URL {
     FileManager.default.temporaryDirectory
         .appending(path: UUID().uuidString)
         .appending(path: "chronicle-e2e.sqlite3")
+}
+
+private func temporaryNotificationCountURL() -> URL {
+    FileManager.default.temporaryDirectory
+        .appending(path: UUID().uuidString)
+        .appending(path: "capture-change-count.txt")
+}
+
+private func notificationCount(at url: URL) throws -> Int {
+    let raw = try String(contentsOf: url, encoding: .utf8)
+    return try XCTUnwrap(Int(raw.trimmingCharacters(in: .whitespacesAndNewlines)))
 }
 
 private func reminderJSON(id: String, text: String, remindAt: String) -> [String: Any] {

@@ -20,7 +20,9 @@ struct E2ERunner {
     func run() {
         Task {
             do {
+                let notificationCount = CaptureChangeNotificationCounter()
                 try await runMode()
+                try notificationCount.writeIfRequested(environment: environment)
                 NSApp.terminate(nil)
             } catch {
                 let message = "ChronicleDesktop E2E failed: \(error)\n"
@@ -94,4 +96,34 @@ private enum E2EError: Error, Equatable {
     case missingEnv(String)
     case syncFailed
     case unsupportedMode(String)
+}
+
+@MainActor
+private final class CaptureChangeNotificationCounter {
+    private var count = 0
+    private var observer: NSObjectProtocol?
+
+    init(center: NotificationCenter = .default) {
+        observer = center.addObserver(
+            forName: .chronicleCapturesChanged,
+            object: nil,
+            queue: .main,
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.count += 1
+            }
+        }
+    }
+
+    func writeIfRequested(environment: [String: String]) throws {
+        guard let raw = environment["CHRONICLE_DESKTOP_E2E_CAPTURE_CHANGE_COUNT_PATH"],
+              !raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else { return }
+        let url = URL(fileURLWithPath: raw)
+        try FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(),
+            withIntermediateDirectories: true,
+        )
+        try String(count).write(to: url, atomically: true, encoding: .utf8)
+    }
 }

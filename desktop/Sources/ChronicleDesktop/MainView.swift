@@ -64,10 +64,21 @@ struct MainView: View {
     // pinning/unpinning anywhere keeps every row's pin indicator in sync.
     @State private var pinTick = 0
 
+    // Marks this view's own capture-change posts so onReceive can skip them:
+    // every local mutation already updates state optimistically (with removal
+    // animations a full reload would stomp); the notification is for the other
+    // open surfaces.
+    @State private var captureEventToken = NSObject()
+
     private var rows: [RowItem] {
-        let base = searched ? hits : ((signedIn && !offline) ? fragments.map(RowItem.init) : localRows)
+        let base = searched ? hits : browseRows
         guard let pendingDeleteId else { return base }
         return base.filter { $0.id != pendingDeleteId }
+    }
+
+    private var browseRows: [RowItem] {
+        guard signedIn && !offline else { return localRows }
+        return mergeBrowseRows(local: localRows, remote: fragments.map(RowItem.init))
     }
 
     var body: some View {
@@ -125,6 +136,10 @@ struct MainView: View {
         .onReceive(NotificationCenter.default.publisher(for: .chronicleMainShown)) { _ in
             if navigation.mode == .browse && !searched { Task { await loadBrowse(reset: true) } }
             if navigation.mode == .trash { Task { await loadTrash() } }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .chronicleCapturesChanged)) { note in
+            guard (note.object as? NSObject) !== captureEventToken else { return }
+            refreshForCaptureChange()
         }
         .onReceive(NotificationCenter.default.publisher(for: .chroniclePinsChanged)) { _ in
             pinTick &+= 1
@@ -308,6 +323,7 @@ struct MainView: View {
         Task { @MainActor in
             do {
                 try await client.restore(id: id)
+                CaptureEvents.postChanged(from: captureEventToken)
                 withAnimation(.easeInOut(duration: 0.2)) { trash.removeAll { $0.id == id } }
             } catch let err { error = describe(err) }
         }
@@ -321,6 +337,7 @@ struct MainView: View {
             do {
                 try await client.permanentDelete(id: id)
                 clients.localDelete(id)
+                CaptureEvents.postChanged(from: captureEventToken)
                 withAnimation(.easeInOut(duration: 0.2)) { trash.removeAll { $0.id == id } }
             } catch let err { error = describe(err) }
         }
@@ -333,6 +350,7 @@ struct MainView: View {
             do {
                 _ = try await client.emptyTrash()
                 for id in ids { clients.localDelete(id) }
+                CaptureEvents.postChanged(from: captureEventToken)
                 withAnimation(.easeInOut(duration: 0.2)) { trash = [] }
             } catch let err { error = describe(err) }
         }
@@ -394,6 +412,21 @@ struct MainView: View {
         }
     }
 
+    private func refreshForCaptureChange() {
+        switch navigation.mode {
+        case .browse:
+            if searched {
+                runBrowse()
+            } else {
+                Task { await loadBrowse(reset: true) }
+            }
+        case .trash:
+            Task { await loadTrash() }
+        case .ask, .settings:
+            break
+        }
+    }
+
     // MARK: - Browse
 
     private func runBrowse() {
@@ -436,12 +469,29 @@ struct MainView: View {
         }
     }
 
+    private func mergeBrowseRows(local: [RowItem], remote: [RowItem]) -> [RowItem] {
+        var seen = Set<String>()
+        var rows: [RowItem] = []
+        for item in remote + local where !seen.contains(item.id) {
+            rows.append(item)
+            seen.insert(item.id)
+        }
+        return rows.sorted { lhs, rhs in
+            (CaptureTime.parse(lhs.createdAt) ?? .distantPast)
+                > (CaptureTime.parse(rhs.createdAt) ?? .distantPast)
+        }
+    }
+
     private func loadBrowse(reset: Bool) async {
-        if reset { fragments = []; nextCursor = nil; searched = false }
+        if reset {
+            fragments = []
+            localRows = clients.localRecent(200)
+            nextCursor = nil
+            searched = false
+        }
         guard let client = clients.recall() else {
             // Offline / not signed in: browse the local store.
             signedIn = false
-            localRows = clients.localRecent(200)
             return
         }
         signedIn = true
@@ -496,6 +546,7 @@ struct MainView: View {
         Task { @MainActor in
             do {
                 _ = try await client.update(id: id, rawText: text)
+                CaptureEvents.postChanged(from: captureEventToken)
                 if searched { runBrowse() } else { await loadBrowse(reset: true) }
             } catch let err { error = describe(err) }
         }
@@ -553,6 +604,7 @@ struct MainView: View {
         // The server soft-deleted it; also drop the cached local row, or it reappears
         // in offline browse/search (captures saved here keep a local_captures row).
         clients.localDelete(id)
+        CaptureEvents.postChanged(from: captureEventToken)
         withAnimation(.easeInOut(duration: 0.2)) {
             fragments.removeAll { $0.id == id }
             hits.removeAll { $0.id == id }

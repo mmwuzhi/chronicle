@@ -403,6 +403,7 @@ struct PanelContentView: View {
             do {
                 try await client.delete(id: id)
                 clients.localDelete(id)
+                CaptureEvents.postChanged()
                 withAnimation(.easeInOut(duration: 0.2)) {
                     hits.removeAll { $0.id == id }
                     recentRows.removeAll { $0.id == id }
@@ -434,9 +435,35 @@ extension Notification.Name {
     static let chroniclePanelShown = Notification.Name("chroniclePanelShown")
     /// Posted each time the main window is shown (MainView refreshes its browse list).
     static let chronicleMainShown = Notification.Name("chronicleMainShown")
+    /// Posted after captures are created, synced, edited, deleted, or restored so
+    /// already-open browse/search surfaces can invalidate their lists.
+    static let chronicleCapturesChanged = Notification.Name("chronicleCapturesChanged")
     /// Posted when the set of pinned desktop stickies changes, so capture rows can
     /// re-read their pinned state and update the pin indicator.
     static let chroniclePinsChanged = Notification.Name("chroniclePinsChanged")
+}
+
+/// Posts `.chronicleCapturesChanged`, always delivered on the main thread —
+/// SwiftUI `onReceive` closures mutate view state.
+enum CaptureEvents {
+    /// Pass `sender` when the poster also observes the notification, so it can
+    /// skip reloading over its own optimistic updates. Main-actor only: the
+    /// non-Sendable sender must not hop threads.
+    @MainActor
+    static func postChanged(from sender: AnyObject) {
+        NotificationCenter.default.post(name: .chronicleCapturesChanged, object: sender)
+    }
+
+    /// Post from any thread (capture sync runs off-main).
+    static func postChanged() {
+        if Thread.isMainThread {
+            NotificationCenter.default.post(name: .chronicleCapturesChanged, object: nil)
+        } else {
+            DispatchQueue.main.async {
+                NotificationCenter.default.post(name: .chronicleCapturesChanged, object: nil)
+            }
+        }
+    }
 }
 
 extension View {

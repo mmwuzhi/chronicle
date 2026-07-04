@@ -284,7 +284,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func persistCapture(_ payload: CapturePayload) throws -> LocalCaptureRecord {
-        try localStore.create(payload)
+        let record = try localStore.create(payload)
+        CaptureEvents.postChanged()
+        return record
     }
 
     func syncPendingCaptures(using client: CaptureAPIClient) async -> SyncSummary {
@@ -310,6 +312,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         do {
             let serverId = try await client.send(record.payload)
             try localStore.markSynced(localId: record.id, serverId: serverId)
+            CaptureEvents.postChanged()
             if notifySuccess {
                 await MainActor.run {
                     self.showNotification(title: "Capture synced", body: record.payload.rawText)
