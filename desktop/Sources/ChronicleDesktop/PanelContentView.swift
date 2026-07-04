@@ -323,7 +323,13 @@ struct PanelContentView: View {
             do {
                 let page = try await client.recent(limit: Self.recentPreviewLimit)
                 if Task.isCancelled { return }
-                recentRows = mergeRecentPreview(local: local, remote: page.items.map(RowItem.init))
+                recentRows = Array(
+                    RowMerge.newestFirst(
+                        primary: page.items.map(RowItem.init),
+                        secondary: local,
+                        id: \.id,
+                        date: \.createdDate,
+                    ).prefix(Self.recentPreviewLimit))
                 recentLoaded = true
                 error = ""
             } catch let err {
@@ -332,19 +338,6 @@ struct PanelContentView: View {
             }
             busy = false
         }
-    }
-
-    private func mergeRecentPreview(local: [RowItem], remote: [RowItem]) -> [RowItem] {
-        var seen = Set<String>()
-        var rows: [RowItem] = []
-        for item in remote + local where !seen.contains(item.id) {
-            rows.append(item)
-            seen.insert(item.id)
-        }
-        return Array(rows.sorted { lhs, rhs in
-            (CaptureTime.parse(lhs.createdAt) ?? .distantPast)
-                > (CaptureTime.parse(rhs.createdAt) ?? .distantPast)
-        }.prefix(Self.recentPreviewLimit))
     }
 
     private func runAsk(_ question: String) {

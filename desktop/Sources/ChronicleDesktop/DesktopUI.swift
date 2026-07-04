@@ -64,6 +64,9 @@ struct RowItem: Identifiable, Equatable {
     let id: String
     let content: String
     let createdAt: String
+    // createdAt parsed once at construction — merge/sort comparators run per
+    // pair, so parsing there re-parses the same strings hundreds of times.
+    let createdDate: Date?
     let modality: String
     // True when this row is backed by a server capture (its id is a real server id).
     // Server-only actions can gate on this; desktop pins are allowed for local rows
@@ -78,6 +81,7 @@ struct RowItem: Identifiable, Equatable {
         id = hit.id
         content = hit.content
         createdAt = hit.createdAt
+        createdDate = CaptureTime.parse(hit.createdAt)
         modality = hit.modality
         synced = true
         mediaUrl = nil
@@ -87,6 +91,7 @@ struct RowItem: Identifiable, Equatable {
         id = capture.id
         content = capture.content
         createdAt = capture.createdAt
+        createdDate = CaptureTime.parse(capture.createdAt)
         modality = capture.mediaType
         synced = true
         mediaUrl = capture.mediaUrl
@@ -96,6 +101,7 @@ struct RowItem: Identifiable, Equatable {
         id = related.id
         content = related.content
         createdAt = related.createdAt
+        createdDate = CaptureTime.parse(related.createdAt)
         modality = related.modality
         synced = true
         mediaUrl = nil
@@ -107,6 +113,7 @@ struct RowItem: Identifiable, Equatable {
         self.id = id
         self.content = content
         self.createdAt = createdAt
+        self.createdDate = CaptureTime.parse(createdAt)
         self.modality = modality
         self.synced = true
         self.mediaUrl = mediaUrl
@@ -119,6 +126,7 @@ struct RowItem: Identifiable, Equatable {
         id = record.serverId ?? record.id
         content = record.payload.rawText
         createdAt = RowItem.iso.string(from: record.createdAt)
+        createdDate = record.createdAt
         modality = record.payload.mediaType
         synced = record.serverId != nil
         mediaUrl = nil

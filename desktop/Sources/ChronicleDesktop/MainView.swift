@@ -76,9 +76,20 @@ struct MainView: View {
         return base.filter { $0.id != pendingDeleteId }
     }
 
-    private var browseRows: [RowItem] {
-        guard signedIn && !offline else { return localRows }
-        return mergeBrowseRows(local: localRows, remote: fragments.map(RowItem.init))
+    // Cached merge of local rows and server fragments — SwiftUI re-evaluates
+    // `rows` on every render, and merging + sorting 200+ rows per frame is
+    // wasted work. Every mutation of fragments/localRows/signedIn/offline must
+    // call rebuildBrowseRows() (today: loadBrowse and commitDelete).
+    @State private var browseRows: [RowItem] = []
+
+    private func rebuildBrowseRows() {
+        guard signedIn && !offline else { browseRows = localRows; return }
+        browseRows = RowMerge.newestFirst(
+            primary: fragments.map(RowItem.init),
+            secondary: localRows,
+            id: \.id,
+            date: \.createdDate,
+        )
     }
 
     var body: some View {
@@ -469,19 +480,6 @@ struct MainView: View {
         }
     }
 
-    private func mergeBrowseRows(local: [RowItem], remote: [RowItem]) -> [RowItem] {
-        var seen = Set<String>()
-        var rows: [RowItem] = []
-        for item in remote + local where !seen.contains(item.id) {
-            rows.append(item)
-            seen.insert(item.id)
-        }
-        return rows.sorted { lhs, rhs in
-            (CaptureTime.parse(lhs.createdAt) ?? .distantPast)
-                > (CaptureTime.parse(rhs.createdAt) ?? .distantPast)
-        }
-    }
-
     private func loadBrowse(reset: Bool) async {
         if reset {
             fragments = []
@@ -492,6 +490,7 @@ struct MainView: View {
         guard let client = clients.recall() else {
             // Offline / not signed in: browse the local store.
             signedIn = false
+            rebuildBrowseRows()
             return
         }
         signedIn = true
@@ -509,6 +508,7 @@ struct MainView: View {
             localRows = clients.localRecent(200)
             error = describe(err)
         }
+        rebuildBrowseRows()
     }
 
     private func maybeLoadMore(_ row: RowItem) {
@@ -609,6 +609,7 @@ struct MainView: View {
             fragments.removeAll { $0.id == id }
             hits.removeAll { $0.id == id }
             localRows.removeAll { $0.id == id }
+            rebuildBrowseRows()
         }
         if pendingDeleteId == id { pendingDeleteId = nil; pendingDeleteTask = nil }
     }
