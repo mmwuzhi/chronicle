@@ -135,7 +135,7 @@ Do not introduce deferred features unless explicitly requested.
 - `web/src/api/` — orval-generated TanStack Query hooks, never edit by hand
 - `web/src/routes/` — TanStack Router file-based routes
 - `web/src/components/` — shared components; `ui/` for Radix primitives, `settings/` for settings sections
-- `web/src/constants/` — shared constants (e.g. `status.ts`)
+- `web/src/constants/` — shared constants (none yet; create on the second use of a constant)
 - `web/src/utils/` — shared pure utilities (e.g. `format.ts`)
 - `web/src/lib/` — non-React helpers (axios client, authenticated fetch)
 - `TODO.md` — deferred work; refactor oversized route files before adding reminder/digest features

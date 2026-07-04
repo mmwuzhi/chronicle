@@ -1,12 +1,11 @@
 # TODO
 
-Deferred work to revisit after the current UI route files are refactored.
+Deferred work. Do the Refactor First items before adding features to the files they touch.
 
 ## Refactor First
 
-- Split oversized route files back into orchestration-only routes.
-- Prioritize `web/src/routes/tasks.$taskId.tsx`, then `captures.tsx`, `tasks.index.tsx`, `projects.index.tsx`, and `reports.tsx`.
-- Keep route files focused on data hooks, layout composition, and event wiring. Move large sub-components to `web/src/components/`.
+- Desktop: split `MainView.swift` (900+ lines) — extract the trash and browse/search sections into their own files.
+- Desktop: cache merged browse rows instead of re-merging and re-sorting on every render, and parse each row's `createdAt` once (the same merge+sort closure is duplicated in `MainView.swift` and `PanelContentView.swift` — extract a shared helper into `ChronicleDesktopCore`).
 
 ## Revisit After Refactor
 
