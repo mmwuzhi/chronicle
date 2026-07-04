@@ -9,6 +9,7 @@ rag_dir := "ragsvc"
 rag_port := env_var_or_default("RAG_PORT", "5400")
 desktop_build_config := env_var_or_default("DESKTOP_BUILD_CONFIG", "debug")
 docker_start_timeout := env_var_or_default("DOCKER_START_TIMEOUT", "60")
+compose_watch := "docker compose watch 2> >(grep -v -E 'context canceled|operation canceled' >&2)"
 
 _default:
     @just --list
@@ -22,29 +23,11 @@ setup: docker-check
 
 # start full stack (docker compose watch)
 dev: docker-check
-    @interrupted=0; \
-    trap 'interrupted=1' INT TERM; \
-    set +e; \
-    docker compose watch 2> >(grep -v -E 'context canceled|operation canceled' >&2); \
-    status=$?; \
-    set -e; \
-    if [ "$interrupted" -eq 1 ] || [ "$status" -eq 130 ] || [ "$status" -eq 143 ]; then \
-      exit 0; \
-    fi; \
-    exit "$status"
+    @just _quiet "{{ compose_watch }}"
 
 # build/reload the macOS app, then start docker backend+web+data with watch
 dev-all: docker-check desktop-reload
-    @interrupted=0; \
-    trap 'interrupted=1' INT TERM; \
-    set +e; \
-    docker compose watch 2> >(grep -v -E 'context canceled|operation canceled' >&2); \
-    status=$?; \
-    set -e; \
-    if [ "$interrupted" -eq 1 ] || [ "$status" -eq 130 ] || [ "$status" -eq 143 ]; then \
-      exit 0; \
-    fi; \
-    exit "$status"
+    @just _quiet "{{ compose_watch }}"
 
 # start only postgres + redis
 dev-data: docker-check
@@ -57,34 +40,16 @@ down: docker-check
 # run API server locally (starts postgres + redis if needed)
 api: dev-data
     @lsof -ti :${PORT:-8080} | xargs kill -9 2>/dev/null || true
-    @interrupted=0; \
-    trap 'interrupted=1' INT TERM; \
-    set +e; \
-    cd {{ api_dir }} && go run cmd/server/main.go; \
-    status=$?; \
-    set -e; \
-    if [ "$interrupted" -eq 1 ] || [ "$status" -eq 130 ] || [ "$status" -eq 143 ]; then \
-      exit 0; \
-    fi; \
-    exit "$status"
+    @just _quiet "cd {{ api_dir }} && go run cmd/server/main.go"
 
 # run Vite dev server
 web:
-    @interrupted=0; \
-    trap 'interrupted=1' INT TERM; \
-    set +e; \
-    cd {{ web_dir }} && pnpm dev; \
-    status=$?; \
-    set -e; \
-    if [ "$interrupted" -eq 1 ] || [ "$status" -eq 130 ] || [ "$status" -eq 143 ]; then \
-      exit 0; \
-    fi; \
-    exit "$status"
+    @just _quiet "cd {{ web_dir }} && pnpm dev"
 
 # run the macOS menu bar quick-capture app
 desktop-capture:
     @echo "Starting ChronicleDesktop in the menu bar. Press Ctrl+C here to stop the dev run."
-    @trap 'exit 0' INT TERM; cd {{ desktop_dir }} && swift run ChronicleDesktop
+    @just _quiet "cd {{ desktop_dir }} && swift run ChronicleDesktop"
 
 # rebuild and relaunch the macOS menu bar app only when it changed
 desktop-reload:
@@ -129,16 +94,7 @@ rag-setup:
 # run the Python RAG sidecar (embeddings + retrieval + analysis)
 rag: dev-data
     @test -d {{ rag_dir }}/.venv || just rag-setup
-    @interrupted=0; \
-    trap 'interrupted=1' INT TERM; \
-    set +e; \
-    cd {{ rag_dir }} && .venv/bin/python app.py; \
-    status=$?; \
-    set -e; \
-    if [ "$interrupted" -eq 1 ] || [ "$status" -eq 130 ] || [ "$status" -eq 143 ]; then \
-      exit 0; \
-    fi; \
-    exit "$status"
+    @just _quiet "cd {{ rag_dir }} && .venv/bin/python app.py"
 
 # index + extract all existing captures (RAG sidecar must be running)
 rag-backfill:
@@ -148,6 +104,19 @@ rag-backfill:
 rag-test:
     @test -d {{ rag_dir }}/.venv || just rag-setup
     cd {{ rag_dir }} && .venv/bin/python -m pytest -q
+
+# run a long-lived dev command, exiting 0 when it is stopped with Ctrl-C
+_quiet cmd:
+    @interrupted=0; \
+    trap 'interrupted=1' INT TERM; \
+    set +e; \
+    {{ cmd }}; \
+    status=$?; \
+    set -e; \
+    if [ "$interrupted" -eq 1 ] || [ "$status" -eq 130 ] || [ "$status" -eq 143 ]; then \
+      exit 0; \
+    fi; \
+    exit "$status"
 
 docker-check:
     #!/usr/bin/env bash
