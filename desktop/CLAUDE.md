@@ -14,14 +14,16 @@ target split, the invariants, and the gotchas.
   (`LocalEmbedder.swift`, `LocalSemanticSearch.swift` — local Ollama
   `bge-m3`), server recall client (`Recall.swift` — `/find` + `/ask`),
   reminders (`Reminder.swift`), webhooks (`Webhook.swift`), hotkey model
-  (`HotKey.swift`, `DoubleTapDetector.swift`), pure layout/focus math
-  (`PanelLayout.swift`, `QuickPanelFocusState.swift`), paths
-  (`Paths.swift`).
+  (`HotKey.swift`, `DoubleTapDetector.swift`), row merge/sort
+  (`RowMerge.swift`), pure layout/focus math (`PanelLayout.swift`,
+  `QuickPanelFocusState.swift`), paths (`Paths.swift`).
 - `Sources/ChronicleDesktop/` — AppKit/SwiftUI shell: menu bar
   (`AppDelegate`), quick panel (`QuickCapturePanelController`,
-  `PanelContentView`), main window (`MainView` — browse/search/trash),
-  detail view, pinned stickies (`PinnedSticky*`), settings, hotkey wiring,
-  reminder notifications, E2E hooks (`E2ERunner`).
+  `PanelContentView`), main window (`MainView` — browse/search/ask shell,
+  with chrome in `MainWindowChrome.swift` and the trash pane in
+  `MainTrashPane.swift`), detail view, pinned stickies (`PinnedSticky*`),
+  settings, hotkey wiring, reminder notifications, E2E hooks
+  (`E2ERunner`).
 
 **Rule:** if a function doesn't touch AppKit/SwiftUI, it belongs in Core,
 where it can be unit-tested. The app target is UI and wiring only.
@@ -59,8 +61,7 @@ only when the cache schema next changes for another reason (`TODO.md`).
   `ChronicleDesktopE2ETests` against the binary (via
   `CHRONICLE_DESKTOP_E2E_APP_PATH`, driven through `E2ERunner`). UI changes
   to the panel or main window usually need a matching e2e update.
-- `MainView.swift` is oversized and slated to be split (trash and
-  browse/search sections out); its browse-row merge is recomputed per render
-  — both tracked in `TODO.md`. Prefer landing that split before adding new
-  sections to it.
+- `MainView` caches its merged browse list in `browseRows`; any new mutation
+  of `fragments`/`localRows`/`signedIn`/`offline` must call
+  `rebuildBrowseRows()`, or the list goes stale.
 - MFA login is not implemented in the desktop app.

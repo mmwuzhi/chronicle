@@ -139,6 +139,18 @@ struct RowItem: Identifiable, Equatable {
     }()
 }
 
+// MARK: - Errors
+
+/// One user-facing line for a capture-API failure, shared by every surface
+/// (main window, quick panel, trash) so wording stays consistent.
+func describeCaptureError(_ error: Error) -> String {
+    switch error {
+    case CaptureAPIError.httpStatus(401): "Session expired — sign in again from Settings."
+    case CaptureAPIError.httpStatus(503): "Ask is unavailable — the recall service is offline."
+    default: "Error: \(error.localizedDescription)"
+    }
+}
+
 // MARK: - Recall mode
 
 enum RecallMode: String, CaseIterable, Identifiable {

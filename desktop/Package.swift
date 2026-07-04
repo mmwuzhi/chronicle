@@ -29,7 +29,7 @@ let package = Package(
         ),
         .testTarget(
             name: "ChronicleDesktopE2ETests",
-            dependencies: ["ChronicleDesktopCore"],
+            dependencies: ["ChronicleDesktop", "ChronicleDesktopCore"],
             linkerSettings: [.linkedFramework("Network")],
         ),
     ],

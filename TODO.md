@@ -1,11 +1,6 @@
 # TODO
 
-Deferred work. Do the Refactor First items before adding features to the files they touch.
-
-## Refactor First
-
-- Desktop: split `MainView.swift` (900+ lines) — extract the trash and browse/search sections into their own files.
-- Desktop: cache merged browse rows instead of re-merging and re-sorting on every render, and parse each row's `createdAt` once (the same merge+sort closure is duplicated in `MainView.swift` and `PanelContentView.swift` — extract a shared helper into `ChronicleDesktopCore`).
+Deferred work.
 
 ## Revisit After Refactor
 

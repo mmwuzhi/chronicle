@@ -333,7 +333,7 @@ struct PanelContentView: View {
                 recentLoaded = true
                 error = ""
             } catch let err {
-                if local.isEmpty { error = describe(err) }
+                if local.isEmpty { error = describeCaptureError(err) }
                 recentLoaded = true
             }
             busy = false
@@ -350,7 +350,7 @@ struct PanelContentView: View {
                 if Task.isCancelled { return }
                 answer = res.answer.isEmpty ? "No answer — not enough captures yet." : res.answer
                 sources = res.sources
-            } catch let err { if !Task.isCancelled { error = describe(err) } }
+            } catch let err { if !Task.isCancelled { error = describeCaptureError(err) } }
             busy = false
         }
     }
@@ -402,18 +402,11 @@ struct PanelContentView: View {
                     recentRows.removeAll { $0.id == id }
                 }
             } catch let err {
-                error = describe(err)
+                error = describeCaptureError(err)
             }
         }
     }
 
-    private func describe(_ error: Error) -> String {
-        switch error {
-        case CaptureAPIError.httpStatus(401): "Session expired — sign in again from Settings."
-        case CaptureAPIError.httpStatus(503): "Ask is unavailable — the recall service is offline."
-        default: "Error: \(error.localizedDescription)"
-        }
-    }
 }
 
 struct PanelHeightKey: PreferenceKey {
