@@ -41,3 +41,10 @@ Deferred work. Do the Refactor First items before adding features to the files t
 - Memory decay: importance score, last-viewed/search/reference counters, low-priority archive candidates, and weekly cleanup suggestions.
 - Memory consolidation: periodic AI summaries that compress repeated raw captures into durable long-term knowledge.
 - Agent workflows: defer until capture volume, search quality, and memory-management primitives are reliable.
+
+## Todo Facet Follow-ups (2026-07-03)
+
+- Desktop todo UI: show the checkbox/state on browse rows and the quick panel (backend + web shipped; desktop is compat-only for now — `Capture` no longer carries classification, `todoAt`/`doneAt` not yet decoded).
+- `#tag` derived index: if inline hashtags see real use, parse them at index time into a browsable tag surface (organize-later; no managed tag objects).
+- Remove the deprecated `classifiedAs` compat field from the create endpoint after the desktop offline queues have cycled (one release is enough for a single-user install).
+- Local desktop SQLite cache still carries the unused `classified_as` column (constant 'unclassified'); drop it whenever the cache schema next changes for another reason.
