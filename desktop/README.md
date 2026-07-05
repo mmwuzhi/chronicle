@@ -1,6 +1,10 @@
 # Chronicle Desktop
 
-Chronicle Desktop is the macOS input layer for quick text capture. It runs as a native menu bar app, opens a small capture panel through a global shortcut, and saves text captures to the Chronicle API with `source=desktop_quick_capture`.
+Chronicle Desktop is the macOS layer of Chronicle: a native menu bar app with a
+Raycast-style quick panel (capture / search / ask), a main window for browsing,
+offline-first local search, desktop sticky notes, and reminder notifications.
+Text captures save to the Chronicle API with `source=desktop_quick_capture` and
+to a local SQLite cache that works without an account.
 
 ## Run Locally
 
@@ -8,28 +12,57 @@ Chronicle Desktop is the macOS input layer for quick text capture. It runs as a 
 swift run ChronicleDesktop
 ```
 
-The app starts in the menu bar. Use Settings to sign in with:
+The app starts in the menu bar. Use Settings to sign in with a Chronicle email
+and password (MFA login is not implemented yet). It targets
+`http://localhost:8080` by default; set `CHRONICLE_API_URL` for another
+endpoint.
 
-- Chronicle email and password
-- Quick Capture shortcut, default `Double Control`
-
-The desktop app stores the returned access token locally. It uses `http://localhost:8080` by default for local development. Set `CHRONICLE_API_URL` when running against another API endpoint. MFA login is not implemented yet.
-
-For a bundled dev run that only restarts the menu bar app when the build output changes, use `make desktop-reload` or `just desktop-reload` from the repo root.
+For a bundled dev run that only restarts the menu bar app when the build output
+changed, use `make desktop-reload` / `just desktop-reload` from the repo root.
+Reminder notifications require the packaged `.app` (`make desktop-app` or
+`desktop-reload`) — a bare `swift run` skips them.
 
 ## Controls
 
-- Menu bar → Quick Capture
-- Double Control → Quick Capture
-- Return → save the current text
-- Esc or focus another window → close Quick Capture
-- Menu bar → Retry Queue
+- Double Control (configurable in Settings) or menu bar → Quick Capture
+- Quick panel modes: Capture ⌘1 · Search ⌘2 · Ask ⌘3; ⌘Return submits
+- Esc or clicking elsewhere closes the panel
+- Menu bar → Open Chronicle: the main window (browse, search, ask, trash,
+  settings)
 
-If the API is unavailable or the token is missing, captures are stored locally in SQLite and retried later:
+## Capture rows
 
-```text
-~/Library/Application Support/Chronicle/chronicle-local.sqlite3
-```
+Rows in the quick panel and main window share one set of hover actions, layered
+by universality: **copy** stays direct; low-frequency state actions (**pin to
+desktop**, **remove link**) fold into a **⋯** menu; **open** stays direct — the
+list's only route into a detail window, since double-clicking a row edits it in
+place; **delete** sits last in red. A pinned row shows a quiet accent bar on its
+left edge instead of a lit icon.
+
+## Detail windows
+
+Every capture can open in its own independent window; several stay open side by
+side, and opening a capture that is already on screen just focuses its window.
+Entry points: a row's open button, double-clicking a desktop sticky, and
+tapping a reminder notification. The detail window shows the capture together
+with its linked and related captures.
+
+## Desktop stickies
+
+Pin a capture from a row's ⋯ menu or its detail window: it becomes a floating
+always-on-top glass note that stays on the Space where it was created and
+restores across launches. Drag the top bar to move; drag the bottom edge to
+resize (height only — width is fixed). The ✕ (or Esc) unpins, copy sits in the
+header, and a double-click anywhere opens the detail window. Body text renders
+inline markdown and supports click-drag selection.
+
+## Reminders
+
+The capture panel's bell attaches a reminder time; "Keep visible" keeps the
+capture in browse instead of hiding it until due. Reminders fire as macOS
+notifications even when the app is not running (packaged app only), and tapping
+one opens that capture's detail window. Sync retry for offline captures lives
+in Settings (sent / remaining).
 
 ## Search
 
@@ -40,6 +73,16 @@ Search runs in independent layers, merged by capture id (no layer depends on ano
 - **Server semantic** — when signed in, the API's `/find` results merge on top.
 
 The on-device and server channels each use their own embedding model and vector space; they coexist by id-dedup rather than a shared space, so the online service is free to use the best embedding (e.g. Voyage) independent of the local one.
+
+## Offline store
+
+If the API is unavailable or the token is missing, captures are stored locally
+and retried later. The same SQLite file doubles as the corpus for offline
+browse and search:
+
+```text
+~/Library/Application Support/Chronicle/chronicle-local.sqlite3
+```
 
 ## Tests
 

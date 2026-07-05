@@ -107,7 +107,7 @@ Do not introduce deferred features unless explicitly requested.
 
 - Frontend: Vite + TanStack Router + TanStack Query, Radix UI primitives, Recharts, React Hook Form + Zod
 - Backend: Go — chi router, huma v2 (OpenAPI-first), slog structured logging
-- Desktop: Swift macOS menu bar app for quick capture
+- Desktop: Swift macOS menu bar app — quick capture/search/ask panel, browse window, offline local search, desktop stickies, reminder notifications
 - Database: PostgreSQL (Neon in prod, Docker in dev) — sqlc + pgx, goose migrations
 - Cache / rate limit: Redis (Upstash in prod, Docker in dev) — go-redis
 - Auth: JWT — access token 15 min, refresh token 30 days, httpOnly cookies; email verification/password reset, Google/GitHub OAuth, passkeys, and TOTP MFA
@@ -130,7 +130,7 @@ Do not introduce deferred features unless explicitly requested.
 - `api/db/sqlc/` — generated Go code from sqlc, never edit by hand
 - `desktop/` — Swift macOS menu bar quick-capture app
 - `desktop/Sources/ChronicleDesktopCore/` — testable capture payload, API client, queue, path helpers, and on-device offline semantic search (local Ollama embedder + SQLite vector cache)
-- `desktop/Sources/ChronicleDesktop/` — AppKit menu bar UI, global hotkey, settings, and quick-capture panel
+- `desktop/Sources/ChronicleDesktop/` — AppKit menu bar UI, global hotkey, quick panel, main window, capture detail windows, pinned stickies, reminder notifications, settings
 - `web/` — Vite frontend
 - `web/src/api/` — orval-generated TanStack Query hooks, never edit by hand
 - `web/src/routes/` — TanStack Router file-based routes

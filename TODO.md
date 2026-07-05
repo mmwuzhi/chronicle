@@ -12,7 +12,7 @@ Deferred work.
 
 ## Capture-First Roadmap
 
-- Desktop Quick Capture polish: packaged app, token setup flow, queue status UI, launch at login, app signing, and configurable global hotkey.
+- Desktop polish (remaining): launch at login, app signing. (Shipped: packaged app via `scripts/build-app.sh`, sign-in/token flow in Settings, queue retry with sent/remaining in Settings, configurable global hotkey.)
 - Automatic developer capture: Git commits, GitHub pull requests, GitHub issues, and VSCode activity.
 - Browser extension capture: save selected text, current page, and research notes into the capture inbox.
 - External file references (deferred — design toward multiple providers):
