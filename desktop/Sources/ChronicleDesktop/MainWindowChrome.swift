@@ -168,7 +168,7 @@ struct MainTabRail: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .foregroundStyle(isSelected ? Color.primary : Color.secondary)
             .background(
-                isSelected ? AnyShapeStyle(Color.accentColor.opacity(0.22))
+                isSelected ? AnyShapeStyle(Color.chronicleAccent.opacity(0.22))
                            : AnyShapeStyle(Color.clear),
                 in: RoundedRectangle(cornerRadius: 8),
             )
@@ -221,7 +221,8 @@ final class MainWindowController: NSObject {
         // shown — e.g. a fullscreen app's dedicated Space.
         w.collectionBehavior.insert(.moveToActiveSpace)
         w.contentView = NSHostingView(
-            rootView: MainView(clients: clients, navigation: navigation, settingsModel: settingsModel),
+            rootView: MainView(clients: clients, navigation: navigation, settingsModel: settingsModel)
+                .tint(.chronicleAccent),
         )
         installTitlebarControls(on: w)
         return w

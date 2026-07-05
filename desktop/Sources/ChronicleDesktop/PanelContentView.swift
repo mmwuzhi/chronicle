@@ -64,7 +64,7 @@ struct PanelContentView: View {
 
             if mode == .capture && remindOn {
                 HStack(spacing: 8) {
-                    Image(systemName: "bell.fill").font(.caption).foregroundStyle(Color.accentColor)
+                    Image(systemName: "bell.fill").font(.caption).foregroundStyle(Color.chronicleAccent)
                     DatePicker("", selection: $remindAt, in: Date()...)
                         .labelsHidden().datePickerStyle(.field).controlSize(.small)
                     Spacer()
@@ -101,6 +101,9 @@ struct PanelContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: .chroniclePinsChanged)) { _ in
             pinTick &+= 1
         }
+        // In the body (not at the hosting site): the controller's hosting view is
+        // typed NSHostingView<PanelContentView>, which a modifier there would break.
+        .tint(.chronicleAccent)
     }
 
     // MARK: - Toolbar
@@ -118,7 +121,7 @@ struct PanelContentView: View {
                     Image(systemName: remindOn ? "bell.fill" : "bell")
                 }
                 .buttonStyle(.borderless)
-                .foregroundStyle(remindOn ? Color.accentColor : .secondary)
+                .foregroundStyle(remindOn ? Color.chronicleAccent : .secondary)
                 .help("Set a reminder")
             }
             Text(mode.sendHint).font(.system(size: 11)).foregroundStyle(.tertiary)
@@ -174,7 +177,7 @@ struct PanelContentView: View {
         } else if mode == .search && searched {
             if degraded {
                 Text("⚠︎ Semantic search unavailable — keyword results.")
-                    .font(.caption2).foregroundStyle(.orange).padding(.bottom, 4)
+                    .font(.caption2).foregroundStyle(.secondary).padding(.bottom, 4)
             }
             if hits.isEmpty {
                 Text("No matches.").font(.caption).foregroundStyle(.secondary)

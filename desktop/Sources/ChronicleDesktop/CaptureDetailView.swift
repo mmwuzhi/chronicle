@@ -176,7 +176,7 @@ struct CaptureDetailView: View {
                           systemImage: model.isPinned ? "pin.fill" : "pin")
                 }
                 .buttonStyle(.borderless).font(.caption)
-                .foregroundStyle(model.isPinned ? Color.accentColor : .secondary)
+                .foregroundStyle(model.isPinned ? Color.chronicleAccent : .secondary)
                 .help(model.isPinned ? "Unpin from desktop" : "Pin to desktop")
                 Button { onCopy(model.capture.content) } label: {
                     Label("Copy", systemImage: "doc.on.doc")
@@ -312,7 +312,7 @@ final class CaptureDetailWindowController: NSObject, NSWindowDelegate {
         let view = CaptureDetailView(model: model, onCopy: Self.copy)
         let w = makeWindow(title: Self.title(for: row))
         w.delegate = self
-        w.contentView = NSHostingView(rootView: view)
+        w.contentView = NSHostingView(rootView: view.tint(.chronicleAccent))
         positionCascaded(w) // before append: cascade off the already-open count
         entries.append(Entry(window: w, model: model))
         w.makeKeyAndOrderFront(nil)

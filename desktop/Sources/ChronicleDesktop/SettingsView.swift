@@ -542,7 +542,7 @@ final class SettingsWindowController {
         w.isReleasedWhenClosed = false
         // Open on the active Space, not the one it was last shown on (see MainView).
         w.collectionBehavior.insert(.moveToActiveSpace)
-        w.contentView = NSHostingView(rootView: SettingsView(model: model))
+        w.contentView = NSHostingView(rootView: SettingsView(model: model).tint(.chronicleAccent))
         return w
     }
 }

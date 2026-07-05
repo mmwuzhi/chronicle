@@ -7,6 +7,21 @@ import ChronicleDesktopCore
 // hover-only borderless icon buttons, caption/secondary hierarchy. No cards, no
 // decorative shadows — the same quiet treatment across every surface.
 
+// MARK: - Brand
+
+extension Color {
+    /// Chronicle's brand green — the web app's `--accent: #0e9e6e` — fixed
+    /// instead of following the macOS system accent: the two ends should read
+    /// as one product, and a user-chosen system accent (orange, blue, …) was
+    /// the loudest visual split between them. Lightened in dark mode so it
+    /// keeps contrast on dark surfaces.
+    static let chronicleAccent = Color(nsColor: NSColor(name: nil) { appearance in
+        appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            ? NSColor(srgbRed: 0.18, green: 0.76, blue: 0.55, alpha: 1)
+            : NSColor(srgbRed: 0.055, green: 0.62, blue: 0.431, alpha: 1)
+    })
+}
+
 // MARK: - Clients
 
 /// Fresh API clients built from the current signed-in config, or nil when not
@@ -232,10 +247,21 @@ enum CaptureTime {
     nonisolated(unsafe) private static let isoPlain = ISO8601DateFormatter()
     private static let sameYear = dateFormatter("MMM d")
     private static let otherYear = dateFormatter("MMM d, yyyy")
-    private static let exact = dateFormatter("yyyy-MM-dd HH:mm")
+    // Same shape as the web app's precise stamp ("Jul 4, 2026 · 2:35pm") so the
+    // two ends speak one time language.
+    private static let exact: DateFormatter = {
+        let f = dateFormatter("MMM d, yyyy · h:mma")
+        f.amSymbol = "am"
+        f.pmSymbol = "pm"
+        return f
+    }()
 
     private static func dateFormatter(_ format: String) -> DateFormatter {
         let f = DateFormatter()
+        // POSIX locale pins the fixed format: without it macOS rewrites h↔HH to
+        // match the user's 12/24-hour setting (QA1480) and localizes month names,
+        // while the desktop UI is English-only.
+        f.locale = Locale(identifier: "en_US_POSIX")
         f.dateFormat = format
         return f
     }
@@ -440,7 +466,7 @@ struct PinnedEdgeBar: View {
     var body: some View {
         if isPinned {
             Capsule()
-                .fill(Color.accentColor)
+                .fill(Color.chronicleAccent)
                 .frame(width: 3)
                 .padding(.vertical, 6)
         }
@@ -674,7 +700,7 @@ struct CaptureRow: View {
     private var unsavedPrompt: some View {
         HStack(spacing: 8) {
             Image(systemName: "exclamationmark.circle")
-                .foregroundStyle(Color.accentColor)
+                .foregroundStyle(Color.chronicleAccent)
             Text("Unsaved changes")
                 .font(.caption.weight(.medium))
             Spacer(minLength: 12)
@@ -688,7 +714,7 @@ struct CaptureRow: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
-        .background(Color.accentColor.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
+        .background(Color.chronicleAccent.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
     }
 
     private func commitDraft() {
@@ -790,7 +816,7 @@ struct UndoDeleteToast: View {
             Text("Capture deleted").font(.callout)
             Button("Undo", action: onUndo)
                 .buttonStyle(.plain)
-                .foregroundStyle(Color.accentColor)
+                .foregroundStyle(Color.chronicleAccent)
                 .font(.callout.weight(.medium))
             Text("⌘Z").font(.caption2).foregroundStyle(.secondary)
         }
@@ -826,7 +852,7 @@ struct PillModePicker<ID: Hashable>: View {
                     .padding(.horizontal, 10).padding(.vertical, 4)
                     .foregroundStyle(selected == seg.id ? Color.primary : Color.secondary)
                     .background(
-                        selected == seg.id ? AnyShapeStyle(Color.accentColor.opacity(0.22))
+                        selected == seg.id ? AnyShapeStyle(Color.chronicleAccent.opacity(0.22))
                                            : AnyShapeStyle(Color.clear),
                         in: Capsule(),
                     )
