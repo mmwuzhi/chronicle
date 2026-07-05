@@ -4,11 +4,14 @@ import SwiftUI
 // The contents of a pinned desktop sticky — a borderless Liquid-Glass note ported
 // from rag4, adapted to Chronicle:
 //
-//   • top handle: drag to move (no native title bar to grab), double-click to open
-//     the capture in its detail window; the ✕ fades in on hover (top-left, where the
-//     macOS close button lives).
+//   • top handle: drag to move (no native title bar to grab); the ✕ fades in on
+//     hover (top-left, where the macOS close button lives).
 //   • body: the capture text with inline markdown, an optional image thumbnail, and
 //     the timestamp pinned below it (hover → precise).
+//   • double-click anywhere opens the capture's detail window. The body text keeps
+//     native click-drag selection via the row lists' NSTextView approach
+//     (SelectableRowText.RowTextView): double-click goes to the open action instead
+//     of word selection — the same trade the main window's rows make for editing.
 //   • bottom edge: an invisible resize bar (drag to grow/shrink vertically).
 //
 // The body reports its natural height up through `onHeight` so the window fits its
@@ -46,7 +49,7 @@ struct PinnedStickyView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 8) {
                     if !content.isEmpty {
-                        Text(renderedMarkdown(content)).textSelection(.enabled)
+                        StickySelectableText(markdown: content, onDoubleClick: onOpen)
                     } else if thumbURL == nil {
                         Text("(media capture)").foregroundStyle(.secondary)
                     }
@@ -64,6 +67,12 @@ struct PinnedStickyView: View {
             footer
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        // Whole-sticky double-click → detail window. The header's WindowDragHandle
+        // and the bottom resize bar are NSViews that consume their own mouseDown
+        // (the handle opens on double-click itself), so this covers everything else:
+        // body text, margins, thumbnail, timestamp, and blank space.
+        .contentShape(Rectangle())
+        .onTapGesture(count: 2, perform: onOpen)
         .panelGlass(cornerRadius: 16)
         .clipShape(RoundedRectangle(cornerRadius: 16))
         .onPreferenceChange(StickyHeightKey.self) { onHeight(chromeHeight + $0) }
@@ -121,8 +130,8 @@ struct PinnedStickyView: View {
 // MARK: - Inline markdown
 
 /// Inline-only markdown (**bold**/*italic*/`code`; "- "/"* " bullets → "• ") as a
-/// single AttributedString so the whole note selects as one run. Block syntax
-/// (headings, code fences) is left literal. Ported from rag4's renderedMarkdown.
+/// single AttributedString. Block syntax (headings, code fences) is left literal.
+/// Ported from rag4's renderedMarkdown.
 func renderedMarkdown(_ md: String) -> AttributedString {
     let bulletized = String(("\n" + md)
         .replacingOccurrences(of: "\n- ", with: "\n• ")
@@ -131,6 +140,83 @@ func renderedMarkdown(_ md: String) -> AttributedString {
     let opts = AttributedString.MarkdownParsingOptions(
         interpretedSyntax: .inlineOnlyPreservingWhitespace)
     return (try? AttributedString(markdown: bulletized, options: opts)) ?? AttributedString(md)
+}
+
+// MARK: - Selectable body text
+
+/// Sticky body text: the row lists' NSTextView (native click-drag selection,
+/// `clickCount == 2` handed to the open action instead of word selection). SwiftUI's
+/// `Text` + `.textSelection` swallows double-clicks in its AppKit host, which made
+/// most of a text-dense sticky a dead zone for the open gesture.
+private struct StickySelectableText: NSViewRepresentable {
+    let attributed: NSAttributedString
+    let onDoubleClick: () -> Void
+
+    init(markdown: String, onDoubleClick: @escaping () -> Void) {
+        self.attributed = Self.render(markdown)
+        self.onDoubleClick = onDoubleClick
+    }
+
+    func makeNSView(context: Context) -> SelectableRowText.RowTextView {
+        let tv = SelectableRowText.RowTextView()
+        tv.isEditable = false
+        tv.isSelectable = true
+        tv.drawsBackground = false
+        tv.textContainerInset = .zero
+        tv.textContainer?.lineFragmentPadding = 0
+        tv.isVerticallyResizable = false
+        tv.isHorizontallyResizable = false
+        return tv
+    }
+
+    func updateNSView(_ tv: SelectableRowText.RowTextView, context: Context) {
+        tv.onDoubleClick = onDoubleClick
+        if tv.string != attributed.string {
+            tv.textStorage?.setAttributedString(attributed)
+        }
+    }
+
+    // Same stateless measurement as SelectableRowText (never touch the text view's
+    // own container during SwiftUI's multi-proposal probing), on the attributed body.
+    func sizeThatFits(
+        _ proposal: ProposedViewSize, nsView tv: SelectableRowText.RowTextView, context: Context
+    ) -> CGSize? {
+        let proposed = proposal.width ?? .infinity
+        let wrapWidth = proposed.isFinite && proposed > 0 ? proposed : .greatestFiniteMagnitude
+        let measured = attributed.boundingRect(
+            with: NSSize(width: wrapWidth, height: .greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin, .usesFontLeading],
+        ).size
+        let width = wrapWidth == .greatestFiniteMagnitude ? ceil(measured.width) : wrapWidth
+        return CGSize(width: width, height: ceil(measured.height))
+    }
+
+    // renderedMarkdown's AttributedString carries inline presentation intents that
+    // SwiftUI Text resolves at draw time; NSTextView needs concrete fonts, so map
+    // bold/italic/code onto the body font here.
+    private static func render(_ md: String) -> NSAttributedString {
+        let attr = renderedMarkdown(md)
+        let body = NSFont.preferredFont(forTextStyle: .body)
+        let out = NSMutableAttributedString()
+        for run in attr.runs {
+            let intent = run.inlinePresentationIntent ?? []
+            var font = body
+            if intent.contains(.code) {
+                font = .monospacedSystemFont(ofSize: body.pointSize, weight: .regular)
+            }
+            if intent.contains(.stronglyEmphasized) {
+                font = NSFontManager.shared.convert(font, toHaveTrait: .boldFontMask)
+            }
+            if intent.contains(.emphasized) {
+                font = NSFontManager.shared.convert(font, toHaveTrait: .italicFontMask)
+            }
+            out.append(NSAttributedString(
+                string: String(attr.characters[run.range]),
+                attributes: [.font: font, .foregroundColor: NSColor.labelColor],
+            ))
+        }
+        return out
+    }
 }
 
 // MARK: - Timestamp

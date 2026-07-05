@@ -6,8 +6,8 @@ import ChronicleDesktopCore
 // borderless Liquid-Glass panel ported from rag4 and matched to Chronicle's quick-
 // capture panel (clear background + `panelGlass`). The note's chrome is hand-rolled
 // because a borderless window has no native title bar/edges: PinnedStickyView's top
-// handle drags (double-click opens the detail window), its ✕ unpins, its bottom edge
-// resizes, and the body auto-fits the window to its content until the user resizes it.
+// handle drags, its ✕ unpins, its bottom edge resizes, a double-click anywhere opens
+// the detail window, and the body auto-fits the window until the user resizes it.
 //
 // Persistence (pinned-captures.json in Application Support) stores each pin's id,
 // cached content/media and window frame, so stickies restore at the same spot across
@@ -158,7 +158,10 @@ final class PinnedStickyController: NSObject, NSWindowDelegate {
         panel.delegate = self
         panel.onEsc = { [weak self] in self?.unpin(pin.id) }
         setContent(panel, pin: pin)
-        if let frame = pin.frame {
+        if var frame = pin.frame {
+            // Width is fixed by design (only height and position ever change). This
+            // also heals frames that an old layout bug persisted at blown-out widths.
+            frame.size.width = Self.width
             panel.setFrame(frame, display: false)
         } else if cascade {
             positionCascaded(panel)
@@ -170,7 +173,7 @@ final class PinnedStickyController: NSObject, NSWindowDelegate {
 
     private func setContent(_ panel: NSPanel, pin: PersistedPin) {
         let id = pin.id
-        panel.contentView = NSHostingView(rootView: PinnedStickyView(
+        let hosting = NSHostingView(rootView: PinnedStickyView(
             content: pin.content,
             createdAt: pin.createdAt,
             mediaType: pin.mediaType ?? "text",
@@ -184,6 +187,12 @@ final class PinnedStickyController: NSObject, NSWindowDelegate {
             },
             onManualResize: { [weak self] in self?.markManualHeight(id) },
         ))
+        // This controller owns the panel frame (persisted, height-fitted via
+        // onHeight). The default sizing options let SwiftUI's ideal size drive the
+        // window instead, which blew the sticky out to the body text's unwrapped
+        // single-line width the moment the body became an NSTextView.
+        hosting.sizingOptions = []
+        panel.contentView = hosting
     }
 
     /// Content natural height → window height (fits content, scrolls past the cap).

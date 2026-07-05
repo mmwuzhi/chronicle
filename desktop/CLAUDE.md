@@ -64,4 +64,9 @@ only when the cache schema next changes for another reason (`TODO.md`).
 - `MainView` caches its merged browse list in `browseRows`; any new mutation
   of `fragments`/`localRows`/`signedIn`/`offline` must call
   `rebuildBrowseRows()`, or the list goes stale.
+- The sticky's `NSHostingView` must keep `sizingOptions = []`: its controller
+  owns the panel frame (persisted, height-fitted via `onHeight`). Default
+  sizing options let a SwiftUI ideal size — e.g. an NSTextView body's
+  unwrapped single-line width — resize the window, and `windowDidResize`
+  then persists the blown-out frame.
 - MFA login is not implemented in the desktop app.
