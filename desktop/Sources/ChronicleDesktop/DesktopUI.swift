@@ -326,6 +326,10 @@ private struct RowActionButtonStyle: ButtonStyle {
 
 /// Shared hover action group for capture rows. Keeping this separate prevents the
 /// main window and quick search panel from drifting into different button sets.
+/// Layered by universality (rag's model): copy (universal, safe) stays direct;
+/// low-frequency state actions (pin, remove link) fold into ⋯; open stays direct
+/// because it is the list's only route into the detail window (double-click is
+/// taken by editing); delete sits last, set apart in danger tint.
 struct CaptureRowActions: View {
     var hovering: Bool
     var onCopy: () -> Void
@@ -337,25 +341,31 @@ struct CaptureRowActions: View {
 
     var body: some View {
         HStack(spacing: 2) {
+            RowActionButton(systemImage: "doc.on.doc", help: "Copy",
+                            visible: hovering, action: onCopy)
+            if onPin != nil || onUnlink != nil {
+                RowActionMenu(visible: hovering) {
+                    if let onPin {
+                        Button(action: onPin) {
+                            Label(isPinned ? "Unpin from desktop" : "Pin to desktop",
+                                  systemImage: isPinned ? "pin.slash" : "pin")
+                        }
+                    }
+                    if let onUnlink {
+                        Button(action: onUnlink) {
+                            Label("Remove link", systemImage: "minus.circle")
+                        }
+                    }
+                }
+            }
             if let onOpen {
                 RowActionButton(systemImage: "arrow.up.forward.square", help: "Open",
                                 visible: hovering, action: onOpen)
             }
-            if let onPin {
-                RowActionButton(systemImage: isPinned ? "pin.fill" : "pin",
-                                help: isPinned ? "Unpin from desktop" : "Pin to desktop",
-                                tint: isPinned ? Color.accentColor : nil,
-                                visible: hovering || isPinned, action: onPin)
-            }
-            RowActionButton(systemImage: "doc.on.doc", help: "Copy",
-                            visible: hovering, action: onCopy)
             if let onDelete {
                 RowActionButton(systemImage: "trash", help: "Delete",
+                                tint: .red.opacity(0.85),
                                 visible: hovering, action: onDelete)
-            }
-            if let onUnlink {
-                RowActionButton(systemImage: "minus.circle", help: "Remove link",
-                                visible: hovering, action: onUnlink)
             }
         }
         .animation(.easeOut(duration: 0.12), value: hovering)
@@ -375,8 +385,54 @@ struct CaptureRowActions: View {
         onPin: (() -> Void)?
     ) -> CGFloat {
         let count = 1 + (onOpen == nil ? 0 : 1) + (onDelete == nil ? 0 : 1)
-            + (onUnlink == nil ? 0 : 1) + (onPin == nil ? 0 : 1)
+            + (onUnlink == nil && onPin == nil ? 0 : 1)
         return CGFloat(count) * 24 + CGFloat(count - 1) * 2
+    }
+}
+
+/// The ⋯ overflow in a row's trailing slot: same 24×22 footprint and hover wash
+/// as its sibling buttons, hidden (and not hit-testable) until the row is hovered.
+private struct RowActionMenu<Items: View>: View {
+    var visible: Bool
+    @ViewBuilder var items: () -> Items
+
+    @State private var hovering = false
+
+    var body: some View {
+        Menu(content: items) {
+            Image(systemName: "ellipsis")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(.secondary)
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .frame(width: 24, height: 22)
+        .background(
+            Color.primary.opacity(hovering ? 0.07 : 0),
+            in: RoundedRectangle(cornerRadius: 6),
+        )
+        .contentShape(RoundedRectangle(cornerRadius: 6))
+        .onHover { hovering = $0 }
+        .help("More")
+        .opacity(visible ? 1 : 0)
+        .allowsHitTesting(visible)
+    }
+}
+
+/// Left-edge accent bar marking a row whose capture is pinned to the desktop.
+/// The authoritative display is the sticky itself; with pin folded into the ⋯
+/// menu the list only needs this quiet callback — no lit icon, no layout shift.
+struct PinnedEdgeBar: View {
+    let isPinned: Bool
+
+    var body: some View {
+        if isPinned {
+            Capsule()
+                .fill(Color.accentColor)
+                .frame(width: 3)
+                .padding(.vertical, 6)
+        }
     }
 }
 
@@ -545,6 +601,9 @@ struct CaptureRow: View {
             Color.primary.opacity(hovering && !rowIsEditing ? RowStyle.washOpacity : 0),
             in: RoundedRectangle(cornerRadius: RowStyle.cornerRadius),
         )
+        .overlay(alignment: .leading) {
+            PinnedEdgeBar(isPinned: isPinned && !rowIsEditing)
+        }
         .onHover { hovering = $0 }
     }
 
