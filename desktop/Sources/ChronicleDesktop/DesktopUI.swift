@@ -327,7 +327,9 @@ extension View {
 private struct RowActionButton: View {
     let systemImage: String
     let help: String
-    var tint: Color?
+    // Shown only while the pointer is on this button; resting state stays
+    // secondary so a danger tint doesn't shout from every hovered row.
+    var hoverTint: Color?
     var visible: Bool
     let action: () -> Void
 
@@ -337,7 +339,7 @@ private struct RowActionButton: View {
         Button(action: action) {
             Image(systemName: systemImage)
                 .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(tint ?? .secondary)
+                .foregroundStyle(hovering ? (hoverTint ?? .secondary) : .secondary)
         }
         .buttonStyle(RowActionButtonStyle(hovering: hovering))
         .onHover { hovering = $0 }
@@ -366,7 +368,9 @@ private struct RowActionButtonStyle: ButtonStyle {
 /// Layered by universality (rag's model): copy (universal, safe) stays direct;
 /// low-frequency state actions (pin, remove link) fold into ⋯; open stays direct
 /// because it is the list's only route into the detail window (double-click is
-/// taken by editing); delete sits last, set apart in danger tint.
+/// taken by editing); delete sits last and only turns danger-red under the
+/// pointer — the same "red only at the moment of intent" rule as the web's
+/// overflow menu (the 5s undo toast is the actual safety net).
 struct CaptureRowActions: View {
     var hovering: Bool
     var onCopy: () -> Void
@@ -401,7 +405,7 @@ struct CaptureRowActions: View {
             }
             if let onDelete {
                 RowActionButton(systemImage: "trash", help: "Delete",
-                                tint: .red.opacity(0.85),
+                                hoverTint: .red.opacity(0.85),
                                 visible: hovering, action: onDelete)
             }
         }
