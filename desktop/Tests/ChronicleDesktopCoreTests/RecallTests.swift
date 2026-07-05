@@ -148,3 +148,32 @@ func decodesTrashedCaptureWithDeletedAtAndRemindHide() throws {
     #expect(notifyOnly.remindHide == false)
     #expect(notifyOnly.deletedAt == nil)
 }
+
+@Test
+func decodesTodoFacetIntoState() throws {
+    // CaptureBody carries todoAt/doneAt; rows from endpoints without the facet
+    // (search hits, related) omit them and must read as plain captures.
+    let json = Data(
+        """
+        [
+          {"id":"55555555-5555-5555-5555-555555555555","rawText":"open todo",
+           "transcript":null,"mediaType":"text","mediaUrl":null,"source":"web",
+           "remindAt":null,"createdAt":"2026-07-01T09:00:00+09:00",
+           "todoAt":"2026-07-02T09:00:00+09:00","doneAt":null},
+          {"id":"66666666-6666-6666-6666-666666666666","rawText":"done todo",
+           "transcript":null,"mediaType":"text","mediaUrl":null,"source":"web",
+           "remindAt":null,"createdAt":"2026-07-01T09:00:00+09:00",
+           "todoAt":"2026-07-02T09:00:00+09:00","doneAt":"2026-07-03T09:00:00+09:00"},
+          {"id":"77777777-7777-7777-7777-777777777777","rawText":"plain capture",
+           "transcript":null,"mediaType":"text","mediaUrl":null,"source":"web",
+           "remindAt":null,"createdAt":"2026-07-01T09:00:00+09:00"}
+        ]
+        """.utf8)
+
+    let decoded = try JSONDecoder().decode([Capture].self, from: json)
+
+    #expect(decoded.count == 3)
+    #expect(decoded[0].todoState == .open)
+    #expect(decoded[1].todoState == .done)
+    #expect(decoded[2].todoState == nil)
+}

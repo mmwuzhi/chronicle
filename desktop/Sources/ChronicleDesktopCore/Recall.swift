@@ -37,6 +37,12 @@ public struct FindResponse: Codable, Equatable, Sendable {
     }
 }
 
+// The todo facet as a renderable state (the Gmail-star model: a capture becomes
+// a todo when flagged, completes via done_at — there is no capture "type").
+public enum CaptureTodoState: Equatable, Sendable {
+    case open, done
+}
+
 // A capture as the browse/manage surfaces see it (subset of the API's CaptureBody;
 // unknown JSON keys are ignored). `content` is what the row renders.
 public struct Capture: Codable, Equatable, Identifiable, Sendable {
@@ -53,12 +59,18 @@ public struct Capture: Codable, Equatable, Identifiable, Sendable {
     // Soft-delete time; nil on live captures, set on rows returned by the trash.
     public let deletedAt: String?
     public let createdAt: String
+    // Todo facet stamps (both nil on a plain capture; doneAt implies todoAt —
+    // the DB CHECK enforces it). Endpoints that don't carry the facet (search
+    // hits, related) simply leave them nil.
+    public let todoAt: String?
+    public let doneAt: String?
 
     public init(
         id: String, rawText: String?, transcript: String?, mediaType: String,
         mediaUrl: String?, source: String,
         remindAt: String?, createdAt: String,
-        remindHide: Bool? = nil, deletedAt: String? = nil
+        remindHide: Bool? = nil, deletedAt: String? = nil,
+        todoAt: String? = nil, doneAt: String? = nil
     ) {
         self.id = id
         self.rawText = rawText
@@ -70,12 +82,20 @@ public struct Capture: Codable, Equatable, Identifiable, Sendable {
         self.remindHide = remindHide
         self.deletedAt = deletedAt
         self.createdAt = createdAt
+        self.todoAt = todoAt
+        self.doneAt = doneAt
     }
 
     // Transcript wins (audio/image), else raw text, else empty (media-only).
     public var content: String {
         if let transcript, !transcript.isEmpty { return transcript }
         return rawText ?? ""
+    }
+
+    // nil = plain capture (or an endpoint that doesn't carry the facet).
+    public var todoState: CaptureTodoState? {
+        guard todoAt != nil else { return nil }
+        return doneAt != nil ? .done : .open
     }
 }
 

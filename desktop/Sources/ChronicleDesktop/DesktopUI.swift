@@ -91,6 +91,11 @@ struct RowItem: Identifiable, Equatable {
     // local records don't carry it (nil); a desktop sticky fills it in on refresh
     // from GET /captures/{id} so it can show an image thumbnail.
     let mediaUrl: String?
+    // Todo facet, carried only by rows backed by a full CaptureBody (browse pages,
+    // links, single fetches). Search hits, related, stickies, and local-cache rows
+    // stay nil — the same asymmetry as the web, whose search modal shows no todo
+    // state either. nil renders as a plain capture, not as "not a todo".
+    let todoState: CaptureTodoState?
 
     init(_ hit: RecallItem) {
         id = hit.id
@@ -100,6 +105,7 @@ struct RowItem: Identifiable, Equatable {
         modality = hit.modality
         synced = true
         mediaUrl = nil
+        todoState = nil
     }
 
     init(_ capture: Capture) {
@@ -110,6 +116,7 @@ struct RowItem: Identifiable, Equatable {
         modality = capture.mediaType
         synced = true
         mediaUrl = capture.mediaUrl
+        todoState = capture.todoState
     }
 
     init(_ related: RelatedCapture) {
@@ -120,6 +127,7 @@ struct RowItem: Identifiable, Equatable {
         modality = related.modality
         synced = true
         mediaUrl = nil
+        todoState = nil
     }
 
     // Build a row from a pinned sticky's cached fields, so double-clicking a sticky
@@ -132,6 +140,7 @@ struct RowItem: Identifiable, Equatable {
         self.modality = modality
         self.synced = true
         self.mediaUrl = mediaUrl
+        self.todoState = nil
     }
 
     // From a local record. A synced record keys on its server id so it dedupes
@@ -145,6 +154,7 @@ struct RowItem: Identifiable, Equatable {
         modality = record.payload.mediaType
         synced = record.serverId != nil
         mediaUrl = nil
+        todoState = nil
     }
 
     nonisolated(unsafe) private static let iso: ISO8601DateFormatter = {
@@ -659,12 +669,20 @@ struct CaptureRow: View {
                 onDoubleClick: onEdit != nil ? { beginEditingFromContent() } : nil,
             )
         }
-        // Resting metadata stays tertiary; the precise stamp firms up to secondary
+        // Resting metadata stays tertiary; the whole line firms up to secondary
         // on hover because that's the moment the user is actually reading it.
-        Text(hovering ? CaptureTime.precise(item.createdAt)
-                      : CaptureTime.display(item.createdAt))
-            .font(.caption2)
-            .foregroundStyle(hovering ? HierarchicalShapeStyle.secondary : .tertiary)
+        // The todo marker mirrors the web card's footer vocabulary (Todo/Done).
+        HStack(spacing: 4) {
+            if let todo = item.todoState {
+                Image(systemName: todo == .done ? "checkmark.square" : "square")
+                Text(todo == .done ? "Done" : "Todo")
+                Text("·")
+            }
+            Text(hovering ? CaptureTime.precise(item.createdAt)
+                          : CaptureTime.display(item.createdAt))
+        }
+        .font(.caption2)
+        .foregroundStyle(hovering ? HierarchicalShapeStyle.secondary : .tertiary)
     }
 
     private var editContainer: some View {
