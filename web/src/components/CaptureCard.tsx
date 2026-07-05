@@ -9,7 +9,7 @@ import {
   type CaptureAttachmentBody,
   type CaptureBody,
 } from "../api";
-import { fmtFileSize, fmtShortDateTime } from "../utils/format";
+import { fmtFileSize, fmtListTime, fmtPreciseDateTime } from "../utils/format";
 import type { TodoState } from "../utils/todo";
 import { useTodoEnabled } from "../hooks/use-todo-enabled";
 import { Markdown } from "./Markdown";
@@ -88,7 +88,7 @@ export function CaptureCard({
   onSetRemind: (id: string, at: string | null, hide: boolean) => void;
   onMutationError: () => void;
 }): React.JSX.Element {
-  const { t } = useTranslation("captures");
+  const { t, i18n } = useTranslation("captures");
   const { t: tc } = useTranslation("common");
   const queryClient = useQueryClient();
   const todosEnabled = useTodoEnabled();
@@ -318,16 +318,29 @@ export function CaptureCard({
               onSet={(at, hide) => onSetRemind(c.id, at, hide)}
             />
             {c.createdAt && (
-              <span className="ch-meta">{fmtShortDateTime(c.createdAt)}</span>
+              <span
+                className="ch-meta"
+                title={fmtPreciseDateTime(c.createdAt, i18n.language)}
+              >
+                {fmtListTime(c.createdAt, i18n.language)}
+              </span>
             )}
             <DropdownMenu.Root>
               <DropdownMenu.Trigger asChild>
                 <button
                   className="ch-iconbtn"
-                  style={{ width: 28, height: 28, fontSize: 16 }}
+                  style={{ width: 28, height: 28 }}
                   aria-label="More options"
                 >
-                  ···
+                  <svg
+                    viewBox="0 0 24 24"
+                    fill="currentColor"
+                    aria-hidden="true"
+                  >
+                    <circle cx="5" cy="12" r="1.9" />
+                    <circle cx="12" cy="12" r="1.9" />
+                    <circle cx="19" cy="12" r="1.9" />
+                  </svg>
                 </button>
               </DropdownMenu.Trigger>
               <DropdownMenu.Portal>

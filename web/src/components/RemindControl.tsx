@@ -1,5 +1,24 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { fmtPreciseDateTime } from "../utils/format";
+
+function BellIcon(): React.JSX.Element {
+  return (
+    <svg
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.75}
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10.3 21a1.94 1.94 0 0 0 3.4 0"
+      />
+    </svg>
+  );
+}
 
 // Time-based recall control on a capture card: set / clear a future remind_at.
 // Browse hides a not-yet-due reminder until it arrives; the desktop app fires a
@@ -14,7 +33,7 @@ export function RemindControl({
   remindHide?: boolean;
   onSet: (at: string | null, hide: boolean) => void;
 }): React.JSX.Element {
-  const { t } = useTranslation("captures");
+  const { t, i18n } = useTranslation("captures");
   const [editing, setEditing] = useState(false);
   // "Keep visible" is the inverse of hide; pre-filled from the current reminder.
   const [keepVisible, setKeepVisible] = useState(remindHide === false);
@@ -58,12 +77,12 @@ export function RemindControl({
   if (remindAt) {
     const due = new Date(remindAt);
     return (
-      <span
-        className="ch-meta"
-        style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
-      >
-        <span title={due.toLocaleString()}>
-          ⏰ {t("remind.at", { time: due.toLocaleString() })}
+      <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+        <span className="ch-time-chip" title={due.toLocaleString()}>
+          <BellIcon />
+          {t("remind.at", {
+            time: fmtPreciseDateTime(remindAt, i18n.language),
+          })}
         </span>
         <button
           className="ch-btn ch-btn-ghost ch-btn-sm"
@@ -77,7 +96,7 @@ export function RemindControl({
 
   return (
     <button
-      className="ch-btn ch-btn-ghost ch-btn-sm"
+      className="ch-btn ch-btn-ghost ch-btn-sm ch-remind-flag"
       onClick={() => {
         // Re-derive from the capture's current state each time, so the checkbox
         // isn't stale after a prior set→clear on this same card.
@@ -85,7 +104,8 @@ export function RemindControl({
         setEditing(true);
       }}
     >
-      ⏰ {t("remind.set")}
+      <BellIcon />
+      {t("remind.set")}
     </button>
   );
 }

@@ -1,6 +1,6 @@
 import { useTranslation } from "react-i18next";
 import type { CaptureBody } from "../api";
-import { fmtShortDateTime } from "../utils/format";
+import { fmtListTime } from "../utils/format";
 import { Markdown } from "./Markdown";
 
 const SNIPPET_MAX = 280;
@@ -25,7 +25,7 @@ export function TrashList({
   onRestore,
   onPermanentDelete,
 }: TrashListProps): React.JSX.Element {
-  const { t } = useTranslation("captures");
+  const { t, i18n } = useTranslation("captures");
 
   return (
     <ul className="ch-trash-list">
@@ -38,7 +38,7 @@ export function TrashList({
                 {capture.deletedAt && (
                   <span>
                     {t("trash.deletedAt", {
-                      time: fmtShortDateTime(capture.deletedAt),
+                      time: fmtListTime(capture.deletedAt, i18n.language),
                     })}
                   </span>
                 )}

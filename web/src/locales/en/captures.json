@@ -88,7 +88,7 @@
   },
   "todo": {
     "flag": "Todo",
-    "open": "Open",
+    "open": "Todo",
     "done": "Done",
     "remove": "Remove todo flag"
   }

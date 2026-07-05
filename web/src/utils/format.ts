@@ -15,14 +15,32 @@ export function fmtDate(iso: string): string {
   });
 }
 
-export function fmtShortDateTime(iso: string): string {
+// Shared list-timestamp rule, mirrored by the desktop app's CaptureTime:
+// relative under 7 days, then the short date, adding the year once it differs.
+export function fmtListTime(iso: string, locale: string): string {
   const d = new Date(iso);
-  const date = d.toLocaleDateString(undefined, {
+  if (Date.now() - d.getTime() < 7 * 24 * 60 * 60 * 1000) {
+    return timeAgo(iso, locale);
+  }
+  const sameYear = d.getFullYear() === new Date().getFullYear();
+  return d.toLocaleDateString(locale, {
     month: "short",
     day: "numeric",
+    ...(sameYear ? {} : { year: "numeric" }),
+  });
+}
+
+// Precise stamp for tooltips and detail contexts ("Jul 4, 2026 · 2:35pm") —
+// the same shape as the desktop app's hover timestamp.
+export function fmtPreciseDateTime(iso: string, locale?: string): string {
+  const d = new Date(iso);
+  const date = d.toLocaleDateString(locale, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
   });
   const time = d
-    .toLocaleTimeString(undefined, {
+    .toLocaleTimeString(locale, {
       hour: "numeric",
       minute: "2-digit",
       hour12: true,

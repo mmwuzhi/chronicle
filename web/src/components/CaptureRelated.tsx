@@ -10,7 +10,7 @@ import {
   useRemoveCaptureLink,
   type CaptureBody,
 } from "../api";
-import { fmtShortDateTime } from "../utils/format";
+import { fmtListTime, fmtPreciseDateTime } from "../utils/format";
 import { todoProgress } from "../utils/todo";
 import { useTodoEnabled } from "../hooks/use-todo-enabled";
 
@@ -27,9 +27,37 @@ function captureText(capture: CaptureBody): string {
   return capture.rawText || capture.transcript || "";
 }
 
+function XIcon(): React.JSX.Element {
+  return (
+    <svg
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.75}
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+    >
+      <path strokeLinecap="round" d="M18 6 6 18M6 6l12 12" />
+    </svg>
+  );
+}
+
+function PlusIcon(): React.JSX.Element {
+  return (
+    <svg
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.75}
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+    >
+      <path strokeLinecap="round" d="M12 5v14M5 12h14" />
+    </svg>
+  );
+}
+
 /**
  * The "Related" surface for a single anchor capture: durable user-made links
- * (unlink with ✕) plus AI semantic suggestions (link with +). The /related
+ * (unlink with an X) plus AI semantic suggestions (link with a plus). The /related
  * endpoint already excludes the anchor and anything already linked, so adding a
  * link makes that suggestion drop out — both queries are invalidated together.
  */
@@ -38,7 +66,7 @@ export function CaptureRelated({
 }: {
   anchorId: string;
 }): React.JSX.Element {
-  const { t } = useTranslation("captures");
+  const { t, i18n } = useTranslation("captures");
   const { t: tc } = useTranslation("common");
   const queryClient = useQueryClient();
   const enabled = anchorId.length > 0;
@@ -100,8 +128,11 @@ export function CaptureRelated({
                   search={{ anchorId: capture.id }}
                   className="ch-related-link"
                 >
-                  <span className="ch-related-time">
-                    {fmtShortDateTime(capture.createdAt)}
+                  <span
+                    className="ch-related-time"
+                    title={fmtPreciseDateTime(capture.createdAt, i18n.language)}
+                  >
+                    {fmtListTime(capture.createdAt, i18n.language)}
                   </span>
                   <span className="ch-related-snippet">
                     {snippet(captureText(capture))}
@@ -116,7 +147,7 @@ export function CaptureRelated({
                   aria-label={t("related.unlink")}
                   title={t("related.unlink")}
                 >
-                  ✕
+                  <XIcon />
                 </button>
               </li>
             ))}
@@ -139,8 +170,11 @@ export function CaptureRelated({
                   search={{ anchorId: capture.id }}
                   className="ch-related-link"
                 >
-                  <span className="ch-related-time">
-                    {fmtShortDateTime(capture.createdAt)}
+                  <span
+                    className="ch-related-time"
+                    title={fmtPreciseDateTime(capture.createdAt, i18n.language)}
+                  >
+                    {fmtListTime(capture.createdAt, i18n.language)}
                   </span>
                   <span className="ch-related-snippet">
                     {snippet(capture.content)}
@@ -156,7 +190,8 @@ export function CaptureRelated({
                   }
                   disabled={addLink.isPending}
                 >
-                  + {t("related.link")}
+                  <PlusIcon />
+                  {t("related.link")}
                 </button>
               </li>
             ))}

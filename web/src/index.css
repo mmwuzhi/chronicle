@@ -656,15 +656,23 @@ body {
 }
 
 /* Todo facet */
-.ch-todo-flag {
-  /* Quiet flag-as-todo affordance: only revealed while hovering the card, so
-     plain captures don't all whisper "I might be a todo". */
+.ch-todo-flag,
+.ch-remind-flag {
+  /* Quiet affordances: only revealed while hovering the card, so plain
+     captures don't all whisper "I might be a todo / want a reminder". */
   opacity: 0;
   transition: opacity 0.12s ease;
 }
 .ch-row:hover .ch-todo-flag,
-.ch-todo-flag:focus-visible {
+.ch-row:hover .ch-remind-flag,
+.ch-todo-flag:focus-visible,
+.ch-remind-flag:focus-visible {
   opacity: 1;
+}
+.ch-todo-flag {
+  /* Cancel the ghost button's inset so the flag icon sits in the same column
+     as the flagged state's checkbox at the footer's left edge. */
+  margin-left: -11px;
 }
 .ch-todo-check {
   display: inline-flex;
@@ -1572,6 +1580,11 @@ body {
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
   font-weight: 600;
+}
+.ch-time-chip svg {
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
 }
 
 /* ── Event log entry ──────────────────────────────────────────────────── */
