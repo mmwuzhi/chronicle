@@ -217,16 +217,31 @@ enum RecallMode: String, CaseIterable, Identifiable {
 // MARK: - Timestamps
 
 enum CaptureTime {
-    // ISO8601DateFormatter is thread-safe for parsing; the unsafe annotation just
-    // opts this immutable cached instance out of Swift 6's global-state check.
+    // Formatters are cached: parse/display/precise run for every visible timestamp
+    // on each render (and on every hover flip to the precise stamp). ISO8601-/
+    // DateFormatter are thread-safe (the latter since macOS 10.9); the unsafe
+    // annotations just opt these immutable instances out of Swift 6's global-state
+    // check.
     nonisolated(unsafe) private static let iso: ISO8601DateFormatter = {
         let f = ISO8601DateFormatter()
         f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return f
     }()
+    // Server timestamps carry fractional seconds, local ones don't; the fallback
+    // used to allocate a fresh formatter on every non-fractional parse.
+    nonisolated(unsafe) private static let isoPlain = ISO8601DateFormatter()
+    private static let sameYear = dateFormatter("MMM d")
+    private static let otherYear = dateFormatter("MMM d, yyyy")
+    private static let exact = dateFormatter("yyyy-MM-dd HH:mm")
+
+    private static func dateFormatter(_ format: String) -> DateFormatter {
+        let f = DateFormatter()
+        f.dateFormat = format
+        return f
+    }
 
     static func parse(_ value: String) -> Date? {
-        iso.date(from: value) ?? ISO8601DateFormatter().date(from: value)
+        iso.date(from: value) ?? isoPlain.date(from: value)
     }
 
     /// Compact relative stamp ("3m", "2h", "Jun 6") for the resting row state.
@@ -237,18 +252,14 @@ enum CaptureTime {
         if secs < 3600 { return "\(Int(secs / 60))m" }
         if secs < 86400 { return "\(Int(secs / 3600))h" }
         if secs < 604800 { return "\(Int(secs / 86400))d" }
-        let f = DateFormatter()
-        f.dateFormat = Calendar.current.isDate(date, equalTo: Date(), toGranularity: .year)
-            ? "MMM d" : "MMM d, yyyy"
-        return f.string(from: date)
+        let sameCalendarYear = Calendar.current.isDate(date, equalTo: Date(), toGranularity: .year)
+        return (sameCalendarYear ? sameYear : otherYear).string(from: date)
     }
 
     /// Exact stamp, revealed on hover (avoids the system tooltip's delay).
     static func precise(_ value: String) -> String {
         guard let date = parse(value) else { return "" }
-        let f = DateFormatter()
-        f.dateFormat = "yyyy-MM-dd HH:mm"
-        return f.string(from: date)
+        return exact.string(from: date)
     }
 }
 

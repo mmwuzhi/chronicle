@@ -131,6 +131,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // SQLite LocalCaptureStore. Drain captures still stranded in the old queue into
     // the store so they become locally searchable and sync-eligible, then clear it.
     // Idempotent — the emptied queue has nothing to drain on the next launch.
+    // Runs at launch before any window exists, so it deliberately skips
+    // CaptureEvents.postChanged(); if it ever runs mid-session, post it so open
+    // lists rebuild.
     private func drainLegacyQueue() {
         let queue = CaptureQueue(fileURL: ChronicleDesktopPaths.defaultQueueURL())
         guard let queued = try? queue.load(), !queued.isEmpty else { return }
