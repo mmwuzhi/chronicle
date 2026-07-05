@@ -138,7 +138,7 @@ Do not introduce deferred features unless explicitly requested.
 - `web/src/constants/` — shared constants (none yet; create on the second use of a constant)
 - `web/src/utils/` — shared pure utilities (e.g. `format.ts`)
 - `web/src/lib/` — non-React helpers (axios client, authenticated fetch)
-- `TODO.md` — deferred work; refactor oversized route files before adding reminder/digest features
+- `TODO.md` — deferred work; the oversized-route-file gate is cleared (all routes are back under 250 lines)
 - `.env.example` — all required env vars
 
 ## Conceptual Model
