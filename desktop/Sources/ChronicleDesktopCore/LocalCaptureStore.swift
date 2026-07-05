@@ -326,6 +326,24 @@ public final class LocalCaptureStore: @unchecked Sendable {
         }.first
     }
 
+    // The local id stays stable across markSynced, so it can round-trip through
+    // long-lived references (e.g. a reminder notification's userInfo) and still
+    // resolve after the capture syncs.
+    public func find(localId: String) throws -> LocalCaptureRecord? {
+        try query(
+            """
+            SELECT id, server_id, raw_text, media_type, classified_as, source,
+                   remind_at, created_at, updated_at, synced_at, last_error, notified_at,
+                   remind_hide
+            FROM local_captures
+            WHERE id = ?
+            LIMIT 1
+            """,
+        ) { stmt in
+            bindText(stmt, 1, localId)
+        }.first
+    }
+
     public func count() throws -> Int {
         try withDatabase { db in
             var stmt: OpaquePointer?

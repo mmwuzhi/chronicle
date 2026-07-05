@@ -177,6 +177,24 @@ func localCaptureStoreMarksCaptureSynced() throws {
 }
 
 @Test
+func localCaptureStoreFindsByLocalIdBeforeAndAfterSync() throws {
+    // The local id is what a reminder notification's userInfo carries; it must
+    // resolve the same row both while the capture is still local-only and after
+    // markSynced rekeys it with a server id (the notification may fire days later).
+    let store = LocalCaptureStore(fileURL: temporaryDatabaseURL())
+    let record = try store.create(CapturePayload(rawText: "Find me"))
+
+    let beforeSync = try #require(try store.find(localId: record.id))
+    #expect(beforeSync.payload.rawText == "Find me")
+
+    try store.markSynced(localId: record.id, serverId: "server-9")
+    let afterSync = try #require(try store.find(localId: record.id))
+    #expect(afterSync.serverId == "server-9")
+
+    #expect(try store.find(localId: "missing") == nil)
+}
+
+@Test
 func localCaptureStoreUpsertsServerReminderWithoutDuplicating() throws {
     let store = LocalCaptureStore(fileURL: temporaryDatabaseURL())
     let remindAt = Date(timeIntervalSince1970: 3_000)

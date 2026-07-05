@@ -1,6 +1,7 @@
 import AppKit
 import Carbon
 import ChronicleDesktopCore
+import UserNotifications
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -18,6 +19,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // can reference localStore; degrades to keyword search when Ollama is absent.
     private lazy var localSemantic = LocalSemanticSearch(store: localStore, embedder: LocalEmbedder())
     private var reminderNotifier: ReminderNotifier?
+    // Retained: UNUserNotificationCenter keeps only a weak reference to its delegate.
+    private var notificationDelegate: ReminderNotificationDelegate?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -151,12 +154,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // `swift run` / `make desktop-capture`. Only schedule from the packaged
         // .app (`make desktop-app`); dev runs simply skip notifications.
         guard Bundle.main.bundleIdentifier != nil else { return }
+        // The delegate must be in place before the authorization request in
+        // start(), or reminders due while the agent runs are silently suppressed.
+        notificationDelegate = ReminderNotificationDelegate(onOpenCapture: { [weak self] localId in
+            self?.openCaptureFromNotification(localId)
+        })
+        UNUserNotificationCenter.current().delegate = notificationDelegate
         reminderNotifier = ReminderNotifier(store: localStore, makeClient: { [settings, authRefresher] in
             let config = settings.load()
             return config.isUsable
                 ? ReminderAPIClient(config: config, refresher: authRefresher) : nil
         })
         reminderNotifier?.start()
+    }
+
+    // Tapping a reminder notification opens that capture's detail window. The row
+    // comes from the local cache; a capture deleted since scheduling is a no-op.
+    private func openCaptureFromNotification(_ localId: String) {
+        guard let record = try? localStore.find(localId: localId) else { return }
+        detailWindowController?.open(RowItem(record))
     }
 
     private func installStatusItem() {

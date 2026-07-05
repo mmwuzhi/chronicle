@@ -15,6 +15,12 @@ final class ReminderNotifier {
     // original always-on behavior (and the existing tests).
     static let enabledKey = "notifyOnReminderDue"
 
+    // userInfo key carrying the capture's local-store id, so tapping the
+    // notification can resolve the capture and open its detail window. The local
+    // id survives sync (markSynced keeps it), unlike the server id which may not
+    // exist yet when the trigger is scheduled.
+    nonisolated static let captureLocalIdKey = "captureLocalId"
+
     private static var notificationsEnabled: Bool {
         UserDefaults.standard.object(forKey: enabledKey) as? Bool ?? true
     }
@@ -67,7 +73,8 @@ final class ReminderNotifier {
         guard Self.notificationsEnabled else { return }
         guard let remindAt = record.payload.remindAt else { return }
         let scheduled = scheduleNotification(
-            id: record.notificationId, text: record.payload.rawText, at: remindAt)
+            id: record.notificationId, localId: record.id,
+            text: record.payload.rawText, at: remindAt)
         if scheduled {
             // A future-dated calendar trigger now guarantees delivery even with the
             // app closed, so mark this reminder handled. Without it, once the reminder
@@ -95,12 +102,13 @@ final class ReminderNotifier {
     // Returns whether a calendar trigger was actually registered (false when the
     // date is in the past, which a calendar trigger can't fire on).
     @discardableResult
-    private func scheduleNotification(id: String, text: String, at date: Date) -> Bool {
+    private func scheduleNotification(id: String, localId: String, text: String, at date: Date) -> Bool {
         guard date > Date() else { return false }  // a calendar trigger can't fire in the past
         let content = UNMutableNotificationContent()
         content.title = "Chronicle reminder"
         content.body = text.isEmpty ? "A capture is due" : text
         content.sound = .default
+        content.userInfo = [Self.captureLocalIdKey: localId]
         let comps = Calendar.current.dateComponents(
             [.year, .month, .day, .hour, .minute, .second], from: date)
         let request = UNNotificationRequest(
@@ -169,11 +177,11 @@ final class ReminderNotifier {
         // reports as due.
         guard Self.notificationsEnabled else { return }
         let remindAt = item.remindAt.flatMap(Self.parseISO) ?? Date()
-        guard (try? store.upsertDueServerReminder(
+        guard let record = try? store.upsertDueServerReminder(
             serverId: item.id,
             text: item.summary,
             remindAt: remindAt,
-        )) != nil else {
+        ) else {
             return
         }
 
@@ -181,6 +189,7 @@ final class ReminderNotifier {
         content.title = "Chronicle reminder"
         content.body = item.summary
         content.sound = .default
+        content.userInfo = [Self.captureLocalIdKey: record.id]
         UNUserNotificationCenter.current().add(
             UNNotificationRequest(identifier: "rmd-\(item.id)", content: content, trigger: nil))
     }
@@ -191,5 +200,35 @@ final class ReminderNotifier {
         let frac = ISO8601DateFormatter()
         frac.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return frac.date(from: s)
+    }
+}
+
+// Notification-center delegate for a resident menu-bar agent. Without willPresent
+// the system treats a due reminder as the foreground app's own notification and
+// suppresses the banner (the agent is always "running"); returning banner/sound/
+// list makes it actually show. Tapping a notification opens the capture's detail
+// window via the local id embedded in userInfo at scheduling time — a reminder
+// never opens a window on its own, only on an explicit click.
+final class ReminderNotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
+    private let onOpenCapture: @MainActor (String) -> Void
+
+    init(onOpenCapture: @escaping @MainActor (String) -> Void) {
+        self.onOpenCapture = onOpenCapture
+    }
+
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification
+    ) async -> UNNotificationPresentationOptions {
+        [.banner, .sound, .list]
+    }
+
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse
+    ) async {
+        guard let localId = response.notification.request.content
+            .userInfo[ReminderNotifier.captureLocalIdKey] as? String else { return }
+        await onOpenCapture(localId)
     }
 }
