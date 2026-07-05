@@ -297,6 +297,7 @@ python -m pytest                  # Python tests (use python -m so top-level imp
 
   Fix every failure before pushing. CI runs these same steps exactly.
 
+- **Web/desktop identity parity.** The brand accent and the list-timestamp rule are each defined twice and must change together: accent as `--accent` in `web/src/index.css` and `Color.chronicleAccent` in `desktop/Sources/ChronicleDesktop/DesktopUI.swift` (desktop deliberately does not follow the macOS system accent); the timestamp rule (relative under 7 days, then short date, year when it differs; precise stamp `Jul 4, 2026 · 2:35pm` on hover/tooltip) as `fmtListTime`/`fmtPreciseDateTime` in `web/src/utils/format.ts` and `CaptureTime` in `DesktopUI.swift`.
 - **Route files are orchestration only.** They may declare data-fetching hooks, layout structure, and event handlers. Target < 250 lines. Any sub-component longer than 60 lines must live in its own file under `web/src/components/`. Any constant or utility used in more than one file must move to `web/src/constants/` or `web/src/utils/` on the second use.
 - **Coding rules are in [`CODING.md`](./CODING.md).** Read it before writing new code.
 
