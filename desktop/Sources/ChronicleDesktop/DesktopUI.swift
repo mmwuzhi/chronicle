@@ -353,7 +353,10 @@ private struct RowActionButton: View {
         }
         .buttonStyle(RowActionButtonStyle(hovering: hovering))
         .onHover { hovering = $0 }
-        .help(help)
+        // A hidden control must not announce itself: .help registers its tooltip
+        // area regardless of opacity, so without the gate the empty space beside
+        // an un-hovered row pops "Copy"/"Delete" tips over invisible buttons.
+        .help(visible ? help : "")
         .opacity(visible ? 1 : 0)
         .allowsHitTesting(visible)
     }
@@ -456,6 +459,10 @@ private struct RowActionMenu<Items: View>: View {
                 .foregroundStyle(.secondary)
         }
         .menuStyle(.borderlessButton)
+        // The borderless menu style paints its label with the environment tint,
+        // overriding the label's own foregroundStyle — without this counter-tint
+        // the window root's brand tint turns the ⋯ green.
+        .tint(Color.secondary)
         .menuIndicator(.hidden)
         .fixedSize()
         .frame(width: 24, height: 22)
@@ -465,7 +472,8 @@ private struct RowActionMenu<Items: View>: View {
         )
         .contentShape(RoundedRectangle(cornerRadius: 6))
         .onHover { hovering = $0 }
-        .help("More")
+        // Same gate as RowActionButton: no tooltip while hidden.
+        .help(visible ? "More" : "")
         .opacity(visible ? 1 : 0)
         .allowsHitTesting(visible)
     }
