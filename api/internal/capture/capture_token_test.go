@@ -98,7 +98,7 @@ func TestCaptureToken_CannotListCaptures(t *testing.T) {
 	userID, _ := createTestUser(t, pool)
 	capToken := mintCaptureToken(t, pool, userID)
 
-	resp := do(t, srv.Client(), http.MethodGet, srv.URL+"/captures", capToken, nil)
+	resp := do(t, srv.Client(), http.MethodGet, srv.URL+"/captures/page", capToken, nil)
 	if resp.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("expected 401 listing with capture token, got %d", resp.StatusCode)
 	}

@@ -268,8 +268,9 @@ func TestCreateCapture_InvalidReminderDoesNotCreateCapture(t *testing.T) {
 		t.Fatalf("expected 422, got %d", resp.StatusCode)
 	}
 
-	rows, err := db.New(pool).ListCaptures(context.Background(), db.ListCapturesParams{
-		UserID: uuid.MustParse(userID),
+	rows, err := db.New(pool).ListCapturePage(context.Background(), db.ListCapturePageParams{
+		UserID:   uuid.MustParse(userID),
+		PageSize: 10,
 	})
 	if err != nil {
 		t.Fatalf("list captures: %v", err)
@@ -466,7 +467,7 @@ func TestCaptureReminderBrowseAndRecall(t *testing.T) {
 	setRemind(past, pgtype.Timestamptz{Time: time.Now().Add(-time.Hour), Valid: true})
 
 	// Default browse hides the not-yet-due reminder, keeps plain + past-due.
-	browse, err := queries.ListCaptures(ctx, db.ListCapturesParams{UserID: uid})
+	browse, err := queries.ListCapturePage(ctx, db.ListCapturePageParams{UserID: uid, PageSize: 50})
 	if err != nil {
 		t.Fatalf("list captures: %v", err)
 	}
@@ -479,7 +480,7 @@ func TestCaptureReminderBrowseAndRecall(t *testing.T) {
 	}
 
 	// include_reminded shows everything (management view).
-	all, err := queries.ListCaptures(ctx, db.ListCapturesParams{UserID: uid, IncludeReminded: true})
+	all, err := queries.ListCapturePage(ctx, db.ListCapturePageParams{UserID: uid, IncludeReminded: true, PageSize: 50})
 	if err != nil {
 		t.Fatalf("list captures (include_reminded): %v", err)
 	}
@@ -510,7 +511,7 @@ func TestCaptureReminderBrowseAndRecall(t *testing.T) {
 
 	// Clearing the reminder returns the capture to the default browse.
 	setRemind(future, pgtype.Timestamptz{})
-	browse2, err := queries.ListCaptures(ctx, db.ListCapturesParams{UserID: uid})
+	browse2, err := queries.ListCapturePage(ctx, db.ListCapturePageParams{UserID: uid, PageSize: 50})
 	if err != nil {
 		t.Fatalf("list captures after clear: %v", err)
 	}
@@ -542,15 +543,10 @@ func TestNotifyOnlyReminderStaysVisible(t *testing.T) {
 	}
 
 	// Default browse: notify-only stays; the default future reminder is hidden.
-	browse := do(t, srv.Client(), http.MethodGet, srv.URL+"/captures", token, nil)
-	var items []struct {
-		ID         string `json:"id"`
-		RemindHide bool   `json:"remindHide"`
-	}
-	decodeBody(t, browse, &items)
+	browse := listCaptureIDs(t, srv, token, "/captures/page")
 	seen := map[string]bool{}
-	for _, it := range items {
-		seen[it.ID] = true
+	for _, id := range browse {
+		seen[id] = true
 	}
 	if !seen[notifyOnly] {
 		t.Fatalf("notify-only capture should stay in default browse")
@@ -641,17 +637,15 @@ func TestEmptyTrash_PurgesOnlyTrashed(t *testing.T) {
 	if len(trashed) != 0 {
 		t.Fatalf("trash should be empty after empty-trash, got %d", len(trashed))
 	}
-	live := do(t, srv.Client(), http.MethodGet, srv.URL+"/captures", token, nil)
-	var liveItems []any
-	decodeBody(t, live, &liveItems)
-	if len(liveItems) != 1 {
-		t.Fatalf("empty trash must not touch live captures, got %d", len(liveItems))
+	live := listCaptureIDs(t, srv, token, "/captures/page")
+	if len(live) != 1 {
+		t.Fatalf("empty trash must not touch live captures, got %d", len(live))
 	}
 }
 
 // --- list ---
 
-func TestListCaptures_IsolatedByUser(t *testing.T) {
+func TestListCapturePage_IsolatedByUser(t *testing.T) {
 	srv, pool := newServer(t)
 	_, tokenA := createTestUser(t, pool)
 	_, tokenB := createTestUser(t, pool)
@@ -659,20 +653,13 @@ func TestListCaptures_IsolatedByUser(t *testing.T) {
 	createCapture(t, srv, tokenA, nil)
 	createCapture(t, srv, tokenB, nil)
 
-	resp := do(t, srv.Client(), http.MethodGet, srv.URL+"/captures", tokenA, nil)
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("expected 200, got %d", resp.StatusCode)
-	}
-
-	var captures []any
-	decodeBody(t, resp, &captures)
-
+	captures := listCaptureIDs(t, srv, tokenA, "/captures/page")
 	if len(captures) != 1 {
 		t.Fatalf("expected 1 capture, got %d", len(captures))
 	}
 }
 
-func TestListCaptures_FilterByTodo(t *testing.T) {
+func TestListCapturePage_FilterByTodo(t *testing.T) {
 	srv, pool := newServer(t)
 	_, token := createTestUser(t, pool)
 
@@ -682,17 +669,17 @@ func TestListCaptures_FilterByTodo(t *testing.T) {
 	setTodo(t, srv, token, openID, "open")
 	setTodo(t, srv, token, doneID, "done")
 
-	open := listCaptureIDs(t, srv, token, "/captures?todo=open")
+	open := listCaptureIDs(t, srv, token, "/captures/page?todo=open")
 	if len(open) != 1 || open[0] != openID {
 		t.Fatalf("expected only the open todo, got %v", open)
 	}
 
-	done := listCaptureIDs(t, srv, token, "/captures?todo=done")
+	done := listCaptureIDs(t, srv, token, "/captures/page?todo=done")
 	if len(done) != 1 || done[0] != doneID {
 		t.Fatalf("expected only the done todo, got %v", done)
 	}
 
-	all := listCaptureIDs(t, srv, token, "/captures")
+	all := listCaptureIDs(t, srv, token, "/captures/page")
 	if len(all) != 3 {
 		t.Fatalf("unfiltered list must include everything, got %d", len(all))
 	}
@@ -713,47 +700,17 @@ func listCaptureIDs(t *testing.T, srv *httptest.Server, token, path string) []st
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("list %s: got %d", path, resp.StatusCode)
 	}
-	var captures []struct {
-		ID string `json:"id"`
+	var body struct {
+		Items []struct {
+			ID string `json:"id"`
+		} `json:"items"`
 	}
-	decodeBody(t, resp, &captures)
-	ids := make([]string, len(captures))
-	for i, c := range captures {
+	decodeBody(t, resp, &body)
+	ids := make([]string, len(body.Items))
+	for i, c := range body.Items {
 		ids[i] = c.ID
 	}
 	return ids
-}
-
-func TestListCaptures_IncludeReminded(t *testing.T) {
-	srv, pool := newServer(t)
-	_, token := createTestUser(t, pool)
-
-	createCapture(t, srv, token, map[string]any{"rawText": "plain note"})
-	future := time.Now().Add(time.Hour).UTC().Format(time.RFC3339)
-	createCapture(t, srv, token, map[string]any{"rawText": "buy milk later", "remindAt": future})
-
-	// Default browse hides the not-yet-due reminder.
-	def := do(t, srv.Client(), http.MethodGet, srv.URL+"/captures", token, nil)
-	if def.StatusCode != http.StatusOK {
-		t.Fatalf("expected 200, got %d", def.StatusCode)
-	}
-	var defItems []map[string]any
-	decodeBody(t, def, &defItems)
-	if len(defItems) != 1 {
-		t.Fatalf("default browse should hide the future reminder, got %d", len(defItems))
-	}
-
-	// includeReminded=true must reach the query so the management view can surface
-	// and edit/clear the reminder (regression guard for the unplumbed handler param).
-	all := do(t, srv.Client(), http.MethodGet, srv.URL+"/captures?includeReminded=true", token, nil)
-	if all.StatusCode != http.StatusOK {
-		t.Fatalf("expected 200, got %d", all.StatusCode)
-	}
-	var allItems []map[string]any
-	decodeBody(t, all, &allItems)
-	if len(allItems) != 2 {
-		t.Fatalf("includeReminded should surface the future reminder, got %d", len(allItems))
-	}
 }
 
 func TestListCapturePage_IncludeReminded(t *testing.T) {
@@ -1125,11 +1082,9 @@ func TestDeleteCapture_HappyPath(t *testing.T) {
 		t.Fatalf("expected 204, got %d", delResp.StatusCode)
 	}
 
-	listResp := do(t, srv.Client(), http.MethodGet, srv.URL+"/captures", token, nil)
-	var items []any
-	decodeBody(t, listResp, &items)
-	if len(items) != 0 {
-		t.Fatalf("expected empty list after delete, got %d items", len(items))
+	live := listCaptureIDs(t, srv, token, "/captures/page")
+	if len(live) != 0 {
+		t.Fatalf("expected empty list after delete, got %d items", len(live))
 	}
 }
 
@@ -1435,11 +1390,9 @@ func TestTrash_DeleteListRestore(t *testing.T) {
 	}
 	restore.Body.Close()
 
-	live := do(t, srv.Client(), http.MethodGet, srv.URL+"/captures", token, nil)
-	var liveItems []any
-	decodeBody(t, live, &liveItems)
-	if len(liveItems) != 1 {
-		t.Fatalf("restored capture should be back in the live feed, got %d", len(liveItems))
+	live := listCaptureIDs(t, srv, token, "/captures/page")
+	if len(live) != 1 {
+		t.Fatalf("restored capture should be back in the live feed, got %d", len(live))
 	}
 	trash2 := do(t, srv.Client(), http.MethodGet, srv.URL+"/captures/trash", token, nil)
 	var trashed2 []any
@@ -1466,7 +1419,7 @@ func TestRestore_LiveCaptureNotFound(t *testing.T) {
 func TestCaptures_Unauthenticated(t *testing.T) {
 	srv, _ := newServer(t)
 
-	resp := do(t, srv.Client(), http.MethodGet, srv.URL+"/captures", "", nil)
+	resp := do(t, srv.Client(), http.MethodGet, srv.URL+"/captures/page", "", nil)
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusUnauthorized {

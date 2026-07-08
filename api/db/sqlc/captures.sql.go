@@ -602,66 +602,6 @@ func (q *Queries) ListCapturePage(ctx context.Context, arg ListCapturePageParams
 	return items, nil
 }
 
-const listCaptures = `-- name: ListCaptures :many
-SELECT id, user_id, raw_text, media_url, media_type, created_at, source, transcript, transcription_status, transcription_model, transcription_attempts, transcribed_at, next_transcription_at, audio_duration_sec, media_key, remind_at, deleted_at, remind_hide, todo_at, done_at FROM captures
-WHERE user_id = $1
-  AND deleted_at IS NULL
-  AND (
-    $2::text IS NULL
-    OR ($2::text = 'open' AND todo_at IS NOT NULL AND done_at IS NULL)
-    OR ($2::text = 'done' AND done_at IS NOT NULL)
-  )
-  AND ($3::boolean OR remind_at IS NULL OR remind_at <= now() OR NOT remind_hide)
-ORDER BY created_at DESC
-`
-
-type ListCapturesParams struct {
-	UserID          uuid.UUID   `json:"user_id"`
-	Todo            pgtype.Text `json:"todo"`
-	IncludeReminded bool        `json:"include_reminded"`
-}
-
-func (q *Queries) ListCaptures(ctx context.Context, arg ListCapturesParams) ([]Capture, error) {
-	rows, err := q.db.Query(ctx, listCaptures, arg.UserID, arg.Todo, arg.IncludeReminded)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []Capture
-	for rows.Next() {
-		var i Capture
-		if err := rows.Scan(
-			&i.ID,
-			&i.UserID,
-			&i.RawText,
-			&i.MediaUrl,
-			&i.MediaType,
-			&i.CreatedAt,
-			&i.Source,
-			&i.Transcript,
-			&i.TranscriptionStatus,
-			&i.TranscriptionModel,
-			&i.TranscriptionAttempts,
-			&i.TranscribedAt,
-			&i.NextTranscriptionAt,
-			&i.AudioDurationSec,
-			&i.MediaKey,
-			&i.RemindAt,
-			&i.DeletedAt,
-			&i.RemindHide,
-			&i.TodoAt,
-			&i.DoneAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const listCapturesInRange = `-- name: ListCapturesInRange :many
 SELECT id, user_id, raw_text, media_url, media_type, created_at, source, transcript, transcription_status, transcription_model, transcription_attempts, transcribed_at, next_transcription_at, audio_duration_sec, media_key, remind_at, deleted_at, remind_hide, todo_at, done_at FROM captures
 WHERE user_id = $1

@@ -68,7 +68,6 @@ func Register(api huma.API, pool *pgxpool.Pool, rag *ragclient.Client, store obj
 		}
 	}
 
-	huma.Register(api, op("list-captures", http.MethodGet, "/captures", "List captures"), h.list)
 	huma.Register(api, op("list-capture-page", http.MethodGet, "/captures/page", "List a page of captures"), h.listPage)
 	huma.Register(api, op("get-capture-context", http.MethodGet, "/captures/context", "Get captures around an anchor"), h.context)
 	createOp := op("create-capture", http.MethodPost, "/captures", "Create a capture")
@@ -167,33 +166,10 @@ func toBody(c db.Capture) CaptureBody {
 
 // --- list ---
 
-type CaptureListInput struct {
-	Todo            string `query:"todo" doc:"Filter by todo state: open (flagged, not done) or done; omit for all captures"`
-	IncludeReminded bool   `query:"includeReminded" doc:"Include captures with a future reminder (hidden by default until due); set true for a reminder-management view"`
-}
-
+// ListOutput is the shared plain-array response for the non-paginated capture
+// listings (trash, links, reminders).
 type ListOutput struct {
 	Body []CaptureBody
-}
-
-func (h *handler) list(ctx context.Context, input *CaptureListInput) (*ListOutput, error) {
-	uid, err := userID(ctx)
-	if err != nil {
-		return nil, err
-	}
-	rows, err := h.q.ListCaptures(ctx, db.ListCapturesParams{
-		UserID:          uid,
-		Todo:            nullText(strPtr(input.Todo)),
-		IncludeReminded: input.IncludeReminded,
-	})
-	if err != nil {
-		return nil, huma.Error500InternalServerError("internal error")
-	}
-	out := &ListOutput{Body: make([]CaptureBody, len(rows))}
-	for i, c := range rows {
-		out.Body[i] = toBody(c)
-	}
-	return out, nil
 }
 
 // --- create ---

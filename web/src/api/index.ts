@@ -612,17 +612,6 @@ export interface WebhookTestOutputBody {
   score: number | null;
 }
 
-export type ListCapturesParams = {
-/**
- * Filter by todo state: open (flagged, not done) or done; omit for all captures
- */
-todo?: string;
-/**
- * Include captures with a future reminder (hidden by default until due); set true for a reminder-management view
- */
-includeReminded?: boolean;
-};
-
 export type GetCaptureContextParams = {
 anchorId: string;
 /**
@@ -2259,100 +2248,6 @@ export const useVerifyEmail = <TError = ErrorModel,
       > => {
       return useMutation(getVerifyEmailMutationOptions(options), queryClient);
     }
-
-/**
- * @summary List captures
- */
-export const listCaptures = (
-    params?: ListCapturesParams,
- signal?: AbortSignal
-) => {
-
-
-      return api<CaptureBody[] | null>(
-      {url: `/captures`, method: 'GET',
-        params, signal
-    },
-      );
-    }
-
-
-
-
-export const getListCapturesQueryKey = (params?: ListCapturesParams,) => {
-    return [
-    `/captures`, ...(params ? [params] : [])
-    ] as const;
-    }
-
-
-export const getListCapturesQueryOptions = <TData = Awaited<ReturnType<typeof listCaptures>>, TError = ErrorModel>(params?: ListCapturesParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listCaptures>>, TError, TData>>, }
-) => {
-
-const {query: queryOptions} = options ?? {};
-
-  const queryKey =  queryOptions?.queryKey ?? getListCapturesQueryKey(params);
-
-
-
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof listCaptures>>> = ({ signal }) => listCaptures(params, signal);
-
-
-
-
-
-   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listCaptures>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
-}
-
-export type ListCapturesQueryResult = NonNullable<Awaited<ReturnType<typeof listCaptures>>>
-export type ListCapturesQueryError = ErrorModel
-
-
-export function useListCaptures<TData = Awaited<ReturnType<typeof listCaptures>>, TError = ErrorModel>(
- params: undefined |  ListCapturesParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listCaptures>>, TError, TData>> & Pick<
-        DefinedInitialDataOptions<
-          Awaited<ReturnType<typeof listCaptures>>,
-          TError,
-          Awaited<ReturnType<typeof listCaptures>>
-        > , 'initialData'
-      >, }
- , queryClient?: QueryClient
-  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useListCaptures<TData = Awaited<ReturnType<typeof listCaptures>>, TError = ErrorModel>(
- params?: ListCapturesParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listCaptures>>, TError, TData>> & Pick<
-        UndefinedInitialDataOptions<
-          Awaited<ReturnType<typeof listCaptures>>,
-          TError,
-          Awaited<ReturnType<typeof listCaptures>>
-        > , 'initialData'
-      >, }
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useListCaptures<TData = Awaited<ReturnType<typeof listCaptures>>, TError = ErrorModel>(
- params?: ListCapturesParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listCaptures>>, TError, TData>>, }
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-/**
- * @summary List captures
- */
-
-export function useListCaptures<TData = Awaited<ReturnType<typeof listCaptures>>, TError = ErrorModel>(
- params?: ListCapturesParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listCaptures>>, TError, TData>>, }
- , queryClient?: QueryClient
- ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
-
-  const queryOptions = getListCapturesQueryOptions(params,options)
-
-  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
-
-  return { ...query, queryKey: queryOptions.queryKey };
-}
-
-
-
-
-
-
 
 /**
  * @summary Create a capture

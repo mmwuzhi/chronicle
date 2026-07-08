@@ -1,15 +1,3 @@
--- name: ListCaptures :many
-SELECT * FROM captures
-WHERE user_id = $1
-  AND deleted_at IS NULL
-  AND (
-    sqlc.narg('todo')::text IS NULL
-    OR (sqlc.narg('todo')::text = 'open' AND todo_at IS NOT NULL AND done_at IS NULL)
-    OR (sqlc.narg('todo')::text = 'done' AND done_at IS NOT NULL)
-  )
-  AND (sqlc.arg('include_reminded')::boolean OR remind_at IS NULL OR remind_at <= now() OR NOT remind_hide)
-ORDER BY created_at DESC;
-
 -- name: ListCapturePage :many
 SELECT * FROM captures
 WHERE user_id = sqlc.arg('user_id')
