@@ -126,13 +126,24 @@ def embed(text: str) -> np.ndarray:
     return _embed_ollama(text)
 
 
-def _embed_ollama(text: str) -> np.ndarray:
-    """Local Ollama embedding.
+_OLLAMA_CLIENT: ollama.Client | None = None
+
+
+def _ollama_client() -> ollama.Client:
+    """Shared Ollama client so back-to-back embeds (backfill re-indexes whole
+    corpora) reuse one HTTP connection instead of opening one per call.
 
     trust_env=False: a corporate proxy's HTTP_PROXY would otherwise hijack the
     localhost call to Ollama. Local calls never go through a proxy."""
-    client = ollama.Client(host=OLLAMA_BASE_URL, trust_env=False)
-    resp = client.embeddings(model=MODEL_BGE, prompt=text[:4096])
+    global _OLLAMA_CLIENT
+    if _OLLAMA_CLIENT is None:
+        _OLLAMA_CLIENT = ollama.Client(host=OLLAMA_BASE_URL, trust_env=False)
+    return _OLLAMA_CLIENT
+
+
+def _embed_ollama(text: str) -> np.ndarray:
+    """Local Ollama embedding."""
+    resp = _ollama_client().embeddings(model=MODEL_BGE, prompt=text[:4096])
     return np.array(resp["embedding"], dtype=np.float32)
 
 
@@ -243,11 +254,13 @@ def get_content(capture_id: str, user_id: str) -> str | None:
 
 def _rows(user_id: str) -> list[dict]:
     """All indexable captures for a user, joined with extracted metadata + the
-    raw embedding bytes and the model that produced it."""
+    raw embedding bytes, the model that produced it, and the source_hash of the
+    content it was computed from (so callers can tell a current vector from a
+    stale one without re-embedding)."""
     with pool().connection() as conn:
         rows = conn.execute(
             f"SELECT c.id::text, {_CONTENT} AS content, c.created_at, "
-            "       m.data, c.media_type::text, e.embedding, e.model "
+            "       m.data, c.media_type::text, e.embedding, e.model, e.source_hash "
             "FROM captures c "
             "LEFT JOIN capture_metadata m ON m.capture_id = c.id "
             "LEFT JOIN capture_embeddings e ON e.capture_id = c.id "
@@ -257,28 +270,46 @@ def _rows(user_id: str) -> list[dict]:
     return [{"id": r[0], "content": r[1] or "", "created_at": _iso(r[2]),
              "metadata": r[3], "modality": r[4],
              "embedding": bytes(r[5]) if r[5] is not None else None,
-             "model": r[6]}
+             "model": r[6], "source_hash": r[7]}
             for r in rows]
 
 
-def _load_for_search(user_id: str, dim: int) -> tuple[list[dict], np.ndarray]:
-    """Load all rows + a vector matrix sized to `dim` (the current query vector's
-    dimension). Only embeddings from the *active* model are placed; rows from a
-    previous embedding model stay zero — they score cosine 0 until backfill
+def search_corpus(user_id: str) -> list[dict]:
+    """One corpus load shared by every recall channel of a single request.
+    With embeddings on this is _rows (the vector channel needs the embedding
+    bytes); off, the embedding-free all_fragments. /find and /ask load this once
+    and pass it down — each channel re-pulling the full corpus from Postgres per
+    query is exactly the cost this avoids."""
+    return _rows(user_id) if EMBED_ENABLED else all_fragments(user_id)
+
+
+def _vector_matrix(rows: list[dict], dim: int) -> np.ndarray:
+    """Vector matrix over pre-loaded rows, sized to `dim` (the current query
+    vector's dimension). Only embeddings from the *active* model are placed; rows
+    from a previous embedding model stay zero — they score cosine 0 until backfill
     re-embeds them. Matching dimension alone is not enough: two models can emit
     same-dim vectors in incompatible spaces, which would produce meaningless cosine
     rankings, so we require both the active model name and the exact dimension.
     Sizing to the query's dim guarantees the matrix multiply never shape-mismatches
     during a model change."""
-    rows = _rows(user_id)
     active = active_embed_model()
-    metas = [{"id": r["id"], "content": r["content"], "created_at": r["created_at"],
-              "metadata": r["metadata"], "modality": r["modality"]} for r in rows]
     mat = np.zeros((len(rows), dim), dtype=np.float32)
     for i, r in enumerate(rows):
-        if r["embedding"] and r["model"] == active and len(r["embedding"]) // 4 == dim:
-            mat[i] = np.frombuffer(r["embedding"], dtype=np.float32)
-    return metas, mat
+        emb = r.get("embedding")
+        if emb and r.get("model") == active and len(emb) // 4 == dim:
+            mat[i] = np.frombuffer(emb, dtype=np.float32)
+    return mat
+
+
+def _stored_vector(row: dict) -> np.ndarray | None:
+    """The row's own stored embedding, but only when it is verifiably the vector
+    embed() would produce now: active model AND source_hash still matching the
+    live content (an edit while the sidecar was down leaves a stale vector).
+    None → the caller re-embeds."""
+    if (row.get("embedding") and row.get("model") == active_embed_model()
+            and row.get("source_hash") == _md5(row["content"])):
+        return np.frombuffer(row["embedding"], dtype=np.float32)
+    return None
 
 
 def _cosines(mat: np.ndarray, qv: np.ndarray) -> np.ndarray:
@@ -305,14 +336,17 @@ def recent(user_id: str, limit: int = 50, offset: int = 0) -> list[Fragment]:
     return [Fragment(r[0], r[1] or "", _iso(r[2]), r[3], r[4]) for r in rows]
 
 
-def neighbors(user_id: str, query: str, limit: int = 20) -> list[Fragment]:
+def neighbors(user_id: str, query: str, limit: int = 20,
+              corpus: list[dict] | None = None) -> list[Fragment]:
     """Semantic nearest neighbours, for assembling the query-time cluster. Empty
     when embeddings are disabled — the cluster then leans on recent ∪ BM25 ∪ the
-    time-window slice instead."""
+    time-window slice instead. Pass `corpus` (a search_corpus result) to reuse a
+    load the caller already paid for."""
     if not EMBED_ENABLED:
         return []
     qv = embed(query)
-    metas, mat = _load_for_search(user_id, len(qv))
+    metas = corpus if corpus is not None else _rows(user_id)
+    mat = _vector_matrix(metas, len(qv))
     sims = _cosines(mat, qv)
     # Skip zero-vector rows (no active-model embedding yet — backfill pending or
     # model changed): they score exactly 0 and would otherwise be pulled into the
@@ -331,19 +365,25 @@ def neighbors(user_id: str, query: str, limit: int = 20) -> list[Fragment]:
 
 
 def related(user_id: str, capture_id: str, limit: int = 10) -> list[dict]:
-    """Semantic neighbours of ONE capture, for the 'Related' surface. Embeds the
-    capture's own indexable text and cosine-scans the user's other captures,
-    excluding the capture itself. Returns dicts shaped like /find items (no
-    embedding bytes). Empty — never an error — when embeddings are disabled or the
-    capture has no indexable text (media-only / missing); the UI just shows no
-    suggestions."""
+    """Semantic neighbours of ONE capture, for the 'Related' surface: cosine-scan
+    the user's other captures against the capture's own vector, excluding the
+    capture itself. The query vector is the capture's *stored* embedding whenever
+    it is verifiably current (_stored_vector) — every detail-view open otherwise
+    pays an embed round-trip for a vector the index already has; only a stale or
+    missing row (edited while the sidecar was down, backfill pending) re-embeds.
+    Returns dicts shaped like /find items (no embedding bytes). Empty — never an
+    error — when embeddings are disabled or the capture has no indexable text
+    (media-only / missing); the UI just shows no suggestions."""
     if not EMBED_ENABLED:
         return []
-    content = get_content(capture_id, user_id)
-    if not content or not content.strip():
+    metas = _rows(user_id)
+    own = next((r for r in metas if r["id"] == capture_id), None)
+    if own is None or not own["content"].strip():
         return []
-    qv = embed(content)
-    metas, mat = _load_for_search(user_id, len(qv))
+    qv = _stored_vector(own)
+    if qv is None:
+        qv = embed(own["content"])
+    mat = _vector_matrix(metas, len(qv))
     sims = _cosines(mat, qv)
     out: list[dict] = []
     for i in np.argsort(-sims):
@@ -368,22 +408,27 @@ def related(user_id: str, capture_id: str, limit: int = 10) -> list[dict]:
 CANDIDATE_FLOOR = float(os.getenv("CANDIDATE_FLOOR", "0.3"))
 
 
-def candidates(user_id: str, query: str, k: int = 30) -> list[dict]:
+def candidates(user_id: str, query: str, k: int = 30,
+               corpus: list[dict] | None = None) -> list[dict]:
     """Wide recall: literal substring hits ∪ vector top-k (low floor), for rerank.
     Zero-content captures are kept out of vector recall (unstable noise); literal
     hits are exempt. With embeddings disabled there is no vector channel, so this
-    returns literal hits only — BM25 (added in search()) supplies the rest."""
+    returns literal hits only — BM25 (added in search()) supplies the rest.
+    Pass `corpus` (a search_corpus result) to reuse a load the caller already
+    paid for."""
     q = query.lower()
+    if corpus is None:
+        corpus = search_corpus(user_id)
     if not EMBED_ENABLED:
-        rows = all_fragments(user_id)
         pool_ = [{"id": f["id"], "content": f["content"], "created_at": f["created_at"],
                   "modality": f["modality"], "lexical": True, "vscore": 0.0}
-                 for f in rows if q in f["content"].lower()]
+                 for f in corpus if q in f["content"].lower()]
         pool_.sort(key=lambda c: c["created_at"], reverse=True)
         return pool_[:k]
 
     qv = embed(query)
-    metas, mat = _load_for_search(user_id, len(qv))
+    metas = corpus
+    mat = _vector_matrix(metas, len(qv))
     sims = _cosines(mat, qv)
 
     pool_: list[dict] = []
@@ -398,12 +443,10 @@ def candidates(user_id: str, query: str, k: int = 30) -> list[dict]:
 
 
 def all_fragments(user_id: str) -> list[dict]:
-    """All captures (for building the BM25 document set / time-window slice).
-
-    Text-only — never SELECTs the embedding BYTEA, which this path discards. (The
-    vector matrix is loaded separately by _load_for_search only when needed.) This
-    matters at scale: pulling every embedding here would move tens of MB per call,
-    sometimes several times per search."""
+    """All captures (for building the BM25 document set / time-window slice)
+    with embeddings disabled — search_corpus routes here so that path never
+    SELECTs the embedding BYTEA it would discard. With embeddings on, the one
+    shared _rows load (which does carry the vectors) serves every channel."""
     with pool().connection() as conn:
         rows = conn.execute(
             f"SELECT c.id::text, {_CONTENT} AS content, c.created_at, "

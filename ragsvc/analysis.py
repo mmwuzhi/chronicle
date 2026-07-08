@@ -71,7 +71,10 @@ def assemble_cluster(user_id: str, question: str, k_sem: int = 20, k_recent: int
     import bm25
     import dates
 
-    frags = rag.all_fragments(user_id)
+    # One corpus load for the whole question: the time-window slice, the BM25
+    # channel, and the semantic channel (neighbors, via corpus=) all share it
+    # instead of each re-pulling every capture from Postgres.
+    frags = rag.search_corpus(user_id)
     by_id = {f["id"]: f for f in frags}
 
     window_order: list[str] = []
@@ -90,7 +93,7 @@ def assemble_cluster(user_id: str, question: str, k_sem: int = 20, k_recent: int
         if fid in by_id and fid not in window_set and fid not in supp_order:
             supp_order.append(fid)
 
-    for f in rag.neighbors(user_id, question, k_sem):
+    for f in rag.neighbors(user_id, question, k_sem, corpus=frags):
         add_supp(f.id)
     for f in rag.recent(user_id, k_recent):
         add_supp(f.id)
@@ -149,10 +152,22 @@ def _claude(system: str, user: str) -> str:
     return out
 
 
+_OLLAMA_CLIENT: ollama.Client | None = None
+
+
+def _ollama_client() -> ollama.Client:
+    """Shared client so repeated chat calls (per-search rerank scoring) reuse one
+    HTTP connection. trust_env=False so the localhost call skips the system
+    proxy."""
+    global _OLLAMA_CLIENT
+    if _OLLAMA_CLIENT is None:
+        _OLLAMA_CLIENT = ollama.Client(host=OLLAMA_BASE_URL, trust_env=False)
+    return _OLLAMA_CLIENT
+
+
 def _ollama(system: str, user: str, model: str) -> str:
-    """Local model. trust_env=False so the localhost call skips the system proxy."""
-    client = ollama.Client(host=OLLAMA_BASE_URL, trust_env=False)
-    resp = client.chat(
+    """Local model."""
+    resp = _ollama_client().chat(
         model=model,
         messages=[
             {"role": "system", "content": system},

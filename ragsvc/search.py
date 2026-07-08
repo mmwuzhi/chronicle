@@ -230,7 +230,11 @@ def search(user_id: str, query: str, limit: int = SEARCH_TOPK) -> list[dict]:
         y, mo, d = (int(x) for x in m.groups())
         return rag.on_date(user_id, f"{y:04d}-{mo:02d}-{d:02d}", limit)
 
-    cands = rag.candidates(user_id, q, k=30)
+    # One corpus load for the whole request — the vector/literal channel
+    # (candidates) and the BM25 channel below share it instead of each
+    # re-pulling every capture from Postgres.
+    corpus = rag.search_corpus(user_id)
+    cands = rag.candidates(user_id, q, k=30, corpus=corpus)
 
     # Information-poor query: single char, or all function words. No alignable
     # topic, rerank score is noise → literal hits only, newest first.
@@ -245,7 +249,7 @@ def search(user_id: str, query: str, limit: int = SEARCH_TOPK) -> list[dict]:
     # ILIKE and may miss the 0.3 vector floor; shared tokens catch them. BM25
     # candidates do NOT get the literal-hit exemption — precision is still rerank's
     # job. Zero-density captures stay out of fuzzy recall.
-    frags = rag.all_fragments(user_id)
+    frags = corpus
     by_id = {f["id"]: f for f in frags}
     seen = {c["id"] for c in cands}
     for fid, _s in bm25.top_k(q, [(f["id"], f["content"]) for f in frags], k=BM25_TOPK):

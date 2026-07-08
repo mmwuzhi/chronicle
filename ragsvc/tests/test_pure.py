@@ -119,6 +119,40 @@ def test_cosines_zero_vectors_score_zero():
     assert sims[1] == 0.0
 
 
+def test_stored_vector_freshness_gate():
+    # related() may only reuse a stored embedding that is verifiably current:
+    # active model AND source_hash matching the live content. Anything stale
+    # must return None so the caller re-embeds — a silent stale-vector reuse
+    # would rank Related against text the user already edited away.
+    vec = np.array([0.1, 0.2], dtype=np.float32)
+    row = {"content": "拉面 1200 日元", "embedding": vec.tobytes(),
+           "model": rag.active_embed_model(),
+           "source_hash": rag._md5("拉面 1200 日元")}
+    assert np.allclose(rag._stored_vector(row), vec)
+    assert rag._stored_vector({**row, "source_hash": rag._md5("edited")}) is None
+    assert rag._stored_vector({**row, "model": "other-model"}) is None
+    assert rag._stored_vector({**row, "embedding": None}) is None
+
+
+def test_vector_matrix_places_only_active_model_and_dim():
+    # Rows from another model or another dimension must stay zero vectors
+    # (cosine 0) rather than land in the matrix — same-dim vectors from a
+    # different model live in an incompatible space.
+    active = rag.active_embed_model()
+    good = np.array([1.0, 0.0], dtype=np.float32)
+    rows = [
+        {"embedding": good.tobytes(), "model": active},
+        {"embedding": good.tobytes(), "model": "old-model"},
+        {"embedding": np.zeros(3, dtype=np.float32).tobytes(), "model": active},
+        {"embedding": None, "model": None},
+        {},  # all_fragments-shaped row (no embedding key at all)
+    ]
+    mat = rag._vector_matrix(rows, 2)
+    assert mat.shape == (5, 2)
+    assert np.allclose(mat[0], good)
+    assert not mat[1:].any()
+
+
 def test_renumber_maps_positions_to_uuids():
     cluster = [
         rag.Fragment("11111111-1111-1111-1111-111111111111", "拉面 1200日元", "2026-06-10T12:00:00"),

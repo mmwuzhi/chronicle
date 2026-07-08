@@ -120,12 +120,23 @@ def _facts_llm(content: str, backend: str) -> dict:
     return json.loads(m.group(0))
 
 
+_OLLAMA_CLIENT: ollama.Client | None = None
+
+
+def _ollama_client() -> ollama.Client:
+    """Shared client so backfill's back-to-back extractions reuse one HTTP
+    connection. trust_env=False: local calls skip the system proxy."""
+    global _OLLAMA_CLIENT
+    if _OLLAMA_CLIENT is None:
+        _OLLAMA_CLIENT = ollama.Client(host=OLLAMA_BASE_URL, trust_env=False)
+    return _OLLAMA_CLIENT
+
+
 def _facts_ollama(content: str) -> dict:
-    """Local qwen, free key/value extraction. trust_env=False: local calls skip
-    the system proxy. think=False is mandatory — format=json's grammar constraint
-    fights the thinking phase and makes long receipt text pathologically slow."""
-    client = ollama.Client(host=OLLAMA_BASE_URL, trust_env=False)
-    resp = client.chat(
+    """Local qwen, free key/value extraction. think=False is mandatory —
+    format=json's grammar constraint fights the thinking phase and makes long
+    receipt text pathologically slow."""
+    resp = _ollama_client().chat(
         model=EXTRACT_MODEL,
         messages=[{"role": "user", "content": _FACTS_PROMPT.format(content=content[:500])}],
         format="json",
