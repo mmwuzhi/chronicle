@@ -165,6 +165,20 @@ SET transcription_status = CASE
     END
 WHERE id = $1;
 
+-- name: MinScheduledTranscriptionIn :one
+-- Seconds until the earliest not-yet-claimable transcription work comes due: a
+-- failed attempt's backoff retry, or a 'processing' lease that would come free
+-- after a crash. The worker reads this after every drain so its wake-up timer
+-- never forgets a retry scheduled by an earlier drain. Zero when nothing is
+-- scheduled. The subtraction happens here because claimability is judged by
+-- the database clock — computing it against the Go clock skews the wait by
+-- whatever the two clocks disagree on.
+SELECT COALESCE(EXTRACT(EPOCH FROM MIN(next_transcription_at) - now()), 0)::float8 AS next_in_seconds
+FROM captures
+WHERE transcription_status IN ('pending', 'processing')
+  AND deleted_at IS NULL
+  AND next_transcription_at > now();
+
 -- name: SkipCaptureTranscription :exec
 -- Mark a capture's transcription skipped and clear its retry schedule, so it
 -- leaves the worker queue. Used to enforce the vision opt-out at the sink: an

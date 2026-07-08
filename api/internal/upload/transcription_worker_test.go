@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/google/uuid"
@@ -198,6 +199,72 @@ func TestProcessAvailableSkipsImageWhenVisionDisabled(t *testing.T) {
 	}
 	if status != string(db.TranscriptionStatusSkipped) {
 		t.Fatalf("expected image skipped when vision disabled, got %q", status)
+	}
+}
+
+// Regression for the cross-drain wake loss: the retry a failed attempt
+// schedules must be reported by *every* later drain, not only the drain that
+// scheduled it. The run loop resets its timer after each wake-up, so if an
+// unrelated kick drained an empty queue and got zero back, a due-in-1-minute
+// retry would silently wait for the 15-minute fallback.
+func TestProcessAvailableReportsScheduledRetryAcrossDrains(t *testing.T) {
+	pool := testutil.NewPool(t)
+	testutil.Truncate(t, pool, "captures", "users")
+	ctx := context.Background()
+
+	userID := uuid.New()
+	if _, err := pool.Exec(ctx,
+		"INSERT INTO users (id, email, password_hash) VALUES ($1, $2, 'hash')",
+		userID, userID.String()+"@test.com",
+	); err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+
+	q := db.New(pool)
+	if _, err := q.CreateUploadedCapture(ctx, db.CreateUploadedCaptureParams{
+		UserID:               userID,
+		MediaUrl:             pgtype.Text{String: "https://r2.example/a.webm", Valid: true},
+		MediaType:            db.CaptureMediaTypeAudio,
+		MediaKey:             pgtype.Text{String: "captures/a.webm", Valid: true},
+		AudioDurationSec:     pgtype.Int4{Int32: 60, Valid: true},
+		TranscriptionEnabled: true,
+	}); err != nil {
+		t.Fatalf("create capture: %v", err)
+	}
+
+	// A provider that always fails, so the first drain schedules the attempt-1
+	// backoff (1 minute) via FailCaptureTranscription.
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	t.Cleanup(server.Close)
+
+	worker := transcriptionWorker{
+		q:      q,
+		s3:     workerS3{body: "audio"},
+		bucket: "bucket",
+		apiKey: "test-key",
+		apiURL: transcriptionEndpoint(server.URL),
+		model:  "test-transcription-model",
+		client: server.Client(),
+	}
+
+	first, err := worker.processAvailable(ctx)
+	if err != nil {
+		t.Fatalf("first drain: %v", err)
+	}
+	if first <= 0 || first > time.Minute {
+		t.Fatalf("first drain should report the 1-minute backoff, got %v", first)
+	}
+
+	// An unrelated wake-up with nothing claimable must still see the scheduled
+	// retry instead of reporting "nothing scheduled".
+	second, err := worker.processAvailable(ctx)
+	if err != nil {
+		t.Fatalf("second drain: %v", err)
+	}
+	if second <= 0 || second > time.Minute {
+		t.Fatalf("later drains must keep reporting the pending retry, got %v", second)
 	}
 }
 

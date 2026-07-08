@@ -706,6 +706,28 @@ func (q *Queries) ListTrashedCaptures(ctx context.Context, userID uuid.UUID) ([]
 	return items, nil
 }
 
+const minScheduledTranscriptionIn = `-- name: MinScheduledTranscriptionIn :one
+SELECT COALESCE(EXTRACT(EPOCH FROM MIN(next_transcription_at) - now()), 0)::float8 AS next_in_seconds
+FROM captures
+WHERE transcription_status IN ('pending', 'processing')
+  AND deleted_at IS NULL
+  AND next_transcription_at > now()
+`
+
+// Seconds until the earliest not-yet-claimable transcription work comes due: a
+// failed attempt's backoff retry, or a 'processing' lease that would come free
+// after a crash. The worker reads this after every drain so its wake-up timer
+// never forgets a retry scheduled by an earlier drain. Zero when nothing is
+// scheduled. The subtraction happens here because claimability is judged by
+// the database clock — computing it against the Go clock skews the wait by
+// whatever the two clocks disagree on.
+func (q *Queries) MinScheduledTranscriptionIn(ctx context.Context) (float64, error) {
+	row := q.db.QueryRow(ctx, minScheduledTranscriptionIn)
+	var next_in_seconds float64
+	err := row.Scan(&next_in_seconds)
+	return next_in_seconds, err
+}
+
 const pendingReminders = `-- name: PendingReminders :many
 SELECT id, user_id, raw_text, media_url, media_type, created_at, source, transcript, transcription_status, transcription_model, transcription_attempts, transcribed_at, next_transcription_at, audio_duration_sec, media_key, remind_at, deleted_at, remind_hide, todo_at, done_at FROM captures
 WHERE user_id = $1

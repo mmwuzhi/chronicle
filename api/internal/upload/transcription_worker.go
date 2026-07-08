@@ -115,34 +115,19 @@ func (w *transcriptionWorker) run(ctx context.Context, kick <-chan struct{}) {
 	}
 }
 
-// backoffAfterAttempt mirrors FailCaptureTranscription's SQL CASE so the run
-// loop can wake up when the retry it just scheduled comes due. Zero means the
-// capture failed permanently (no reschedule).
-func backoffAfterAttempt(attempts int32) time.Duration {
-	switch attempts {
-	case 1:
-		return time.Minute
-	case 2:
-		return 5 * time.Minute
-	case 3:
-		return 30 * time.Minute
-	default:
-		return 0
-	}
-}
-
-// processAvailable drains the claimable queue. The returned duration is the
-// earliest backoff among jobs that failed in this drain (zero when none), so
-// the caller can wake up when the first retry becomes claimable.
+// processAvailable drains the claimable queue, then reports how long until the
+// earliest scheduled retry or expired-lease pickup comes due (zero when nothing
+// is scheduled). The schedule is read back from the database rather than
+// accumulated in memory: a wake-up for an unrelated kick must not forget a
+// retry that an earlier drain scheduled.
 func (w *transcriptionWorker) processAvailable(ctx context.Context) (time.Duration, error) {
-	var retryIn time.Duration
 	for {
 		capture, err := w.q.ClaimPendingTranscription(ctx)
 		if errors.Is(err, pgx.ErrNoRows) {
-			return retryIn, nil
+			return w.nextScheduledIn(ctx)
 		}
 		if err != nil {
-			return retryIn, err
+			return 0, err
 		}
 
 		// Enforce the vision opt-out at the sink. Create marks images skipped when
@@ -151,7 +136,7 @@ func (w *transcriptionWorker) processAvailable(ctx context.Context) (time.Durati
 		// skipped so it leaves the queue instead of looping. Audio is unaffected.
 		if capture.MediaType == db.CaptureMediaTypeImage && !w.visionEnabled {
 			if err := w.q.SkipCaptureTranscription(ctx, capture.ID); err != nil {
-				return retryIn, err
+				return 0, err
 			}
 			continue
 		}
@@ -159,10 +144,7 @@ func (w *transcriptionWorker) processAvailable(ctx context.Context) (time.Durati
 		transcript, model, err := w.transcribeCapture(ctx, capture)
 		if err != nil {
 			if failErr := w.q.FailCaptureTranscription(ctx, capture.ID); failErr != nil {
-				return retryIn, failErr
-			}
-			if backoff := backoffAfterAttempt(capture.TranscriptionAttempts); backoff > 0 && (retryIn == 0 || backoff < retryIn) {
-				retryIn = backoff
+				return 0, failErr
 			}
 			slog.Warn(
 				"transcription attempt failed",
@@ -179,11 +161,30 @@ func (w *transcriptionWorker) processAvailable(ctx context.Context) (time.Durati
 			Transcript:         pgtype.Text{String: transcript, Valid: true},
 			TranscriptionModel: pgtype.Text{String: model, Valid: true},
 		}); err != nil {
-			return retryIn, err
+			return 0, err
 		}
 		// Transcript is now the capture's indexable content — embed it.
 		w.rag.Index(capture.UserID.String(), capture.ID.String())
 	}
+}
+
+// nextScheduledIn is the time until the earliest scheduled (not yet claimable)
+// transcription comes due — a failure backoff or a crashed 'processing' lease.
+// Zero means nothing is scheduled. A due-but-not-yet-visible boundary case is
+// clamped to one second so the run loop re-drains instead of treating it as
+// "nothing scheduled" and falling back to the long interval.
+func (w *transcriptionWorker) nextScheduledIn(ctx context.Context) (time.Duration, error) {
+	seconds, err := w.q.MinScheduledTranscriptionIn(ctx)
+	if err != nil {
+		return 0, err
+	}
+	if seconds <= 0 {
+		return 0, nil
+	}
+	if wait := time.Duration(seconds * float64(time.Second)); wait > time.Second {
+		return wait, nil
+	}
+	return time.Second, nil
 }
 
 func (w *transcriptionWorker) transcribe(ctx context.Context, key string) (string, error) {
