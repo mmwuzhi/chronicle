@@ -116,6 +116,22 @@ final class MainWindowNavigation: ObservableObject {
     }
 }
 
+extension View {
+    // Same macOS 26 availability rationale as `panelGlass` in
+    // PanelContentView.swift, but full-bleed (no corner radius) since the rail
+    // hugs the window's leading edge rather than floating as its own panel.
+    // The stutter this was first blamed for was actually the browse/trash
+    // lists missing `LazyVStack` (see MainView.swift), not this material.
+    @ViewBuilder
+    fileprivate func sidebarGlass() -> some View {
+        if #available(macOS 26, *) {
+            glassEffect(.regular, in: Rectangle())
+        } else {
+            background(.regularMaterial)
+        }
+    }
+}
+
 struct MainTabRail: View {
     static let width: CGFloat = 148
     static let edgePeekInset: CGFloat = 2
@@ -143,9 +159,13 @@ struct MainTabRail: View {
         .padding(.vertical, 14)
         .frame(width: Self.width)
         .frame(maxHeight: .infinity)
-        .background(floating ? AnyShapeStyle(.regularMaterial) : AnyShapeStyle(Color.primary.opacity(0.025)))
+        .sidebarGlass()
         .overlay(alignment: .trailing) {
-            Divider()
+            LinearGradient(
+                colors: [Color.white.opacity(0.55), Color.white.opacity(0.05)],
+                startPoint: .top, endPoint: .bottom,
+            )
+            .frame(width: 1)
         }
         .shadow(color: Color.black.opacity(floating ? 0.12 : 0), radius: floating ? 18 : 0, x: floating ? 8 : 0, y: 0)
         .onHover(perform: onHover)
