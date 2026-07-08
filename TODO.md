@@ -48,7 +48,6 @@ Deferred work.
 
 Approved refactor batch, worked top-down; remove each line when its phase lands.
 
-- P2 — Event-driven transcription worker: replace the 2s poll in `api/internal/upload/transcription_worker.go` with kick channel + backoff-aware timer + 15min fallback; wire kick through `upload.Register` / `capture.Register`.
 - P3 — Drop the dead `model` param from `ragsvc/rag.py embed()`; update callers in `rag.py`, `search.py`, `webhook.py`, tests.
 - P4 — Remove the unconsumed `GET /captures` endpoint (handler, `ListCaptures` query, tests move to `/captures/page`).
 - P5 — Split `desktop/Sources/ChronicleDesktop/DesktopUI.swift` (1102 lines) into DesktopTheme / CaptureRowModel / CaptureRowViews / WorkspaceInput / ScreenPlacement; update the identity-parity file references in root `CLAUDE.md`.

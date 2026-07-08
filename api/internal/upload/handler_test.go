@@ -39,6 +39,7 @@ func TestUploadCreatesCaptureOnlyWhenRequested(t *testing.T) {
 		validate: func(string) (string, error) {
 			return userID.String(), nil
 		},
+		kick: func() {},
 	}
 
 	for _, test := range []struct {

@@ -140,9 +140,9 @@ func main() {
 		OpenAIVisionModel: cfg.OpenAIVisionModel,
 		VisionEnabled:     cfg.VisionEnabled,
 	}
-	upload.Register(r, pool, s3client, uploadConfig, auth.ValidateToken(cfg.JWTSecret))
-	upload.StartTranscriptionWorker(ctx, pool, s3client, uploadConfig, rag)
-	capture.Register(api, pool, rag, s3client, cfg.R2BucketName, authMW, captureCreateMW)
+	kickTranscription := upload.StartTranscriptionWorker(ctx, pool, s3client, uploadConfig, rag)
+	upload.Register(r, pool, s3client, uploadConfig, auth.ValidateToken(cfg.JWTSecret), kickTranscription)
+	capture.Register(api, pool, rag, s3client, cfg.R2BucketName, authMW, captureCreateMW, kickTranscription)
 	user.Register(api, pool, authMW)
 	ai.Register(api, cfg.GeminiKey, authMW)
 	search.Register(api, pool, rag, authMW)

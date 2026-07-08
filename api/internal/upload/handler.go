@@ -48,12 +48,18 @@ type handler struct {
 	q        *db.Queries
 	cfg      Config
 	validate func(raw string) (string, error)
+	kick     func()
 }
 
 // Register mounts POST /captures/upload on the chi router as a plain http.Handler.
 // Multipart parsing requires direct *http.Request access, so huma is bypassed here.
-func Register(r chi.Router, pool *pgxpool.Pool, s3c S3Client, cfg Config, validate func(raw string) (string, error)) {
-	h := &handler{s3: s3c, q: db.New(pool), cfg: cfg, validate: validate}
+// kick wakes the transcription worker after an upload enqueues a pending job
+// (see StartTranscriptionWorker); pass a no-op when transcription is disabled.
+func Register(r chi.Router, pool *pgxpool.Pool, s3c S3Client, cfg Config, validate func(raw string) (string, error), kick func()) {
+	if kick == nil {
+		kick = func() {}
+	}
+	h := &handler{s3: s3c, q: db.New(pool), cfg: cfg, validate: validate, kick: kick}
 	r.Post("/captures/upload", h.upload)
 }
 
@@ -188,6 +194,9 @@ func (h *handler) upload(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "could not create capture")
 		return
+	}
+	if c.TranscriptionStatus == db.TranscriptionStatusPending {
+		h.kick()
 	}
 	resp := uploadResponse{
 		ID:                  c.ID.String(),

@@ -31,6 +31,9 @@ type handler struct {
 	rag    *ragclient.Client
 	store  objectDeleter
 	bucket string
+	// kickTranscription wakes the event-driven transcription worker after
+	// retryTranscription re-queues a job (see upload.StartTranscriptionWorker).
+	kickTranscription func()
 }
 
 // objectDeleter is the sliver of the R2/S3 client the capture handler needs to
@@ -46,9 +49,13 @@ type objectDeleter interface {
 // quick-capture token can append captures but cannot read, update, or delete.
 //
 // store/bucket back best-effort R2 media cleanup on permanent delete; pass a nil
-// store when R2 is not configured.
-func Register(api huma.API, pool *pgxpool.Pool, rag *ragclient.Client, store objectDeleter, bucket string, authMW, createMW func(huma.Context, func(huma.Context))) {
-	h := &handler{q: db.New(pool), rag: rag, store: store, bucket: bucket}
+// store when R2 is not configured. kickTranscription wakes the transcription
+// worker when a retry re-queues a job; pass nil when transcription is disabled.
+func Register(api huma.API, pool *pgxpool.Pool, rag *ragclient.Client, store objectDeleter, bucket string, authMW, createMW func(huma.Context, func(huma.Context)), kickTranscription func()) {
+	if kickTranscription == nil {
+		kickTranscription = func() {}
+	}
+	h := &handler{q: db.New(pool), rag: rag, store: store, bucket: bucket, kickTranscription: kickTranscription}
 
 	op := func(id, method, path, summary string) huma.Operation {
 		return huma.Operation{
@@ -345,6 +352,7 @@ func (h *handler) retryTranscription(ctx context.Context, input *CaptureRetryTra
 		}
 		return nil, huma.Error500InternalServerError("internal error")
 	}
+	h.kickTranscription()
 	return &UpdateOutput{Body: toBody(c)}, nil
 }
 

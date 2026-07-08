@@ -52,8 +52,9 @@ func newServer(t *testing.T) (*httptest.Server, *pgxpool.Pool) {
 	// read/mutate routes stay JWT-only via authMW.
 	createMW := middleware.RequireAuthHumaCtx(auth.ValidateTokenOrPAT(testutil.TestJWTSecret, db.New(pool)))
 	// nil store + empty bucket: permanent delete still hard-deletes the row; R2
-	// media cleanup is simply skipped (no object storage wired in tests).
-	capture.Register(api, pool, ragclient.New(""), nil, "", authMW, createMW)
+	// media cleanup is simply skipped (no object storage wired in tests). nil
+	// kick: no transcription worker to wake in tests.
+	capture.Register(api, pool, ragclient.New(""), nil, "", authMW, createMW, nil)
 
 	srv := httptest.NewServer(r)
 	t.Cleanup(srv.Close)

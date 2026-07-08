@@ -39,9 +39,28 @@ type transcriptionWorker struct {
 	visionEnabled bool
 }
 
-func StartTranscriptionWorker(ctx context.Context, pool *pgxpool.Pool, s3c S3Client, cfg Config, rag *ragclient.Client) {
+// The worker is event-driven, not polled: every enqueue path lives in this API
+// process (upload in this package, the retry endpoint in internal/capture) and
+// signals the returned kick, so the loop only touches the database when there
+// is plausibly work. This keeps an idle deployment truly idle — a short poll
+// would stop Neon from ever autosuspending. If the API is ever scaled to
+// multiple instances, cross-instance enqueues are picked up by the fallback
+// wake-up (bounded by workerFallbackInterval).
+const (
+	// workerFallbackInterval bounds how stale a missed signal can get (crash
+	// recovery of an expired 'processing' lease, a future multi-instance write).
+	workerFallbackInterval = 15 * time.Minute
+	// workerErrorRetryInterval re-checks quickly after a drain failed midway
+	// (typically a transient DB error), without falling back to a tight loop.
+	workerErrorRetryInterval = 30 * time.Second
+)
+
+// StartTranscriptionWorker launches the background worker and returns a
+// non-blocking kick that wakes it immediately. When transcription is not
+// configured the worker doesn't start and the returned kick is a no-op.
+func StartTranscriptionWorker(ctx context.Context, pool *pgxpool.Pool, s3c S3Client, cfg Config, rag *ragclient.Client) (kick func()) {
 	if s3c == nil || cfg.R2BucketName == "" || cfg.OpenAIKey == "" {
-		return
+		return func() {}
 	}
 	worker := &transcriptionWorker{
 		q:             db.New(pool),
@@ -56,33 +75,74 @@ func StartTranscriptionWorker(ctx context.Context, pool *pgxpool.Pool, s3c S3Cli
 		rag:           rag,
 		visionEnabled: cfg.VisionEnabled,
 	}
-	go worker.run(ctx)
-}
-
-func (w *transcriptionWorker) run(ctx context.Context) {
-	ticker := time.NewTicker(2 * time.Second)
-	defer ticker.Stop()
-
-	for {
-		if err := w.processAvailable(ctx); err != nil && !errors.Is(err, context.Canceled) {
-			slog.Error("transcription worker failed", "traceId", "transcription-worker", "err", err)
-		}
+	kickCh := make(chan struct{}, 1)
+	go worker.run(ctx, kickCh)
+	return func() {
 		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
+		case kickCh <- struct{}{}:
+		default: // a wake-up is already queued
 		}
 	}
 }
 
-func (w *transcriptionWorker) processAvailable(ctx context.Context) error {
+func (w *transcriptionWorker) run(ctx context.Context, kick <-chan struct{}) {
+	timer := time.NewTimer(0) // fire immediately: drain anything left from before a restart
+	defer timer.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-kick:
+		case <-timer.C:
+		}
+		wait := workerFallbackInterval
+		retryIn, err := w.processAvailable(ctx)
+		if err != nil && !errors.Is(err, context.Canceled) {
+			slog.Error("transcription worker failed", "traceId", "transcription-worker", "err", err)
+			wait = workerErrorRetryInterval
+		}
+		if retryIn > 0 && retryIn < wait {
+			wait = retryIn
+		}
+		if !timer.Stop() {
+			select {
+			case <-timer.C:
+			default:
+			}
+		}
+		timer.Reset(wait)
+	}
+}
+
+// backoffAfterAttempt mirrors FailCaptureTranscription's SQL CASE so the run
+// loop can wake up when the retry it just scheduled comes due. Zero means the
+// capture failed permanently (no reschedule).
+func backoffAfterAttempt(attempts int32) time.Duration {
+	switch attempts {
+	case 1:
+		return time.Minute
+	case 2:
+		return 5 * time.Minute
+	case 3:
+		return 30 * time.Minute
+	default:
+		return 0
+	}
+}
+
+// processAvailable drains the claimable queue. The returned duration is the
+// earliest backoff among jobs that failed in this drain (zero when none), so
+// the caller can wake up when the first retry becomes claimable.
+func (w *transcriptionWorker) processAvailable(ctx context.Context) (time.Duration, error) {
+	var retryIn time.Duration
 	for {
 		capture, err := w.q.ClaimPendingTranscription(ctx)
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil
+			return retryIn, nil
 		}
 		if err != nil {
-			return err
+			return retryIn, err
 		}
 
 		// Enforce the vision opt-out at the sink. Create marks images skipped when
@@ -91,7 +151,7 @@ func (w *transcriptionWorker) processAvailable(ctx context.Context) error {
 		// skipped so it leaves the queue instead of looping. Audio is unaffected.
 		if capture.MediaType == db.CaptureMediaTypeImage && !w.visionEnabled {
 			if err := w.q.SkipCaptureTranscription(ctx, capture.ID); err != nil {
-				return err
+				return retryIn, err
 			}
 			continue
 		}
@@ -99,7 +159,10 @@ func (w *transcriptionWorker) processAvailable(ctx context.Context) error {
 		transcript, model, err := w.transcribeCapture(ctx, capture)
 		if err != nil {
 			if failErr := w.q.FailCaptureTranscription(ctx, capture.ID); failErr != nil {
-				return failErr
+				return retryIn, failErr
+			}
+			if backoff := backoffAfterAttempt(capture.TranscriptionAttempts); backoff > 0 && (retryIn == 0 || backoff < retryIn) {
+				retryIn = backoff
 			}
 			slog.Warn(
 				"transcription attempt failed",
@@ -116,7 +179,7 @@ func (w *transcriptionWorker) processAvailable(ctx context.Context) error {
 			Transcript:         pgtype.Text{String: transcript, Valid: true},
 			TranscriptionModel: pgtype.Text{String: model, Valid: true},
 		}); err != nil {
-			return err
+			return retryIn, err
 		}
 		// Transcript is now the capture's indexable content — embed it.
 		w.rag.Index(capture.UserID.String(), capture.ID.String())

@@ -186,7 +186,7 @@ func TestProcessAvailableSkipsImageWhenVisionDisabled(t *testing.T) {
 		client:        server.Client(),
 		visionEnabled: false,
 	}
-	if err := worker.processAvailable(ctx); err != nil {
+	if _, err := worker.processAvailable(ctx); err != nil {
 		t.Fatalf("processAvailable: %v", err)
 	}
 
