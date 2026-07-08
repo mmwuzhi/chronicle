@@ -120,6 +120,11 @@ export interface CaptureAttachmentCreateInputBody {
 export interface CaptureBody {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
+  /**
+     * External file references. Populated only by the page listing; null elsewhere — use GET /captures/{id}/attachments for other surfaces.
+     * @nullable
+     */
+  attachments: CaptureAttachmentBody[] | null;
   /** @nullable */
   audioDurationSec: number | null;
   createdAt: string;

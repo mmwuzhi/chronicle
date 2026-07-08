@@ -9,6 +9,16 @@ WHERE ca.user_id = sqlc.arg('user_id')
   AND c.deleted_at IS NULL
 ORDER BY ca.created_at DESC, ca.id DESC;
 
+-- name: ListCaptureAttachmentsByCaptureIDs :many
+-- Batch fetch for the capture page listing: one query for a whole page of
+-- captures instead of one per capture. No captures join needed — the page
+-- query already established ownership and liveness of every id passed in.
+SELECT ca.* FROM capture_attachments ca
+WHERE ca.user_id = $1
+  AND ca.capture_id = ANY(sqlc.arg('capture_ids')::uuid[])
+  AND ca.deleted_at IS NULL
+ORDER BY ca.created_at DESC, ca.id DESC;
+
 -- name: CreateCaptureAttachment :one
 INSERT INTO capture_attachments (
   user_id,

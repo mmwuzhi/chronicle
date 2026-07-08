@@ -854,6 +854,60 @@ func TestListCapturePage_InvalidCursor(t *testing.T) {
 	}
 }
 
+func TestListCapturePage_EmbedsAttachments(t *testing.T) {
+	srv, pool := newServer(t)
+	_, token := createTestUser(t, pool)
+
+	plain := createCapture(t, srv, token, map[string]any{"rawText": "no attachments"})
+	withAtt := createCapture(t, srv, token, map[string]any{"rawText": "has an attachment"})
+	add := do(t, srv.Client(), http.MethodPost, srv.URL+"/captures/"+withAtt+"/attachments", token, map[string]any{
+		"provider":       "google_drive",
+		"providerFileId": "drive-file-page",
+		"name":           "notes.pdf",
+		"webUrl":         "https://drive.google.com/file/d/drive-file-page/view",
+	})
+	add.Body.Close()
+	if add.StatusCode != http.StatusOK {
+		t.Fatalf("add attachment: expected 200, got %d", add.StatusCode)
+	}
+
+	resp := do(t, srv.Client(), http.MethodGet, srv.URL+"/captures/page", token, nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+	var body struct {
+		Items []struct {
+			ID          string `json:"id"`
+			Attachments *[]struct {
+				Name string `json:"name"`
+			} `json:"attachments"`
+		} `json:"items"`
+	}
+	decodeBody(t, resp, &body)
+	if len(body.Items) != 2 {
+		t.Fatalf("expected 2 items, got %d", len(body.Items))
+	}
+	for _, item := range body.Items {
+		// Attachments must be an array on every page item — never null — so the
+		// web list can read it without a per-capture fallback fetch.
+		if item.Attachments == nil {
+			t.Fatalf("capture %s: attachments is null, want array", item.ID)
+		}
+		switch item.ID {
+		case withAtt:
+			if len(*item.Attachments) != 1 || (*item.Attachments)[0].Name != "notes.pdf" {
+				t.Fatalf("capture %s: unexpected attachments %+v", item.ID, *item.Attachments)
+			}
+		case plain:
+			if len(*item.Attachments) != 0 {
+				t.Fatalf("capture %s: expected no attachments, got %+v", item.ID, *item.Attachments)
+			}
+		default:
+			t.Fatalf("unexpected capture %s in page", item.ID)
+		}
+	}
+}
+
 func TestCaptureContext_ReturnsWindowInChronologicalOrder(t *testing.T) {
 	srv, pool := newServer(t)
 	userID, token := createTestUser(t, pool)

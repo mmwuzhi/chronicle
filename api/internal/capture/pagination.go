@@ -82,11 +82,16 @@ func (h *handler) listPage(ctx context.Context, input *CapturePageInput) (*Captu
 	if hasMore {
 		rows = rows[:limit]
 	}
+	attachments, err := h.pageAttachments(ctx, uid, rows)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("internal error")
+	}
 	body := CapturePageBody{
 		Items: make([]CaptureBody, len(rows)),
 	}
 	for i, capture := range rows {
 		body.Items[i] = toBody(capture)
+		body.Items[i].Attachments = attachments[capture.ID]
 	}
 	if hasMore && len(rows) > 0 {
 		next, err := encodeCaptureCursor(rows[len(rows)-1])
@@ -181,6 +186,34 @@ func (h *handler) context(ctx context.Context, input *CaptureContextInput) (*Cap
 		HasEarlier:  hasEarlier,
 		HasLater:    hasLater,
 	}}, nil
+}
+
+// pageAttachments batch-loads the external attachments for one page of captures
+// (one query per page, not one per capture) keyed by capture id. Every capture
+// gets at least an empty slice so page items always serialize attachments as an
+// array, never null — the web list reads it directly instead of issuing a
+// per-capture GET /captures/{id}/attachments.
+func (h *handler) pageAttachments(ctx context.Context, uid uuid.UUID, rows []db.Capture) (map[uuid.UUID][]CaptureAttachmentBody, error) {
+	if len(rows) == 0 {
+		return nil, nil
+	}
+	ids := make([]uuid.UUID, len(rows))
+	byCapture := make(map[uuid.UUID][]CaptureAttachmentBody, len(rows))
+	for i, capture := range rows {
+		ids[i] = capture.ID
+		byCapture[capture.ID] = []CaptureAttachmentBody{}
+	}
+	attachments, err := h.q.ListCaptureAttachmentsByCaptureIDs(ctx, db.ListCaptureAttachmentsByCaptureIDsParams{
+		UserID:     uid,
+		CaptureIds: ids,
+	})
+	if err != nil {
+		return nil, err
+	}
+	for _, a := range attachments {
+		byCapture[a.CaptureID] = append(byCapture[a.CaptureID], attachmentToBody(a))
+	}
+	return byCapture, nil
 }
 
 func contextSizes(before, after int) (int, int, error) {

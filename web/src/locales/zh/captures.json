@@ -25,7 +25,6 @@
   },
   "attachments": {
     "title": "文件",
-    "loadFailed": "文件加载失败",
     "open": "打开",
     "removeReference": "移除"
   },

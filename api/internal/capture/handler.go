@@ -107,6 +107,8 @@ type CaptureBody struct {
 	RemindHide          bool    `json:"remindHide" doc:"When a reminder is set: true (default) hides the capture from browse until due; false keeps it visible and only notifies (notify-only)"`
 	CreatedAt           string  `json:"createdAt"`
 	DeletedAt           *string `json:"deletedAt"`
+
+	Attachments []CaptureAttachmentBody `json:"attachments" doc:"External file references. Populated only by the page listing; null elsewhere — use GET /captures/{id}/attachments for other surfaces."`
 }
 
 func toBody(c db.Capture) CaptureBody {

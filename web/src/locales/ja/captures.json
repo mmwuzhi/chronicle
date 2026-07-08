@@ -25,7 +25,6 @@
   },
   "attachments": {
     "title": "ファイル",
-    "loadFailed": "ファイルを読み込めませんでした",
     "open": "開く",
     "removeReference": "削除"
   },

@@ -4,7 +4,6 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import {
   getListCapturePageInfiniteQueryKey,
-  getListCaptureAttachmentsQueryKey,
   useAddCaptureAttachment,
   useCreateCapture,
   useDeleteCapture,
@@ -14,6 +13,12 @@ import {
   useSetCaptureTodo,
   useUpdateCapture,
 } from "../api";
+import {
+  appendAttachmentInPages,
+  patchCaptureInPages,
+  prependCaptureToPages,
+  removeCaptureFromPages,
+} from "../utils/capture-cache";
 import { CaptureComposer } from "../components/CaptureComposer";
 import { CaptureFeed } from "../components/CaptureFeed";
 import { MutationToast } from "../components/mutation-toast";
@@ -51,15 +56,6 @@ function Captures() {
     query: {
       initialPageParam: undefined,
       getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
-      refetchInterval: (query) => {
-        const data = query.state.data;
-        const hasPending = data?.pages.some((page) =>
-          (page.items ?? []).some((capture) =>
-            ["pending", "processing"].includes(capture.transcriptionStatus),
-          ),
-        );
-        return hasPending ? 3000 : false;
-      },
     },
   });
   const captures =
@@ -69,27 +65,34 @@ function Captures() {
     queryClient.invalidateQueries({
       queryKey: getListCapturePageInfiniteQueryKey(),
     });
+  // Single-item mutations return the updated CaptureBody, so the cached pages
+  // are patched in place instead of invalidated — invalidating an infinite
+  // query refetches every loaded page serially. Only the multipart upload path
+  // (no typed response) still does a full invalidate.
+  const patchCapture = (capture: Parameters<typeof patchCaptureInPages>[1]) =>
+    patchCaptureInPages(queryClient, capture);
   const create = useCreateCapture({
     mutation: {
-      onSuccess: invalidateCaptures,
+      onSuccess: (capture) => prependCaptureToPages(queryClient, capture),
       onError: () => mutationToast.show(tc("errors.mutationFailed")),
     },
   });
   const update = useUpdateCapture({
     mutation: {
-      onSuccess: invalidateCaptures,
+      onSuccess: patchCapture,
       onError: () => mutationToast.show(tc("errors.mutationFailed")),
     },
   });
   const remove = useDeleteCapture({
     mutation: {
-      onSuccess: invalidateCaptures,
+      onSuccess: (_data, variables) =>
+        removeCaptureFromPages(queryClient, variables.id),
       onError: () => mutationToast.show(tc("errors.mutationFailed")),
     },
   });
   const retryTranscription = useRetryCaptureTranscription({
     mutation: {
-      onSuccess: invalidateCaptures,
+      onSuccess: patchCapture,
       onError: () => {
         invalidateCaptures();
         mutationToast.show(tc("errors.mutationFailed"));
@@ -98,23 +101,20 @@ function Captures() {
   });
   const setRemind = useSetCaptureRemind({
     mutation: {
-      onSuccess: invalidateCaptures,
+      onSuccess: patchCapture,
       onError: () => mutationToast.show(tc("errors.mutationFailed")),
     },
   });
   const setTodo = useSetCaptureTodo({
     mutation: {
-      onSuccess: invalidateCaptures,
+      onSuccess: patchCapture,
       onError: () => mutationToast.show(tc("errors.mutationFailed")),
     },
   });
   const addAttachment = useAddCaptureAttachment({
     mutation: {
-      onSuccess: (_attachment, variables) => {
-        queryClient.invalidateQueries({
-          queryKey: getListCaptureAttachmentsQueryKey(variables.id),
-        });
-      },
+      onSuccess: (attachment, variables) =>
+        appendAttachmentInPages(queryClient, variables.id, attachment),
       onError: () => mutationToast.show(tc("errors.mutationFailed")),
     },
   });

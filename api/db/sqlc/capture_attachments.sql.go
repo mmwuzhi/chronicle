@@ -153,3 +153,51 @@ func (q *Queries) ListCaptureAttachments(ctx context.Context, arg ListCaptureAtt
 	}
 	return items, nil
 }
+
+const listCaptureAttachmentsByCaptureIDs = `-- name: ListCaptureAttachmentsByCaptureIDs :many
+SELECT ca.id, ca.user_id, ca.capture_id, ca.provider, ca.provider_file_id, ca.name, ca.mime_type, ca.size_bytes, ca.web_url, ca.created_at, ca.deleted_at FROM capture_attachments ca
+WHERE ca.user_id = $1
+  AND ca.capture_id = ANY($2::uuid[])
+  AND ca.deleted_at IS NULL
+ORDER BY ca.created_at DESC, ca.id DESC
+`
+
+type ListCaptureAttachmentsByCaptureIDsParams struct {
+	UserID     uuid.UUID   `json:"user_id"`
+	CaptureIds []uuid.UUID `json:"capture_ids"`
+}
+
+// Batch fetch for the capture page listing: one query for a whole page of
+// captures instead of one per capture. No captures join needed — the page
+// query already established ownership and liveness of every id passed in.
+func (q *Queries) ListCaptureAttachmentsByCaptureIDs(ctx context.Context, arg ListCaptureAttachmentsByCaptureIDsParams) ([]CaptureAttachment, error) {
+	rows, err := q.db.Query(ctx, listCaptureAttachmentsByCaptureIDs, arg.UserID, arg.CaptureIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []CaptureAttachment
+	for rows.Next() {
+		var i CaptureAttachment
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.CaptureID,
+			&i.Provider,
+			&i.ProviderFileID,
+			&i.Name,
+			&i.MimeType,
+			&i.SizeBytes,
+			&i.WebUrl,
+			&i.CreatedAt,
+			&i.DeletedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}

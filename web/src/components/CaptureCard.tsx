@@ -3,15 +3,15 @@ import { useTranslation } from "react-i18next";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { useQueryClient } from "@tanstack/react-query";
 import {
-  getListCaptureAttachmentsQueryKey,
   useDeleteCaptureAttachment,
-  useListCaptureAttachments,
   type CaptureAttachmentBody,
   type CaptureBody,
 } from "../api";
 import { fmtFileSize, fmtListTime, fmtPreciseDateTime } from "../utils/format";
+import { patchCaptureInPages } from "../utils/capture-cache";
 import type { TodoState } from "../utils/todo";
 import { useTodoEnabled } from "../hooks/use-todo-enabled";
+import { useTranscriptionPoll } from "../hooks/use-transcription-poll";
 import { Markdown } from "./Markdown";
 import { RemindControl } from "./RemindControl";
 import { TodoControl } from "./TodoControl";
@@ -99,20 +99,23 @@ export function CaptureCard({
   // Both audio and image captures go through the transcription/OCR workflow, so
   // their processing/failed/retry status surfaces the same way.
   const transcribable = c.mediaType === "audio" || c.mediaType === "image";
-  const attachmentsQuery = useListCaptureAttachments(c.id, {
-    query: { staleTime: 60_000 },
-  });
+  useTranscriptionPoll(c);
+  // The page listing embeds attachments on every item, so the card reads them
+  // directly instead of issuing one GET /captures/{id}/attachments per card.
+  const attachments = c.attachments ?? [];
   const deleteAttachment = useDeleteCaptureAttachment({
     mutation: {
-      onSuccess: () => {
-        queryClient.invalidateQueries({
-          queryKey: getListCaptureAttachmentsQueryKey(c.id),
+      onSuccess: (_data, variables) => {
+        patchCaptureInPages(queryClient, {
+          ...c,
+          attachments: attachments.filter(
+            (attachment) => attachment.id !== variables.attachmentId,
+          ),
         });
       },
       onError: onMutationError,
     },
   });
-  const attachments = attachmentsQuery.data ?? [];
 
   const commitEdit = () => {
     const trimmed = draft.trim();
@@ -276,10 +279,9 @@ export function CaptureCard({
           )}
         </div>
       )}
-      {(attachments.length > 0 || attachmentsQuery.isError) && (
+      {attachments.length > 0 && (
         <CaptureAttachments
           attachments={attachments}
-          failed={attachmentsQuery.isError}
           deleting={deleteAttachment.isPending}
           onDelete={(attachmentId) =>
             deleteAttachment.mutate({ id: c.id, attachmentId })
@@ -375,24 +377,14 @@ export function CaptureCard({
 
 function CaptureAttachments({
   attachments,
-  failed,
   deleting,
   onDelete,
 }: {
   attachments: CaptureAttachmentBody[];
-  failed: boolean;
   deleting: boolean;
   onDelete: (attachmentId: string) => void;
 }): React.JSX.Element {
   const { t } = useTranslation("captures");
-
-  if (failed) {
-    return (
-      <div className="ch-attachments">
-        <span className="ch-inline-error">{t("attachments.loadFailed")}</span>
-      </div>
-    );
-  }
 
   return (
     <div className="ch-attachments">
