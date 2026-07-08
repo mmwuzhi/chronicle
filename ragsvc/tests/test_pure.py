@@ -187,7 +187,7 @@ def test_embed_switch_to_openai_compat(monkeypatch):
         return _FakeResp(b'{"data":[{"embedding":[0.1,0.2,0.3]}]}')
 
     monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
-    vec = rag.embed("hello", rag.MODEL_BGE)
+    vec = rag.embed("hello")
 
     assert captured["url"] == "https://x.example/v1/embeddings"
     assert captured["auth"] == "Bearer sk-test"

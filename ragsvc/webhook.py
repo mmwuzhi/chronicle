@@ -92,7 +92,7 @@ def _rule_embedding(query: str) -> np.ndarray:
     model = rag.active_embed_model()
     key = (query, model)
     if key not in _EMBED_CACHE:
-        _EMBED_CACHE[key] = rag.embed(query, rag.MODEL_BGE).astype(np.float32)
+        _EMBED_CACHE[key] = rag.embed(query).astype(np.float32)
     return _EMBED_CACHE[key]
 
 

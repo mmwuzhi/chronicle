@@ -116,22 +116,23 @@ def active_embed_model() -> str:
     return EMBED_MODEL_OPENAI if EMBED_BACKEND == "openai" else MODEL_BGE
 
 
-def embed(text: str, model: str) -> np.ndarray:
-    """Embed text. Default ollama (local); openai = any OpenAI-compatible
-    /v1/embeddings endpoint (BYOK, no local model install). Switching backend
-    changes dimension/vector space — the corpus must be re-embedded (backfill)."""
+def embed(text: str) -> np.ndarray:
+    """Embed text with the active backend's model (active_embed_model).
+    Default ollama (local); openai = any OpenAI-compatible /v1/embeddings
+    endpoint (BYOK, no local model install). Switching backend changes
+    dimension/vector space — the corpus must be re-embedded (backfill)."""
     if EMBED_BACKEND == "openai":
         return _embed_openai(text)
-    return _embed_ollama(text, model)
+    return _embed_ollama(text)
 
 
-def _embed_ollama(text: str, model: str) -> np.ndarray:
+def _embed_ollama(text: str) -> np.ndarray:
     """Local Ollama embedding.
 
     trust_env=False: a corporate proxy's HTTP_PROXY would otherwise hijack the
     localhost call to Ollama. Local calls never go through a proxy."""
     client = ollama.Client(host=OLLAMA_BASE_URL, trust_env=False)
-    resp = client.embeddings(model=model, prompt=text[:4096])
+    resp = client.embeddings(model=MODEL_BGE, prompt=text[:4096])
     return np.array(resp["embedding"], dtype=np.float32)
 
 
@@ -206,7 +207,7 @@ def index_capture(capture_id: str, user_id: str) -> bool:
         return False
 
     model = active_embed_model()
-    vec = embed(content, MODEL_BGE).astype(np.float32).tobytes()
+    vec = embed(content).astype(np.float32).tobytes()
     with pool().connection() as conn:
         cur = conn.execute(
             f"SELECT {_CONTENT} FROM captures c WHERE c.id = %s AND c.user_id = %s AND c.deleted_at IS NULL",
@@ -310,7 +311,7 @@ def neighbors(user_id: str, query: str, limit: int = 20) -> list[Fragment]:
     time-window slice instead."""
     if not EMBED_ENABLED:
         return []
-    qv = embed(query, MODEL_BGE)
+    qv = embed(query)
     metas, mat = _load_for_search(user_id, len(qv))
     sims = _cosines(mat, qv)
     # Skip zero-vector rows (no active-model embedding yet — backfill pending or
@@ -341,7 +342,7 @@ def related(user_id: str, capture_id: str, limit: int = 10) -> list[dict]:
     content = get_content(capture_id, user_id)
     if not content or not content.strip():
         return []
-    qv = embed(content, MODEL_BGE)
+    qv = embed(content)
     metas, mat = _load_for_search(user_id, len(qv))
     sims = _cosines(mat, qv)
     out: list[dict] = []
@@ -381,7 +382,7 @@ def candidates(user_id: str, query: str, k: int = 30) -> list[dict]:
         pool_.sort(key=lambda c: c["created_at"], reverse=True)
         return pool_[:k]
 
-    qv = embed(query, MODEL_BGE)
+    qv = embed(query)
     metas, mat = _load_for_search(user_id, len(qv))
     sims = _cosines(mat, qv)
 

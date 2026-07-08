@@ -98,7 +98,7 @@ def warmup() -> None:
         _get_reranker()
     if rag.EMBED_ENABLED:
         try:
-            rag.embed("warmup", rag.MODEL_BGE)
+            rag.embed("warmup")
         except Exception:
             pass
 
