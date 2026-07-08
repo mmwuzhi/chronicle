@@ -43,3 +43,13 @@ Deferred work.
 - `#tag` derived index: if inline hashtags see real use, parse them at index time into a browsable tag surface (organize-later; no managed tag objects).
 - Remove the deprecated `classifiedAs` compat field from the create endpoint after the desktop offline queues have cycled (one release is enough for a single-user install).
 - Local desktop SQLite cache still carries the unused `classified_as` column (constant 'unclassified'); drop it whenever the cache schema next changes for another reason.
+
+## Refactor Backlog (2026-07-08)
+
+Approved refactor batch, worked top-down; remove each line when its phase lands.
+
+- P1 — Attachments N+1 + full-list invalidation: embed attachments in `GET /captures/page` (batch second query, `api/internal/capture/pagination.go`) and switch web mutations to in-place cache patches (`web/src/utils/capture-cache.ts`, `captures.tsx`, `CaptureCard.tsx`).
+- P2 — Event-driven transcription worker: replace the 2s poll in `api/internal/upload/transcription_worker.go` with kick channel + backoff-aware timer + 15min fallback; wire kick through `upload.Register` / `capture.Register`.
+- P3 — Drop the dead `model` param from `ragsvc/rag.py embed()`; update callers in `rag.py`, `search.py`, `webhook.py`, tests.
+- P4 — Remove the unconsumed `GET /captures` endpoint (handler, `ListCaptures` query, tests move to `/captures/page`).
+- P5 — Split `desktop/Sources/ChronicleDesktop/DesktopUI.swift` (1102 lines) into DesktopTheme / CaptureRowModel / CaptureRowViews / WorkspaceInput / ScreenPlacement; update the identity-parity file references in root `CLAUDE.md`.
