@@ -33,7 +33,14 @@ struct MainTrashPane: View {
             }
 
             ScrollView {
-                list.frame(maxWidth: .infinity, alignment: .leading).padding(.trailing, 8)
+                // LazyVStack: same non-lazy-ForEach pitfall as MainView's browse list
+                // (each row's own hover state, selectable text, etc. all stay
+                // mounted otherwise).
+                LazyVStack(alignment: .leading, spacing: 8) {
+                    list
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.trailing, 8)
             }
         }
         .padding(16)

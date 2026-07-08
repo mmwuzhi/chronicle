@@ -64,6 +64,12 @@ only when the cache schema next changes for another reason (`TODO.md`).
 - `MainView` caches its merged browse list in `browseRows`; any new mutation
   of `fragments`/`localRows`/`signedIn`/`offline` must call
   `rebuildBrowseRows()`, or the list goes stale.
+- **`.onAppear`-driven pagination needs a `LazyVStack`.** In a non-lazy
+  container every row's `onAppear` fires the moment it's added, so "load more
+  when the last row appears" (`maybeLoadMore`) degenerates into chain-loading
+  every page, with all rows — each hosting a native NSTextView — permanently
+  mounted. This was the main-window scroll/sidebar/drag stutter root cause;
+  don't diagnose that class of jank as a material/rendering cost first.
 - The sticky's `NSHostingView` must keep `sizingOptions = []`: its controller
   owns the panel frame (persisted, height-fitted via `onHeight`). Default
   sizing options let a SwiftUI ideal size — e.g. an NSTextView body's

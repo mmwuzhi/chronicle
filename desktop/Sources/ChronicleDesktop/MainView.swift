@@ -185,7 +185,17 @@ struct MainView: View {
                 }
 
                 ScrollView {
-                    content.frame(maxWidth: .infinity, alignment: .leading).padding(.trailing, 8)
+                    // LazyVStack, not a plain ForEach: browse rows accumulate across
+                    // pagination (`maybeLoadMore`) and each row backs its selectable
+                    // text with a native NSTextView (see SelectableRowText). Without
+                    // laziness every loaded row, on- or off-screen, stays fully
+                    // mounted, so any reflow (scroll, sidebar width change) had to
+                    // re-lay-out all of them at once.
+                    LazyVStack(alignment: .leading, spacing: 8) {
+                        content
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.trailing, 8)
                 }
             }
             .padding(16)
