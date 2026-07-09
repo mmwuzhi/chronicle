@@ -152,7 +152,8 @@ def _llm_rerank(query: str, cands: list[dict], backend: str) -> list[float] | No
     vector ordering). Routed through analysis.llm — claude calls stay inside the
     analysis module. 0-based keys, not fragment ids (big ids bias the model)."""
     import analysis
-    items = "\n".join(f"#{i} {c['content'][:200]}" for i, c in enumerate(cands))
+    items = "\n".join(f"#{i} {(c.get('rerank_text') or c['content'])[:200]}"
+                      for i, c in enumerate(cands))
     user = f"查询：{query}\n\n候选：\n{items}"
     ana_backend = "ollama" if backend == "local" else "claude"
     try:
@@ -189,7 +190,8 @@ def _rerank_api(query: str, cands: list[dict]) -> list[float] | None:
     if not base or not key:
         return None
     body = json.dumps({"model": model, "query": query,
-                       "documents": [c["content"][:2000] for c in cands]}).encode()
+                       "documents": [(c.get("rerank_text") or c["content"])[:2000]
+                                     for c in cands]}).encode()
     try:
         req = urllib.request.Request(
             f"{base}/rerank", data=body,
@@ -211,7 +213,8 @@ def _rerank_scores(query: str, cands: list[dict]) -> list[float] | None:
     if backend == "off":
         return None
     if backend == "cross_encoder":
-        preds = _get_reranker().predict([[query, c["content"]] for c in cands])
+        preds = _get_reranker().predict(
+            [[query, c.get("rerank_text") or c["content"]] for c in cands])
         return [float(s) for s in preds]
     if backend == "api":
         return _rerank_api(query, cands)
@@ -230,11 +233,11 @@ def search(user_id: str, query: str, limit: int = SEARCH_TOPK) -> list[dict]:
         y, mo, d = (int(x) for x in m.groups())
         return rag.on_date(user_id, f"{y:04d}-{mo:02d}-{d:02d}", limit)
 
-    # One corpus load for the whole request — the vector/literal channel
-    # (candidates) and the BM25 channel below share it instead of each
-    # re-pulling every capture from Postgres.
+    # One corpus load for the whole request: the BM25 channel below uses `corpus`
+    # directly, and candidates reads the same per-user cached snapshot (a cache
+    # hit here), so neither re-pulls every capture from Postgres per query.
     corpus = rag.search_corpus(user_id)
-    cands = rag.candidates(user_id, q, k=30, corpus=corpus)
+    cands = rag.candidates(user_id, q, k=30)
 
     # Information-poor query: single char, or all function words. No alignable
     # topic, rerank score is noise → literal hits only, newest first.
@@ -257,7 +260,8 @@ def search(user_id: str, query: str, limit: int = SEARCH_TOPK) -> list[dict]:
         if fid in seen or _content_chars(f["content"]) == 0:
             continue
         cands.append({"id": fid, "content": f["content"], "created_at": f["created_at"],
-                      "modality": f["modality"], "lexical": False, "vscore": 0.0})
+                      "modality": f["modality"], "lexical": False, "vscore": 0.0,
+                      "rerank_text": f["content"]})
 
     if not cands:
         return []

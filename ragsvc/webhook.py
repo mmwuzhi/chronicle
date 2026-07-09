@@ -103,13 +103,20 @@ def matches(rule: dict, frag: dict) -> tuple[bool, float | None]:
     surface it for threshold tuning."""
     score = None
     sq = rule.get("semantic_query")
-    emb = frag.get("embedding")
-    if sq and emb:
+    embs = frag.get("embeddings") or []
+    if sq and embs:
+        # Score against the best-matching chunk: a rule should fire when any part
+        # of a long capture is semantically close, not only when the whole-document
+        # average is. Mirrors retrieval's max-over-chunks aggregation.
         a = _rule_embedding(sq)
-        b = np.frombuffer(emb, dtype=np.float32)
-        if a.shape == b.shape:  # dims differ across embedding models → skip
-            denom = float(np.linalg.norm(a) * np.linalg.norm(b)) or 1.0
-            score = float(a @ b) / denom
+        an = float(np.linalg.norm(a)) or 1.0
+        for e in embs:
+            b = np.frombuffer(e, dtype=np.float32)
+            if a.shape != b.shape:  # dims differ across embedding models → skip
+                continue
+            s = float(a @ b) / (an * (float(np.linalg.norm(b)) or 1.0))
+            if score is None or s > score:
+                score = s
     keywords = rule.get("keywords") or []
     if not keywords and not sq:
         return True, score  # unconditional rule = match everything

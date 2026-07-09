@@ -25,8 +25,11 @@ import datetime as dt
 import hashlib
 import json
 import os
+import threading
+import time
 import unicodedata
 import urllib.request
+from collections import OrderedDict
 from dataclasses import dataclass
 
 import numpy as np
@@ -58,6 +61,35 @@ EMBED_MODEL_OPENAI = os.getenv("EMBED_MODEL_OPENAI", "text-embedding-3-small")
 # rather than semantic neighbours. Set EMBED_ENABLED=true (with Ollama running)
 # to re-light the semantic vector channel.
 EMBED_ENABLED = os.getenv("EMBED_ENABLED", "false").lower() == "true"
+
+# In-process corpus cache. Every /find and /ask reloads a user's whole corpus
+# (content + embedding BYTEA) from Postgres and rebuilds the numpy matrix per
+# request; at personal scale the cosine math is cheap but that reload + decode is
+# the real per-search cost. We cache the decoded snapshot per user in this single
+# uvicorn process (no --workers, so one shared cache is coherent). Freshness is
+# kept two ways: writes that go through this process invalidate immediately
+# (_index_one, backfill), and a short TTL bounds staleness from writes the Go API
+# makes without telling us (soft-delete / restore). CORPUS_CACHE_TTL=0 disables
+# caching entirely (every call reloads — the pre-cache behaviour, for rollback).
+CORPUS_CACHE_TTL = float(os.getenv("CORPUS_CACHE_TTL", "60"))
+# LRU bound: one entry per active user. 1 for a personal deployment; capped so a
+# multi-user host can never grow the cache without limit (each entry is
+# rows + an N×dim float32 matrix).
+CORPUS_CACHE_MAX_USERS = int(os.getenv("CORPUS_CACHE_MAX_USERS", "32"))
+
+# Chunked embeddings: long content is split into overlapping character windows,
+# each embedded on its own, so a long capture is findable by any of its parts
+# rather than through one averaged whole-document vector. Short content is a
+# single chunk (identical to the pre-chunking behaviour). CHUNK_CHARS is a rough
+# few-hundred-token budget; bge-m3 and the OpenAI embeddings both handle
+# multilingual text, so we split by characters — no tokenizer/segmenter
+# dependency, the same discipline bm25 uses for CJK.
+CHUNK_CHARS = int(os.getenv("CHUNK_CHARS", "1200"))
+CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP", "180"))
+# Embedding format version stored on every row: 1 = pre-chunking single vector,
+# 2 = chunked. needs_index treats anything below EMBED_V as stale, so one
+# backfill re-chunks the corpus after migration 027.
+EMBED_V = 2
 
 # Same function-word / particle set as the rag project: text made only of these
 # (a query or a capture) carries no alignable topic, so its rerank score is pure
@@ -198,16 +230,40 @@ def clear_derived(capture_id: str) -> None:
         conn.execute("DELETE FROM capture_metadata WHERE capture_id = %s", (capture_id,))
 
 
+def chunk_content(text: str) -> list[str]:
+    """Split indexable content into overlapping character windows for embedding.
+    Content that fits one window is returned whole — the common case, since most
+    captures are short, so this is a single chunk exactly as before chunking. The
+    overlap keeps a phrase straddling a window boundary recoverable from at least
+    one chunk. Deterministic; the unit of retrieval, not display."""
+    text = text.strip()
+    if not text:
+        return []
+    if len(text) <= CHUNK_CHARS:
+        return [text]
+    step = max(1, CHUNK_CHARS - CHUNK_OVERLAP)
+    chunks: list[str] = []
+    for start in range(0, len(text), step):
+        piece = text[start:start + CHUNK_CHARS].strip()
+        if piece:
+            chunks.append(piece)
+        if start + CHUNK_CHARS >= len(text):
+            break  # this window reached the end; stop before a fully-overlapped tail
+    return chunks
+
+
 def index_capture(capture_id: str, user_id: str) -> bool:
-    """Compute and upsert the embedding for one capture. Returns True if an
-    embedding was written, False otherwise (embeddings disabled, capture gone, no
+    """Compute and store the chunked embeddings for one capture. Returns True if
+    chunks were written, False otherwise (embeddings disabled, capture gone, no
     indexable text, or the text changed under us).
 
     Idempotent and safe under concurrent re-index of the same capture: embed()
     runs on the content we read, then a short write transaction re-reads the
-    current content and only commits if it still matches. So when two quick edits
-    fire two index tasks, a slow older task whose text is now stale aborts instead
-    of overwriting the newer embedding."""
+    current content and only replaces the chunk set if it still matches. So when
+    two quick edits fire two index tasks, a slow older task whose text is now
+    stale aborts instead of overwriting the newer embedding. The whole chunk set
+    is replaced (delete + insert) rather than upserted because the chunk count
+    can change between edits."""
     if not EMBED_ENABLED:
         return False
     content = get_content(capture_id, user_id)
@@ -218,7 +274,11 @@ def index_capture(capture_id: str, user_id: str) -> bool:
         return False
 
     model = active_embed_model()
-    vec = embed(content).astype(np.float32).tobytes()
+    source_hash = _md5(content)
+    chunks = chunk_content(content)
+    # Embed outside the write transaction — the model round-trips are the slow
+    # part and must not hold a row lock. The re-read below guards staleness.
+    vecs = [embed(ch).astype(np.float32).tobytes() for ch in chunks]
     with pool().connection() as conn:
         cur = conn.execute(
             f"SELECT {_CONTENT} FROM captures c WHERE c.id = %s AND c.user_id = %s AND c.deleted_at IS NULL",
@@ -226,17 +286,16 @@ def index_capture(capture_id: str, user_id: str) -> bool:
         ).fetchone()
         if cur is None:
             return False
-        current = cur[0] or ""
-        if current.strip() != content:
+        if (cur[0] or "").strip() != content:
             return False  # content moved on; the newer index task owns this row
-        conn.execute(
-            "INSERT INTO capture_embeddings (capture_id, user_id, embedding, model, embed_v, source_hash, updated_at) "
-            "VALUES (%s, %s, %s, %s, 1, %s, now()) "
-            "ON CONFLICT (capture_id) DO UPDATE SET "
-            "embedding = EXCLUDED.embedding, model = EXCLUDED.model, "
-            "embed_v = EXCLUDED.embed_v, source_hash = EXCLUDED.source_hash, updated_at = now()",
-            (capture_id, user_id, vec, model, _md5(current)),
-        )
+        conn.execute("DELETE FROM capture_embeddings WHERE capture_id = %s", (capture_id,))
+        for idx, (vec, ch) in enumerate(zip(vecs, chunks)):
+            conn.execute(
+                "INSERT INTO capture_embeddings "
+                "(capture_id, user_id, chunk_idx, embedding, chunk_text, model, embed_v, source_hash, updated_at) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, now())",
+                (capture_id, user_id, idx, vec, ch, model, EMBED_V, source_hash),
+            )
     return True
 
 
@@ -253,63 +312,151 @@ def get_content(capture_id: str, user_id: str) -> str | None:
 
 
 def _rows(user_id: str) -> list[dict]:
-    """All indexable captures for a user, joined with extracted metadata + the
-    raw embedding bytes, the model that produced it, and the source_hash of the
-    content it was computed from (so callers can tell a current vector from a
-    stale one without re-embedding)."""
+    """All indexable captures for a user, joined with extracted metadata and their
+    chunk embeddings aggregated into per-capture arrays (ordered by chunk_idx).
+    `chunks` and `chunk_texts` are aligned — both filtered by embedding presence —
+    so a pre-chunking row (embed_v=1, chunk_text NULL) still contributes its one
+    vector with a None text. model / source_hash are identical across a capture's
+    chunks (index_capture writes them together), so max() collapses each to that
+    single value; a capture with no embedding yet gets empty arrays and NULLs."""
     with pool().connection() as conn:
         rows = conn.execute(
             f"SELECT c.id::text, {_CONTENT} AS content, c.created_at, "
-            "       m.data, c.media_type::text, e.embedding, e.model, e.source_hash "
+            "       m.data, c.media_type::text, "
+            "       array_agg(e.embedding ORDER BY e.chunk_idx) "
+            "         FILTER (WHERE e.embedding IS NOT NULL) AS embeddings, "
+            "       array_agg(e.chunk_text ORDER BY e.chunk_idx) "
+            "         FILTER (WHERE e.embedding IS NOT NULL) AS chunk_texts, "
+            "       max(e.model) AS model, max(e.source_hash) AS source_hash "
             "FROM captures c "
             "LEFT JOIN capture_metadata m ON m.capture_id = c.id "
             "LEFT JOIN capture_embeddings e ON e.capture_id = c.id "
-            "WHERE c.user_id = %s AND c.deleted_at IS NULL",
+            "WHERE c.user_id = %s AND c.deleted_at IS NULL "
+            "GROUP BY c.id, m.data",
             (user_id,),
         ).fetchall()
     return [{"id": r[0], "content": r[1] or "", "created_at": _iso(r[2]),
              "metadata": r[3], "modality": r[4],
-             "embedding": bytes(r[5]) if r[5] is not None else None,
-             "model": r[6], "source_hash": r[7]}
+             "chunks": [bytes(b) for b in (r[5] or [])],
+             "chunk_texts": list(r[6] or []),
+             "model": r[7], "source_hash": r[8]}
             for r in rows]
 
 
+@dataclass
+class _Snapshot:
+    """One user's cached corpus: the loaded rows plus the flattened chunk matrix
+    decoded from their embedding bytes (built lazily on first vector use). `model`
+    is the active embedding model at build time — a backend switch changes it and
+    forces a rebuild, so a snapshot never mixes vector spaces. Snapshots are
+    immutable once cached except for the lazily-filled chunk arrays; invalidation
+    replaces the whole entry rather than mutating rows, so a channel iterating an
+    old snapshot's rows always sees chunk owners aligned to those same rows.
+    chunk_owner[j] is the index into `rows` that chunk-matrix row j belongs to;
+    chunk_txt[j] is that chunk's text (None for pre-chunking single vectors)."""
+    rows: list[dict]
+    model: str
+    built_at: float
+    chunk_mat: np.ndarray | None = None
+    chunk_owner: np.ndarray | None = None
+    chunk_txt: list | None = None
+    chunk_dim: int = 0
+
+
+_corpus_cache: "OrderedDict[str, _Snapshot]" = OrderedDict()
+_corpus_lock = threading.Lock()
+
+
+def _fresh_snapshot(user_id: str) -> _Snapshot:
+    """Load a user's corpus from Postgres. With embeddings on this is _rows (the
+    vector channel needs the bytes); off, the embedding-free all_fragments."""
+    rows = _rows(user_id) if EMBED_ENABLED else all_fragments(user_id)
+    return _Snapshot(rows=rows, model=active_embed_model(), built_at=time.monotonic())
+
+
+def _snapshot(user_id: str) -> _Snapshot:
+    """The user's corpus snapshot, from cache when fresh (same model, within TTL)
+    else freshly loaded. TTL<=0 disables caching (always reload). The DB load runs
+    outside the lock — a concurrent builder just loads twice and the later write
+    wins, which is wasted work, never corruption."""
+    if CORPUS_CACHE_TTL <= 0:
+        return _fresh_snapshot(user_id)
+    now = time.monotonic()
+    with _corpus_lock:
+        snap = _corpus_cache.get(user_id)
+        if (snap is not None and snap.model == active_embed_model()
+                and now - snap.built_at <= CORPUS_CACHE_TTL):
+            _corpus_cache.move_to_end(user_id)
+            return snap
+    snap = _fresh_snapshot(user_id)
+    with _corpus_lock:
+        _corpus_cache[user_id] = snap
+        _corpus_cache.move_to_end(user_id)
+        while len(_corpus_cache) > CORPUS_CACHE_MAX_USERS:
+            _corpus_cache.popitem(last=False)  # evict least-recently-used
+    return snap
+
+
+def invalidate_corpus(user_id: str) -> None:
+    """Drop a user's cached snapshot so the next recall reloads. Called after any
+    write to their embeddings/content that this process makes (index, clear,
+    backfill); the TTL covers writes the Go API makes on its own."""
+    with _corpus_lock:
+        _corpus_cache.pop(user_id, None)
+
+
 def search_corpus(user_id: str) -> list[dict]:
-    """One corpus load shared by every recall channel of a single request.
-    With embeddings on this is _rows (the vector channel needs the embedding
-    bytes); off, the embedding-free all_fragments. /find and /ask load this once
-    and pass it down — each channel re-pulling the full corpus from Postgres per
-    query is exactly the cost this avoids."""
-    return _rows(user_id) if EMBED_ENABLED else all_fragments(user_id)
+    """The rows of a user's cached corpus, shared by every recall channel of a
+    single request (BM25, time-window, and — via the same snapshot — the vector
+    channel). See _snapshot for the caching + freshness contract."""
+    return _snapshot(user_id).rows
 
 
-def _vector_matrix(rows: list[dict], dim: int) -> np.ndarray:
-    """Vector matrix over pre-loaded rows, sized to `dim` (the current query
-    vector's dimension). Only embeddings from the *active* model are placed; rows
-    from a previous embedding model stay zero — they score cosine 0 until backfill
-    re-embeds them. Matching dimension alone is not enough: two models can emit
-    same-dim vectors in incompatible spaces, which would produce meaningless cosine
-    rankings, so we require both the active model name and the exact dimension.
-    Sizing to the query's dim guarantees the matrix multiply never shape-mismatches
-    during a model change."""
+def _snapshot_chunks(snap: _Snapshot, dim: int):
+    """Flatten every capture's active-model chunk vectors into one matrix, with an
+    aligned owner array (matrix row → index into snap.rows) and chunk-text list.
+    Built once per query dimension and memoised on the snapshot. Only chunks from
+    the active model at the query's dimension are placed — a stale-model or
+    wrong-dim chunk sits in an incompatible vector space, so it is skipped and its
+    capture simply scores 0 until backfill re-embeds it (same guard the old
+    per-row matrix applied). Returns (matrix, owner, texts)."""
+    if snap.chunk_mat is not None and snap.chunk_dim == dim:
+        return snap.chunk_mat, snap.chunk_owner, snap.chunk_txt
     active = active_embed_model()
-    mat = np.zeros((len(rows), dim), dtype=np.float32)
-    for i, r in enumerate(rows):
-        emb = r.get("embedding")
-        if emb and r.get("model") == active and len(emb) // 4 == dim:
-            mat[i] = np.frombuffer(emb, dtype=np.float32)
-    return mat
+    vecs: list[np.ndarray] = []
+    owners: list[int] = []
+    texts: list = []
+    for i, r in enumerate(snap.rows):
+        if r.get("model") != active:
+            continue
+        for emb, txt in zip(r.get("chunks") or [], r.get("chunk_texts") or []):
+            if emb and len(emb) // 4 == dim:
+                vecs.append(np.frombuffer(emb, dtype=np.float32))
+                owners.append(i)
+                texts.append(txt)
+    mat = np.vstack(vecs) if vecs else np.zeros((0, dim), dtype=np.float32)
+    owner = np.asarray(owners, dtype=np.int64)
+    snap.chunk_mat, snap.chunk_owner, snap.chunk_txt, snap.chunk_dim = mat, owner, texts, dim
+    return mat, owner, texts
 
 
-def _stored_vector(row: dict) -> np.ndarray | None:
-    """The row's own stored embedding, but only when it is verifiably the vector
-    embed() would produce now: active model AND source_hash still matching the
-    live content (an edit while the sidecar was down leaves a stale vector).
-    None → the caller re-embeds."""
-    if (row.get("embedding") and row.get("model") == active_embed_model()
-            and row.get("source_hash") == _md5(row["content"])):
-        return np.frombuffer(row["embedding"], dtype=np.float32)
-    return None
+def _capture_max_sims(snap: _Snapshot, qv: np.ndarray):
+    """Per-capture vector score = the max cosine over that capture's chunks, plus
+    the text of that best chunk (handed to the reranker so it scores the matched
+    fragment, not a long document's truncated opening). Both are aligned to
+    snap.rows; a capture with no active-model chunk scores 0 with None text."""
+    mat, owner, texts = _snapshot_chunks(snap, len(qv))
+    n = len(snap.rows)
+    best = np.zeros(n, dtype=np.float32)
+    best_text: list = [None] * n
+    if mat.shape[0]:
+        sims = _cosines(mat, qv)
+        np.maximum.at(best, owner, sims)  # per-capture max, vectorised over chunks
+        for j in range(len(owner)):
+            o = int(owner[j])
+            if texts[j] is not None and float(sims[j]) == float(best[o]):
+                best_text[o] = texts[j]  # the argmax chunk's text (ties: last wins)
+    return best, best_text
 
 
 def _cosines(mat: np.ndarray, qv: np.ndarray) -> np.ndarray:
@@ -336,25 +483,23 @@ def recent(user_id: str, limit: int = 50, offset: int = 0) -> list[Fragment]:
     return [Fragment(r[0], r[1] or "", _iso(r[2]), r[3], r[4]) for r in rows]
 
 
-def neighbors(user_id: str, query: str, limit: int = 20,
-              corpus: list[dict] | None = None) -> list[Fragment]:
+def neighbors(user_id: str, query: str, limit: int = 20) -> list[Fragment]:
     """Semantic nearest neighbours, for assembling the query-time cluster. Empty
     when embeddings are disabled — the cluster then leans on recent ∪ BM25 ∪ the
-    time-window slice instead. Pass `corpus` (a search_corpus result) to reuse a
-    load the caller already paid for."""
+    time-window slice instead. Reads the cached corpus snapshot (shared with the
+    caller's own search_corpus load in the same request)."""
     if not EMBED_ENABLED:
         return []
-    qv = embed(query)
-    metas = corpus if corpus is not None else _rows(user_id)
-    mat = _vector_matrix(metas, len(qv))
-    sims = _cosines(mat, qv)
-    # Skip zero-vector rows (no active-model embedding yet — backfill pending or
-    # model changed): they score exactly 0 and would otherwise be pulled into the
-    # cluster as bogus neighbours, polluting Ask answers. argsort is descending, so
-    # stop at the first non-positive score. Same filter related() applies.
+    snap = _snapshot(user_id)
+    metas = snap.rows
+    best, _ = _capture_max_sims(snap, embed(query))
+    # Skip zero-score captures (no active-model embedding yet — backfill pending or
+    # model changed): they would otherwise be pulled into the cluster as bogus
+    # neighbours, polluting Ask answers. argsort is descending, so stop at the
+    # first non-positive score. Same filter related() applies.
     order: list[int] = []
-    for i in np.argsort(-sims):
-        if sims[i] <= 0:
+    for i in np.argsort(-best):
+        if best[i] <= 0:
             break
         order.append(i)
         if len(order) >= limit:
@@ -365,39 +510,34 @@ def neighbors(user_id: str, query: str, limit: int = 20,
 
 
 def related(user_id: str, capture_id: str, limit: int = 10) -> list[dict]:
-    """Semantic neighbours of ONE capture, for the 'Related' surface: cosine-scan
-    the user's other captures against the capture's own vector, excluding the
-    capture itself. The query vector is the capture's *stored* embedding whenever
-    it is verifiably current (_stored_vector) — every detail-view open otherwise
-    pays an embed round-trip for a vector the index already has; only a stale or
-    missing row (edited while the sidecar was down, backfill pending) re-embeds.
-    Returns dicts shaped like /find items (no embedding bytes). Empty — never an
-    error — when embeddings are disabled or the capture has no indexable text
-    (media-only / missing); the UI just shows no suggestions."""
+    """Semantic neighbours of ONE capture, for the 'Related' surface: score the
+    user's other captures against this capture's meaning (max cosine over their
+    chunks), excluding the capture itself. The query vector is the capture's full
+    content freshly embedded — with chunked storage there is no single stored
+    vector to reuse, and Related is an on-open surface, not a hot path. Returns
+    dicts shaped like /find items. Empty — never an error — when embeddings are
+    disabled or the capture has no indexable text (media-only / missing)."""
     if not EMBED_ENABLED:
         return []
-    metas = _rows(user_id)
+    snap = _snapshot(user_id)
+    metas = snap.rows
     own = next((r for r in metas if r["id"] == capture_id), None)
     if own is None or not own["content"].strip():
         return []
-    qv = _stored_vector(own)
-    if qv is None:
-        qv = embed(own["content"])
-    mat = _vector_matrix(metas, len(qv))
-    sims = _cosines(mat, qv)
+    best, _ = _capture_max_sims(snap, embed(own["content"]))
     out: list[dict] = []
-    for i in np.argsort(-sims):
+    for i in np.argsort(-best):
         if metas[i]["id"] == capture_id:
             continue
-        # Rows with no active-model embedding stay zero vectors (backfill pending,
-        # model changed, media-only, embed failed) and score exactly 0; stop before
-        # them so they never fill the list with non-semantic suggestions. argsort is
-        # descending, so everything past the first non-positive score is also junk.
-        if sims[i] <= 0:
+        # Zero-score captures (no active-model embedding: backfill pending, model
+        # changed, media-only, embed failed) sort last; stop before them so they
+        # never fill the list with non-semantic suggestions. argsort is descending,
+        # so everything past the first non-positive score is also junk.
+        if best[i] <= 0:
             break
         out.append({"id": metas[i]["id"], "content": metas[i]["content"],
                     "created_at": metas[i]["created_at"],
-                    "modality": metas[i]["modality"], "score": float(sims[i])})
+                    "modality": metas[i]["modality"], "score": float(best[i])})
         if len(out) >= limit:
             break
     return out
@@ -408,36 +548,35 @@ def related(user_id: str, capture_id: str, limit: int = 10) -> list[dict]:
 CANDIDATE_FLOOR = float(os.getenv("CANDIDATE_FLOOR", "0.3"))
 
 
-def candidates(user_id: str, query: str, k: int = 30,
-               corpus: list[dict] | None = None) -> list[dict]:
+def candidates(user_id: str, query: str, k: int = 30) -> list[dict]:
     """Wide recall: literal substring hits ∪ vector top-k (low floor), for rerank.
     Zero-content captures are kept out of vector recall (unstable noise); literal
     hits are exempt. With embeddings disabled there is no vector channel, so this
-    returns literal hits only — BM25 (added in search()) supplies the rest.
-    Pass `corpus` (a search_corpus result) to reuse a load the caller already
-    paid for."""
+    returns literal hits only — BM25 (added in search()) supplies the rest. Reads
+    the cached corpus snapshot (shared with the caller's own search_corpus load in
+    the same request). A capture's vector score is the max cosine over its chunks,
+    and rerank_text carries the best-matching chunk so the reranker scores the
+    matched fragment rather than a long document's truncated opening."""
     q = query.lower()
-    if corpus is None:
-        corpus = search_corpus(user_id)
+    snap = _snapshot(user_id)
     if not EMBED_ENABLED:
         pool_ = [{"id": f["id"], "content": f["content"], "created_at": f["created_at"],
-                  "modality": f["modality"], "lexical": True, "vscore": 0.0}
-                 for f in corpus if q in f["content"].lower()]
+                  "modality": f["modality"], "lexical": True, "vscore": 0.0,
+                  "rerank_text": f["content"]}
+                 for f in snap.rows if q in f["content"].lower()]
         pool_.sort(key=lambda c: c["created_at"], reverse=True)
         return pool_[:k]
 
-    qv = embed(query)
-    metas = corpus
-    mat = _vector_matrix(metas, len(qv))
-    sims = _cosines(mat, qv)
-
+    best, best_text = _capture_max_sims(snap, embed(query))
     pool_: list[dict] = []
-    for m, sim in zip(metas, sims):
+    for i, m in enumerate(snap.rows):
         lex = q in m["content"].lower()
-        if lex or (float(sim) >= CANDIDATE_FLOOR and _content_chars(m["content"]) > 0):
+        sim = float(best[i])
+        if lex or (sim >= CANDIDATE_FLOOR and _content_chars(m["content"]) > 0):
             pool_.append({"id": m["id"], "content": m["content"],
                           "created_at": m["created_at"], "modality": m["modality"],
-                          "lexical": lex, "vscore": float(sim)})
+                          "lexical": lex, "vscore": sim,
+                          "rerank_text": best_text[i] or m["content"]})
     pool_.sort(key=lambda c: (not c["lexical"], -c["vscore"]))
     return pool_[:k]
 
@@ -528,21 +667,26 @@ def needs_extract(user_id: str, current_version: int) -> list[dict]:
 
 def needs_index(user_id: str) -> list[str]:
     """Capture ids whose embedding is missing, stale (source_hash no longer matches
-    the current content — e.g. edited while the sidecar was down), or produced by a
-    different embedding model. Drives backfill self-heal + model-change reindex.
+    the current content — e.g. edited while the sidecar was down), produced by a
+    different embedding model, or still in the pre-chunking format (embed_v <
+    EMBED_V). Drives backfill self-heal, model-change reindex, and the one-time
+    re-chunk after migration 027. A capture is up to date iff it has at least one
+    chunk that is current on all three axes, so NOT EXISTS of such a chunk means it
+    needs indexing — and returns one id per capture (no per-chunk duplication).
     Empty when embeddings are disabled (nothing to embed)."""
     if not EMBED_ENABLED:
         return []
     with pool().connection() as conn:
         rows = conn.execute(
             f"SELECT c.id::text FROM captures c "
-            "LEFT JOIN capture_embeddings e ON e.capture_id = c.id "
             "WHERE c.user_id = %s AND c.deleted_at IS NULL "
             f"AND {_CONTENT} <> '' "
-            "AND (e.capture_id IS NULL OR e.model <> %s "
-            f"     OR e.source_hash IS DISTINCT FROM md5({_CONTENT})) "
+            "AND NOT EXISTS ("
+            "  SELECT 1 FROM capture_embeddings e "
+            "  WHERE e.capture_id = c.id AND e.model = %s "
+            f"    AND e.source_hash = md5({_CONTENT}) AND e.embed_v >= %s) "
             "ORDER BY c.created_at",
-            (user_id, active_embed_model()),
+            (user_id, active_embed_model(), EMBED_V),
         ).fetchall()
     return [r[0] for r in rows]
 
@@ -609,16 +753,20 @@ def webhooks_enabled(user_id: str) -> list[dict]:
 
 
 def get_fragment(capture_id: str, user_id: str) -> dict | None:
-    """One capture's content + embedding + extracted metadata, for webhook
-    matching and template rendering. None if the capture isn't this user's."""
+    """One capture's content + chunk embeddings + extracted metadata, for webhook
+    matching and template rendering. `embeddings` is the list of the capture's
+    chunk vectors (empty if unembedded); matches() takes the max cosine over them.
+    None if the capture isn't this user's."""
     with pool().connection() as conn:
         row = conn.execute(
             f"SELECT c.id::text, {_CONTENT} AS content, c.created_at, "
-            "e.embedding, m.data "
+            "       array_agg(e.embedding ORDER BY e.chunk_idx) "
+            "         FILTER (WHERE e.embedding IS NOT NULL) AS embeddings, m.data "
             "FROM captures c "
             "LEFT JOIN capture_embeddings e ON e.capture_id = c.id "
             "LEFT JOIN capture_metadata m ON m.capture_id = c.id "
-            "WHERE c.id = %s AND c.user_id = %s AND c.deleted_at IS NULL",
+            "WHERE c.id = %s AND c.user_id = %s AND c.deleted_at IS NULL "
+            "GROUP BY c.id, m.data",
             (capture_id, user_id),
         ).fetchone()
     if row is None:
@@ -627,6 +775,6 @@ def get_fragment(capture_id: str, user_id: str) -> dict | None:
         "id": row[0],
         "content": row[1] or "",
         "created_at": _iso(row[2]) if row[2] else None,
-        "embedding": bytes(row[3]) if row[3] is not None else None,
+        "embeddings": [bytes(b) for b in (row[3] or [])],
         "metadata": row[4],
     }

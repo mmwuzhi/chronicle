@@ -190,7 +190,7 @@ captures             id, user_id, raw_text, media_url, media_key, media_type, so
                      todo_at, done_at (todo facet; CHECK done_at IS NULL OR todo_at IS NOT NULL)
 capture_links        a_id, b_id, user_id, created_at  (undirected, a_id < b_id)
 capture_attachments  external file references (Google Drive etc.)
-capture_embeddings   per-capture vector (RAG index)
+capture_embeddings   per-chunk vector (RAG index; one row per (capture, chunk_idx) since 027, max-over-chunks at read)
 capture_metadata     per-capture extracted JSONB (RAG index)
 capture_tokens       create-only personal access tokens (iOS Shortcut / quick capture)
 capture_webhooks     keyword/semantic outbound webhooks

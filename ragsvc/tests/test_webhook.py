@@ -1,5 +1,6 @@
 import json
 
+import numpy as np
 import pytest
 
 import webhook
@@ -44,7 +45,7 @@ def test_render_missing_placeholder_is_null_or_empty():
 
 
 def test_matches_keyword_substring():
-    frag = {"content": "buy 領収書 today", "embedding": None, "metadata": None}
+    frag = {"content": "buy 領収書 today", "embeddings": [], "metadata": None}
     rule = {"keywords": ["領収書"], "semantic_query": None, "semantic_threshold": 0.6}
 
     hit, score = webhook.matches(rule, frag)
@@ -53,7 +54,7 @@ def test_matches_keyword_substring():
 
 
 def test_matches_no_keyword_hit():
-    frag = {"content": "nothing relevant here", "embedding": None, "metadata": None}
+    frag = {"content": "nothing relevant here", "embeddings": [], "metadata": None}
     rule = {"keywords": ["receipt"], "semantic_query": None, "semantic_threshold": 0.6}
 
     hit, _ = webhook.matches(rule, frag)
@@ -61,11 +62,27 @@ def test_matches_no_keyword_hit():
 
 
 def test_unconditional_rule_matches_everything():
-    frag = {"content": "anything at all", "embedding": None, "metadata": None}
+    frag = {"content": "anything at all", "embeddings": [], "metadata": None}
     rule = {"keywords": [], "semantic_query": None, "semantic_threshold": 0.6}
 
     hit, _ = webhook.matches(rule, frag)
     assert hit
+
+
+def test_matches_semantic_scores_best_chunk(monkeypatch):
+    # A rule fires when ANY chunk of a long capture is close enough — the score is
+    # the max cosine over the capture's chunks, not a whole-document average.
+    monkeypatch.setattr(webhook.rag, "active_embed_model", lambda: "m")
+    aligned = np.array([1.0, 0.0], dtype=np.float32)   # cosine 1.0 with the query
+    orthog = np.array([0.0, 1.0], dtype=np.float32)    # cosine 0.0
+    monkeypatch.setattr(webhook, "_rule_embedding", lambda q: aligned)
+    frag = {"content": "long capture", "metadata": None,
+            "embeddings": [orthog.tobytes(), aligned.tobytes()]}
+    rule = {"keywords": [], "semantic_query": "topic", "semantic_threshold": 0.6}
+
+    hit, score = webhook.matches(rule, frag)
+    assert hit
+    assert abs(score - 1.0) < 1e-6      # best (second) chunk, not the first
 
 
 def test_resolve_and_vet_blocks_internal_targets():

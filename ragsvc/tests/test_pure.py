@@ -119,38 +119,48 @@ def test_cosines_zero_vectors_score_zero():
     assert sims[1] == 0.0
 
 
-def test_stored_vector_freshness_gate():
-    # related() may only reuse a stored embedding that is verifiably current:
-    # active model AND source_hash matching the live content. Anything stale
-    # must return None so the caller re-embeds — a silent stale-vector reuse
-    # would rank Related against text the user already edited away.
-    vec = np.array([0.1, 0.2], dtype=np.float32)
-    row = {"content": "拉面 1200 日元", "embedding": vec.tobytes(),
-           "model": rag.active_embed_model(),
-           "source_hash": rag._md5("拉面 1200 日元")}
-    assert np.allclose(rag._stored_vector(row), vec)
-    assert rag._stored_vector({**row, "source_hash": rag._md5("edited")}) is None
-    assert rag._stored_vector({**row, "model": "other-model"}) is None
-    assert rag._stored_vector({**row, "embedding": None}) is None
+def test_chunk_content_short_is_single_chunk():
+    assert rag.chunk_content("short note") == ["short note"]
+    assert rag.chunk_content("   ") == []
+    assert rag.chunk_content("") == []
 
 
-def test_vector_matrix_places_only_active_model_and_dim():
-    # Rows from another model or another dimension must stay zero vectors
-    # (cosine 0) rather than land in the matrix — same-dim vectors from a
-    # different model live in an incompatible space.
-    active = rag.active_embed_model()
-    good = np.array([1.0, 0.0], dtype=np.float32)
+def test_chunk_content_long_splits_with_overlap(monkeypatch):
+    monkeypatch.setattr(rag, "CHUNK_CHARS", 100)
+    monkeypatch.setattr(rag, "CHUNK_OVERLAP", 20)
+    text = "".join(chr(ord("a") + (i % 26)) for i in range(250))  # no spaces
+    chunks = rag.chunk_content(text)
+    assert len(chunks) == 3                    # windows at 0, 80, 160 (step 80)
+    assert all(len(c) <= 100 for c in chunks)
+    assert chunks[0][-20:] == chunks[1][:20]   # 20-char overlap between windows
+    assert text.endswith(chunks[-1][-10:])     # the last window reaches the end
+
+
+def test_capture_max_sims_takes_best_chunk(monkeypatch):
+    # A capture's vector score is the max cosine over its chunks, and the returned
+    # text is that best chunk's — a long capture with one on-topic passage must
+    # rank on that passage, not on a whole-document average. Chunks from another
+    # model / dimension stay out of the matrix (incompatible vector space).
+    monkeypatch.setattr(rag, "active_embed_model", lambda: "m")
+    qv = np.array([1.0, 0.0], dtype=np.float32)
+    aligned = np.array([1.0, 0.0], dtype=np.float32)   # cosine 1.0 with qv
+    orthog = np.array([0.0, 1.0], dtype=np.float32)    # cosine 0.0
     rows = [
-        {"embedding": good.tobytes(), "model": active},
-        {"embedding": good.tobytes(), "model": "old-model"},
-        {"embedding": np.zeros(3, dtype=np.float32).tobytes(), "model": active},
-        {"embedding": None, "model": None},
-        {},  # all_fragments-shaped row (no embedding key at all)
+        {"id": "A", "content": "capA", "model": "m",
+         "chunks": [orthog.tobytes(), aligned.tobytes()],
+         "chunk_texts": ["A-miss", "A-hit"]},
+        {"id": "B", "content": "capB", "model": "m",
+         "chunks": [orthog.tobytes()], "chunk_texts": ["B-only"]},
+        {"id": "C", "content": "capC", "model": "old",  # stale model → skipped
+         "chunks": [aligned.tobytes()], "chunk_texts": ["C-stale"]},
     ]
-    mat = rag._vector_matrix(rows, 2)
-    assert mat.shape == (5, 2)
-    assert np.allclose(mat[0], good)
-    assert not mat[1:].any()
+    snap = rag._Snapshot(rows=rows, model="m", built_at=0.0)
+    best, best_text = rag._capture_max_sims(snap, qv)
+    assert abs(best[0] - 1.0) < 1e-6      # A: max over its two chunks
+    assert abs(best[1] - 0.0) < 1e-6      # B: single orthogonal chunk
+    assert abs(best[2] - 0.0) < 1e-6      # C: stale model contributes nothing
+    assert best_text[0] == "A-hit"        # the argmax chunk's text
+    assert best_text[2] is None
 
 
 def test_renumber_maps_positions_to_uuids():

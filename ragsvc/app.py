@@ -55,6 +55,12 @@ def _index_one(capture_id: str, user_id: str) -> None:
         webhook.fire(capture_id, user_id)
     except Exception as e:
         print(f"[index] {capture_id} failed (backfill will retry): {e}", file=sys.stderr)
+    finally:
+        # This write changed the user's corpus (embedding/metadata add or clear);
+        # drop the cached snapshot so the next recall reflects it immediately
+        # rather than waiting out the TTL. Runs on every path (a no-op reload when
+        # nothing changed is cheap and rare).
+        rag.invalidate_corpus(user_id)
 
 
 @app.get("/health")
@@ -120,6 +126,8 @@ def backfill(user_id: str | None = Header(default=None, alias="X-User-Id")) -> d
         for cid in rag.orphaned_derived(uid):
             rag.clear_derived(cid)
             cleared += 1
+        # Backfill rewrote this user's embeddings/metadata; drop any cached snapshot.
+        rag.invalidate_corpus(uid)
     return {"users": len(targets), "embedded": embedded,
             "extracted": extracted, "cleared": cleared}
 

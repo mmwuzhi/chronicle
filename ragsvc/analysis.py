@@ -71,9 +71,12 @@ def assemble_cluster(user_id: str, question: str, k_sem: int = 20, k_recent: int
     import bm25
     import dates
 
-    # One corpus load for the whole question: the time-window slice, the BM25
-    # channel, and the semantic channel (neighbors, via corpus=) all share it
-    # instead of each re-pulling every capture from Postgres.
+    # One corpus load for the whole question: the time-window slice and the BM25
+    # channel use `frags` directly, and the semantic channel (neighbors) reads the
+    # same per-user cached snapshot (a cache hit), so none re-pull every capture
+    # from Postgres per query. add_supp gates every id through by_id (built from
+    # `frags`), so a neighbour from a snapshot refreshed mid-request is simply
+    # skipped rather than causing a lookup miss.
     frags = rag.search_corpus(user_id)
     by_id = {f["id"]: f for f in frags}
 
@@ -93,7 +96,7 @@ def assemble_cluster(user_id: str, question: str, k_sem: int = 20, k_recent: int
         if fid in by_id and fid not in window_set and fid not in supp_order:
             supp_order.append(fid)
 
-    for f in rag.neighbors(user_id, question, k_sem, corpus=frags):
+    for f in rag.neighbors(user_id, question, k_sem):
         add_supp(f.id)
     for f in rag.recent(user_id, k_recent):
         add_supp(f.id)
