@@ -84,5 +84,12 @@
   },
   "tagMenu": {
     "todoHint": "标记为待办"
+  },
+  "review": {
+    "title": "回顾",
+    "subtitle": "重温你之前捕获的内容。",
+    "onThisDay": "历史上的今天",
+    "rediscover": "重新发现",
+    "empty": "还没有可回顾的内容——随着时间推移,较早的捕获会出现在这里。"
   }
 }

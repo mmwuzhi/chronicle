@@ -475,6 +475,21 @@ export interface ResetPasswordOutputBody {
   accessToken: string;
 }
 
+export interface ReviewTodayOutputBody {
+  /** A URL to the JSON Schema for this object. */
+  readonly $schema?: string;
+  /**
+     * Captures from this same calendar day in an earlier period
+     * @nullable
+     */
+  onThisDay: CaptureBody[] | null;
+  /**
+     * A random handful of older captures for serendipitous recall
+     * @nullable
+     */
+  rediscover: CaptureBody[] | null;
+}
+
 export interface TOTPDisableInputBody {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
@@ -3931,6 +3946,99 @@ export function usePendingReminders<TData = Awaited<ReturnType<typeof pendingRem
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
   const queryOptions = getPendingRemindersQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+/**
+ * @summary Captures to revisit today: on-this-day and a rediscover sample
+ */
+export const reviewToday = (
+
+ signal?: AbortSignal
+) => {
+
+
+      return api<ReviewTodayOutputBody>(
+      {url: `/review/today`, method: 'GET', signal
+    },
+      );
+    }
+
+
+
+
+export const getReviewTodayQueryKey = () => {
+    return [
+    `/review/today`
+    ] as const;
+    }
+
+
+export const getReviewTodayQueryOptions = <TData = Awaited<ReturnType<typeof reviewToday>>, TError = ErrorModel>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof reviewToday>>, TError, TData>>, }
+) => {
+
+const {query: queryOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getReviewTodayQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof reviewToday>>> = ({ signal }) => reviewToday(signal);
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof reviewToday>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ReviewTodayQueryResult = NonNullable<Awaited<ReturnType<typeof reviewToday>>>
+export type ReviewTodayQueryError = ErrorModel
+
+
+export function useReviewToday<TData = Awaited<ReturnType<typeof reviewToday>>, TError = ErrorModel>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof reviewToday>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof reviewToday>>,
+          TError,
+          Awaited<ReturnType<typeof reviewToday>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useReviewToday<TData = Awaited<ReturnType<typeof reviewToday>>, TError = ErrorModel>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof reviewToday>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof reviewToday>>,
+          TError,
+          Awaited<ReturnType<typeof reviewToday>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useReviewToday<TData = Awaited<ReturnType<typeof reviewToday>>, TError = ErrorModel>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof reviewToday>>, TError, TData>>, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Captures to revisit today: on-this-day and a rediscover sample
+ */
+
+export function useReviewToday<TData = Awaited<ReturnType<typeof reviewToday>>, TError = ErrorModel>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof reviewToday>>, TError, TData>>, }
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getReviewTodayQueryOptions(options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 

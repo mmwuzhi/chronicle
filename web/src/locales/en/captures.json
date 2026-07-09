@@ -84,5 +84,12 @@
   },
   "tagMenu": {
     "todoHint": "Mark as todo"
+  },
+  "review": {
+    "title": "Review",
+    "subtitle": "Revisit what you captured before.",
+    "onThisDay": "On this day",
+    "rediscover": "Rediscover",
+    "empty": "Nothing to revisit yet — your older captures will surface here over time."
   }
 }

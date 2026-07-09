@@ -94,6 +94,7 @@ func Register(api huma.API, pool *pgxpool.Pool, rag *ragclient.Client, store obj
 	huma.Register(api, op("get-capture", http.MethodGet, "/captures/{id}", "Get a single capture"), h.get)
 	huma.Register(api, op("update-capture", http.MethodPatch, "/captures/{id}", "Update a capture"), h.update)
 	huma.Register(api, op("retry-capture-transcription", http.MethodPost, "/captures/{id}/transcription/retry", "Retry audio or image transcription"), h.retryTranscription)
+	huma.Register(api, op("review-today", http.MethodGet, "/review/today", "Captures to revisit today: on-this-day and a rediscover sample"), h.reviewToday)
 	huma.Register(api, op("set-capture-remind", http.MethodPost, "/captures/{id}/remind", "Set or clear a capture reminder"), h.setRemind)
 	huma.Register(api, op("due-reminders", http.MethodGet, "/reminders/due", "List reminders that have come due"), h.dueReminders)
 	huma.Register(api, op("pending-reminders", http.MethodGet, "/reminders/pending", "List not-yet-due reminders"), h.pendingReminders)

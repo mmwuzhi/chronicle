@@ -84,5 +84,12 @@
   },
   "tagMenu": {
     "todoHint": "TODOにする"
+  },
+  "review": {
+    "title": "振り返り",
+    "subtitle": "以前キャプチャした内容を見返しましょう。",
+    "onThisDay": "この日の記録",
+    "rediscover": "再発見",
+    "empty": "まだ見返すものはありません。時間が経つと過去のキャプチャがここに現れます。"
   }
 }

@@ -27,6 +27,15 @@ const SearchIcon = () => (
     <path d="m21 21-4.35-4.35" />
   </svg>
 );
+const ReviewIcon = () => (
+  <svg fill="none" stroke="currentColor" strokeWidth={1.75} viewBox="0 0 24 24">
+    <path
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      d="M12 6v6l4 2M3.75 12a8.25 8.25 0 1 1 2.42 5.83M3.75 12H8m-4.25 0V7.75"
+    />
+  </svg>
+);
 const AskIcon = () => (
   <svg fill="none" stroke="currentColor" strokeWidth={1.75} viewBox="0 0 24 24">
     <path
@@ -68,6 +77,7 @@ const ASK_ENABLED =
 const tabs = [
   { to: "/" as const, labelKey: "nav.home", icon: <HomeIcon />, exact: true },
   { to: "/captures" as const, labelKey: "nav.captures", icon: <CaptureIcon /> },
+  { to: "/review" as const, labelKey: "nav.review", icon: <ReviewIcon /> },
   ...(ASK_ENABLED
     ? [{ to: "/ask" as const, labelKey: "nav.ask", icon: <AskIcon /> }]
     : []),
