@@ -100,6 +100,27 @@ public final class CaptureAPIClient: CaptureSending, @unchecked Sendable {
         }
         return try JSONDecoder().decode(CreatedCapture.self, from: data).id
     }
+
+    // Push an edited capture's text back (PATCH /captures/{id}). Mirrors
+    // RecallAPIClient.update but on the sync client, so the offline queue drains
+    // creates (send) and edits (update) through one client. The server re-embeds +
+    // re-extracts; the returned body is ignored — the drain only needs success.
+    public func update(serverId: String, rawText: String) async throws {
+        var request = URLRequest(
+            url: config.apiURL.appending(path: "captures").appending(path: serverId))
+        request.httpMethod = "PATCH"
+        request.setValue("Bearer \(config.token)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONEncoder().encode(["rawText": rawText])
+        let (_, response) = try await AuthedTransport.send(
+            request, session: session, refresher: refresher)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw CaptureAPIError.invalidResponse
+        }
+        guard (200..<300).contains(httpResponse.statusCode) else {
+            throw CaptureAPIError.httpStatus(httpResponse.statusCode)
+        }
+    }
 }
 
 public enum CaptureAPIError: Error, Equatable {

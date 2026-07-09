@@ -64,9 +64,6 @@ struct MainView: View {
     // pinning/unpinning anywhere keeps every row's pin indicator in sync.
     @State private var pinTick = 0
 
-    // Signed-out + queued-count snapshot for the top sign-in banner.
-    @State private var session = SessionStatus()
-
     // Marks this view's own capture-change posts so onReceive can skip them:
     // every local mutation already updates state optimistically (with removal
     // animations a full reload would stomp); the notification is for the other
@@ -85,14 +82,13 @@ struct MainView: View {
     // call rebuildBrowseRows() (today: loadBrowse and commitDelete).
     @State private var browseRows: [RowItem] = []
 
-    private func refreshSessionStatus() {
-        session = clients.sessionStatus()
-    }
-
     private func rebuildBrowseRows() {
         guard signedIn && !offline else { browseRows = localRows; return }
+        // Dirty local rows (offline edits not yet pushed) go ahead of the server
+        // fragments so their new text wins the id-dedup over the stale server copy;
+        // everything else keeps server-fragment-first precedence.
         browseRows = RowMerge.newestFirst(
-            primary: fragments.map(RowItem.init),
+            primary: localRows.filter(\.dirty) + fragments.map(RowItem.init),
             secondary: localRows,
             id: \.id,
             date: \.createdDate,
@@ -100,13 +96,7 @@ struct MainView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            if session.signedOut {
-                SignInBanner(status: session, onSignIn: { clients.openSettings() })
-                Divider()
-            }
-            windowBody
-        }
+        windowBody
     }
 
     private var windowBody: some View {
@@ -172,20 +162,14 @@ struct MainView: View {
         .animation(.easeOut(duration: 0.16), value: navigation.tabsPeeking)
         .animation(navigation.tabsExpandedAnimation, value: navigation.tabsExpanded)
         .task {
-            refreshSessionStatus()
             await loadBrowse(reset: true)
         }
         .onReceive(NotificationCenter.default.publisher(for: .chronicleMainShown)) { _ in
-            refreshSessionStatus()
             if navigation.mode == .browse && !searched { Task { await loadBrowse(reset: true) } }
         }
         .onReceive(NotificationCenter.default.publisher(for: .chronicleCapturesChanged)) { note in
-            refreshSessionStatus()
             guard (note.object as? NSObject) !== captureEventToken else { return }
             refreshForCaptureChange()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .chronicleSessionChanged)) { _ in
-            refreshSessionStatus()
         }
         .onReceive(NotificationCenter.default.publisher(for: .chroniclePinsChanged)) { _ in
             pinTick &+= 1
@@ -564,19 +548,40 @@ struct MainView: View {
     }
 
     private func edit(_ id: String, _ text: String) {
-        // A silent return here reads as "save is broken": the row keeps the old
-        // text with no feedback. Name the actual problem instead.
-        guard let client = clients.recall() else {
-            error = "Not signed in — sign in from Settings to edit."
+        // Offline-first: write the edit to the local store first so it's never lost
+        // and shows immediately — the same fallback create and delete already use.
+        // `false` means the row isn't cached locally (a signed-in, server-only
+        // browse fragment), so edit it directly against the server instead.
+        guard clients.localSetText(id, text) else {
+            guard let client = clients.recall() else {
+                error = "Not signed in — sign in from Settings to edit."
+                return
+            }
+            Task { @MainActor in
+                do {
+                    _ = try await client.update(id: id, rawText: text)
+                    CaptureEvents.postChanged(from: captureEventToken)
+                    if searched { runBrowse() } else { await loadBrowse(reset: true) }
+                } catch let err { error = describeCaptureError(err) }
+            }
             return
         }
-        Task { @MainActor in
-            do {
-                _ = try await client.update(id: id, rawText: text)
-                CaptureEvents.postChanged(from: captureEventToken)
-                if searched { runBrowse() } else { await loadBrowse(reset: true) }
-            } catch let err { error = describeCaptureError(err) }
-        }
+        // Reflect the new text now: a dirty row wins the merge over any stale server
+        // fragment (see rebuildBrowseRows), so there's no flash before the push. Tell
+        // the other open surfaces too; this view skips its own post via the token.
+        error = ""
+        localRows = clients.localRecent(200)
+        rebuildBrowseRows()
+        // The visible list in search mode is `hits`, not browseRows — re-run the
+        // active local search so the edited row shows its new text (and drops out if
+        // it no longer matches) without waiting for a manual re-search.
+        if searched { runBrowse() }
+        CaptureEvents.postChanged(from: captureEventToken)
+        // Push the edit when a session is live. The drain clears the dirty flag
+        // (markUpdatePushed) and its own capture-change post re-pulls fresh
+        // fragments here; signed out, the row stays dirty and replays on next
+        // sign-in. A transient failure leaves it dirty — never an error dialog.
+        Task { await clients.syncEdits() }
     }
 
     // Hide the row now; commit the soft delete after the undo window unless undone.

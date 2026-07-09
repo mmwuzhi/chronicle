@@ -141,11 +141,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
     }
 
-    // Menu bar icon + tooltip react to the current session status; the banner
-    // surfaces subscribe to .chronicleSessionChanged and re-pull the status.
+    // Menu bar icon + tooltip are the only sign-in surface — react to session
+    // health changes by refreshing the status-item glyph and tooltip.
     private func sessionHealthChanged() {
         updateStatusItemAppearance()
-        NotificationCenter.default.post(name: .chronicleSessionChanged, object: nil)
     }
 
     @objc private func capturesChangedForStatusItem() {
@@ -202,7 +201,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 (try? localStore.recent(limit: limit))?.map(RowItem.init) ?? []
             },
             localDelete: { [localStore] id in try? localStore.delete(id: id) },
-            sessionStatus: { [weak self] in self?.currentSessionStatus() ?? SessionStatus() },
+            localSetText: { [localStore] id, text in
+                ((try? localStore.setText(id: id, rawText: text)) ?? 0) > 0
+            },
+            syncEdits: { [weak self] in
+                guard let self, let client = self.makeClient() else { return }
+                await self.pushPendingUpdates(using: client)
+            },
         )
     }
 
@@ -405,15 +410,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 sent += 1
             }
         }
+        // Replay offline/optimistic edits to already-synced captures (PATCH), so a
+        // typo fixed while signed out lands on the server on the next sign-in.
+        await pushPendingUpdates(using: client)
         let remaining = (try? localStore.pendingSync().count) ?? 0
         return SyncSummary(sent: sent, remaining: remaining)
+    }
+
+    // Drain the "edited since last sync" queue: server-backed rows whose text was
+    // changed offline. On success advance synced_at to the pushed updated_at
+    // (markUpdatePushed) so the row clears; on failure leave it dirty for the next
+    // drain — offline-first, never an error dialog.
+    private func pushPendingUpdates(using client: CaptureAPIClient) async {
+        let dirty = (try? localStore.pendingUpdates(limit: 1000)) ?? []
+        for record in dirty {
+            guard let serverId = record.serverId else { continue }
+            do {
+                try await client.update(serverId: serverId, rawText: record.payload.rawText)
+                try localStore.markUpdatePushed(localId: record.id, syncedAt: record.updatedAt)
+                CaptureEvents.postChanged()
+            } catch {
+                try? localStore.markFailed(localId: record.id, error: error)
+            }
+        }
     }
 
     @discardableResult
     func sync(_ record: LocalCaptureRecord, using client: CaptureAPIClient, notifySuccess: Bool) async -> Bool {
         do {
             let serverId = try await client.send(record.payload)
-            try localStore.markSynced(localId: record.id, serverId: serverId)
+            // sentText = the snapshot we just POSTed; if the user edited this row
+            // while the create was in flight, markCreateSynced keeps it dirty so the
+            // trailing pushPendingUpdates drain PATCHes the new text (never lost to
+            // the stale create payload).
+            try localStore.markCreateSynced(
+                localId: record.id, serverId: serverId, sentText: record.payload.rawText)
             CaptureEvents.postChanged()
             if notifySuccess {
                 await MainActor.run {

@@ -207,6 +207,27 @@ public final class LocalCaptureStore: @unchecked Sendable {
         }
     }
 
+    // Server-backed rows edited since their last sync (updated_at > synced_at):
+    // offline/optimistic edits waiting to be PATCHed back. Distinct from
+    // pendingSync (never-created rows, server_id IS NULL) — these already exist on
+    // the server and only need their new text pushed. `synced_at IS NULL` is
+    // defensive; a server-backed row should always carry one.
+    public func pendingUpdates(limit: Int = 50) throws -> [LocalCaptureRecord] {
+        try query(
+            """
+            SELECT id, server_id, raw_text, media_type, classified_as, source,
+                   remind_at, created_at, updated_at, synced_at, last_error, notified_at,
+                   remind_hide
+            FROM local_captures
+            WHERE server_id IS NOT NULL AND (synced_at IS NULL OR updated_at > synced_at)
+            ORDER BY updated_at
+            LIMIT ?
+            """,
+        ) { stmt in
+            sqlite3_bind_int(stmt, 1, Int32(limit))
+        }
+    }
+
     public func upcomingReminders(now: Date = Date()) throws -> [LocalCaptureRecord] {
         try query(
             """
@@ -239,6 +260,71 @@ public final class LocalCaptureStore: @unchecked Sendable {
                 bindDate(stmt, 3, syncedAt)
                 bindText(stmt, 4, localId)
             }
+        }
+    }
+
+    // Complete a create-sync. Marks the row synced (server_id + synced_at), but if
+    // its text changed since `sentText` was snapshotted — an edit raced the
+    // in-flight create POST, so the server received the stale create payload —
+    // leaves the row dirty (updated_at > synced_at) so pendingUpdates re-PATCHes
+    // the newer text instead of stranding the server on the old copy. Returns true
+    // when a concurrent edit was detected and the row was kept dirty for re-push.
+    @discardableResult
+    public func markCreateSynced(
+        localId: String, serverId: String, sentText: String,
+        syncedAt: Date = Date(), reeditStamp: Date = Date()
+    ) throws -> Bool {
+        try markSynced(localId: localId, serverId: serverId, syncedAt: syncedAt)
+        guard let row = try find(localId: localId), row.payload.rawText != sentText else {
+            return false
+        }
+        try setText(id: localId, rawText: row.payload.rawText, now: reeditStamp)
+        return true
+    }
+
+    // Mark a server-backed row's edit as pushed by advancing synced_at to the
+    // updated_at we just PATCHed — never re-stamping updated_at or raw_text. If a
+    // concurrent re-edit bumped updated_at past `syncedAt`, the row stays dirty
+    // (updated_at > synced_at) and re-pushes on the next drain, so an edit made
+    // during the network round-trip is never silently dropped.
+    public func markUpdatePushed(localId: String, syncedAt: Date) throws {
+        try withDatabase { db in
+            try executeStatement(
+                db, "UPDATE local_captures SET synced_at = ?, last_error = NULL WHERE id = ?"
+            ) { stmt in
+                bindDate(stmt, 1, syncedAt)
+                bindText(stmt, 2, localId)
+            }
+        }
+    }
+
+    // Edit a capture's text in place (offline-first). Bumps updated_at but leaves
+    // synced_at untouched, so a server-backed row becomes "dirty"
+    // (updated_at > synced_at) and pendingUpdates re-pushes it; an unsynced row
+    // just carries the new text into its eventual create. `id` may be a server id
+    // (synced rows key on it) or a local id (unsynced), so match both — as delete
+    // does. Also drops any cached embedding: the vector indexed the *old* text, so
+    // leaving it would make on-device semantic search keep ranking this capture by
+    // stale content (rowsNeedingEmbedding only re-embeds rows with a missing or
+    // different-model vector). Nulling it re-enqueues the row for re-embedding.
+    // Returns the number of rows changed: 0 means the row isn't in the local cache
+    // (a signed-in, server-only browse fragment), so the caller edits it directly
+    // against the server instead.
+    @discardableResult
+    public func setText(id: String, rawText: String, now: Date = Date()) throws -> Int {
+        try withDatabase { db in
+            let sql = """
+                UPDATE local_captures
+                SET raw_text = ?, updated_at = ?, embedding = NULL, embed_model = NULL
+                WHERE server_id = ? OR id = ?
+                """
+            try executeStatement(db, sql) { stmt in
+                bindText(stmt, 1, rawText)
+                bindDate(stmt, 2, now)
+                bindText(stmt, 3, id)
+                bindText(stmt, 4, id)
+            }
+            return Int(sqlite3_changes(db))
         }
     }
 
@@ -358,17 +444,20 @@ public final class LocalCaptureStore: @unchecked Sendable {
         }
     }
 
+    // Record that a reminder's local notification fired. This is bookkeeping, NOT a
+    // text edit: it must not touch `updated_at`. The offline edit-replay queue keys
+    // dirtiness on `updated_at > synced_at` (see pendingUpdates), so bumping it here
+    // would make a server-backed reminder look edited and get PATCHed to
+    // /captures/{id} with the cached text — for server-sourced reminders that text
+    // is the reminder *summary*, so the drain would overwrite the capture body.
+    // Only user text edits (setText) and create may advance `updated_at`.
     public func markNotified(localId: String, now: Date = Date()) throws {
         try withDatabase { db in
-            let sql = """
-                UPDATE local_captures
-                SET notified_at = ?, updated_at = ?
-                WHERE id = ?
-                """
-            try executeStatement(db, sql) { stmt in
+            try executeStatement(
+                db, "UPDATE local_captures SET notified_at = ? WHERE id = ?"
+            ) { stmt in
                 bindDate(stmt, 1, now)
-                bindDate(stmt, 2, now)
-                bindText(stmt, 3, localId)
+                bindText(stmt, 2, localId)
             }
         }
     }

@@ -261,6 +261,149 @@ func localCaptureStoreDoesNotReNotifyLocallyScheduledReminderAfterSync() throws 
     #expect(try store.count() == 1)  // still the same single row
 }
 
+@Test
+func localCaptureStoreEditFlagsSyncedRowDirtyForPush() throws {
+    // Editing an already-synced row must surface it in pendingUpdates (an offline
+    // PATCH-back) with the new text — never back in pendingSync, which is only for
+    // rows that were never created on the server.
+    let store = LocalCaptureStore(fileURL: temporaryDatabaseURL())
+    let record = try store.create(CapturePayload(rawText: "original"))
+    try store.markSynced(
+        localId: record.id, serverId: "server-e1", syncedAt: Date(timeIntervalSince1970: 1_000))
+
+    // Freshly synced: updated_at == synced_at, so nothing is dirty yet.
+    #expect(try store.pendingUpdates().isEmpty)
+
+    let changed = try store.setText(
+        id: "server-e1", rawText: "edited offline", now: Date(timeIntervalSince1970: 2_000))
+    #expect(changed == 1)
+
+    let dirty = try store.pendingUpdates()
+    #expect(dirty.map(\.serverId) == ["server-e1"])
+    #expect(dirty.first?.payload.rawText == "edited offline")
+    #expect(try store.pendingSync().isEmpty) // an edit is not a create
+}
+
+@Test
+func localCaptureStoreEditOnUnsyncedRowStaysInCreateQueue() throws {
+    // Editing a not-yet-synced row must carry the new text into its eventual create
+    // (pendingSync), not appear as a separate update — it has no server id to PATCH.
+    let store = LocalCaptureStore(fileURL: temporaryDatabaseURL())
+    let record = try store.create(CapturePayload(rawText: "draft"))
+
+    let changed = try store.setText(id: record.id, rawText: "draft revised")
+    #expect(changed == 1)
+
+    let pending = try store.pendingSync()
+    #expect(pending.map(\.payload.rawText) == ["draft revised"])
+    #expect(try store.pendingUpdates().isEmpty)
+}
+
+@Test
+func localCaptureStoreSetTextReturnsZeroForUnknownRow() throws {
+    // A server-only browse fragment isn't in the local cache; setText must report
+    // 0 changes so the caller falls back to editing directly against the server.
+    let store = LocalCaptureStore(fileURL: temporaryDatabaseURL())
+    #expect(try store.setText(id: "not-cached", rawText: "x") == 0)
+}
+
+@Test
+func localCaptureStoreMarkUpdatePushedClearsDirtyOnlyWhenNothingChangedMeanwhile() throws {
+    // markUpdatePushed advances synced_at to the pushed updated_at. When no re-edit
+    // raced the PATCH the row goes clean; when one did (updated_at moved past the
+    // pushed value), it stays dirty so the concurrent edit is re-pushed, never lost.
+    let store = LocalCaptureStore(fileURL: temporaryDatabaseURL())
+    let record = try store.create(CapturePayload(rawText: "v0"))
+    try store.markSynced(
+        localId: record.id, serverId: "server-race", syncedAt: Date(timeIntervalSince1970: 1_000))
+
+    // Edit 1 — the drain reads this row's updated_at (t2) before PATCHing.
+    try store.setText(id: "server-race", rawText: "v1", now: Date(timeIntervalSince1970: 2_000))
+    let pushed = try #require(try store.pendingUpdates().first)
+    #expect(pushed.updatedAt == Date(timeIntervalSince1970: 2_000))
+
+    // Edit 2 lands during the round-trip, bumping updated_at to t3.
+    try store.setText(id: "server-race", rawText: "v2", now: Date(timeIntervalSince1970: 3_000))
+
+    // PATCH of v1 completes: synced_at only advances to t2, not to "now".
+    try store.markUpdatePushed(localId: record.id, syncedAt: pushed.updatedAt)
+
+    // updated_at (t3) still exceeds synced_at (t2) → still dirty, v2 re-pushes.
+    let stillDirty = try store.pendingUpdates()
+    #expect(stillDirty.map(\.serverId) == ["server-race"])
+    #expect(stillDirty.first?.payload.rawText == "v2")
+
+    // Pushing v2 with its own updated_at finally clears the dirty flag.
+    try store.markUpdatePushed(localId: record.id, syncedAt: Date(timeIntervalSince1970: 3_000))
+    #expect(try store.pendingUpdates().isEmpty)
+}
+
+@Test
+func localCaptureStoreEditClearsStaleEmbedding() throws {
+    // On-device semantic search ranks the cached vector, which indexed the *old*
+    // text. Editing must drop that vector (rowsNeedingEmbedding only re-embeds a
+    // missing/different-model one) or semantic recall keeps matching stale content.
+    let store = LocalCaptureStore(fileURL: temporaryDatabaseURL())
+    let record = try store.create(CapturePayload(rawText: "ramen shop"))
+    try store.setEmbedding(id: record.id, model: "bge-m3", vector: [0.1, 0.2, 0.3])
+    #expect(try store.rowsNeedingEmbedding(model: "bge-m3").isEmpty) // indexed
+
+    try store.setText(id: record.id, rawText: "sushi bar")
+
+    #expect(try store.rowsNeedingEmbedding(model: "bge-m3").map(\.id) == [record.id])
+    #expect(try store.embeddedRows(model: "bge-m3").isEmpty) // stale vector dropped
+}
+
+@Test
+func localCaptureStoreMarkCreateSyncedRePushesEditThatRacedTheCreate() throws {
+    // Regression: an edit made while a capture's create POST is in flight must not
+    // be lost to the stale create payload. markCreateSynced compares the just-sent
+    // text against the stored text and keeps the row dirty when they diverge.
+    let store = LocalCaptureStore(fileURL: temporaryDatabaseURL())
+
+    // No concurrent edit: the create's own text is what synced → row goes clean.
+    let clean = try store.create(CapturePayload(rawText: "as sent"))
+    let dirtyAfterClean = try store.markCreateSynced(
+        localId: clean.id, serverId: "srv-clean", sentText: "as sent",
+        syncedAt: Date(timeIntervalSince1970: 1_000))
+    #expect(dirtyAfterClean == false)
+    #expect(try store.pendingUpdates().isEmpty)
+
+    // Edit landed during the in-flight create (stored "fixed" ≠ sent "typo"): the
+    // row must stay dirty carrying the NEW text so the drain re-PATCHes it.
+    let raced = try store.create(CapturePayload(rawText: "typo"))
+    try store.setText(id: raced.id, rawText: "fixed", now: Date(timeIntervalSince1970: 2_000))
+    let dirtyAfterRace = try store.markCreateSynced(
+        localId: raced.id, serverId: "srv-raced", sentText: "typo",
+        syncedAt: Date(timeIntervalSince1970: 2_500),
+        reeditStamp: Date(timeIntervalSince1970: 3_000))
+    #expect(dirtyAfterRace == true)
+    let dirty = try store.pendingUpdates()
+    #expect(dirty.map(\.serverId) == ["srv-raced"])
+    #expect(dirty.first?.payload.rawText == "fixed")
+}
+
+@Test
+func localCaptureStoreMarkNotifiedDoesNotQueueAnEditPush() throws {
+    // Regression: firing a reminder's local notification is bookkeeping, not a text
+    // edit, so it must NOT surface the row in pendingUpdates. Otherwise the drain
+    // PATCHes /captures/{id} with the cached text — and for a server-sourced
+    // reminder that text is the reminder *summary*, corrupting the capture body.
+    let store = LocalCaptureStore(fileURL: temporaryDatabaseURL())
+    // server_id set, raw_text = the reminder summary; synced_at == updated_at (clean).
+    let reminder = try store.upsertServerReminder(
+        serverId: "srv-reminder", text: "reminder summary",
+        remindAt: Date(timeIntervalSince1970: 9_000),
+        now: Date(timeIntervalSince1970: 5_000))
+    #expect(try store.pendingUpdates().isEmpty)
+
+    // Notify LATER than synced_at — the exact case ReminderNotifier hits (default
+    // now = real time). Bumping updated_at here would falsely flag the row dirty.
+    try store.markNotified(localId: reminder.id, now: Date(timeIntervalSince1970: 6_000))
+
+    #expect(try store.pendingUpdates().isEmpty)
+}
+
 private func temporaryQueueURL() -> URL {
     FileManager.default.temporaryDirectory
         .appending(path: UUID().uuidString)

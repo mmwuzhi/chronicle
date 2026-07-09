@@ -27,10 +27,14 @@ final class CaptureClients {
     // Drop a capture's cached local row after it is deleted on the server, keyed
     // by the row id (server id, or local id for an unsynced row).
     let localDelete: (String) -> Void
-    // Current session-visibility snapshot: whether the session is known-expired
-    // (drives the "signed out" banner) and how many captures are queued locally
-    // awaiting sync. Read on demand so any surface can render the nudge.
-    let sessionStatus: () -> SessionStatus
+    // Edit a capture's text in the local store (offline-first), keyed by the row id
+    // (server id, or local id for an unsynced row). Returns true when a local row
+    // was changed; false means the row isn't cached locally (a signed-in,
+    // server-only browse fragment) and must be edited directly against the server.
+    let localSetText: (String, String) -> Bool
+    // Push offline/optimistic edits (dirty rows) to the server now, if a session is
+    // live. No-op when signed out — the edits stay queued and replay on sign-in.
+    let syncEdits: () async -> Void
 
     init(
         recall: @escaping () -> RecallAPIClient?,
@@ -43,7 +47,8 @@ final class CaptureClients {
         localSemanticSearch: @escaping (String) async -> [RowItem] = { _ in [] },
         localRecent: @escaping (Int) -> [RowItem],
         localDelete: @escaping (String) -> Void,
-        sessionStatus: @escaping () -> SessionStatus = { SessionStatus() }
+        localSetText: @escaping (String, String) -> Bool = { _, _ in false },
+        syncEdits: @escaping () async -> Void = {}
     ) {
         self.recall = recall
         self.webhook = webhook
@@ -55,14 +60,15 @@ final class CaptureClients {
         self.localSemanticSearch = localSemanticSearch
         self.localRecent = localRecent
         self.localDelete = localDelete
-        self.sessionStatus = sessionStatus
+        self.localSetText = localSetText
+        self.syncEdits = syncEdits
     }
 }
 
-/// What the sign-in nudge needs to render: whether the server session is
-/// known-expired, and how many local captures are waiting to sync. `signedOut`
-/// is deliberately only true on a *proven* 401 — an offline app stays quiet
-/// (offline-first), matching `SessionHealth.expired`.
+/// What the menu-bar sign-in glyph + tooltip need to render: whether the server
+/// session is known-expired, and how many local captures are waiting to sync.
+/// `signedOut` is deliberately only true on a *proven* 401 — an offline app stays
+/// quiet (offline-first), matching `SessionHealth.expired`.
 struct SessionStatus: Equatable {
     var signedOut: Bool = false
     var pending: Int = 0
@@ -84,6 +90,12 @@ struct RowItem: Identifiable, Equatable {
     // Server-only actions can gate on this; desktop pins are allowed for local rows
     // because the sticky persists the capture content and can render offline.
     let synced: Bool
+    // True for a server-backed local row whose text was edited since its last sync
+    // (an offline/optimistic edit not yet pushed). Only local-cache rows can be
+    // dirty; every server/search-sourced row is false. The browse merge floats a
+    // dirty row ahead of its same-id server fragment so the not-yet-pushed new text
+    // wins over the stale server copy (see MainView.rebuildBrowseRows).
+    let dirty: Bool
     // Remote media URL (R2) for image/audio captures, when known. Search hits and
     // local records don't carry it (nil); a desktop sticky fills it in on refresh
     // from GET /captures/{id} so it can show an image thumbnail.
@@ -101,6 +113,7 @@ struct RowItem: Identifiable, Equatable {
         createdDate = CaptureTime.parse(hit.createdAt)
         modality = hit.modality
         synced = true
+        dirty = false
         mediaUrl = nil
         todoState = nil
     }
@@ -112,6 +125,7 @@ struct RowItem: Identifiable, Equatable {
         createdDate = CaptureTime.parse(capture.createdAt)
         modality = capture.mediaType
         synced = true
+        dirty = false
         mediaUrl = capture.mediaUrl
         todoState = capture.todoState
     }
@@ -123,6 +137,7 @@ struct RowItem: Identifiable, Equatable {
         createdDate = CaptureTime.parse(related.createdAt)
         modality = related.modality
         synced = true
+        dirty = false
         mediaUrl = nil
         todoState = nil
     }
@@ -136,13 +151,17 @@ struct RowItem: Identifiable, Equatable {
         self.createdDate = CaptureTime.parse(createdAt)
         self.modality = modality
         self.synced = true
+        self.dirty = false
         self.mediaUrl = mediaUrl
         self.todoState = nil
     }
 
     // From a local record. A synced record keys on its server id so it dedupes
     // against the same capture's server search hit; an unsynced one keeps its
-    // local id (it exists only on this device until it syncs).
+    // local id (it exists only on this device until it syncs). `dirty` mirrors
+    // LocalCaptureStore.pendingUpdates: a server-backed row edited since its last
+    // sync (updated_at > synced_at) — the not-yet-pushed edit the merge must float
+    // above the stale server fragment.
     init(_ record: LocalCaptureRecord) {
         id = record.serverId ?? record.id
         content = record.payload.rawText
@@ -150,6 +169,7 @@ struct RowItem: Identifiable, Equatable {
         createdDate = record.createdAt
         modality = record.payload.mediaType
         synced = record.serverId != nil
+        dirty = record.serverId != nil && (record.syncedAt.map { record.updatedAt > $0 } ?? true)
         mediaUrl = nil
         todoState = nil
     }

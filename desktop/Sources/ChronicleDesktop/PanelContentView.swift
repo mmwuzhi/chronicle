@@ -30,8 +30,6 @@ struct PanelContentView: View {
     @State private var needsSignIn = false
     @State private var inFlight: Task<Void, Never>?
     @State private var pinTick = 0
-    // Signed-out + queued-count snapshot for the top sign-in banner.
-    @State private var session = SessionStatus()
 
     @State private var remindOn = false
     @State private var remindAt = Date().addingTimeInterval(3600)
@@ -52,11 +50,6 @@ struct PanelContentView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if session.signedOut {
-                SignInBanner(status: session, onSignIn: { clients.openSettings() })
-                Divider()
-            }
-
             ModeTextEditor(
                 text: textBinding, focused: $focused,
                 placeholder: mode.placeholder,
@@ -103,20 +96,12 @@ struct PanelContentView: View {
         .background(shortcutButtons)
         .onAppear {
             DispatchQueue.main.async { focused = true }
-            refreshSessionStatus()
         }
         .onReceive(NotificationCenter.default.publisher(for: .chroniclePanelShown)) { _ in
             reset()
-            refreshSessionStatus()
         }
         .onReceive(NotificationCenter.default.publisher(for: .chroniclePinsChanged)) { _ in
             pinTick &+= 1
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .chronicleSessionChanged)) { _ in
-            refreshSessionStatus()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .chronicleCapturesChanged)) { _ in
-            refreshSessionStatus()
         }
         // In the body (not at the hosting site): the controller's hosting view is
         // typed NSHostingView<PanelContentView>, which a modifier there would break.
@@ -402,10 +387,6 @@ struct PanelContentView: View {
         DispatchQueue.main.async { focused = true }
     }
 
-    private func refreshSessionStatus() {
-        session = clients.sessionStatus()
-    }
-
     private func copy(_ s: String) {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(s, forType: .string)
@@ -461,9 +442,6 @@ extension Notification.Name {
     /// Posted when the set of pinned desktop stickies changes, so capture rows can
     /// re-read their pinned state and update the pin indicator.
     static let chroniclePinsChanged = Notification.Name("chroniclePinsChanged")
-    /// Posted when server-session health flips (signed in ⇆ signed out), so the
-    /// sign-in banner surfaces re-pull `clients.sessionStatus()`.
-    static let chronicleSessionChanged = Notification.Name("chronicleSessionChanged")
 }
 
 /// Posts `.chronicleCapturesChanged`, always delivered on the main thread —
