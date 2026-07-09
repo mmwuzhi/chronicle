@@ -63,7 +63,9 @@ visible from any single file. Setup and commands live in the root `Justfile`.
   is down (same policy as R2 media purge on permanent delete).
 - `/captures/upload` bypasses huma (multipart needs the raw `*http.Request`),
   so it is absent from `/openapi.json` and has no orval hook — the web client
-  calls it manually.
+  calls it manually. An optional `text` form field becomes the capture's
+  raw_text; like every save path it goes through the #todo derivation
+  (`capture.DeriveTodoStamps`).
 - `CaptureCreateInput` still accepts a deprecated, ignored `classifiedAs`
   field so queued desktop offline captures from pre-todo-facet builds replay
   cleanly. Removal timing is tracked in `TODO.md`. General rule: when

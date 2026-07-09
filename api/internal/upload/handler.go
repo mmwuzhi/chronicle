@@ -21,6 +21,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	db "github.com/sikaoshenmi/chronicle/db/sqlc"
+	"github.com/sikaoshenmi/chronicle/internal/capture"
 )
 
 const maxUploadSize = 20 << 20 // 20 MB
@@ -182,12 +183,20 @@ func (h *handler) upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// The composer draft sent along with the upload becomes the capture's
+	// text. Like the create/update endpoints, the text decides the todo facet
+	// (#todo tag; see internal/capture/todotag.go).
+	rawText := strings.TrimSpace(r.FormValue("text"))
+	todoAt, doneAt := capture.DeriveTodoStamps(rawText, time.Now())
 	c, err := h.q.CreateUploadedCapture(r.Context(), db.CreateUploadedCaptureParams{
 		UserID:               uid,
 		MediaUrl:             pgtype.Text{String: publicURL, Valid: true},
 		MediaType:            db.CaptureMediaType(mediaType),
 		MediaKey:             pgtype.Text{String: key, Valid: true},
 		AudioDurationSec:     nullableInt4(duration),
+		RawText:              nullableText(rawText),
+		TodoAt:               todoAt,
+		DoneAt:               doneAt,
 		TranscriptionEnabled: h.cfg.OpenAIKey != "",
 		VisionEnabled:        h.cfg.OpenAIKey != "" && h.cfg.VisionEnabled,
 	})
@@ -240,4 +249,11 @@ func nullableInt4(value *int32) pgtype.Int4 {
 		return pgtype.Int4{}
 	}
 	return pgtype.Int4{Int32: *value, Valid: true}
+}
+
+func nullableText(value string) pgtype.Text {
+	if value == "" {
+		return pgtype.Text{}
+	}
+	return pgtype.Text{String: value, Valid: true}
 }

@@ -14,6 +14,11 @@ interface UploadResult {
 
 const MAX_RECORDING_SECONDS = 5 * 60;
 
+// Mirrors maxUploadSize in api/internal/upload/handler.go — the two must
+// change together. At the cap the attach flow falls back to the cloud-drive
+// route instead of failing the direct upload.
+const DIRECT_UPLOAD_MAX_BYTES = 20 * 1024 * 1024;
+
 interface CaptureComposerProps {
   creating: boolean;
   onCreate: (text: string, onSuccess: () => void) => void;
@@ -39,8 +44,13 @@ export function CaptureComposer({
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [recording, setRecording] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
-  const imageInputRef = useRef<HTMLInputElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const attachInputRef = useRef<HTMLInputElement>(null);
+  // Latest-value ref: upload() and the recorder's onstop run from closures
+  // that outlive the render which created them, so they read the draft here.
+  const textRef = useRef(text);
+  useEffect(() => {
+    textRef.current = text;
+  }, [text]);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const recordingStartedAtRef = useRef(0);
@@ -70,6 +80,13 @@ export function CaptureComposer({
     [clearRecordingTimers],
   );
 
+  // A media capture absorbs the composer draft as its text; clear the box
+  // only if the draft is still what we sent, so typing during a slow upload
+  // is never destroyed.
+  const consumeDraft = (sent: string) => {
+    if (sent) setText((current) => (current.trim() === sent ? "" : current));
+  };
+
   const upload = async (
     file: File | Blob,
     filename?: string,
@@ -77,6 +94,7 @@ export function CaptureComposer({
   ) => {
     setUploadError(null);
     setUploading(true);
+    const draft = textRef.current.trim();
     try {
       const form = new FormData();
       form.append(
@@ -85,8 +103,10 @@ export function CaptureComposer({
         filename ?? (file instanceof File ? file.name : "recording.webm"),
       );
       form.append("createCapture", "true");
+      if (draft) form.append("text", draft);
       if (durationSec != null) form.append("durationSec", String(durationSec));
       await apiClient.post<UploadResult>("/captures/upload", form);
+      consumeDraft(draft);
       onUploaded();
     } catch {
       setUploadError(t("uploadFailed"));
@@ -96,34 +116,39 @@ export function CaptureComposer({
     }
   };
 
-  const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (file) void upload(file);
-    event.target.value = "";
-  };
-
-  const handleCloudFileUpload = async (
-    event: React.ChangeEvent<HTMLInputElement>,
-  ) => {
-    const file = event.target.files?.[0];
-    event.target.value = "";
-    if (!file) return;
+  const uploadToCloud = async (file: File) => {
     setUploadError(null);
     setUploading(true);
+    const draft = textRef.current.trim();
     try {
       const adapter = getCloudDriveProvider("google_drive");
       const attachment = await adapter.upload(file);
-      const captureId = await onCreateAttachmentCapture(
-        text.trim() || file.name,
-      );
+      const captureId = await onCreateAttachmentCapture(draft || file.name);
       await onAttachCloudFile(captureId, attachment);
-      setText("");
+      consumeDraft(draft);
       onUploaded();
     } catch (error) {
       setUploadError(t(cloudUploadErrorKey(error)));
       window.setTimeout(() => setUploadError(null), 4000);
     } finally {
       setUploading(false);
+    }
+  };
+
+  // One attach entry, no destination choice: media the server can transcribe
+  // (and fit under the direct-upload cap) stays on Chronicle's R2 and enters
+  // the OCR/Whisper pipeline; everything else goes to the user's cloud drive
+  // as an external reference.
+  const handleAttachPick = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    const transcribable =
+      file.type.startsWith("image/") || file.type.startsWith("audio/");
+    if (transcribable && file.size <= DIRECT_UPLOAD_MAX_BYTES) {
+      void upload(file);
+    } else {
+      void uploadToCloud(file);
     }
   };
 
@@ -201,11 +226,9 @@ export function CaptureComposer({
       submitDisabled={creating}
       tagSuggestions={[{ tag: "#todo", hint: t("tagMenu.todoHint") }]}
       onPolish={handlePolish}
-      onAttach={() => imageInputRef.current?.click()}
-      onFile={() => fileInputRef.current?.click()}
+      onAttach={() => attachInputRef.current?.click()}
       onRecord={() => void handleAudioToggle()}
-      attachLabel={t("uploadImage")}
-      fileLabel={t("uploadFile")}
+      attachLabel={t("attach")}
       recordLabel={
         recording
           ? `${t("stopRecording")} ${Math.floor(recordingSeconds / 60)}:${String(recordingSeconds % 60).padStart(2, "0")} / 5:00`
@@ -216,21 +239,12 @@ export function CaptureComposer({
       busyLabel={recording ? t("recording") : t("uploading")}
       error={uploadError}
       attachmentInput={
-        <>
-          <input
-            ref={imageInputRef}
-            type="file"
-            accept="image/*"
-            className="ch-hidden-input"
-            onChange={handleImageUpload}
-          />
-          <input
-            ref={fileInputRef}
-            type="file"
-            className="ch-hidden-input"
-            onChange={(event) => void handleCloudFileUpload(event)}
-          />
-        </>
+        <input
+          ref={attachInputRef}
+          type="file"
+          className="ch-hidden-input"
+          onChange={handleAttachPick}
+        />
       }
     />
   );

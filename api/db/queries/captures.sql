@@ -57,6 +57,10 @@ VALUES ($1, $2, $3, $4, $5, sqlc.narg('todo_at')::timestamptz, sqlc.narg('done_a
 RETURNING *;
 
 -- name: CreateUploadedCapture :one
+-- raw_text is the composer draft sent along with the upload; like
+-- CreateCapture, todo_at/done_at are derived from it by the handler (the
+-- #todo tag is the todo facet's only entry point; see
+-- internal/capture/todotag.go).
 INSERT INTO captures (
   user_id,
   media_url,
@@ -64,6 +68,9 @@ INSERT INTO captures (
   source,
   media_key,
   audio_duration_sec,
+  raw_text,
+  todo_at,
+  done_at,
   transcription_status,
   next_transcription_at
 )
@@ -74,6 +81,9 @@ VALUES (
   'web',
   $4,
   $5,
+  sqlc.narg('raw_text')::text,
+  sqlc.narg('todo_at')::timestamptz,
+  sqlc.narg('done_at')::timestamptz,
   CASE
     WHEN $3::capture_media_type = 'audio'
       AND $5::integer IS NOT NULL

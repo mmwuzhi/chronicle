@@ -57,7 +57,7 @@ func TestUploadCreatesCaptureOnlyWhenRequested(t *testing.T) {
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			request := newUploadRequest(t, test.createCapture)
+			request := newUploadRequest(t, test.createCapture, "")
 			recorder := httptest.NewRecorder()
 			h.upload(recorder, request)
 			if recorder.Code != http.StatusOK {
@@ -84,7 +84,57 @@ func TestUploadCreatesCaptureOnlyWhenRequested(t *testing.T) {
 	}
 }
 
-func newUploadRequest(t *testing.T, createCapture bool) *http.Request {
+// TestUploadCreateWithText pins the composer-draft contract: a "text" form
+// field becomes the capture's raw_text, and — like every other save path —
+// the text decides the todo facet (#todo tag derivation).
+func TestUploadCreateWithText(t *testing.T) {
+	pool := testutil.NewPool(t)
+	testutil.Truncate(t, pool, "captures", "users")
+	userID := uuid.New()
+	if _, err := pool.Exec(
+		context.Background(),
+		"INSERT INTO users (id, email, password_hash) VALUES ($1, $2, 'hash')",
+		userID,
+		userID.String()+"@test.com",
+	); err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+
+	h := handler{
+		s3:  workerS3{},
+		q:   db.New(pool),
+		cfg: Config{R2BucketName: "bucket", R2AccountID: "account"},
+		validate: func(string) (string, error) {
+			return userID.String(), nil
+		},
+		kick: func() {},
+	}
+
+	request := newUploadRequest(t, true, "买牛奶 #todo")
+	recorder := httptest.NewRecorder()
+	h.upload(recorder, request)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+
+	var rawText string
+	var todoAt, doneAt *string
+	err := pool.QueryRow(
+		context.Background(),
+		"SELECT raw_text, todo_at::text, done_at::text FROM captures",
+	).Scan(&rawText, &todoAt, &doneAt)
+	if err != nil {
+		t.Fatalf("read capture: %v", err)
+	}
+	if rawText != "买牛奶 #todo" {
+		t.Fatalf("expected the draft as raw_text, got %q", rawText)
+	}
+	if todoAt == nil || doneAt != nil {
+		t.Fatalf("expected todo_at set and done_at null, got %v / %v", todoAt, doneAt)
+	}
+}
+
+func newUploadRequest(t *testing.T, createCapture bool, text string) *http.Request {
 	t.Helper()
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
@@ -104,6 +154,11 @@ func newUploadRequest(t *testing.T, createCapture bool) *http.Request {
 	if createCapture {
 		if err := writer.WriteField("createCapture", "true"); err != nil {
 			t.Fatalf("write createCapture: %v", err)
+		}
+	}
+	if text != "" {
+		if err := writer.WriteField("text", text); err != nil {
+			t.Fatalf("write text: %v", err)
 		}
 	}
 	if err := writer.Close(); err != nil {

@@ -53,6 +53,14 @@ func doneDateStamp(d string) pgtype.Timestamptz {
 	return pgtype.Timestamptz{Time: t, Valid: true}
 }
 
+// DeriveTodoStamps parses text's #todo tag and returns the todo_at/done_at
+// stamps for a capture being created now with that text. Exported for the
+// other capture-creating path (internal/upload's composer-draft text); the
+// grammar itself stays private to this package.
+func DeriveTodoStamps(text string, now time.Time) (todoAt, doneAt pgtype.Timestamptz) {
+	return createTodoStamps(parseTodoTag(text), now)
+}
+
 // createTodoStamps derives a fresh capture's todo_at/done_at from its parsed
 // text: the tag present at birth dates the flag now; a dated done parameter
 // wins over now for the completion stamp (imported/hand-written history).

@@ -45,6 +45,12 @@ client-side behaviors that are not visible from any single file.
 
 - `/captures/upload` is not in the OpenAPI spec (the API mounts it outside
   huma), so there is no generated hook for it — call it manually.
+- The composer has one Attach entry; the destination is routed, never asked:
+  transcribable media (image/audio under the direct-upload cap) goes to
+  Chronicle's R2 + OCR/Whisper, everything else to the user's cloud drive as
+  an external reference. `DIRECT_UPLOAD_MAX_BYTES` in `CaptureComposer.tsx`
+  mirrors `maxUploadSize` in `api/internal/upload/handler.go` — change them
+  together.
 - Route files target < 250 lines; any sub-component over 60 lines moves to
   `components/`. `web/src/constants/` doesn't exist yet — create it on the
   second use of a shared constant, per the root convention.

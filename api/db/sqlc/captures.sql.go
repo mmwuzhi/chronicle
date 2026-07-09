@@ -141,6 +141,9 @@ INSERT INTO captures (
   source,
   media_key,
   audio_duration_sec,
+  raw_text,
+  todo_at,
+  done_at,
   transcription_status,
   next_transcription_at
 )
@@ -151,16 +154,19 @@ VALUES (
   'web',
   $4,
   $5,
+  $6::text,
+  $7::timestamptz,
+  $8::timestamptz,
   CASE
     WHEN $3::capture_media_type = 'audio'
       AND $5::integer IS NOT NULL
       AND $5::integer <= 300
-      AND $6::boolean
+      AND $9::boolean
     THEN 'pending'::transcription_status
     WHEN $3::capture_media_type = 'audio'
     THEN 'skipped'::transcription_status
     WHEN $3::capture_media_type = 'image'
-      AND $7::boolean
+      AND $10::boolean
     THEN 'pending'::transcription_status
     WHEN $3::capture_media_type = 'image'
     THEN 'skipped'::transcription_status
@@ -170,10 +176,10 @@ VALUES (
     WHEN $3::capture_media_type = 'audio'
       AND $5::integer IS NOT NULL
       AND $5::integer <= 300
-      AND $6::boolean
+      AND $9::boolean
     THEN now()
     WHEN $3::capture_media_type = 'image'
-      AND $7::boolean
+      AND $10::boolean
     THEN now()
     ELSE NULL
   END
@@ -182,15 +188,22 @@ RETURNING id, user_id, raw_text, media_url, media_type, created_at, source, tran
 `
 
 type CreateUploadedCaptureParams struct {
-	UserID               uuid.UUID        `json:"user_id"`
-	MediaUrl             pgtype.Text      `json:"media_url"`
-	MediaType            CaptureMediaType `json:"media_type"`
-	MediaKey             pgtype.Text      `json:"media_key"`
-	AudioDurationSec     pgtype.Int4      `json:"audio_duration_sec"`
-	TranscriptionEnabled bool             `json:"transcription_enabled"`
-	VisionEnabled        bool             `json:"vision_enabled"`
+	UserID               uuid.UUID          `json:"user_id"`
+	MediaUrl             pgtype.Text        `json:"media_url"`
+	MediaType            CaptureMediaType   `json:"media_type"`
+	MediaKey             pgtype.Text        `json:"media_key"`
+	AudioDurationSec     pgtype.Int4        `json:"audio_duration_sec"`
+	RawText              pgtype.Text        `json:"raw_text"`
+	TodoAt               pgtype.Timestamptz `json:"todo_at"`
+	DoneAt               pgtype.Timestamptz `json:"done_at"`
+	TranscriptionEnabled bool               `json:"transcription_enabled"`
+	VisionEnabled        bool               `json:"vision_enabled"`
 }
 
+// raw_text is the composer draft sent along with the upload; like
+// CreateCapture, todo_at/done_at are derived from it by the handler (the
+// #todo tag is the todo facet's only entry point; see
+// internal/capture/todotag.go).
 func (q *Queries) CreateUploadedCapture(ctx context.Context, arg CreateUploadedCaptureParams) (Capture, error) {
 	row := q.db.QueryRow(ctx, createUploadedCapture,
 		arg.UserID,
@@ -198,6 +211,9 @@ func (q *Queries) CreateUploadedCapture(ctx context.Context, arg CreateUploadedC
 		arg.MediaType,
 		arg.MediaKey,
 		arg.AudioDurationSec,
+		arg.RawText,
+		arg.TodoAt,
+		arg.DoneAt,
 		arg.TranscriptionEnabled,
 		arg.VisionEnabled,
 	)
