@@ -269,7 +269,8 @@ struct CaptureRow: View {
     @State private var hovering = false
     @State private var fallbackEditing = false
     @State private var fallbackText = ""
-    @FocusState private var draftFocused: Bool
+    @State private var draftFocused = false
+    @State private var editorHeight: CGFloat = 22
 
     private var rowIsEditing: Bool {
         isEditing || fallbackEditing
@@ -375,12 +376,22 @@ struct CaptureRow: View {
 
     private var editContainer: some View {
         VStack(alignment: .leading, spacing: 10) {
-            TextField("", text: draftBinding, axis: .vertical)
-                .textFieldStyle(.plain)
-                .font(.system(size: 15))
-                .lineLimit(1...10)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .focused($draftFocused)
+            // The quick panel's capture editor, not a SwiftUI TextField: same key
+            // semantics everywhere — Enter inserts a newline, ⌘Enter saves (the
+            // Save button's shortcut), Esc cancels, and IME composition never
+            // commits on a bare Enter. A vertical-axis TextField submits on Enter
+            // and only breaks lines with Option+Enter.
+            ModeTextEditor(
+                text: draftBinding, focused: $draftFocused,
+                placeholder: "",
+                submitsOnEnter: false,
+                onSubmit: { commitDraft() },
+                onCancel: { cancelDraft() },
+                onHeight: { h in editorHeight = min(max(h, 22), 190) },
+                fontSize: 15,
+            )
+            .frame(height: editorHeight)
+            .frame(maxWidth: .infinity, alignment: .leading)
 
             if showsUnsavedPrompt {
                 unsavedPrompt

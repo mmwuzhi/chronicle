@@ -66,6 +66,7 @@ struct ModeTextEditor: NSViewRepresentable {
     var onSubmit: () -> Void
     var onCancel: () -> Void
     var onHeight: (CGFloat) -> Void
+    var fontSize: CGFloat = 16
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -77,7 +78,7 @@ struct ModeTextEditor: NSViewRepresentable {
         tv.submitsOnEnter = submitsOnEnter
         tv.string = text
         tv.placeholderString = placeholder
-        tv.font = .systemFont(ofSize: 16)
+        tv.font = .systemFont(ofSize: fontSize)
         tv.isRichText = false
         tv.allowsUndo = true
         tv.drawsBackground = false
