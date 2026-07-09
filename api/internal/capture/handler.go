@@ -77,7 +77,6 @@ func Register(api huma.API, pool *pgxpool.Pool, rag *ragclient.Client, store obj
 	huma.Register(api, op("update-capture", http.MethodPatch, "/captures/{id}", "Update a capture"), h.update)
 	huma.Register(api, op("retry-capture-transcription", http.MethodPost, "/captures/{id}/transcription/retry", "Retry audio or image transcription"), h.retryTranscription)
 	huma.Register(api, op("set-capture-remind", http.MethodPost, "/captures/{id}/remind", "Set or clear a capture reminder"), h.setRemind)
-	huma.Register(api, op("set-capture-todo", http.MethodPost, "/captures/{id}/todo", "Set or clear a capture's todo state"), h.setTodo)
 	huma.Register(api, op("due-reminders", http.MethodGet, "/reminders/due", "List reminders that have come due"), h.dueReminders)
 	huma.Register(api, op("pending-reminders", http.MethodGet, "/reminders/pending", "List not-yet-due reminders"), h.pendingReminders)
 	huma.Register(api, op("delete-capture", http.MethodDelete, "/captures/{id}", "Delete a capture"), h.delete)
@@ -206,12 +205,19 @@ func (h *handler) create(ctx context.Context, input *CaptureCreateInput) (*Creat
 	if err != nil {
 		return nil, err
 	}
+	var tag todoTag
+	if input.Body.RawText != nil {
+		tag = parseTodoTag(*input.Body.RawText)
+	}
+	todoAt, doneAt := createTodoStamps(tag, time.Now())
 	c, err := h.q.CreateCapture(ctx, db.CreateCaptureParams{
 		UserID:    uid,
 		RawText:   nullText(input.Body.RawText),
 		MediaUrl:  nullText(input.Body.MediaUrl),
 		MediaType: db.CaptureMediaType(input.Body.MediaType),
 		Source:    source,
+		TodoAt:    todoAt,
+		DoneAt:    doneAt,
 	})
 	if err != nil {
 		return nil, huma.Error500InternalServerError("internal error")
@@ -258,11 +264,18 @@ func (h *handler) update(ctx context.Context, input *CaptureUpdateInput) (*Updat
 	if err != nil {
 		return nil, huma.Error422UnprocessableEntity("invalid id")
 	}
+	var tag todoTag
+	if input.Body.RawText != nil {
+		tag = parseTodoTag(*input.Body.RawText)
+	}
 	c, err := h.q.UpdateCapture(ctx, db.UpdateCaptureParams{
-		ID:         id,
-		UserID:     uid,
-		RawText:    nullText(input.Body.RawText),
-		Transcript: nullText(input.Body.Transcript),
+		ID:          id,
+		UserID:      uid,
+		RawText:     nullText(input.Body.RawText),
+		Transcript:  nullText(input.Body.Transcript),
+		TodoPresent: tag.present,
+		TodoDone:    tag.done,
+		DoneDate:    doneDateStamp(tag.doneDate),
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -329,42 +342,6 @@ func (h *handler) retryTranscription(ctx context.Context, input *CaptureRetryTra
 		return nil, huma.Error500InternalServerError("internal error")
 	}
 	h.kickTranscription()
-	return &UpdateOutput{Body: toBody(c)}, nil
-}
-
-// --- todo facet ---
-//
-// A capture becomes a todo the moment the user treats it as one — capture time
-// never asks. Todo-ness only gates the checkbox and derived progress counts;
-// misclassification costs one click to undo.
-
-type CaptureTodoInput struct {
-	ID   string `path:"id" format:"uuid"`
-	Body struct {
-		State string `json:"state" enum:"none,open,done" doc:"none clears the todo flag, open flags it as a todo, done completes it"`
-	}
-}
-
-func (h *handler) setTodo(ctx context.Context, input *CaptureTodoInput) (*UpdateOutput, error) {
-	uid, err := userID(ctx)
-	if err != nil {
-		return nil, err
-	}
-	id, err := uuid.Parse(input.ID)
-	if err != nil {
-		return nil, huma.Error422UnprocessableEntity("invalid id")
-	}
-	c, err := h.q.SetCaptureTodo(ctx, db.SetCaptureTodoParams{
-		ID:     id,
-		UserID: uid,
-		State:  input.Body.State,
-	})
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, huma.Error404NotFound("capture not found")
-		}
-		return nil, huma.Error500InternalServerError("internal error")
-	}
 	return &UpdateOutput{Body: toBody(c)}, nil
 }
 

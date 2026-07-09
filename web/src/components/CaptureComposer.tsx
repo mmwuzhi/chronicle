@@ -199,6 +199,7 @@ export function CaptureComposer({
       placeholder={t("placeholder")}
       submitLabel={tc("actions.save")}
       submitDisabled={creating}
+      tagSuggestions={[{ tag: "#todo", hint: t("tagMenu.todoHint") }]}
       onPolish={handlePolish}
       onAttach={() => imageInputRef.current?.click()}
       onFile={() => fileInputRef.current?.click()}

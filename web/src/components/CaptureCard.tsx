@@ -9,12 +9,9 @@ import {
 } from "../api";
 import { fmtFileSize, fmtListTime, fmtPreciseDateTime } from "../utils/format";
 import { patchCaptureInPages } from "../utils/capture-cache";
-import type { TodoState } from "../utils/todo";
-import { useTodoEnabled } from "../hooks/use-todo-enabled";
 import { useTranscriptionPoll } from "../hooks/use-transcription-poll";
 import { Markdown } from "./Markdown";
 import { RemindControl } from "./RemindControl";
-import { TodoControl } from "./TodoControl";
 
 export function AutoTextarea({
   value,
@@ -69,7 +66,6 @@ export function AutoTextarea({
 
 export function CaptureCard({
   c,
-  onSetTodo,
   onDelete,
   onSaveText,
   onSaveTranscript,
@@ -79,7 +75,6 @@ export function CaptureCard({
   onMutationError,
 }: {
   c: CaptureBody;
-  onSetTodo: (id: string, state: TodoState) => void;
   onDelete: (id: string) => void;
   onSaveText: (id: string, text: string) => void;
   onSaveTranscript: (id: string, transcript: string) => void;
@@ -91,7 +86,6 @@ export function CaptureCard({
   const { t, i18n } = useTranslation("captures");
   const { t: tc } = useTranslation("common");
   const queryClient = useQueryClient();
-  const todosEnabled = useTodoEnabled();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(c.rawText ?? "");
   const [editingTranscript, setEditingTranscript] = useState(false);
@@ -289,13 +283,6 @@ export function CaptureCard({
         />
       )}
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-        {todosEnabled && (
-          <TodoControl
-            todoAt={c.todoAt}
-            doneAt={c.doneAt}
-            onSet={(state) => onSetTodo(c.id, state)}
-          />
-        )}
         <span style={{ flex: 1 }} />
         {editing ? (
           <>
@@ -351,14 +338,6 @@ export function CaptureCard({
                   align="end"
                   sideOffset={4}
                 >
-                  {todosEnabled && c.todoAt && (
-                    <DropdownMenu.Item
-                      className="ch-dropdown-item"
-                      onSelect={() => onSetTodo(c.id, "none")}
-                    >
-                      {t("todo.remove")}
-                    </DropdownMenu.Item>
-                  )}
                   <DropdownMenu.Item
                     className="ch-dropdown-item danger"
                     onSelect={() => onDelete(c.id)}

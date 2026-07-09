@@ -80,19 +80,23 @@ func (q *Queries) CompleteCaptureTranscription(ctx context.Context, arg Complete
 }
 
 const createCapture = `-- name: CreateCapture :one
-INSERT INTO captures (user_id, raw_text, media_url, media_type, source)
-VALUES ($1, $2, $3, $4, $5)
+INSERT INTO captures (user_id, raw_text, media_url, media_type, source, todo_at, done_at)
+VALUES ($1, $2, $3, $4, $5, $6::timestamptz, $7::timestamptz)
 RETURNING id, user_id, raw_text, media_url, media_type, created_at, source, transcript, transcription_status, transcription_model, transcription_attempts, transcribed_at, next_transcription_at, audio_duration_sec, media_key, remind_at, deleted_at, remind_hide, todo_at, done_at
 `
 
 type CreateCaptureParams struct {
-	UserID    uuid.UUID        `json:"user_id"`
-	RawText   pgtype.Text      `json:"raw_text"`
-	MediaUrl  pgtype.Text      `json:"media_url"`
-	MediaType CaptureMediaType `json:"media_type"`
-	Source    string           `json:"source"`
+	UserID    uuid.UUID          `json:"user_id"`
+	RawText   pgtype.Text        `json:"raw_text"`
+	MediaUrl  pgtype.Text        `json:"media_url"`
+	MediaType CaptureMediaType   `json:"media_type"`
+	Source    string             `json:"source"`
+	TodoAt    pgtype.Timestamptz `json:"todo_at"`
+	DoneAt    pgtype.Timestamptz `json:"done_at"`
 }
 
+// todo_at/done_at are derived from the raw text by the handler (the #todo tag
+// is the todo facet's only entry point; see internal/capture/todotag.go).
 func (q *Queries) CreateCapture(ctx context.Context, arg CreateCaptureParams) (Capture, error) {
 	row := q.db.QueryRow(ctx, createCapture,
 		arg.UserID,
@@ -100,6 +104,8 @@ func (q *Queries) CreateCapture(ctx context.Context, arg CreateCaptureParams) (C
 		arg.MediaUrl,
 		arg.MediaType,
 		arg.Source,
+		arg.TodoAt,
+		arg.DoneAt,
 	)
 	var i Capture
 	err := row.Scan(
@@ -954,59 +960,6 @@ func (q *Queries) SetCaptureRemind(ctx context.Context, arg SetCaptureRemindPara
 	return i, err
 }
 
-const setCaptureTodo = `-- name: SetCaptureTodo :one
-UPDATE captures
-SET todo_at = CASE $1::text
-      WHEN 'none' THEN NULL
-      ELSE COALESCE(todo_at, now())
-    END,
-    done_at = CASE $1::text
-      WHEN 'done' THEN COALESCE(done_at, now())
-      ELSE NULL
-    END
-WHERE id = $2 AND user_id = $3 AND deleted_at IS NULL
-RETURNING id, user_id, raw_text, media_url, media_type, created_at, source, transcript, transcription_status, transcription_model, transcription_attempts, transcribed_at, next_transcription_at, audio_duration_sec, media_key, remind_at, deleted_at, remind_hide, todo_at, done_at
-`
-
-type SetCaptureTodoParams struct {
-	State  string    `json:"state"`
-	ID     uuid.UUID `json:"id"`
-	UserID uuid.UUID `json:"user_id"`
-}
-
-// Set a capture's todo facet. 'none' clears both stamps (no longer a todo),
-// 'open' flags it as a todo (COALESCE keeps the original flag time on re-open),
-// 'done' completes it (COALESCE keeps the first completion time on repeat).
-// Independent of content edits, like SetCaptureRemind. The CHECK
-// (done_at IS NULL OR todo_at IS NOT NULL) holds: 'done' coalesces todo_at too.
-func (q *Queries) SetCaptureTodo(ctx context.Context, arg SetCaptureTodoParams) (Capture, error) {
-	row := q.db.QueryRow(ctx, setCaptureTodo, arg.State, arg.ID, arg.UserID)
-	var i Capture
-	err := row.Scan(
-		&i.ID,
-		&i.UserID,
-		&i.RawText,
-		&i.MediaUrl,
-		&i.MediaType,
-		&i.CreatedAt,
-		&i.Source,
-		&i.Transcript,
-		&i.TranscriptionStatus,
-		&i.TranscriptionModel,
-		&i.TranscriptionAttempts,
-		&i.TranscribedAt,
-		&i.NextTranscriptionAt,
-		&i.AudioDurationSec,
-		&i.MediaKey,
-		&i.RemindAt,
-		&i.DeletedAt,
-		&i.RemindHide,
-		&i.TodoAt,
-		&i.DoneAt,
-	)
-	return i, err
-}
-
 const skipCaptureTranscription = `-- name: SkipCaptureTranscription :exec
 UPDATE captures
 SET transcription_status = 'skipped',
@@ -1027,22 +980,46 @@ const updateCapture = `-- name: UpdateCapture :one
 UPDATE captures
 SET
   raw_text      = COALESCE($1::text,   raw_text),
-  transcript    = COALESCE($2::text, transcript)
-WHERE id = $3 AND user_id = $4 AND deleted_at IS NULL
+  transcript    = COALESCE($2::text, transcript),
+  todo_at = CASE
+    WHEN $1::text IS NULL THEN todo_at
+    WHEN NOT $3::boolean THEN NULL
+    ELSE COALESCE(todo_at, now())
+  END,
+  done_at = CASE
+    WHEN $1::text IS NULL THEN done_at
+    WHEN NOT $4::boolean THEN NULL
+    WHEN $5::timestamptz IS NOT NULL THEN $5::timestamptz
+    ELSE COALESCE(done_at, now())
+  END
+WHERE id = $6 AND user_id = $7 AND deleted_at IS NULL
 RETURNING id, user_id, raw_text, media_url, media_type, created_at, source, transcript, transcription_status, transcription_model, transcription_attempts, transcribed_at, next_transcription_at, audio_duration_sec, media_key, remind_at, deleted_at, remind_hide, todo_at, done_at
 `
 
 type UpdateCaptureParams struct {
-	RawText    pgtype.Text `json:"raw_text"`
-	Transcript pgtype.Text `json:"transcript"`
-	ID         uuid.UUID   `json:"id"`
-	UserID     uuid.UUID   `json:"user_id"`
+	RawText     pgtype.Text        `json:"raw_text"`
+	Transcript  pgtype.Text        `json:"transcript"`
+	TodoPresent bool               `json:"todo_present"`
+	TodoDone    bool               `json:"todo_done"`
+	DoneDate    pgtype.Timestamptz `json:"done_date"`
+	ID          uuid.UUID          `json:"id"`
+	UserID      uuid.UUID          `json:"user_id"`
 }
 
+// When raw_text changes, todo_at/done_at follow the text (the #todo tag is
+// authoritative; the handler parses it into todo_present/todo_done/done_date).
+// A transcript-only patch (raw_text IS NULL) leaves both stamps untouched.
+// todo_at keeps its original value while the tag stays present (first-entry
+// index); done_at takes the tag's explicit date when given, else keeps the
+// existing stamp, else now(). The CHECK (done_at IS NULL OR todo_at IS NOT
+// NULL) holds because the parser only reports done on a present tag.
 func (q *Queries) UpdateCapture(ctx context.Context, arg UpdateCaptureParams) (Capture, error) {
 	row := q.db.QueryRow(ctx, updateCapture,
 		arg.RawText,
 		arg.Transcript,
+		arg.TodoPresent,
+		arg.TodoDone,
+		arg.DoneDate,
 		arg.ID,
 		arg.UserID,
 	)

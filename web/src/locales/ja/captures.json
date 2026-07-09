@@ -85,10 +85,7 @@
     "deletedAt": "{{time}} に削除",
     "failedToLoad": "ゴミ箱の読み込みに失敗しました"
   },
-  "todo": {
-    "flag": "TODO",
-    "open": "TODO",
-    "done": "完了",
-    "remove": "TODOフラグを解除"
+  "tagMenu": {
+    "todoHint": "TODOにする"
   }
 }

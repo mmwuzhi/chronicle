@@ -85,10 +85,7 @@
     "deletedAt": "Deleted {{time}}",
     "failedToLoad": "Failed to load trash"
   },
-  "todo": {
-    "flag": "Todo",
-    "open": "Todo",
-    "done": "Done",
-    "remove": "Remove todo flag"
+  "tagMenu": {
+    "todoHint": "Mark as todo"
   }
 }

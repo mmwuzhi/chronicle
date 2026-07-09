@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
+import { trailingTagToken } from "../utils/todo";
 import { AutoTextarea } from "./CaptureCard";
 
 const AttachIcon = () => (
@@ -85,6 +86,10 @@ type ComposerProps = {
   attachmentInput?: ReactNode;
   extraControls?: ReactNode;
   canSubmitWithoutText?: boolean;
+  // System tags offered while a trailing #-token is being typed ("#", "#t"…).
+  // The menu is the discoverability layer for text-driven behaviors: each
+  // entry pairs the tag with a one-line hint of what it does.
+  tagSuggestions?: { tag: string; hint: string }[];
 };
 
 export function Composer({
@@ -110,11 +115,27 @@ export function Composer({
   attachmentInput,
   extraControls,
   canSubmitWithoutText,
+  tagSuggestions,
 }: ComposerProps): React.JSX.Element {
   const { t: tc } = useTranslation("common");
   const [suggestion, setSuggestion] = useState<string | null>(null);
   const [polishing, setPolishing] = useState(false);
   const [polishError, setPolishError] = useState(false);
+  const [dismissedToken, setDismissedToken] = useState<string | null>(null);
+
+  const tagToken = tagSuggestions?.length ? trailingTagToken(value) : null;
+  const tagMatches =
+    tagToken !== null && tagToken !== dismissedToken
+      ? (tagSuggestions ?? []).filter(
+          (s) => s.tag.startsWith(tagToken) && s.tag !== tagToken,
+        )
+      : [];
+
+  const completeTag = (tag: string) => {
+    onChange(
+      value.slice(0, value.length - (tagToken?.length ?? 0)) + tag + " ",
+    );
+  };
 
   const trimmed = value.trim();
   const canSubmit =
@@ -151,6 +172,15 @@ export function Composer({
           if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
             e.preventDefault();
             if (canSubmit) onSubmit(trimmed);
+            return;
+          }
+          if (tagMatches.length > 0) {
+            if (e.key === "Tab" || e.key === "Enter") {
+              e.preventDefault();
+              completeTag(tagMatches[0].tag);
+            } else if (e.key === "Escape") {
+              setDismissedToken(tagToken);
+            }
           }
         }}
         placeholder={placeholder}
@@ -163,6 +193,28 @@ export function Composer({
           minHeight: minRows ? `${minRows * 24}px` : undefined,
         }}
       />
+      {tagMatches.length > 0 && (
+        <div className="ch-tag-suggest">
+          {tagMatches.map((s) => (
+            <button
+              key={s.tag}
+              type="button"
+              className="ch-tag-suggest-item"
+              // onMouseDown so the click completes before the textarea loses focus.
+              onMouseDown={(e) => {
+                e.preventDefault();
+                completeTag(s.tag);
+              }}
+            >
+              <span className="ch-todo-chip">{s.tag}</span>
+              <span className="ch-meta">{s.hint}</span>
+            </button>
+          ))}
+          <span className="ch-meta" style={{ marginLeft: "auto" }}>
+            Tab
+          </span>
+        </div>
+      )}
       {extraControls}
 
       {suggestion !== null && (

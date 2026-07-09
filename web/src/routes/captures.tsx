@@ -10,7 +10,6 @@ import {
   useListCapturePageInfinite,
   useRetryCaptureTranscription,
   useSetCaptureRemind,
-  useSetCaptureTodo,
   useUpdateCapture,
 } from "../api";
 import {
@@ -48,7 +47,7 @@ function Captures() {
   const params = {
     limit: 30,
     // The todo tab lists open todos; completed ones stay in "all" with a
-    // checked box.
+    // done chip.
     ...(tab === "todo" && todosEnabled ? { todo: "open" } : {}),
     ...(showScheduled ? { includeReminded: true } : {}),
   };
@@ -100,12 +99,6 @@ function Captures() {
     },
   });
   const setRemind = useSetCaptureRemind({
-    mutation: {
-      onSuccess: patchCapture,
-      onError: () => mutationToast.show(tc("errors.mutationFailed")),
-    },
-  });
-  const setTodo = useSetCaptureTodo({
     mutation: {
       onSuccess: patchCapture,
       onError: () => mutationToast.show(tc("errors.mutationFailed")),
@@ -186,7 +179,6 @@ function Captures() {
           hasMore={captureQuery.hasNextPage}
           loadingMore={captureQuery.isFetchingNextPage}
           onLoadMore={() => void captureQuery.fetchNextPage()}
-          onSetTodo={(id, state) => setTodo.mutate({ id, data: { state } })}
           onDelete={async (id) => {
             const confirmed = await confirm({
               title: tc("confirm.deleteCapture"),

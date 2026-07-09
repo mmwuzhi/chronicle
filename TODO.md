@@ -39,7 +39,7 @@ Deferred work.
 
 ## Todo Facet Follow-ups (2026-07-03)
 
-- Desktop todo UI: show the checkbox/state on browse rows and the quick panel (backend + web shipped; desktop is compat-only for now — `Capture` no longer carries classification, `todoAt`/`doneAt` not yet decoded).
+- Desktop todo UI: display only — the `#todo` text tag is the entry point everywhere (2026-07-09), so desktop capture already works by typing the tag; what's missing is rendering the tag as a chip on browse rows, the quick panel, and stickies (matching web's chip-only model — no checkbox anywhere), plus the `#` suggestion menu in the capture field.
 - `#tag` derived index: if inline hashtags see real use, parse them at index time into a browsable tag surface (organize-later; no managed tag objects).
 - Remove the deprecated `classifiedAs` compat field from the create endpoint after the desktop offline queues have cycled (one release is enough for a single-user install).
 - Local desktop SQLite cache still carries the unused `classified_as` column (constant 'unclassified'); drop it whenever the cache schema next changes for another reason.

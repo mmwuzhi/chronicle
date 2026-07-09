@@ -220,25 +220,6 @@ export interface CaptureRemindInputBody {
   hide?: boolean;
 }
 
-/**
- * none clears the todo flag, open flags it as a todo, done completes it
- */
-export type CaptureTodoInputBodyState = typeof CaptureTodoInputBodyState[keyof typeof CaptureTodoInputBodyState];
-
-
-export const CaptureTodoInputBodyState = {
-  none: 'none',
-  open: 'open',
-  done: 'done',
-} as const;
-
-export interface CaptureTodoInputBody {
-  /** A URL to the JSON Schema for this object. */
-  readonly $schema?: string;
-  /** none clears the todo flag, open flags it as a todo, done completes it */
-  state: CaptureTodoInputBodyState;
-}
-
 export interface CaptureTokenCreateInputBody {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
@@ -3617,71 +3598,6 @@ export const useRestoreCapture = <TError = ErrorModel,
         TContext
       > => {
       return useMutation(getRestoreCaptureMutationOptions(options), queryClient);
-    }
-
-/**
- * @summary Set or clear a capture's todo state
- */
-export const setCaptureTodo = (
-    id: string,
-    captureTodoInputBody: NonReadonly<CaptureTodoInputBody>,
- signal?: AbortSignal
-) => {
-
-
-      return api<CaptureBody>(
-      {url: `/captures/${id}/todo`, method: 'POST',
-      headers: {'Content-Type': 'application/json', },
-      data: captureTodoInputBody, signal
-    },
-      );
-    }
-
-
-
-export const getSetCaptureTodoMutationOptions = <TError = ErrorModel,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setCaptureTodo>>, TError,{id: string;data: NonReadonly<CaptureTodoInputBody>}, TContext>, }
-): UseMutationOptions<Awaited<ReturnType<typeof setCaptureTodo>>, TError,{id: string;data: NonReadonly<CaptureTodoInputBody>}, TContext> => {
-
-const mutationKey = ['setCaptureTodo'];
-const {mutation: mutationOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }};
-
-
-
-
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof setCaptureTodo>>, {id: string;data: NonReadonly<CaptureTodoInputBody>}> = (props) => {
-          const {id,data} = props ?? {};
-
-          return  setCaptureTodo(id,data,)
-        }
-
-
-
-
-
-
-  return  { mutationFn, ...mutationOptions }}
-
-    export type SetCaptureTodoMutationResult = NonNullable<Awaited<ReturnType<typeof setCaptureTodo>>>
-    export type SetCaptureTodoMutationBody = NonReadonly<CaptureTodoInputBody>
-    export type SetCaptureTodoMutationError = ErrorModel
-
-    /**
- * @summary Set or clear a capture's todo state
- */
-export const useSetCaptureTodo = <TError = ErrorModel,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setCaptureTodo>>, TError,{id: string;data: NonReadonly<CaptureTodoInputBody>}, TContext>, }
- , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof setCaptureTodo>>,
-        TError,
-        {id: string;data: NonReadonly<CaptureTodoInputBody>},
-        TContext
-      > => {
-      return useMutation(getSetCaptureTodoMutationOptions(options), queryClient);
     }
 
 /**

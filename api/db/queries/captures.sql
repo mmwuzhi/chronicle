@@ -50,8 +50,10 @@ ORDER BY created_at ASC, id ASC
 LIMIT sqlc.arg('window_size');
 
 -- name: CreateCapture :one
-INSERT INTO captures (user_id, raw_text, media_url, media_type, source)
-VALUES ($1, $2, $3, $4, $5)
+-- todo_at/done_at are derived from the raw text by the handler (the #todo tag
+-- is the todo facet's only entry point; see internal/capture/todotag.go).
+INSERT INTO captures (user_id, raw_text, media_url, media_type, source, todo_at, done_at)
+VALUES ($1, $2, $3, $4, $5, sqlc.narg('todo_at')::timestamptz, sqlc.narg('done_at')::timestamptz)
 RETURNING *;
 
 -- name: CreateUploadedCapture :one
@@ -102,10 +104,28 @@ VALUES (
 RETURNING *;
 
 -- name: UpdateCapture :one
+-- When raw_text changes, todo_at/done_at follow the text (the #todo tag is
+-- authoritative; the handler parses it into todo_present/todo_done/done_date).
+-- A transcript-only patch (raw_text IS NULL) leaves both stamps untouched.
+-- todo_at keeps its original value while the tag stays present (first-entry
+-- index); done_at takes the tag's explicit date when given, else keeps the
+-- existing stamp, else now(). The CHECK (done_at IS NULL OR todo_at IS NOT
+-- NULL) holds because the parser only reports done on a present tag.
 UPDATE captures
 SET
   raw_text      = COALESCE(sqlc.narg('raw_text')::text,   raw_text),
-  transcript    = COALESCE(sqlc.narg('transcript')::text, transcript)
+  transcript    = COALESCE(sqlc.narg('transcript')::text, transcript),
+  todo_at = CASE
+    WHEN sqlc.narg('raw_text')::text IS NULL THEN todo_at
+    WHEN NOT sqlc.arg('todo_present')::boolean THEN NULL
+    ELSE COALESCE(todo_at, now())
+  END,
+  done_at = CASE
+    WHEN sqlc.narg('raw_text')::text IS NULL THEN done_at
+    WHEN NOT sqlc.arg('todo_done')::boolean THEN NULL
+    WHEN sqlc.narg('done_date')::timestamptz IS NOT NULL THEN sqlc.narg('done_date')::timestamptz
+    ELSE COALESCE(done_at, now())
+  END
 WHERE id = sqlc.arg('id') AND user_id = sqlc.arg('user_id') AND deleted_at IS NULL
 RETURNING *;
 
@@ -253,24 +273,6 @@ ORDER BY created_at;
 UPDATE captures
 SET remind_at = sqlc.narg('remind_at')::timestamptz,
     remind_hide = sqlc.arg('remind_hide')::boolean
-WHERE id = sqlc.arg('id') AND user_id = sqlc.arg('user_id') AND deleted_at IS NULL
-RETURNING *;
-
--- name: SetCaptureTodo :one
--- Set a capture's todo facet. 'none' clears both stamps (no longer a todo),
--- 'open' flags it as a todo (COALESCE keeps the original flag time on re-open),
--- 'done' completes it (COALESCE keeps the first completion time on repeat).
--- Independent of content edits, like SetCaptureRemind. The CHECK
--- (done_at IS NULL OR todo_at IS NOT NULL) holds: 'done' coalesces todo_at too.
-UPDATE captures
-SET todo_at = CASE sqlc.arg('state')::text
-      WHEN 'none' THEN NULL
-      ELSE COALESCE(todo_at, now())
-    END,
-    done_at = CASE sqlc.arg('state')::text
-      WHEN 'done' THEN COALESCE(done_at, now())
-      ELSE NULL
-    END
 WHERE id = sqlc.arg('id') AND user_id = sqlc.arg('user_id') AND deleted_at IS NULL
 RETURNING *;
 

@@ -664,10 +664,8 @@ func TestListCapturePage_FilterByTodo(t *testing.T) {
 	_, token := createTestUser(t, pool)
 
 	createCapture(t, srv, token, map[string]any{"rawText": "plain note"})
-	openID := createCapture(t, srv, token, map[string]any{"rawText": "an open todo"})
-	doneID := createCapture(t, srv, token, map[string]any{"rawText": "a finished todo"})
-	setTodo(t, srv, token, openID, "open")
-	setTodo(t, srv, token, doneID, "done")
+	openID := createCapture(t, srv, token, map[string]any{"rawText": "an open todo #todo"})
+	doneID := createCapture(t, srv, token, map[string]any{"rawText": "a finished todo #todo(done)"})
 
 	open := listCaptureIDs(t, srv, token, "/captures/page?todo=open")
 	if len(open) != 1 || open[0] != openID {
@@ -682,15 +680,6 @@ func TestListCapturePage_FilterByTodo(t *testing.T) {
 	all := listCaptureIDs(t, srv, token, "/captures/page")
 	if len(all) != 3 {
 		t.Fatalf("unfiltered list must include everything, got %d", len(all))
-	}
-}
-
-func setTodo(t *testing.T, srv *httptest.Server, token, id, state string) {
-	t.Helper()
-	resp := do(t, srv.Client(), http.MethodPost, srv.URL+"/captures/"+id+"/todo", token, map[string]any{"state": state})
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("setup: set todo %s: got %d", state, resp.StatusCode)
 	}
 }
 
@@ -925,80 +914,48 @@ func TestCaptureContext_DoesNotExposeAnotherUsersAnchor(t *testing.T) {
 
 // --- todo facet ---
 
-func TestSetCaptureTodo_StateMachine(t *testing.T) {
+func TestCaptureTodo_TextIsSourceOfTruth(t *testing.T) {
 	srv, pool := newServer(t)
 	_, token := createTestUser(t, pool)
 
-	id := createCapture(t, srv, token, nil)
+	id := createCapture(t, srv, token, map[string]any{"rawText": "买牛奶"})
 
 	type todoBody struct {
 		TodoAt *string `json:"todoAt"`
 		DoneAt *string `json:"doneAt"`
 	}
-	set := func(state string) todoBody {
-		resp := do(t, srv.Client(), http.MethodPost, srv.URL+"/captures/"+id+"/todo", token, map[string]any{"state": state})
+	patch := func(body map[string]any) todoBody {
+		resp := do(t, srv.Client(), http.MethodPatch, srv.URL+"/captures/"+id, token, body)
 		if resp.StatusCode != http.StatusOK {
-			t.Fatalf("set todo %s: expected 200, got %d", state, resp.StatusCode)
+			t.Fatalf("patch: expected 200, got %d", resp.StatusCode)
 		}
-		var body todoBody
-		decodeBody(t, resp, &body)
-		return body
+		var b todoBody
+		decodeBody(t, resp, &b)
+		return b
 	}
 
-	open := set("open")
-	if open.TodoAt == nil || open.DoneAt != nil {
-		t.Fatalf("open: expected todoAt set and doneAt null, got %+v", open)
+	// Typing the tag into the text flags the capture.
+	flagged := patch(map[string]any{"rawText": "买牛奶 #todo"})
+	if flagged.TodoAt == nil || flagged.DoneAt != nil {
+		t.Fatalf("adding #todo: expected todoAt set, got %+v", flagged)
 	}
 
-	done := set("done")
-	if done.DoneAt == nil {
-		t.Fatalf("done: expected doneAt set, got %+v", done)
-	}
-	// The flag time survives completion: checking the box must not re-date the todo.
-	if done.TodoAt == nil || *done.TodoAt != *open.TodoAt {
-		t.Fatalf("done: expected original todoAt %v kept, got %v", open.TodoAt, done.TodoAt)
+	// A hand-written dated done parameter completes it with that date.
+	dated := patch(map[string]any{"rawText": "买牛奶 #todo(done:2026-07-01)"})
+	if dated.DoneAt == nil || (*dated.DoneAt)[:10] != "2026-07-01" {
+		t.Fatalf("dated done: expected doneAt on 2026-07-01, got %+v", dated.DoneAt)
 	}
 
-	reopened := set("open")
-	if reopened.TodoAt == nil || reopened.DoneAt != nil {
-		t.Fatalf("reopen: expected doneAt cleared, got %+v", reopened)
+	// A transcript-only patch must not disturb the stamps (text unchanged).
+	kept := patch(map[string]any{"transcript": "irrelevant"})
+	if kept.TodoAt == nil || kept.DoneAt == nil {
+		t.Fatalf("transcript-only patch: expected stamps kept, got %+v", kept)
 	}
 
-	cleared := set("none")
+	// Deleting the tag from the text clears both stamps.
+	cleared := patch(map[string]any{"rawText": "买牛奶"})
 	if cleared.TodoAt != nil || cleared.DoneAt != nil {
-		t.Fatalf("none: expected both stamps cleared, got %+v", cleared)
-	}
-
-	// Checking a plain capture directly is the check-is-classify path: done from
-	// scratch must set both stamps at once (the DB CHECK enforces the pairing).
-	direct := set("done")
-	if direct.TodoAt == nil || direct.DoneAt == nil {
-		t.Fatalf("direct done: expected both stamps set, got %+v", direct)
-	}
-}
-
-func TestSetCaptureTodo_InvalidState(t *testing.T) {
-	srv, pool := newServer(t)
-	_, token := createTestUser(t, pool)
-
-	id := createCapture(t, srv, token, nil)
-	resp := do(t, srv.Client(), http.MethodPost, srv.URL+"/captures/"+id+"/todo", token, map[string]any{"state": "blocked"})
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusUnprocessableEntity {
-		t.Fatalf("expected 422, got %d", resp.StatusCode)
-	}
-}
-
-func TestSetCaptureTodo_NotOwned(t *testing.T) {
-	srv, pool := newServer(t)
-	_, tokenA := createTestUser(t, pool)
-	_, tokenB := createTestUser(t, pool)
-
-	id := createCapture(t, srv, tokenA, nil)
-	resp := do(t, srv.Client(), http.MethodPost, srv.URL+"/captures/"+id+"/todo", tokenB, map[string]any{"state": "open"})
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusNotFound {
-		t.Fatalf("expected 404, got %d", resp.StatusCode)
+		t.Fatalf("removing #todo: expected both stamps cleared, got %+v", cleared)
 	}
 }
 

@@ -20,7 +20,8 @@ visible from any single file. Setup and commands live in the root `Justfile`.
   (`totp.go`), JWT mint/verify (`token.go`), create-only capture tokens
   (`capture_token.go`).
 - `internal/capture` — the core resource, split by sub-domain: `handler.go`
-  (Register + CRUD + todo facet + shared helpers), `remind.go` (reminders),
+  (Register + CRUD + shared helpers), `todotag.go` (#todo tag grammar; create
+  and update derive todo_at/done_at from the text), `remind.go` (reminders),
   `trash.go` (soft delete, trash, R2 media purge), `attachments.go` (external
   file references), `links.go` (explicit links + semantic suggestions),
   `pagination.go` (cursor logic). New endpoints go in the matching sub-domain

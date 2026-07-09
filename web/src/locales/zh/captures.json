@@ -85,10 +85,7 @@
     "deletedAt": "删除于 {{time}}",
     "failedToLoad": "加载回收站失败"
   },
-  "todo": {
-    "flag": "待办",
-    "open": "待办",
-    "done": "已完成",
-    "remove": "移除待办标记"
+  "tagMenu": {
+    "todoHint": "标记为待办"
   }
 }

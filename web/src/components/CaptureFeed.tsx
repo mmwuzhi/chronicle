@@ -1,6 +1,5 @@
 import { useTranslation } from "react-i18next";
 import type { CaptureBody } from "../api";
-import type { TodoState } from "../utils/todo";
 import { CaptureCard } from "./CaptureCard";
 
 interface CaptureFeedProps {
@@ -9,7 +8,6 @@ interface CaptureFeedProps {
   hasMore: boolean;
   loadingMore: boolean;
   onLoadMore: () => void;
-  onSetTodo: (id: string, state: TodoState) => void;
   onDelete: (id: string) => void;
   onSaveText: (id: string, text: string) => void;
   onSaveTranscript: (id: string, transcript: string) => void;

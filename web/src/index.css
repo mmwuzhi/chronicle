@@ -655,42 +655,55 @@ body {
   color: var(--text-faint);
 }
 
-/* Todo facet */
-.ch-todo-flag,
+/* Todo facet — the #todo text tag is the entry point; the UI only renders
+   the tag as a chip and toggles its done parameter. */
 .ch-remind-flag {
-  /* Quiet affordances: only revealed while hovering the card, so plain
-     captures don't all whisper "I might be a todo / want a reminder". */
+  /* Quiet affordance: only revealed while hovering the card, so plain
+     captures don't all whisper "I might want a reminder". */
   opacity: 0;
   transition: opacity 0.12s ease;
 }
-.ch-row:hover .ch-todo-flag,
 .ch-row:hover .ch-remind-flag,
-.ch-todo-flag:focus-visible,
 .ch-remind-flag:focus-visible {
   opacity: 1;
 }
-.ch-todo-flag {
-  /* Cancel the ghost button's inset so the flag icon sits in the same column
-     as the flagged state's checkbox at the footer's left edge. */
-  margin-left: -11px;
+.ch-todo-chip {
+  display: inline-block;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent-weak) 55%, transparent);
+  color: var(--accent-strong);
+  font-size: 0.85em;
+  font-weight: 600;
+  white-space: nowrap;
 }
-.ch-todo-check {
+.ch-todo-chip.done {
+  background: var(--bg-tint);
+  color: var(--text-faint);
+}
+.ch-tag-suggest {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  margin-bottom: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-tint);
+}
+.ch-tag-suggest-item {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  font-size: var(--fs-xs);
-  color: var(--text-muted);
+  gap: 8px;
+  border: none;
+  background: none;
+  padding: 2px 4px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
-  user-select: none;
+  font: inherit;
 }
-.ch-todo-check input {
-  width: 14px;
-  height: 14px;
-  cursor: pointer;
-  accent-color: var(--accent-strong);
-}
-.ch-todo-check.done {
-  color: var(--text-faint);
+.ch-tag-suggest-item:hover {
+  background: color-mix(in srgb, var(--accent-weak) 40%, transparent);
 }
 .ch-related-progress {
   margin-left: 8px;
