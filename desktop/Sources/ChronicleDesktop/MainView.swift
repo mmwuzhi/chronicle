@@ -64,6 +64,9 @@ struct MainView: View {
     // pinning/unpinning anywhere keeps every row's pin indicator in sync.
     @State private var pinTick = 0
 
+    // Signed-out + queued-count snapshot for the top sign-in banner.
+    @State private var session = SessionStatus()
+
     // Marks this view's own capture-change posts so onReceive can skip them:
     // every local mutation already updates state optimistically (with removal
     // animations a full reload would stomp); the notification is for the other
@@ -82,6 +85,10 @@ struct MainView: View {
     // call rebuildBrowseRows() (today: loadBrowse and commitDelete).
     @State private var browseRows: [RowItem] = []
 
+    private func refreshSessionStatus() {
+        session = clients.sessionStatus()
+    }
+
     private func rebuildBrowseRows() {
         guard signedIn && !offline else { browseRows = localRows; return }
         browseRows = RowMerge.newestFirst(
@@ -93,6 +100,16 @@ struct MainView: View {
     }
 
     var body: some View {
+        VStack(spacing: 0) {
+            if session.signedOut {
+                SignInBanner(status: session, onSignIn: { clients.openSettings() })
+                Divider()
+            }
+            windowBody
+        }
+    }
+
+    private var windowBody: some View {
         ZStack(alignment: .leading) {
             HStack(spacing: 0) {
                 if navigation.tabsExpanded {
@@ -155,14 +172,20 @@ struct MainView: View {
         .animation(.easeOut(duration: 0.16), value: navigation.tabsPeeking)
         .animation(navigation.tabsExpandedAnimation, value: navigation.tabsExpanded)
         .task {
+            refreshSessionStatus()
             await loadBrowse(reset: true)
         }
         .onReceive(NotificationCenter.default.publisher(for: .chronicleMainShown)) { _ in
+            refreshSessionStatus()
             if navigation.mode == .browse && !searched { Task { await loadBrowse(reset: true) } }
         }
         .onReceive(NotificationCenter.default.publisher(for: .chronicleCapturesChanged)) { note in
+            refreshSessionStatus()
             guard (note.object as? NSObject) !== captureEventToken else { return }
             refreshForCaptureChange()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .chronicleSessionChanged)) { _ in
+            refreshSessionStatus()
         }
         .onReceive(NotificationCenter.default.publisher(for: .chroniclePinsChanged)) { _ in
             pinTick &+= 1

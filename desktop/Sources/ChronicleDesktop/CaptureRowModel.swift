@@ -27,6 +27,10 @@ final class CaptureClients {
     // Drop a capture's cached local row after it is deleted on the server, keyed
     // by the row id (server id, or local id for an unsynced row).
     let localDelete: (String) -> Void
+    // Current session-visibility snapshot: whether the session is known-expired
+    // (drives the "signed out" banner) and how many captures are queued locally
+    // awaiting sync. Read on demand so any surface can render the nudge.
+    let sessionStatus: () -> SessionStatus
 
     init(
         recall: @escaping () -> RecallAPIClient?,
@@ -38,7 +42,8 @@ final class CaptureClients {
         localSearch: @escaping (String) -> [RowItem],
         localSemanticSearch: @escaping (String) async -> [RowItem] = { _ in [] },
         localRecent: @escaping (Int) -> [RowItem],
-        localDelete: @escaping (String) -> Void
+        localDelete: @escaping (String) -> Void,
+        sessionStatus: @escaping () -> SessionStatus = { SessionStatus() }
     ) {
         self.recall = recall
         self.webhook = webhook
@@ -50,7 +55,17 @@ final class CaptureClients {
         self.localSemanticSearch = localSemanticSearch
         self.localRecent = localRecent
         self.localDelete = localDelete
+        self.sessionStatus = sessionStatus
     }
+}
+
+/// What the sign-in nudge needs to render: whether the server session is
+/// known-expired, and how many local captures are waiting to sync. `signedOut`
+/// is deliberately only true on a *proven* 401 — an offline app stays quiet
+/// (offline-first), matching `SessionHealth.expired`.
+struct SessionStatus: Equatable {
+    var signedOut: Bool = false
+    var pending: Int = 0
 }
 
 // MARK: - Row model
