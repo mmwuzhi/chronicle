@@ -28,6 +28,9 @@ final class PinnedStickyController: NSObject, NSWindowDelegate {
     private var windows: [String: NSPanel] = [:]
     private var saved: [String: PersistedPin] = [:]
     private var manualHeight: Set<String> = [] // pins the user resized: auto-fit off
+    // Pins whose panel exists but hasn't been ordered on screen yet because a
+    // fullscreen Space was active at the time (see surface(_:id:)).
+    private var deferredUntilNormalSpace: Set<String> = []
 
     /// Injected by AppDelegate: double-click a sticky → open that capture's window.
     var onOpen: ((RowItem) -> Void)?
@@ -45,6 +48,34 @@ final class PinnedStickyController: NSObject, NSWindowDelegate {
         ) { [weak self] _ in
             MainActor.assumeIsolated { self?.recompositeAfterWake() }
         }
+        // Surface any pins that were created/restored while a fullscreen Space
+        // was active as soon as the user lands back on a normal Space.
+        NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.activeSpaceDidChangeNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.orderDeferredPins() }
+        }
+    }
+
+    /// Order a sticky onto the current Space — unless that Space is another
+    /// app's fullscreen Space. A panel first ordered there joins that Space
+    /// permanently: it floats on top of the fullscreen app forever and never
+    /// appears on the desktop. Such pins wait for the next normal-Space switch.
+    private func surface(_ panel: NSPanel, id: String) {
+        if ScreenPlacement.activeSpaceIsFullScreen() {
+            deferredUntilNormalSpace.insert(id)
+        } else {
+            panel.orderFront(nil)
+        }
+    }
+
+    private func orderDeferredPins() {
+        guard !deferredUntilNormalSpace.isEmpty,
+              !ScreenPlacement.activeSpaceIsFullScreen() else { return }
+        for id in deferredUntilNormalSpace {
+            windows[id]?.orderFront(nil)
+        }
+        deferredUntilNormalSpace.removeAll()
     }
 
     func isPinned(_ id: String) -> Bool { saved[id] != nil }
@@ -69,7 +100,7 @@ final class PinnedStickyController: NSObject, NSWindowDelegate {
             if pin.manualHeight == true { manualHeight.insert(pin.id) }
             let panel = makePanel(for: pin, cascade: false)
             windows[pin.id] = panel
-            panel.orderFront(nil)
+            surface(panel, id: pin.id)
             refresh(pin.id)
         }
         if !saved.isEmpty { notifyChanged() }
@@ -79,7 +110,7 @@ final class PinnedStickyController: NSObject, NSWindowDelegate {
 
     private func pin(_ row: RowItem) {
         if let existing = windows[row.id] {
-            existing.orderFront(nil) // already pinned: just surface it
+            surface(existing, id: row.id) // already pinned: just surface it
             return
         }
         let pin = PersistedPin(
@@ -90,7 +121,7 @@ final class PinnedStickyController: NSObject, NSWindowDelegate {
         windows[row.id] = panel
         saved[row.id]?.frame = panel.frame // remember the cascade spot even before a move
         persist()
-        panel.orderFront(nil) // orderFront, not makeKey: don't steal focus / activate
+        surface(panel, id: row.id) // orderFront, not makeKey: don't steal focus / activate
         notifyChanged()
         refresh(row.id)
     }
@@ -101,6 +132,7 @@ final class PinnedStickyController: NSObject, NSWindowDelegate {
         guard saved[id] != nil else { return }
         saved.removeValue(forKey: id)
         manualHeight.remove(id)
+        deferredUntilNormalSpace.remove(id)
         persist()
         if let panel = windows.removeValue(forKey: id) {
             panel.close()
