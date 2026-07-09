@@ -332,9 +332,10 @@ final class CaptureDetailWindowController: NSObject, NSWindowDelegate {
         )
         w.title = title
         w.isReleasedWhenClosed = false
-        // Follow the user to the active Space (like the main window; opposite of a
-        // pinned sticky, which stays put). No frame autosave: with many windows they
-        // would all fight over one saved frame, so we cascade instead.
+        w.isRestorable = false // no uninvited reopen on relaunch (see main window)
+        // Follow the user to the active Space (like the main window; opposite of
+        // a pinned sticky, which stays put). No frame autosave: with many windows
+        // they would all fight over one saved frame, so we cascade instead.
         w.collectionBehavior.insert(.moveToActiveSpace)
         return w
     }

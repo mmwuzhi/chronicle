@@ -236,9 +236,15 @@ final class MainWindowController: NSObject {
         w.center()
         w.setFrameAutosaveName("ChronicleMainWindow")
         w.isReleasedWhenClosed = false
-        // Follow the user to whatever Space (Mission Control desktop) is active
-        // instead of yanking them back to the Space where the window was last
-        // shown — e.g. a fullscreen app's dedicated Space.
+        // No relaunch restoration: macOS would reopen the window uninvited on
+        // whatever Space is active — including over a fullscreen app. The menu
+        // bar icon is one click; frame autosave still remembers the position.
+        w.isRestorable = false
+        // Follow the user to the active Space instead of yanking them back to
+        // the Space the window was last shown on. Over a fullscreen Space this
+        // means overlaying the fullscreen app — accepted behavior for an
+        // explicit open (2026-07-09; probe-verified that every programmatic
+        // show path lands there anyway, flag or no flag).
         w.collectionBehavior.insert(.moveToActiveSpace)
         w.contentView = NSHostingView(
             rootView: MainView(clients: clients, navigation: navigation, settingsModel: settingsModel)

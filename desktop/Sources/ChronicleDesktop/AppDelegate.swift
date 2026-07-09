@@ -64,7 +64,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // → handleSignInChanged refreshes their content once a token lands.
         pinnedStickyController.restore()
 
-        if settings.load().isUsable == false {
+        // First-run onboarding only. A signed-out *returning* user must not get
+        // an uninvited window at every launch — it lands on whatever Space is
+        // active, including over a fullscreen app; their signed-out state shows
+        // in Settings and the quick panel instead.
+        if settings.load().isUsable == false && settings.hasSignedInOnce == false {
             mainWindowController.show()
         }
     }

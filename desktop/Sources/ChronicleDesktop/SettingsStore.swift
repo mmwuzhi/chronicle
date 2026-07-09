@@ -9,6 +9,7 @@ final class SettingsStore {
         static let token = "token"
         static let hotKey = "hotKey"
         static let shortcut = "shortcut"
+        static let signedInOnce = "hasSignedInOnce"
     }
 
     private let defaults: UserDefaults
@@ -26,7 +27,15 @@ final class SettingsStore {
     func save(_ config: ChronicleConfig) {
         defaults.set(config.token, forKey: Key.token)
         defaults.set(config.apiURL.absoluteString, forKey: Key.apiURL)
+        // Remembered forever: gates the first-run onboarding window. A returning
+        // user who lost their session must not get popped windows at launch.
+        if config.isUsable { defaults.set(true, forKey: Key.signedInOnce) }
     }
+
+    /// True once any sign-in has succeeded on this machine. Distinguishes a
+    /// virgin install (pop the onboarding window) from a signed-out returning
+    /// user (stay quiet; Settings and the panel surface the state).
+    var hasSignedInOnce: Bool { defaults.bool(forKey: Key.signedInOnce) }
 
     func saveAPIURL(_ url: URL) {
         defaults.set(url.absoluteString, forKey: Key.apiURL)

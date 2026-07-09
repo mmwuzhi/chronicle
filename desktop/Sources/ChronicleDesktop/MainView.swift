@@ -541,7 +541,12 @@ struct MainView: View {
     }
 
     private func edit(_ id: String, _ text: String) {
-        guard let client = clients.recall() else { return }
+        // A silent return here reads as "save is broken": the row keeps the old
+        // text with no feedback. Name the actual problem instead.
+        guard let client = clients.recall() else {
+            error = "Not signed in — sign in from Settings to edit."
+            return
+        }
         Task { @MainActor in
             do {
                 _ = try await client.update(id: id, rawText: text)

@@ -2,6 +2,19 @@
 
 Deferred work.
 
+## Desktop Sign-in Health (2026-07-09)
+
+- Signed-out state needs a visible, non-intrusive indicator (menu bar icon
+  state or a panel badge). The launch-time onboarding window used to be the
+  only signal and is now first-run-only, so a returning user who loses their
+  session sees nothing until a mutation fails. Context: the installed app sat
+  signed out for ~3 weeks with 16 captures silently queued locally.
+- Likely cause of the long signed-out stretch: signOut deliberately clears the
+  refresh cookie (2026-06-22 fix), and offline-first is a supported way to run
+  the app — so a lapsed/cleared session never heals itself and never announces
+  itself. A "N captures waiting to sync — sign in" nudge in the panel or main
+  window would close the loop without nagging.
+
 ## Revisit After Refactor
 
 - Task event history: represent task edits as deletable log-style events.

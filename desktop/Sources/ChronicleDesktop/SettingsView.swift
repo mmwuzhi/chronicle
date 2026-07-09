@@ -540,6 +540,7 @@ final class SettingsWindowController {
         w.title = "Chronicle Settings"
         w.center()
         w.isReleasedWhenClosed = false
+        w.isRestorable = false // no uninvited reopen on relaunch (see main window)
         // Open on the active Space, not the one it was last shown on (see MainView).
         w.collectionBehavior.insert(.moveToActiveSpace)
         w.contentView = NSHostingView(rootView: SettingsView(model: model).tint(.chronicleAccent))
