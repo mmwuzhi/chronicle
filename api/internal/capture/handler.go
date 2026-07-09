@@ -34,6 +34,10 @@ type handler struct {
 	// kickTranscription wakes the event-driven transcription worker after
 	// retryTranscription re-queues a job (see upload.StartTranscriptionWorker).
 	kickTranscription func()
+	// linkFetchEnabled gates enqueuing link enrichment on create; kickLinkFetch
+	// wakes the link-fetch worker (see linkfetch.StartLinkFetchWorker).
+	linkFetchEnabled bool
+	kickLinkFetch    func()
 }
 
 // objectDeleter is the sliver of the R2/S3 client the capture handler needs to
@@ -51,11 +55,25 @@ type objectDeleter interface {
 // store/bucket back best-effort R2 media cleanup on permanent delete; pass a nil
 // store when R2 is not configured. kickTranscription wakes the transcription
 // worker when a retry re-queues a job; pass nil when transcription is disabled.
-func Register(api huma.API, pool *pgxpool.Pool, rag *ragclient.Client, store objectDeleter, bucket string, authMW, createMW func(huma.Context, func(huma.Context)), kickTranscription func()) {
+// linkFetchEnabled + kickLinkFetch wire link enrichment: when enabled, creating
+// a text capture that contains a URL enqueues a background fetch and wakes the
+// link-fetch worker; pass false / nil when link fetch is disabled.
+func Register(api huma.API, pool *pgxpool.Pool, rag *ragclient.Client, store objectDeleter, bucket string, authMW, createMW func(huma.Context, func(huma.Context)), kickTranscription func(), linkFetchEnabled bool, kickLinkFetch func()) {
 	if kickTranscription == nil {
 		kickTranscription = func() {}
 	}
-	h := &handler{q: db.New(pool), rag: rag, store: store, bucket: bucket, kickTranscription: kickTranscription}
+	if kickLinkFetch == nil {
+		kickLinkFetch = func() {}
+	}
+	h := &handler{
+		q:                 db.New(pool),
+		rag:               rag,
+		store:             store,
+		bucket:            bucket,
+		kickTranscription: kickTranscription,
+		linkFetchEnabled:  linkFetchEnabled,
+		kickLinkFetch:     kickLinkFetch,
+	}
 
 	op := func(id, method, path, summary string) huma.Operation {
 		return huma.Operation{
@@ -238,7 +256,52 @@ func (h *handler) create(ctx context.Context, input *CaptureCreateInput) (*Creat
 	if input.Body.RawText != nil && strings.TrimSpace(*input.Body.RawText) != "" {
 		h.rag.Index(uid.String(), c.ID.String())
 	}
+	// On create the prior link_url is always absent, so reconcile just enqueues
+	// a fetch when the new text carries a URL.
+	h.reconcileLinkFetch(ctx, c)
 	return &CreateOutput{Body: toBody(c)}, nil
+}
+
+// reconcileLinkFetch keeps link enrichment in step with the capture text (text
+// is the source of truth, like the #todo tag): the fetched page text lands in
+// `transcript`, making the capture findable by the page's content, not just the
+// pasted URL. `c` carries the post-write row — its raw_text is the new value and
+// its link_url is the prior one (no write path touches link_url but this one).
+//
+//   - URL added or changed  → (re)enqueue a fetch (overwrites any old transcript)
+//   - URL unchanged         → no-op, so editing surrounding words never re-fetches
+//   - URL removed           → clear the link-derived transcript and re-embed
+//
+// Best-effort: a failed enqueue/clear never fails the capture write, matching
+// the RAG-indexing policy.
+func (h *handler) reconcileLinkFetch(ctx context.Context, c db.Capture) {
+	if !h.linkFetchEnabled || c.MediaType != db.CaptureMediaTypeText {
+		return
+	}
+	newURL := ""
+	if c.RawText.Valid {
+		newURL = FirstURL(c.RawText.String)
+	}
+	oldURL := ""
+	if c.LinkUrl.Valid {
+		oldURL = c.LinkUrl.String
+	}
+	if newURL == oldURL {
+		return
+	}
+	if newURL != "" {
+		if err := h.q.EnqueueCaptureLinkFetch(ctx, db.EnqueueCaptureLinkFetchParams{
+			ID:      c.ID,
+			LinkUrl: pgtype.Text{String: newURL, Valid: true},
+		}); err == nil {
+			h.kickLinkFetch()
+		}
+		return
+	}
+	// URL edited out: drop the stale page text and re-embed the shorter content.
+	if err := h.q.ClearCaptureLinkFetch(ctx, c.ID); err == nil {
+		h.rag.Index(c.UserID.String(), c.ID.String())
+	}
 }
 
 // --- update ---
@@ -287,6 +350,11 @@ func (h *handler) update(ctx context.Context, input *CaptureUpdateInput) (*Updat
 	// must not trigger embedding + extraction.
 	if input.Body.RawText != nil || input.Body.Transcript != nil {
 		h.rag.Index(uid.String(), c.ID.String())
+	}
+	// A raw_text edit can add, change, or drop the capture's URL; keep link
+	// enrichment in step. Skipped for a transcript-only patch (raw_text nil).
+	if input.Body.RawText != nil {
+		h.reconcileLinkFetch(ctx, c)
 	}
 	return &UpdateOutput{Body: toBody(c)}, nil
 }

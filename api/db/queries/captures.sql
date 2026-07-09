@@ -156,6 +156,9 @@ WHERE id = $1
 RETURNING *;
 
 -- name: ClaimPendingTranscription :one
+-- Media transcription only (media_key IS NOT NULL). Text captures with a URL
+-- share this status column for link enrichment; ClaimPendingLinkFetch claims
+-- those. The media_key split keeps the two workers off each other's rows.
 UPDATE captures
 SET transcription_status = 'processing',
     transcription_attempts = transcription_attempts + 1,
@@ -164,6 +167,7 @@ WHERE id = (
   SELECT id
   FROM captures
   WHERE transcription_status IN ('pending', 'processing')
+    AND media_key IS NOT NULL
     AND deleted_at IS NULL
     AND next_transcription_at <= now()
   ORDER BY next_transcription_at, created_at
@@ -206,6 +210,7 @@ WHERE id = $1;
 SELECT COALESCE(EXTRACT(EPOCH FROM MIN(next_transcription_at) - now()), 0)::float8 AS next_in_seconds
 FROM captures
 WHERE transcription_status IN ('pending', 'processing')
+  AND media_key IS NOT NULL
   AND deleted_at IS NULL
   AND next_transcription_at > now();
 
@@ -218,6 +223,95 @@ UPDATE captures
 SET transcription_status = 'skipped',
     next_transcription_at = NULL
 WHERE id = $1;
+
+-- name: EnqueueCaptureLinkFetch :exec
+-- Record the URL detected in a text capture and hand it to the link-fetch worker
+-- via the shared transcription_status machine. media_key IS NULL guards it to
+-- text captures (a media capture's queue slot belongs to transcription). Called
+-- from the create path when LINK_FETCH_ENABLED and the text contains a URL.
+UPDATE captures
+SET link_url = $2,
+    transcription_status = 'pending',
+    transcription_attempts = 0,
+    next_transcription_at = now()
+WHERE id = $1 AND media_key IS NULL AND deleted_at IS NULL;
+
+-- name: BackfillLinkFetchQueue :execrows
+-- One-time enqueue of pre-existing text captures that carry a URL but were never
+-- link-enriched. Run once when the link-fetch worker starts, so history is only
+-- touched when the feature is actually enabled. The coarse `~*` presence check
+-- just gates entry to the queue; the worker derives the exact URL from the text
+-- (capture.FirstURL) — the URL grammar stays defined once, in Go.
+UPDATE captures
+SET transcription_status = 'pending',
+    transcription_attempts = 0,
+    next_transcription_at = now()
+WHERE media_key IS NULL
+  AND deleted_at IS NULL
+  AND transcript IS NULL
+  AND transcription_status = 'none'
+  AND raw_text ~* 'https?://';
+
+-- name: ClaimPendingLinkFetch :one
+-- Link enrichment only (media_key IS NULL). Symmetric to
+-- ClaimPendingTranscription; the media_key split keeps the two workers from
+-- claiming each other's rows out of the shared status column.
+UPDATE captures
+SET transcription_status = 'processing',
+    transcription_attempts = transcription_attempts + 1,
+    next_transcription_at = now() + interval '10 minutes'
+WHERE id = (
+  SELECT id
+  FROM captures
+  WHERE transcription_status IN ('pending', 'processing')
+    AND media_key IS NULL
+    AND deleted_at IS NULL
+    AND next_transcription_at <= now()
+  ORDER BY next_transcription_at, created_at
+  FOR UPDATE SKIP LOCKED
+  LIMIT 1
+)
+RETURNING *;
+
+-- name: MinScheduledLinkFetchIn :one
+-- Seconds until the earliest not-yet-claimable link-fetch job comes due (failure
+-- backoff or a crashed 'processing' lease). Link-job counterpart to
+-- MinScheduledTranscriptionIn; see its comment for why the clock math is in SQL.
+SELECT COALESCE(EXTRACT(EPOCH FROM MIN(next_transcription_at) - now()), 0)::float8 AS next_in_seconds
+FROM captures
+WHERE transcription_status IN ('pending', 'processing')
+  AND media_key IS NULL
+  AND deleted_at IS NULL
+  AND next_transcription_at > now();
+
+-- name: CompleteCaptureLinkFetch :exec
+-- Store the fetched page text as the capture's transcript (now its indexable
+-- content) and record the resolved URL, so a backfilled row that entered the
+-- queue without link_url ends up with the URL the worker actually fetched.
+UPDATE captures
+SET transcript = $2,
+    link_url = $3,
+    transcription_status = 'completed',
+    transcription_model = $4,
+    transcribed_at = now(),
+    next_transcription_at = NULL
+WHERE id = $1;
+
+-- name: ClearCaptureLinkFetch :exec
+-- The URL was edited out of a text capture: drop the link-derived transcript and
+-- its scheduling so search matches the text again (text is the source of truth,
+-- like the #todo tag). Guarded to text captures (media_key IS NULL), whose
+-- transcript can only be link-derived — a media capture's transcript is
+-- Whisper/OCR output and must never be cleared here.
+UPDATE captures
+SET link_url = NULL,
+    transcript = NULL,
+    transcription_status = 'none',
+    transcription_model = NULL,
+    transcribed_at = NULL,
+    transcription_attempts = 0,
+    next_transcription_at = NULL
+WHERE id = $1 AND media_key IS NULL AND deleted_at IS NULL;
 
 -- name: DeleteCapture :one
 -- Soft delete (project convention: never hard-DELETE user data). Idempotent —

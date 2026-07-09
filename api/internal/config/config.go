@@ -29,6 +29,7 @@ type Config struct {
 	OpenAITranscriptionModel string `envconfig:"OPENAI_TRANSCRIPTION_MODEL" default:"gpt-4o-mini-transcribe"`
 	OpenAIVisionModel        string `envconfig:"OPENAI_VISION_MODEL" default:"gpt-4o-mini"`
 	VisionEnabled            bool   `envconfig:"VISION_ENABLED" doc:"Transcribe image captures to searchable text via the vision model; requires OPENAI_API_KEY"`
+	LinkFetchEnabled         bool   `envconfig:"LINK_FETCH_ENABLED" doc:"Fetch the readable text of URLs in text captures into transcript so they are searchable by content; no external API key needed"`
 	GeminiKey                string `envconfig:"GEMINI_API_KEY"`
 	RAGServiceURL            string `envconfig:"RAG_SERVICE_URL" doc:"Base URL of the Python RAG sidecar; empty disables semantic recall"`
 	Port                     string `envconfig:"PORT" default:"8080"`

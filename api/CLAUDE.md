@@ -35,6 +35,11 @@ visible from any single file. Setup and commands live in the root `Justfile`.
 - `internal/upload` — `POST /captures/upload`: multipart media upload to R2
   (20 MB cap) plus the async Whisper/OCR transcription worker
   (`transcription_worker.go`).
+- `internal/linkfetch` — the async link-enrichment worker: fetches URLs found
+  in text captures (SSRF-guarded, HTML-only, size-capped) and stores the
+  page's readable text in `transcript`. Structural twin of the transcription
+  worker; shares the `transcription_status` queue, partitioned by
+  `media_key IS NULL`. Gated by `LINK_FETCH_ENABLED`; no external API key.
 - `internal/ai` — `POST /ai/polish`: optional LLM text enrichment.
 - `internal/user` — `/users/me`: profile, password change, linked OAuth
   account management.

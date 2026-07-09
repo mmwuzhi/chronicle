@@ -12,6 +12,82 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const backfillLinkFetchQueue = `-- name: BackfillLinkFetchQueue :execrows
+UPDATE captures
+SET transcription_status = 'pending',
+    transcription_attempts = 0,
+    next_transcription_at = now()
+WHERE media_key IS NULL
+  AND deleted_at IS NULL
+  AND transcript IS NULL
+  AND transcription_status = 'none'
+  AND raw_text ~* 'https?://'
+`
+
+// One-time enqueue of pre-existing text captures that carry a URL but were never
+// link-enriched. Run once when the link-fetch worker starts, so history is only
+// touched when the feature is actually enabled. The coarse `~*` presence check
+// just gates entry to the queue; the worker derives the exact URL from the text
+// (capture.FirstURL) — the URL grammar stays defined once, in Go.
+func (q *Queries) BackfillLinkFetchQueue(ctx context.Context) (int64, error) {
+	result, err := q.db.Exec(ctx, backfillLinkFetchQueue)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const claimPendingLinkFetch = `-- name: ClaimPendingLinkFetch :one
+UPDATE captures
+SET transcription_status = 'processing',
+    transcription_attempts = transcription_attempts + 1,
+    next_transcription_at = now() + interval '10 minutes'
+WHERE id = (
+  SELECT id
+  FROM captures
+  WHERE transcription_status IN ('pending', 'processing')
+    AND media_key IS NULL
+    AND deleted_at IS NULL
+    AND next_transcription_at <= now()
+  ORDER BY next_transcription_at, created_at
+  FOR UPDATE SKIP LOCKED
+  LIMIT 1
+)
+RETURNING id, user_id, raw_text, media_url, media_type, created_at, source, transcript, transcription_status, transcription_model, transcription_attempts, transcribed_at, next_transcription_at, audio_duration_sec, media_key, remind_at, deleted_at, remind_hide, todo_at, done_at, link_url
+`
+
+// Link enrichment only (media_key IS NULL). Symmetric to
+// ClaimPendingTranscription; the media_key split keeps the two workers from
+// claiming each other's rows out of the shared status column.
+func (q *Queries) ClaimPendingLinkFetch(ctx context.Context) (Capture, error) {
+	row := q.db.QueryRow(ctx, claimPendingLinkFetch)
+	var i Capture
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.RawText,
+		&i.MediaUrl,
+		&i.MediaType,
+		&i.CreatedAt,
+		&i.Source,
+		&i.Transcript,
+		&i.TranscriptionStatus,
+		&i.TranscriptionModel,
+		&i.TranscriptionAttempts,
+		&i.TranscribedAt,
+		&i.NextTranscriptionAt,
+		&i.AudioDurationSec,
+		&i.MediaKey,
+		&i.RemindAt,
+		&i.DeletedAt,
+		&i.RemindHide,
+		&i.TodoAt,
+		&i.DoneAt,
+		&i.LinkUrl,
+	)
+	return i, err
+}
+
 const claimPendingTranscription = `-- name: ClaimPendingTranscription :one
 UPDATE captures
 SET transcription_status = 'processing',
@@ -21,15 +97,19 @@ WHERE id = (
   SELECT id
   FROM captures
   WHERE transcription_status IN ('pending', 'processing')
+    AND media_key IS NOT NULL
     AND deleted_at IS NULL
     AND next_transcription_at <= now()
   ORDER BY next_transcription_at, created_at
   FOR UPDATE SKIP LOCKED
   LIMIT 1
 )
-RETURNING id, user_id, raw_text, media_url, media_type, created_at, source, transcript, transcription_status, transcription_model, transcription_attempts, transcribed_at, next_transcription_at, audio_duration_sec, media_key, remind_at, deleted_at, remind_hide, todo_at, done_at
+RETURNING id, user_id, raw_text, media_url, media_type, created_at, source, transcript, transcription_status, transcription_model, transcription_attempts, transcribed_at, next_transcription_at, audio_duration_sec, media_key, remind_at, deleted_at, remind_hide, todo_at, done_at, link_url
 `
 
+// Media transcription only (media_key IS NOT NULL). Text captures with a URL
+// share this status column for link enrichment; ClaimPendingLinkFetch claims
+// those. The media_key split keeps the two workers off each other's rows.
 func (q *Queries) ClaimPendingTranscription(ctx context.Context) (Capture, error) {
 	row := q.db.QueryRow(ctx, claimPendingTranscription)
 	var i Capture
@@ -54,8 +134,62 @@ func (q *Queries) ClaimPendingTranscription(ctx context.Context) (Capture, error
 		&i.RemindHide,
 		&i.TodoAt,
 		&i.DoneAt,
+		&i.LinkUrl,
 	)
 	return i, err
+}
+
+const clearCaptureLinkFetch = `-- name: ClearCaptureLinkFetch :exec
+UPDATE captures
+SET link_url = NULL,
+    transcript = NULL,
+    transcription_status = 'none',
+    transcription_model = NULL,
+    transcribed_at = NULL,
+    transcription_attempts = 0,
+    next_transcription_at = NULL
+WHERE id = $1 AND media_key IS NULL AND deleted_at IS NULL
+`
+
+// The URL was edited out of a text capture: drop the link-derived transcript and
+// its scheduling so search matches the text again (text is the source of truth,
+// like the #todo tag). Guarded to text captures (media_key IS NULL), whose
+// transcript can only be link-derived — a media capture's transcript is
+// Whisper/OCR output and must never be cleared here.
+func (q *Queries) ClearCaptureLinkFetch(ctx context.Context, id uuid.UUID) error {
+	_, err := q.db.Exec(ctx, clearCaptureLinkFetch, id)
+	return err
+}
+
+const completeCaptureLinkFetch = `-- name: CompleteCaptureLinkFetch :exec
+UPDATE captures
+SET transcript = $2,
+    link_url = $3,
+    transcription_status = 'completed',
+    transcription_model = $4,
+    transcribed_at = now(),
+    next_transcription_at = NULL
+WHERE id = $1
+`
+
+type CompleteCaptureLinkFetchParams struct {
+	ID                 uuid.UUID   `json:"id"`
+	Transcript         pgtype.Text `json:"transcript"`
+	LinkUrl            pgtype.Text `json:"link_url"`
+	TranscriptionModel pgtype.Text `json:"transcription_model"`
+}
+
+// Store the fetched page text as the capture's transcript (now its indexable
+// content) and record the resolved URL, so a backfilled row that entered the
+// queue without link_url ends up with the URL the worker actually fetched.
+func (q *Queries) CompleteCaptureLinkFetch(ctx context.Context, arg CompleteCaptureLinkFetchParams) error {
+	_, err := q.db.Exec(ctx, completeCaptureLinkFetch,
+		arg.ID,
+		arg.Transcript,
+		arg.LinkUrl,
+		arg.TranscriptionModel,
+	)
+	return err
 }
 
 const completeCaptureTranscription = `-- name: CompleteCaptureTranscription :exec
@@ -82,7 +216,7 @@ func (q *Queries) CompleteCaptureTranscription(ctx context.Context, arg Complete
 const createCapture = `-- name: CreateCapture :one
 INSERT INTO captures (user_id, raw_text, media_url, media_type, source, todo_at, done_at)
 VALUES ($1, $2, $3, $4, $5, $6::timestamptz, $7::timestamptz)
-RETURNING id, user_id, raw_text, media_url, media_type, created_at, source, transcript, transcription_status, transcription_model, transcription_attempts, transcribed_at, next_transcription_at, audio_duration_sec, media_key, remind_at, deleted_at, remind_hide, todo_at, done_at
+RETURNING id, user_id, raw_text, media_url, media_type, created_at, source, transcript, transcription_status, transcription_model, transcription_attempts, transcribed_at, next_transcription_at, audio_duration_sec, media_key, remind_at, deleted_at, remind_hide, todo_at, done_at, link_url
 `
 
 type CreateCaptureParams struct {
@@ -129,6 +263,7 @@ func (q *Queries) CreateCapture(ctx context.Context, arg CreateCaptureParams) (C
 		&i.RemindHide,
 		&i.TodoAt,
 		&i.DoneAt,
+		&i.LinkUrl,
 	)
 	return i, err
 }
@@ -184,7 +319,7 @@ VALUES (
     ELSE NULL
   END
 )
-RETURNING id, user_id, raw_text, media_url, media_type, created_at, source, transcript, transcription_status, transcription_model, transcription_attempts, transcribed_at, next_transcription_at, audio_duration_sec, media_key, remind_at, deleted_at, remind_hide, todo_at, done_at
+RETURNING id, user_id, raw_text, media_url, media_type, created_at, source, transcript, transcription_status, transcription_model, transcription_attempts, transcribed_at, next_transcription_at, audio_duration_sec, media_key, remind_at, deleted_at, remind_hide, todo_at, done_at, link_url
 `
 
 type CreateUploadedCaptureParams struct {
@@ -239,6 +374,7 @@ func (q *Queries) CreateUploadedCapture(ctx context.Context, arg CreateUploadedC
 		&i.RemindHide,
 		&i.TodoAt,
 		&i.DoneAt,
+		&i.LinkUrl,
 	)
 	return i, err
 }
@@ -266,7 +402,7 @@ func (q *Queries) DeleteCapture(ctx context.Context, arg DeleteCaptureParams) (u
 }
 
 const dueReminders = `-- name: DueReminders :many
-SELECT id, user_id, raw_text, media_url, media_type, created_at, source, transcript, transcription_status, transcription_model, transcription_attempts, transcribed_at, next_transcription_at, audio_duration_sec, media_key, remind_at, deleted_at, remind_hide, todo_at, done_at FROM captures
+SELECT id, user_id, raw_text, media_url, media_type, created_at, source, transcript, transcription_status, transcription_model, transcription_attempts, transcribed_at, next_transcription_at, audio_duration_sec, media_key, remind_at, deleted_at, remind_hide, todo_at, done_at, link_url FROM captures
 WHERE user_id = $1
   AND deleted_at IS NULL
   AND remind_at IS NOT NULL
@@ -313,6 +449,7 @@ func (q *Queries) DueReminders(ctx context.Context, arg DueRemindersParams) ([]C
 			&i.RemindHide,
 			&i.TodoAt,
 			&i.DoneAt,
+			&i.LinkUrl,
 		); err != nil {
 			return nil, err
 		}
@@ -353,6 +490,29 @@ func (q *Queries) EmptyTrash(ctx context.Context, userID uuid.UUID) ([]pgtype.Te
 	return items, nil
 }
 
+const enqueueCaptureLinkFetch = `-- name: EnqueueCaptureLinkFetch :exec
+UPDATE captures
+SET link_url = $2,
+    transcription_status = 'pending',
+    transcription_attempts = 0,
+    next_transcription_at = now()
+WHERE id = $1 AND media_key IS NULL AND deleted_at IS NULL
+`
+
+type EnqueueCaptureLinkFetchParams struct {
+	ID      uuid.UUID   `json:"id"`
+	LinkUrl pgtype.Text `json:"link_url"`
+}
+
+// Record the URL detected in a text capture and hand it to the link-fetch worker
+// via the shared transcription_status machine. media_key IS NULL guards it to
+// text captures (a media capture's queue slot belongs to transcription). Called
+// from the create path when LINK_FETCH_ENABLED and the text contains a URL.
+func (q *Queries) EnqueueCaptureLinkFetch(ctx context.Context, arg EnqueueCaptureLinkFetchParams) error {
+	_, err := q.db.Exec(ctx, enqueueCaptureLinkFetch, arg.ID, arg.LinkUrl)
+	return err
+}
+
 const failCaptureTranscription = `-- name: FailCaptureTranscription :exec
 UPDATE captures
 SET transcription_status = CASE
@@ -374,7 +534,7 @@ func (q *Queries) FailCaptureTranscription(ctx context.Context, id uuid.UUID) er
 }
 
 const getCapture = `-- name: GetCapture :one
-SELECT id, user_id, raw_text, media_url, media_type, created_at, source, transcript, transcription_status, transcription_model, transcription_attempts, transcribed_at, next_transcription_at, audio_duration_sec, media_key, remind_at, deleted_at, remind_hide, todo_at, done_at FROM captures
+SELECT id, user_id, raw_text, media_url, media_type, created_at, source, transcript, transcription_status, transcription_model, transcription_attempts, transcribed_at, next_transcription_at, audio_duration_sec, media_key, remind_at, deleted_at, remind_hide, todo_at, done_at, link_url FROM captures
 WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL
 `
 
@@ -407,12 +567,13 @@ func (q *Queries) GetCapture(ctx context.Context, arg GetCaptureParams) (Capture
 		&i.RemindHide,
 		&i.TodoAt,
 		&i.DoneAt,
+		&i.LinkUrl,
 	)
 	return i, err
 }
 
 const listCaptureContextAfter = `-- name: ListCaptureContextAfter :many
-SELECT id, user_id, raw_text, media_url, media_type, created_at, source, transcript, transcription_status, transcription_model, transcription_attempts, transcribed_at, next_transcription_at, audio_duration_sec, media_key, remind_at, deleted_at, remind_hide, todo_at, done_at FROM captures
+SELECT id, user_id, raw_text, media_url, media_type, created_at, source, transcript, transcription_status, transcription_model, transcription_attempts, transcribed_at, next_transcription_at, audio_duration_sec, media_key, remind_at, deleted_at, remind_hide, todo_at, done_at, link_url FROM captures
 WHERE user_id = $1
   AND deleted_at IS NULL
   AND (created_at, id) > (
@@ -465,6 +626,7 @@ func (q *Queries) ListCaptureContextAfter(ctx context.Context, arg ListCaptureCo
 			&i.RemindHide,
 			&i.TodoAt,
 			&i.DoneAt,
+			&i.LinkUrl,
 		); err != nil {
 			return nil, err
 		}
@@ -477,7 +639,7 @@ func (q *Queries) ListCaptureContextAfter(ctx context.Context, arg ListCaptureCo
 }
 
 const listCaptureContextBefore = `-- name: ListCaptureContextBefore :many
-SELECT id, user_id, raw_text, media_url, media_type, created_at, source, transcript, transcription_status, transcription_model, transcription_attempts, transcribed_at, next_transcription_at, audio_duration_sec, media_key, remind_at, deleted_at, remind_hide, todo_at, done_at FROM captures
+SELECT id, user_id, raw_text, media_url, media_type, created_at, source, transcript, transcription_status, transcription_model, transcription_attempts, transcribed_at, next_transcription_at, audio_duration_sec, media_key, remind_at, deleted_at, remind_hide, todo_at, done_at, link_url FROM captures
 WHERE user_id = $1
   AND deleted_at IS NULL
   AND (created_at, id) < (
@@ -530,6 +692,7 @@ func (q *Queries) ListCaptureContextBefore(ctx context.Context, arg ListCaptureC
 			&i.RemindHide,
 			&i.TodoAt,
 			&i.DoneAt,
+			&i.LinkUrl,
 		); err != nil {
 			return nil, err
 		}
@@ -542,7 +705,7 @@ func (q *Queries) ListCaptureContextBefore(ctx context.Context, arg ListCaptureC
 }
 
 const listCapturePage = `-- name: ListCapturePage :many
-SELECT id, user_id, raw_text, media_url, media_type, created_at, source, transcript, transcription_status, transcription_model, transcription_attempts, transcribed_at, next_transcription_at, audio_duration_sec, media_key, remind_at, deleted_at, remind_hide, todo_at, done_at FROM captures
+SELECT id, user_id, raw_text, media_url, media_type, created_at, source, transcript, transcription_status, transcription_model, transcription_attempts, transcribed_at, next_transcription_at, audio_duration_sec, media_key, remind_at, deleted_at, remind_hide, todo_at, done_at, link_url FROM captures
 WHERE user_id = $1
   AND deleted_at IS NULL
   AND (
@@ -613,6 +776,7 @@ func (q *Queries) ListCapturePage(ctx context.Context, arg ListCapturePageParams
 			&i.RemindHide,
 			&i.TodoAt,
 			&i.DoneAt,
+			&i.LinkUrl,
 		); err != nil {
 			return nil, err
 		}
@@ -625,7 +789,7 @@ func (q *Queries) ListCapturePage(ctx context.Context, arg ListCapturePageParams
 }
 
 const listCapturesInRange = `-- name: ListCapturesInRange :many
-SELECT id, user_id, raw_text, media_url, media_type, created_at, source, transcript, transcription_status, transcription_model, transcription_attempts, transcribed_at, next_transcription_at, audio_duration_sec, media_key, remind_at, deleted_at, remind_hide, todo_at, done_at FROM captures
+SELECT id, user_id, raw_text, media_url, media_type, created_at, source, transcript, transcription_status, transcription_model, transcription_attempts, transcribed_at, next_transcription_at, audio_duration_sec, media_key, remind_at, deleted_at, remind_hide, todo_at, done_at, link_url FROM captures
 WHERE user_id = $1
   AND deleted_at IS NULL
   AND created_at >= $2
@@ -669,6 +833,7 @@ func (q *Queries) ListCapturesInRange(ctx context.Context, arg ListCapturesInRan
 			&i.RemindHide,
 			&i.TodoAt,
 			&i.DoneAt,
+			&i.LinkUrl,
 		); err != nil {
 			return nil, err
 		}
@@ -681,7 +846,7 @@ func (q *Queries) ListCapturesInRange(ctx context.Context, arg ListCapturesInRan
 }
 
 const listTrashedCaptures = `-- name: ListTrashedCaptures :many
-SELECT id, user_id, raw_text, media_url, media_type, created_at, source, transcript, transcription_status, transcription_model, transcription_attempts, transcribed_at, next_transcription_at, audio_duration_sec, media_key, remind_at, deleted_at, remind_hide, todo_at, done_at FROM captures
+SELECT id, user_id, raw_text, media_url, media_type, created_at, source, transcript, transcription_status, transcription_model, transcription_attempts, transcribed_at, next_transcription_at, audio_duration_sec, media_key, remind_at, deleted_at, remind_hide, todo_at, done_at, link_url FROM captures
 WHERE user_id = $1 AND deleted_at IS NOT NULL
 ORDER BY deleted_at DESC, id DESC
 `
@@ -717,6 +882,7 @@ func (q *Queries) ListTrashedCaptures(ctx context.Context, userID uuid.UUID) ([]
 			&i.RemindHide,
 			&i.TodoAt,
 			&i.DoneAt,
+			&i.LinkUrl,
 		); err != nil {
 			return nil, err
 		}
@@ -728,10 +894,30 @@ func (q *Queries) ListTrashedCaptures(ctx context.Context, userID uuid.UUID) ([]
 	return items, nil
 }
 
+const minScheduledLinkFetchIn = `-- name: MinScheduledLinkFetchIn :one
+SELECT COALESCE(EXTRACT(EPOCH FROM MIN(next_transcription_at) - now()), 0)::float8 AS next_in_seconds
+FROM captures
+WHERE transcription_status IN ('pending', 'processing')
+  AND media_key IS NULL
+  AND deleted_at IS NULL
+  AND next_transcription_at > now()
+`
+
+// Seconds until the earliest not-yet-claimable link-fetch job comes due (failure
+// backoff or a crashed 'processing' lease). Link-job counterpart to
+// MinScheduledTranscriptionIn; see its comment for why the clock math is in SQL.
+func (q *Queries) MinScheduledLinkFetchIn(ctx context.Context) (float64, error) {
+	row := q.db.QueryRow(ctx, minScheduledLinkFetchIn)
+	var next_in_seconds float64
+	err := row.Scan(&next_in_seconds)
+	return next_in_seconds, err
+}
+
 const minScheduledTranscriptionIn = `-- name: MinScheduledTranscriptionIn :one
 SELECT COALESCE(EXTRACT(EPOCH FROM MIN(next_transcription_at) - now()), 0)::float8 AS next_in_seconds
 FROM captures
 WHERE transcription_status IN ('pending', 'processing')
+  AND media_key IS NOT NULL
   AND deleted_at IS NULL
   AND next_transcription_at > now()
 `
@@ -751,7 +937,7 @@ func (q *Queries) MinScheduledTranscriptionIn(ctx context.Context) (float64, err
 }
 
 const pendingReminders = `-- name: PendingReminders :many
-SELECT id, user_id, raw_text, media_url, media_type, created_at, source, transcript, transcription_status, transcription_model, transcription_attempts, transcribed_at, next_transcription_at, audio_duration_sec, media_key, remind_at, deleted_at, remind_hide, todo_at, done_at FROM captures
+SELECT id, user_id, raw_text, media_url, media_type, created_at, source, transcript, transcription_status, transcription_model, transcription_attempts, transcribed_at, next_transcription_at, audio_duration_sec, media_key, remind_at, deleted_at, remind_hide, todo_at, done_at, link_url FROM captures
 WHERE user_id = $1
   AND deleted_at IS NULL
   AND remind_at IS NOT NULL
@@ -791,6 +977,7 @@ func (q *Queries) PendingReminders(ctx context.Context, userID uuid.UUID) ([]Cap
 			&i.RemindHide,
 			&i.TodoAt,
 			&i.DoneAt,
+			&i.LinkUrl,
 		); err != nil {
 			return nil, err
 		}
@@ -831,7 +1018,7 @@ const restoreCapture = `-- name: RestoreCapture :one
 UPDATE captures
 SET deleted_at = NULL
 WHERE id = $1 AND user_id = $2 AND deleted_at IS NOT NULL
-RETURNING id, user_id, raw_text, media_url, media_type, created_at, source, transcript, transcription_status, transcription_model, transcription_attempts, transcribed_at, next_transcription_at, audio_duration_sec, media_key, remind_at, deleted_at, remind_hide, todo_at, done_at
+RETURNING id, user_id, raw_text, media_url, media_type, created_at, source, transcript, transcription_status, transcription_model, transcription_attempts, transcribed_at, next_transcription_at, audio_duration_sec, media_key, remind_at, deleted_at, remind_hide, todo_at, done_at, link_url
 `
 
 type RestoreCaptureParams struct {
@@ -866,6 +1053,7 @@ func (q *Queries) RestoreCapture(ctx context.Context, arg RestoreCaptureParams) 
 		&i.RemindHide,
 		&i.TodoAt,
 		&i.DoneAt,
+		&i.LinkUrl,
 	)
 	return i, err
 }
@@ -884,7 +1072,7 @@ WHERE id = $1
     -- image OCR has no duration guard; the worker routes it to vision transcription
     OR media_type = 'image'
   )
-RETURNING id, user_id, raw_text, media_url, media_type, created_at, source, transcript, transcription_status, transcription_model, transcription_attempts, transcribed_at, next_transcription_at, audio_duration_sec, media_key, remind_at, deleted_at, remind_hide, todo_at, done_at
+RETURNING id, user_id, raw_text, media_url, media_type, created_at, source, transcript, transcription_status, transcription_model, transcription_attempts, transcribed_at, next_transcription_at, audio_duration_sec, media_key, remind_at, deleted_at, remind_hide, todo_at, done_at, link_url
 `
 
 type RetryCaptureTranscriptionParams struct {
@@ -916,6 +1104,7 @@ func (q *Queries) RetryCaptureTranscription(ctx context.Context, arg RetryCaptur
 		&i.RemindHide,
 		&i.TodoAt,
 		&i.DoneAt,
+		&i.LinkUrl,
 	)
 	return i, err
 }
@@ -925,7 +1114,7 @@ UPDATE captures
 SET remind_at = $1::timestamptz,
     remind_hide = $2::boolean
 WHERE id = $3 AND user_id = $4 AND deleted_at IS NULL
-RETURNING id, user_id, raw_text, media_url, media_type, created_at, source, transcript, transcription_status, transcription_model, transcription_attempts, transcribed_at, next_transcription_at, audio_duration_sec, media_key, remind_at, deleted_at, remind_hide, todo_at, done_at
+RETURNING id, user_id, raw_text, media_url, media_type, created_at, source, transcript, transcription_status, transcription_model, transcription_attempts, transcribed_at, next_transcription_at, audio_duration_sec, media_key, remind_at, deleted_at, remind_hide, todo_at, done_at, link_url
 `
 
 type SetCaptureRemindParams struct {
@@ -972,6 +1161,7 @@ func (q *Queries) SetCaptureRemind(ctx context.Context, arg SetCaptureRemindPara
 		&i.RemindHide,
 		&i.TodoAt,
 		&i.DoneAt,
+		&i.LinkUrl,
 	)
 	return i, err
 }
@@ -1009,7 +1199,7 @@ SET
     ELSE COALESCE(done_at, now())
   END
 WHERE id = $6 AND user_id = $7 AND deleted_at IS NULL
-RETURNING id, user_id, raw_text, media_url, media_type, created_at, source, transcript, transcription_status, transcription_model, transcription_attempts, transcribed_at, next_transcription_at, audio_duration_sec, media_key, remind_at, deleted_at, remind_hide, todo_at, done_at
+RETURNING id, user_id, raw_text, media_url, media_type, created_at, source, transcript, transcription_status, transcription_model, transcription_attempts, transcribed_at, next_transcription_at, audio_duration_sec, media_key, remind_at, deleted_at, remind_hide, todo_at, done_at, link_url
 `
 
 type UpdateCaptureParams struct {
@@ -1061,6 +1251,7 @@ func (q *Queries) UpdateCapture(ctx context.Context, arg UpdateCaptureParams) (C
 		&i.RemindHide,
 		&i.TodoAt,
 		&i.DoneAt,
+		&i.LinkUrl,
 	)
 	return i, err
 }

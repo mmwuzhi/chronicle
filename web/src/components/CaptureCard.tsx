@@ -206,7 +206,7 @@ export function CaptureCard({
           <Markdown>{c.rawText ?? ""}</Markdown>
         </div>
       )}
-      {c.transcript && (
+      {transcribable && c.transcript && (
         <div className="ch-transcript">
           <div className="ch-transcript-head">
             <span>{t("transcript.label")}</span>

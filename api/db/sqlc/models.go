@@ -315,6 +315,7 @@ type Capture struct {
 	RemindHide            bool                `json:"remind_hide"`
 	TodoAt                pgtype.Timestamptz  `json:"todo_at"`
 	DoneAt                pgtype.Timestamptz  `json:"done_at"`
+	LinkUrl               pgtype.Text         `json:"link_url"`
 }
 
 type CaptureAttachment struct {

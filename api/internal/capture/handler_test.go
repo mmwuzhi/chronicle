@@ -29,6 +29,13 @@ import (
 )
 
 func newServer(t *testing.T) (*httptest.Server, *pgxpool.Pool) {
+	return newServerOpts(t, false)
+}
+
+// newServerOpts builds the capture test server. linkFetch toggles link
+// enrichment: with it on, creating a text capture that contains a URL enqueues a
+// link-fetch job (no worker runs in tests, so the row simply lands 'pending').
+func newServerOpts(t *testing.T, linkFetch bool) (*httptest.Server, *pgxpool.Pool) {
 	t.Helper()
 	pool := testutil.NewPool(t)
 	testutil.Truncate(t, pool, "captures", "users")
@@ -54,7 +61,7 @@ func newServer(t *testing.T) (*httptest.Server, *pgxpool.Pool) {
 	// nil store + empty bucket: permanent delete still hard-deletes the row; R2
 	// media cleanup is simply skipped (no object storage wired in tests). nil
 	// kick: no transcription worker to wake in tests.
-	capture.Register(api, pool, ragclient.New(""), nil, "", authMW, createMW, nil)
+	capture.Register(api, pool, ragclient.New(""), nil, "", authMW, createMW, nil, linkFetch, nil)
 
 	srv := httptest.NewServer(r)
 	t.Cleanup(srv.Close)
