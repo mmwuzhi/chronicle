@@ -270,7 +270,10 @@ How changes reach the running dev stack:
 - Migrations are never auto-applied to the dev DB (nothing runs goose at API
   startup): apply with `make migrate`. Tests are unaffected — `testutil`
   migrates the separate `chronicle_test` DB on every run.
-- There is no `/healthz`; probe API liveness with `GET /users/me` → 401.
+- API liveness probe: `GET /health` → 200 `{"status":"ok"}` (mind the path —
+  it is not `/healthz`; probing the wrong path and concluding "server down"
+  has happened twice now). `GET /users/me` → 401 also proves routing + auth
+  middleware are up.
 - ragsvc tests need the project venv: run `.venv/bin/python -m pytest` from
   `ragsvc/` (a bare system python won't have pytest).
 
