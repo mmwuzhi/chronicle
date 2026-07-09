@@ -2,15 +2,22 @@
 -- Captures from the same calendar day (month + day) in an earlier period —
 -- "on this day" resurfacing. Today's own captures are excluded (created_at is
 -- before the start of today), so this only surfaces genuinely older memories.
--- Month/day and "today" are evaluated in the server clock (UTC), matching how
--- the rest of the app stores and compares created_at.
-SELECT * FROM captures
+-- Month/day and "today" are evaluated in the caller's local calendar using
+-- timezone_offset_minutes (same sign as JavaScript getTimezoneOffset: UTC minus
+-- local). created_at stays stored in UTC; the offset is only for calendar-day
+-- comparison.
+WITH clock AS (
+  SELECT
+    now() AS now_utc,
+    make_interval(mins => sqlc.arg('timezone_offset_minutes')::int) AS tz_offset
+)
+SELECT c.* FROM captures c, clock
 WHERE user_id = $1
   AND deleted_at IS NULL
-  AND EXTRACT(MONTH FROM created_at) = EXTRACT(MONTH FROM now())
-  AND EXTRACT(DAY FROM created_at) = EXTRACT(DAY FROM now())
-  AND created_at < date_trunc('day', now())
-ORDER BY created_at DESC
+  AND EXTRACT(MONTH FROM c.created_at - clock.tz_offset) = EXTRACT(MONTH FROM clock.now_utc - clock.tz_offset)
+  AND EXTRACT(DAY FROM c.created_at - clock.tz_offset) = EXTRACT(DAY FROM clock.now_utc - clock.tz_offset)
+  AND c.created_at - clock.tz_offset < date_trunc('day', clock.now_utc - clock.tz_offset)
+ORDER BY c.created_at DESC
 LIMIT sqlc.arg('result_limit');
 
 -- name: ListRediscover :many

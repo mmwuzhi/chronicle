@@ -24,7 +24,9 @@ const (
 	rediscoverLimit = 5
 )
 
-type ReviewTodayInput struct{}
+type ReviewTodayInput struct {
+	TimezoneOffsetMinutes int `query:"timezoneOffsetMinutes" minimum:"-840" maximum:"720" default:"0" doc:"Client timezone offset in minutes, same sign as JavaScript getTimezoneOffset (UTC minus local)"`
+}
 
 type ReviewTodayOutput struct {
 	Body struct {
@@ -37,15 +39,16 @@ type ReviewTodayOutput struct {
 // and a random sample of older ones. Rediscover is deduped against onThisDay so
 // a card never shows twice. Both are always non-nil arrays so the client renders
 // an empty state rather than branching on null.
-func (h *handler) reviewToday(ctx context.Context, _ *ReviewTodayInput) (*ReviewTodayOutput, error) {
+func (h *handler) reviewToday(ctx context.Context, input *ReviewTodayInput) (*ReviewTodayOutput, error) {
 	uid, err := userID(ctx)
 	if err != nil {
 		return nil, err
 	}
 
 	onThisDay, err := h.q.ListOnThisDay(ctx, db.ListOnThisDayParams{
-		UserID:      uid,
-		ResultLimit: onThisDayLimit,
+		UserID:                uid,
+		TimezoneOffsetMinutes: int32(input.TimezoneOffsetMinutes),
+		ResultLimit:           onThisDayLimit,
 	})
 	if err != nil {
 		return nil, huma.Error500InternalServerError("internal error")

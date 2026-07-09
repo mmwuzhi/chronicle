@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -73,6 +74,46 @@ func TestReviewToday(t *testing.T) {
 		if slices.Contains(reIDs, id) {
 			t.Errorf("capture %s appears in both onThisDay and rediscover", id)
 		}
+	}
+}
+
+func TestReviewTodayUsesTimezoneOffset(t *testing.T) {
+	srv, pool := newServer(t)
+	userID, token := createTestUser(t, pool)
+
+	// A capture from today in Japan, one year ago, deliberately placed at a local
+	// clock time whose UTC date is not today's UTC date. Review should care about
+	// the caller's local calendar day, not the server's UTC day.
+	jstOffset := -540 // JavaScript getTimezoneOffset for UTC+09:00.
+	localClock := "interval '30 minutes'"
+	if time.Now().UTC().Hour() >= 15 {
+		localClock = "interval '12 hours'"
+	}
+	jstExpr := fmt.Sprintf("date_trunc('day', now() - make_interval(mins => -540)) + %s + make_interval(mins => -540) - interval '1 year'", localClock)
+	jstToday := insertCaptureAt(t, pool, userID, "local today in Japan", jstExpr)
+
+	resp := do(t, srv.Client(), http.MethodGet,
+		fmt.Sprintf("%s/review/today?timezoneOffsetMinutes=%d", srv.URL, jstOffset),
+		token, nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 for JST review, got %d", resp.StatusCode)
+	}
+	var body struct {
+		OnThisDay []struct{ ID string } `json:"onThisDay"`
+	}
+	decodeBody(t, resp, &body)
+	if !slices.Contains(idsOf(body.OnThisDay), jstToday) {
+		t.Fatalf("JST onThisDay should contain local-today capture; got %v", idsOf(body.OnThisDay))
+	}
+
+	resp = do(t, srv.Client(), http.MethodGet, srv.URL+"/review/today", token, nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 for default UTC review, got %d", resp.StatusCode)
+	}
+	body.OnThisDay = nil
+	decodeBody(t, resp, &body)
+	if slices.Contains(idsOf(body.OnThisDay), jstToday) {
+		t.Fatalf("default UTC onThisDay should not contain the JST-only local-today capture; got %v", idsOf(body.OnThisDay))
 	}
 }
 

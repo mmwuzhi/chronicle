@@ -227,11 +227,15 @@ WHERE id = $1;
 -- name: EnqueueCaptureLinkFetch :exec
 -- Record the URL detected in a text capture and hand it to the link-fetch worker
 -- via the shared transcription_status machine. media_key IS NULL guards it to
--- text captures (a media capture's queue slot belongs to transcription). Called
--- from the create path when LINK_FETCH_ENABLED and the text contains a URL.
+-- text captures (a media capture's queue slot belongs to transcription). Clear
+-- any old link-derived transcript immediately so search never keeps matching a
+-- stale page while the new URL is pending or has failed.
 UPDATE captures
 SET link_url = $2,
+    transcript = NULL,
     transcription_status = 'pending',
+    transcription_model = NULL,
+    transcribed_at = NULL,
     transcription_attempts = 0,
     next_transcription_at = now()
 WHERE id = $1 AND media_key IS NULL AND deleted_at IS NULL;

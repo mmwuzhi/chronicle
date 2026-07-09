@@ -208,12 +208,15 @@ func TestUpdateChangesLinkURL(t *testing.T) {
 
 	patchRawText(t, srv, token, id, "see https://new.example.com/b instead")
 
-	status, linkURL, _ := readLinkState(t, pool, id)
+	status, linkURL, transcript := readLinkState(t, pool, id)
 	if status != "pending" {
 		t.Errorf("status = %q, want pending (re-enqueued for the new URL)", status)
 	}
 	if linkURL == nil || *linkURL != "https://new.example.com/b" {
 		t.Errorf("link_url = %v, want https://new.example.com/b", linkURL)
+	}
+	if transcript != nil {
+		t.Errorf("transcript = %v, want nil so old page text stops matching search", transcript)
 	}
 }
 

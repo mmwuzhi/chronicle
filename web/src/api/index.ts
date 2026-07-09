@@ -666,6 +666,15 @@ export type DueRemindersParams = {
 since?: string;
 };
 
+export type ReviewTodayParams = {
+/**
+ * Client timezone offset in minutes, same sign as JavaScript getTimezoneOffset (UTC minus local)
+ * @minimum -840
+ * @maximum 720
+ */
+timezoneOffsetMinutes?: number;
+};
+
 /**
  * @summary Polish text with AI
  */
@@ -3962,13 +3971,14 @@ export function usePendingReminders<TData = Awaited<ReturnType<typeof pendingRem
  * @summary Captures to revisit today: on-this-day and a rediscover sample
  */
 export const reviewToday = (
-
+    params?: ReviewTodayParams,
  signal?: AbortSignal
 ) => {
 
 
       return api<ReviewTodayOutputBody>(
-      {url: `/review/today`, method: 'GET', signal
+      {url: `/review/today`, method: 'GET',
+        params, signal
     },
       );
     }
@@ -3976,23 +3986,23 @@ export const reviewToday = (
 
 
 
-export const getReviewTodayQueryKey = () => {
+export const getReviewTodayQueryKey = (params?: ReviewTodayParams,) => {
     return [
-    `/review/today`
+    `/review/today`, ...(params ? [params] : [])
     ] as const;
     }
 
 
-export const getReviewTodayQueryOptions = <TData = Awaited<ReturnType<typeof reviewToday>>, TError = ErrorModel>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof reviewToday>>, TError, TData>>, }
+export const getReviewTodayQueryOptions = <TData = Awaited<ReturnType<typeof reviewToday>>, TError = ErrorModel>(params?: ReviewTodayParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof reviewToday>>, TError, TData>>, }
 ) => {
 
 const {query: queryOptions} = options ?? {};
 
-  const queryKey =  queryOptions?.queryKey ?? getReviewTodayQueryKey();
+  const queryKey =  queryOptions?.queryKey ?? getReviewTodayQueryKey(params);
 
 
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof reviewToday>>> = ({ signal }) => reviewToday(signal);
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof reviewToday>>> = ({ signal }) => reviewToday(params, signal);
 
 
 
@@ -4006,7 +4016,7 @@ export type ReviewTodayQueryError = ErrorModel
 
 
 export function useReviewToday<TData = Awaited<ReturnType<typeof reviewToday>>, TError = ErrorModel>(
-  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof reviewToday>>, TError, TData>> & Pick<
+ params: undefined |  ReviewTodayParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof reviewToday>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof reviewToday>>,
           TError,
@@ -4016,7 +4026,7 @@ export function useReviewToday<TData = Awaited<ReturnType<typeof reviewToday>>, 
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 export function useReviewToday<TData = Awaited<ReturnType<typeof reviewToday>>, TError = ErrorModel>(
-  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof reviewToday>>, TError, TData>> & Pick<
+ params?: ReviewTodayParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof reviewToday>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof reviewToday>>,
           TError,
@@ -4026,7 +4036,7 @@ export function useReviewToday<TData = Awaited<ReturnType<typeof reviewToday>>, 
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 export function useReviewToday<TData = Awaited<ReturnType<typeof reviewToday>>, TError = ErrorModel>(
-  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof reviewToday>>, TError, TData>>, }
+ params?: ReviewTodayParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof reviewToday>>, TError, TData>>, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 /**
@@ -4034,11 +4044,11 @@ export function useReviewToday<TData = Awaited<ReturnType<typeof reviewToday>>, 
  */
 
 export function useReviewToday<TData = Awaited<ReturnType<typeof reviewToday>>, TError = ErrorModel>(
-  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof reviewToday>>, TError, TData>>, }
+ params?: ReviewTodayParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof reviewToday>>, TError, TData>>, }
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
-  const queryOptions = getReviewTodayQueryOptions(options)
+  const queryOptions = getReviewTodayQueryOptions(params,options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 

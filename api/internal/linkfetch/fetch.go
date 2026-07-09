@@ -11,6 +11,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"strings"
 	"syscall"
@@ -38,13 +39,62 @@ var ErrBlockedAddress = errors.New("refusing to fetch a private or non-public ad
 // checked through this at every dial, so a public hostname that resolves (or
 // redirects) to an internal IP is still refused.
 func blockedIP(ip net.IP) bool {
-	return ip == nil ||
-		ip.IsLoopback() ||
-		ip.IsPrivate() ||
-		ip.IsLinkLocalUnicast() ||
-		ip.IsLinkLocalMulticast() ||
-		ip.IsUnspecified() ||
-		ip.IsMulticast()
+	addr, ok := addrFromIP(ip)
+	if !ok {
+		return true
+	}
+	addr = addr.Unmap()
+	return !addr.IsGlobalUnicast() ||
+		addr.IsLoopback() ||
+		addr.IsPrivate() ||
+		addr.IsLinkLocalUnicast() ||
+		addr.IsLinkLocalMulticast() ||
+		addr.IsMulticast() ||
+		addr.IsUnspecified() ||
+		inSpecialUseRange(addr)
+}
+
+func addrFromIP(ip net.IP) (netip.Addr, bool) {
+	if ip == nil {
+		return netip.Addr{}, false
+	}
+	if v4 := ip.To4(); v4 != nil {
+		return netip.AddrFrom4([4]byte(v4)), true
+	}
+	if v6 := ip.To16(); v6 != nil {
+		return netip.AddrFrom16([16]byte(v6)), true
+	}
+	return netip.Addr{}, false
+}
+
+func inSpecialUseRange(addr netip.Addr) bool {
+	for _, prefix := range blockedSpecialUsePrefixes {
+		if prefix.Contains(addr) {
+			return true
+		}
+	}
+	return false
+}
+
+var blockedSpecialUsePrefixes = mustPrefixes(
+	"0.0.0.0/8",       // this network
+	"100.64.0.0/10",   // carrier-grade NAT/shared address space
+	"192.0.0.0/24",    // IETF protocol assignments
+	"192.0.2.0/24",    // TEST-NET-1
+	"198.18.0.0/15",   // benchmarking
+	"198.51.100.0/24", // TEST-NET-2
+	"203.0.113.0/24",  // TEST-NET-3
+	"240.0.0.0/4",     // reserved
+	"2001::/23",       // IETF protocol assignments
+	"2001:db8::/32",   // documentation
+)
+
+func mustPrefixes(values ...string) []netip.Prefix {
+	out := make([]netip.Prefix, 0, len(values))
+	for _, value := range values {
+		out = append(out, netip.MustParsePrefix(value))
+	}
+	return out
 }
 
 // newSafeClient builds an HTTP client whose dialer rejects private/loopback

@@ -295,6 +295,9 @@ func (h *handler) reconcileLinkFetch(ctx context.Context, c db.Capture) {
 			ID:      c.ID,
 			LinkUrl: pgtype.Text{String: newURL, Valid: true},
 		}); err == nil {
+			// Enqueue clears any old link-derived transcript immediately; re-index
+			// now so search reflects the current raw text while the new fetch runs.
+			h.rag.Index(c.UserID.String(), c.ID.String())
 			h.kickLinkFetch()
 		}
 		return

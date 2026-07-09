@@ -340,6 +340,8 @@ type CaptureEmbedding struct {
 	EmbedV     int32              `json:"embed_v"`
 	UpdatedAt  pgtype.Timestamptz `json:"updated_at"`
 	SourceHash pgtype.Text        `json:"source_hash"`
+	ChunkIdx   int32              `json:"chunk_idx"`
+	ChunkText  pgtype.Text        `json:"chunk_text"`
 }
 
 type CaptureLink struct {

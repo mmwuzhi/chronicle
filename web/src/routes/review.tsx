@@ -9,7 +9,7 @@ import {
   useSetCaptureRemind,
   useUpdateCapture,
 } from "../api";
-import type { CaptureBody } from "../api";
+import type { CaptureBody, ReviewTodayParams } from "../api";
 import { CaptureFeed } from "../components/CaptureFeed";
 import { MutationToast } from "../components/mutation-toast";
 import { Nav } from "../components/nav";
@@ -26,7 +26,10 @@ function Review() {
   const confirm = useConfirm();
   const mutationToast = useMutationToast();
 
-  const reviewQuery = useReviewToday();
+  const reviewParams: ReviewTodayParams = {
+    timezoneOffsetMinutes: new Date().getTimezoneOffset(),
+  };
+  const reviewQuery = useReviewToday(reviewParams);
   const onThisDay = reviewQuery.data?.onThisDay ?? [];
   const rediscover = reviewQuery.data?.rediscover ?? [];
   const all: CaptureBody[] = [...onThisDay, ...rediscover];
@@ -34,7 +37,9 @@ function Review() {
   // Review is not a hot path, so every edit just invalidates the whole panel
   // rather than patching cached items in place.
   const invalidate = () =>
-    queryClient.invalidateQueries({ queryKey: getReviewTodayQueryKey() });
+    queryClient.invalidateQueries({
+      queryKey: getReviewTodayQueryKey(reviewParams),
+    });
   const onError = () => mutationToast.show(tc("errors.mutationFailed"));
 
   const update = useUpdateCapture({

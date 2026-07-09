@@ -21,8 +21,12 @@ func TestBlockedIP(t *testing.T) {
 		{"172.16.5.4", true},      // private
 		{"192.168.1.1", true},     // private
 		{"169.254.169.254", true}, // cloud metadata (link-local)
+		{"100.64.0.1", true},      // carrier-grade NAT/shared address space
+		{"198.18.0.1", true},      // benchmarking network
+		{"203.0.113.10", true},    // TEST-NET documentation range
 		{"fe80::1", true},         // link-local v6
 		{"fc00::1", true},         // ULA private v6
+		{"2001:db8::1", true},     // documentation range
 		{"0.0.0.0", true},         // unspecified
 		{"224.0.0.1", true},       // multicast
 		{"8.8.8.8", false},        // public
