@@ -258,6 +258,22 @@ swift build                       # compile the menu bar app
 python -m pytest                  # Python tests (use python -m so top-level imports resolve)
 ```
 
+How changes reach the running dev stack:
+
+- The api container is image-baked (`build: ./api`): a code change reaches it
+  only while a `docker compose watch` session (`make dev`) is running to
+  rebuild it, or via a manual `docker compose up -d --build api`. When in
+  doubt, compare the image's `Created` time (`docker inspect`) with the source
+  file's mtime.
+- The web container bind-mounts `./web` and runs Vite — changes hot-reload,
+  no rebuild ever.
+- Migrations are never auto-applied to the dev DB (nothing runs goose at API
+  startup): apply with `make migrate`. Tests are unaffected — `testutil`
+  migrates the separate `chronicle_test` DB on every run.
+- There is no `/healthz`; probe API liveness with `GET /users/me` → 401.
+- ragsvc tests need the project venv: run `.venv/bin/python -m pytest` from
+  `ragsvc/` (a bare system python won't have pytest).
+
 ## Conventions
 
 - **All DB queries live in `api/db/queries/*.sql`.** sqlc generates the Go code. Never write raw SQL in Go files.
