@@ -1,0 +1,25 @@
+{
+  "_comment": "Shared golden fixture for the #todo tag grammar. Asserted by BOTH api/internal/capture/todotag_parity_test.go (present/done/doneDate) and web/src/utils/todo.parity.test.ts (present/done only — the web regex deliberately does not capture the date, since done_at derivation is server-side). The grammar is defined twice — todoTagRe in api/internal/capture/todotag.go and TODO_TAG_RE in web/src/utils/todo.ts — and must change together; any drift breaks one of these two tests. See the root CLAUDE.md 'tag grammar is defined twice' note.",
+  "cases": [
+    { "desc": "bare tag at start of text", "text": "#todo", "present": true, "done": false, "doneDate": "" },
+    { "desc": "bare tag then trailing prose", "text": "#todo buy milk", "present": true, "done": false, "doneDate": "" },
+    { "desc": "tag after prose (whitespace before)", "text": "buy milk #todo", "present": true, "done": false, "doneDate": "" },
+    { "desc": "tag after newline boundary", "text": "line one\n#todo", "present": true, "done": false, "doneDate": "" },
+    { "desc": "tag after tab boundary", "text": "a\t#todo", "present": true, "done": false, "doneDate": "" },
+    { "desc": "tag followed by a period", "text": "#todo.", "present": true, "done": false, "doneDate": "" },
+    { "desc": "done without a date", "text": "#todo(done)", "present": true, "done": true, "doneDate": "" },
+    { "desc": "done with an explicit date", "text": "#todo(done:2026-07-09)", "present": true, "done": true, "doneDate": "2026-07-09" },
+    { "desc": "dated done inside a sentence", "text": "finished it #todo(done:2026-07-09)", "present": true, "done": true, "doneDate": "2026-07-09" },
+    { "desc": "dated done then trailing period", "text": "review #todo(done:2026-07-09).", "present": true, "done": true, "doneDate": "2026-07-09" },
+    { "desc": "first occurrence is authoritative (bare before dated)", "text": "#todo and later #todo(done:2026-07-09)", "present": true, "done": false, "doneDate": "" },
+    { "desc": "plural is a different tag", "text": "#todos", "present": false, "done": false, "doneDate": "" },
+    { "desc": "hyphen suffix is a different tag", "text": "#todo-list", "present": false, "done": false, "doneDate": "" },
+    { "desc": "CJK suffix is a different tag", "text": "#todo买牛奶", "present": false, "done": false, "doneDate": "" },
+    { "desc": "URL fragment is not a tag (no whitespace/start before)", "text": "https://x.com/#todo", "present": false, "done": false, "doneDate": "" },
+    { "desc": "malformed parameter disqualifies the token", "text": "#todo(later)", "present": false, "done": false, "doneDate": "" },
+    { "desc": "malformed date disqualifies the token", "text": "#todo(done:2026-7-9)", "present": false, "done": false, "doneDate": "" },
+    { "desc": "uppercase is not the tag (case-sensitive)", "text": "#TODO", "present": false, "done": false, "doneDate": "" },
+    { "desc": "word without a hash is not a tag", "text": "todo", "present": false, "done": false, "doneDate": "" },
+    { "desc": "empty text", "text": "", "present": false, "done": false, "doneDate": "" }
+  ]
+}

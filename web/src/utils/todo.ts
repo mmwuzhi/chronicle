@@ -6,6 +6,21 @@
 export const TODO_TAG_RE =
   /(^|\s)(#todo(\(done(?::\d{4}-\d{2}-\d{2})?\))?)(?=[^\p{L}\p{N}_(-]|$)/u;
 
+// Parse the first #todo token in text, mirroring the API's parseTodoTag
+// (api/internal/capture/todotag.go). `present` is whether the standalone tag
+// occurs at all; `done` is whether that first tag carries a (done…) parameter.
+// The done *date* is intentionally not surfaced here — completion timestamps are
+// derived server-side; the web only needs to know present/done to render the
+// chip. Later occurrences are inert: the first tag is authoritative.
+export function parseTodoTag(text: string): {
+  present: boolean;
+  done: boolean;
+} {
+  const m = TODO_TAG_RE.exec(text);
+  if (!m) return { present: false, done: false };
+  return { present: true, done: Boolean(m[3]) };
+}
+
 // The trailing #-token being typed at the end of the composer text, used to
 // drive the tag suggestion menu ("#", "#t", "#todo"…). Null when the text
 // does not end in one.
