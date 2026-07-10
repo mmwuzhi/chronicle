@@ -69,14 +69,13 @@ function Review() {
       update.mutate({ id, data: { rawText } }),
     onSaveTranscript: (id: string, transcript: string) =>
       update.mutate({ id, data: { transcript } }),
-    onUseTranscript: (id: string, mode: "append" | "replace") => {
-      const c = all.find((x) => x.id === id);
-      if (!c?.transcript) return;
+    onUseTranscript: (capture: CaptureBody, mode: "append" | "replace") => {
+      if (!capture.transcript) return;
       const rawText =
-        mode === "append" && c.rawText
-          ? `${c.rawText}\n\n${c.transcript}`
-          : c.transcript;
-      update.mutate({ id, data: { rawText } });
+        mode === "append" && capture.rawText
+          ? `${capture.rawText}\n\n${capture.transcript}`
+          : capture.transcript;
+      update.mutate({ id: capture.id, data: { rawText } });
     },
     onRetryTranscription: (id: string) => retryTranscription.mutate({ id }),
     onSetRemind: (id: string, at: string | null, hide: boolean) =>

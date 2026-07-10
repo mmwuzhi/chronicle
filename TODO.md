@@ -25,6 +25,7 @@ Deferred work.
 
 ## Capture-First Roadmap
 
+- Web feed virtualization: the captures list keeps every loaded page mounted. Load-more is a manual button so growth is bounded in practice; if deep feeds ever jank, add @tanstack/react-virtual (measure first — the 2026-07-11 memoization pass already removed the markdown re-parse cost).
 - Desktop polish (remaining): launch at login, app signing. (Shipped: packaged app via `scripts/build-app.sh`, sign-in/token flow in Settings, queue retry with sent/remaining in Settings, configurable global hotkey.)
 - Automatic developer capture: Git commits, GitHub pull requests, GitHub issues, and VSCode activity.
 - Browser extension capture: save selected text, current page, and research notes into the capture inbox.

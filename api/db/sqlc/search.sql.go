@@ -13,46 +13,52 @@ import (
 )
 
 const searchCaptures = `-- name: SearchCaptures :many
-WITH ranked AS (
+WITH params AS (
+  SELECT
+    $2::text AS q,
+    '%' || replace(replace(replace($2::text,
+      '\', '\\'), '%', '\%'), '_', '\_') || '%' AS q_like
+),
+ranked AS (
   SELECT
     captures.id, captures.user_id, captures.raw_text, captures.media_url, captures.media_type, captures.created_at, captures.source, captures.transcript, captures.transcription_status, captures.transcription_model, captures.transcription_attempts, captures.transcribed_at, captures.next_transcription_at, captures.audio_duration_sec, captures.media_key, captures.remind_at, captures.deleted_at, captures.remind_hide, captures.todo_at, captures.done_at, captures.link_url,
     CASE
-      WHEN raw_text ILIKE '%' || $2::text || '%' THEN 'rawText'
-      WHEN transcript ILIKE '%' || $2::text || '%' THEN 'transcript'
+      WHEN raw_text ILIKE params.q_like THEN 'rawText'
+      WHEN transcript ILIKE params.q_like THEN 'transcript'
       WHEN ts_rank_cd(
         to_tsvector('simple', COALESCE(raw_text, '')),
-        websearch_to_tsquery('simple', $2::text)
+        websearch_to_tsquery('simple', params.q)
       ) >= ts_rank_cd(
         to_tsvector('simple', COALESCE(transcript, '')),
-        websearch_to_tsquery('simple', $2::text)
+        websearch_to_tsquery('simple', params.q)
       ) THEN 'rawText'
       ELSE 'transcript'
     END AS matched_field,
     (
       CASE
-        WHEN raw_text ILIKE '%' || $2::text || '%' THEN 2.0
-        WHEN transcript ILIKE '%' || $2::text || '%' THEN 1.8
+        WHEN raw_text ILIKE params.q_like THEN 2.0
+        WHEN transcript ILIKE params.q_like THEN 1.8
         ELSE 0.0
       END
       + GREATEST(
-          similarity(COALESCE(raw_text, ''), $2::text),
-          similarity(COALESCE(transcript, ''), $2::text)
+          similarity(COALESCE(raw_text, ''), params.q),
+          similarity(COALESCE(transcript, ''), params.q)
         )
       + ts_rank_cd(
           to_tsvector('simple', COALESCE(raw_text, '') || ' ' || COALESCE(transcript, '')),
-          websearch_to_tsquery('simple', $2::text)
+          websearch_to_tsquery('simple', params.q)
         )
     )::double precision AS relevance
-  FROM captures
+  FROM captures, params
   WHERE user_id = $3
     AND deleted_at IS NULL
     AND (
-      raw_text ILIKE '%' || $2::text || '%'
-      OR transcript ILIKE '%' || $2::text || '%'
+      raw_text ILIKE params.q_like
+      OR transcript ILIKE params.q_like
       OR to_tsvector(
         'simple',
         COALESCE(raw_text, '') || ' ' || COALESCE(transcript, '')
-      ) @@ websearch_to_tsquery('simple', $2::text)
+      ) @@ websearch_to_tsquery('simple', params.q)
     )
 )
 SELECT id, user_id, raw_text, media_url, media_type, created_at, source, transcript, transcription_status, transcription_model, transcription_attempts, transcribed_at, next_transcription_at, audio_duration_sec, media_key, remind_at, deleted_at, remind_hide, todo_at, done_at, link_url, matched_field, relevance FROM ranked
@@ -92,6 +98,10 @@ type SearchCapturesRow struct {
 	Relevance             float64             `json:"relevance"`
 }
 
+// params computes the literal-substring pattern once: ILIKE wildcards in the
+// user's query (% _ \) are escaped so they match themselves instead of acting
+// as wildcards — an unescaped "%" would ILIKE-match every capture and inflate
+// its relevance as a fake literal hit. FTS and similarity() keep the raw query.
 func (q *Queries) SearchCaptures(ctx context.Context, arg SearchCapturesParams) ([]SearchCapturesRow, error) {
 	rows, err := q.db.Query(ctx, searchCaptures, arg.ResultLimit, arg.Query, arg.UserID)
 	if err != nil {

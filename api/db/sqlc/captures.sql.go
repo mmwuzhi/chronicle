@@ -853,11 +853,20 @@ const listTrashedCaptures = `-- name: ListTrashedCaptures :many
 SELECT id, user_id, raw_text, media_url, media_type, created_at, source, transcript, transcription_status, transcription_model, transcription_attempts, transcribed_at, next_transcription_at, audio_duration_sec, media_key, remind_at, deleted_at, remind_hide, todo_at, done_at, link_url FROM captures
 WHERE user_id = $1 AND deleted_at IS NOT NULL
 ORDER BY deleted_at DESC, id DESC
+LIMIT $2
 `
 
+type ListTrashedCapturesParams struct {
+	UserID      uuid.UUID `json:"user_id"`
+	ResultLimit int32     `json:"result_limit"`
+}
+
 // Soft-deleted captures, for the trash view. Most-recently-deleted first.
-func (q *Queries) ListTrashedCaptures(ctx context.Context, userID uuid.UUID) ([]Capture, error) {
-	rows, err := q.db.Query(ctx, listTrashedCaptures, userID)
+// Capped: a user who never empties the trash would otherwise grow this
+// response without bound. Older trashed rows stay restorable one-by-one once
+// the newer ones are purged, and empty-trash always clears everything.
+func (q *Queries) ListTrashedCaptures(ctx context.Context, arg ListTrashedCapturesParams) ([]Capture, error) {
+	rows, err := q.db.Query(ctx, listTrashedCaptures, arg.UserID, arg.ResultLimit)
 	if err != nil {
 		return nil, err
 	}

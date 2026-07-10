@@ -52,12 +52,20 @@ func (h *handler) delete(ctx context.Context, input *CaptureDeleteInput) (*struc
 
 type CaptureTrashListInput struct{}
 
+// maxTrashList caps the trash listing so a user who never empties the trash
+// can't grow the response without bound. Older rows stay restorable once the
+// newer ones are purged or restored; empty-trash always clears everything.
+const maxTrashList = 500
+
 func (h *handler) listTrash(ctx context.Context, _ *CaptureTrashListInput) (*ListOutput, error) {
 	uid, err := userID(ctx)
 	if err != nil {
 		return nil, err
 	}
-	rows, err := h.q.ListTrashedCaptures(ctx, uid)
+	rows, err := h.q.ListTrashedCaptures(ctx, db.ListTrashedCapturesParams{
+		UserID:      uid,
+		ResultLimit: maxTrashList,
+	})
 	if err != nil {
 		return nil, huma.Error500InternalServerError("internal error")
 	}

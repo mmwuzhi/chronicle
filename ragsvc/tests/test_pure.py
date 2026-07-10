@@ -163,6 +163,28 @@ def test_capture_max_sims_takes_best_chunk(monkeypatch):
     assert best_text[2] is None
 
 
+def test_stored_query_vec_reuses_chunks(monkeypatch):
+    # related() rebuilds a capture's query vector from its stored chunks instead
+    # of re-embedding: a single chunk IS the stored vector, multiple chunks give
+    # the normalised mean, and anything unusable (stale model, no chunks) is
+    # None so the caller falls back to a fresh embed.
+    monkeypatch.setattr(rag, "active_embed_model", lambda: "m")
+    v1 = np.array([2.0, 0.0], dtype=np.float32)
+    v2 = np.array([0.0, 1.0], dtype=np.float32)
+
+    single = {"model": "m", "chunks": [v1.tobytes()]}
+    got = rag._stored_query_vec(single)
+    assert got is not None and np.allclose(got, v1)
+
+    multi = {"model": "m", "chunks": [v1.tobytes(), v2.tobytes()]}
+    got = rag._stored_query_vec(multi)
+    # Mean of the *normalised* chunks: ([1,0] + [0,1]) / 2.
+    assert got is not None and np.allclose(got, [0.5, 0.5])
+
+    assert rag._stored_query_vec({"model": "old", "chunks": [v1.tobytes()]}) is None
+    assert rag._stored_query_vec({"model": "m", "chunks": []}) is None
+
+
 def test_renumber_maps_positions_to_uuids():
     cluster = [
         rag.Fragment("11111111-1111-1111-1111-111111111111", "拉面 1200日元", "2026-06-10T12:00:00"),

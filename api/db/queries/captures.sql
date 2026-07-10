@@ -328,9 +328,13 @@ RETURNING id;
 
 -- name: ListTrashedCaptures :many
 -- Soft-deleted captures, for the trash view. Most-recently-deleted first.
+-- Capped: a user who never empties the trash would otherwise grow this
+-- response without bound. Older trashed rows stay restorable one-by-one once
+-- the newer ones are purged, and empty-trash always clears everything.
 SELECT * FROM captures
 WHERE user_id = $1 AND deleted_at IS NOT NULL
-ORDER BY deleted_at DESC, id DESC;
+ORDER BY deleted_at DESC, id DESC
+LIMIT sqlc.arg('result_limit');
 
 -- name: RestoreCapture :one
 -- Undo a soft delete. Idempotent — restoring a live capture matches no row and

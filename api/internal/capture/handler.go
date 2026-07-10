@@ -252,14 +252,16 @@ func (h *handler) create(ctx context.Context, input *CaptureCreateInput) (*Creat
 			return nil, huma.Error500InternalServerError("internal error")
 		}
 	}
-	// Only index when there's text to embed; media-only captures get indexed once
-	// their transcript lands (transcription worker), not here.
-	if input.Body.RawText != nil && strings.TrimSpace(*input.Body.RawText) != "" {
+	// On create the prior link_url is always absent, so reconcile just enqueues
+	// a fetch when the new text carries a URL — and re-indexes once itself.
+	indexed := h.reconcileLinkFetch(ctx, c)
+	// Only index when there's text to embed and reconcile didn't already do it
+	// (indexing twice would also run the sidecar's LLM extraction twice);
+	// media-only captures get indexed once their transcript lands
+	// (transcription worker), not here.
+	if !indexed && input.Body.RawText != nil && strings.TrimSpace(*input.Body.RawText) != "" {
 		h.rag.Index(uid.String(), c.ID.String())
 	}
-	// On create the prior link_url is always absent, so reconcile just enqueues
-	// a fetch when the new text carries a URL.
-	h.reconcileLinkFetch(ctx, c)
 	return &CreateOutput{Body: toBody(c)}, nil
 }
 
@@ -273,11 +275,15 @@ func (h *handler) create(ctx context.Context, input *CaptureCreateInput) (*Creat
 //   - URL unchanged         → no-op, so editing surrounding words never re-fetches
 //   - URL removed           → clear the link-derived transcript and re-embed
 //
+// Returns true when it re-indexed the capture itself (enqueue or clear
+// succeeded): the caller must then skip its own reindex, or one write would
+// embed — and LLM-extract — the same content twice.
+//
 // Best-effort: a failed enqueue/clear never fails the capture write, matching
 // the RAG-indexing policy.
-func (h *handler) reconcileLinkFetch(ctx context.Context, c db.Capture) {
+func (h *handler) reconcileLinkFetch(ctx context.Context, c db.Capture) bool {
 	if !h.linkFetchEnabled || c.MediaType != db.CaptureMediaTypeText {
-		return
+		return false
 	}
 	newURL := ""
 	if c.RawText.Valid {
@@ -288,24 +294,27 @@ func (h *handler) reconcileLinkFetch(ctx context.Context, c db.Capture) {
 		oldURL = c.LinkUrl.String
 	}
 	if newURL == oldURL {
-		return
+		return false
 	}
 	if newURL != "" {
 		if err := h.q.EnqueueCaptureLinkFetch(ctx, db.EnqueueCaptureLinkFetchParams{
 			ID:      c.ID,
 			LinkUrl: pgtype.Text{String: newURL, Valid: true},
-		}); err == nil {
-			// Enqueue clears any old link-derived transcript immediately; re-index
-			// now so search reflects the current raw text while the new fetch runs.
-			h.rag.Index(c.UserID.String(), c.ID.String())
-			h.kickLinkFetch()
+		}); err != nil {
+			return false
 		}
-		return
+		// Enqueue clears any old link-derived transcript immediately; re-index
+		// now so search reflects the current raw text while the new fetch runs.
+		h.rag.Index(c.UserID.String(), c.ID.String())
+		h.kickLinkFetch()
+		return true
 	}
 	// URL edited out: drop the stale page text and re-embed the shorter content.
-	if err := h.q.ClearCaptureLinkFetch(ctx, c.ID); err == nil {
-		h.rag.Index(c.UserID.String(), c.ID.String())
+	if err := h.q.ClearCaptureLinkFetch(ctx, c.ID); err != nil {
+		return false
 	}
+	h.rag.Index(c.UserID.String(), c.ID.String())
+	return true
 }
 
 // --- update ---
@@ -350,15 +359,19 @@ func (h *handler) update(ctx context.Context, input *CaptureUpdateInput) (*Updat
 		}
 		return nil, huma.Error500InternalServerError("internal error")
 	}
-	// Reindex only when the indexable text actually changed — an empty PATCH
-	// must not trigger embedding + extraction.
-	if input.Body.RawText != nil || input.Body.Transcript != nil {
-		h.rag.Index(uid.String(), c.ID.String())
-	}
 	// A raw_text edit can add, change, or drop the capture's URL; keep link
 	// enrichment in step. Skipped for a transcript-only patch (raw_text nil).
+	// Runs before the general reindex: when it enqueues or clears it re-indexes
+	// once itself (post-clear, so no stale link transcript is embedded).
+	indexed := false
 	if input.Body.RawText != nil {
-		h.reconcileLinkFetch(ctx, c)
+		indexed = h.reconcileLinkFetch(ctx, c)
+	}
+	// Reindex only when the indexable text actually changed and reconcile didn't
+	// already do it — an empty PATCH must not trigger embedding + extraction,
+	// and a URL change must not embed + LLM-extract twice.
+	if !indexed && (input.Body.RawText != nil || input.Body.Transcript != nil) {
+		h.rag.Index(uid.String(), c.ID.String())
 	}
 	return &UpdateOutput{Body: toBody(c)}, nil
 }

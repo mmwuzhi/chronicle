@@ -289,13 +289,13 @@ def index_capture(capture_id: str, user_id: str) -> bool:
         if (cur[0] or "").strip() != content:
             return False  # content moved on; the newer index task owns this row
         conn.execute("DELETE FROM capture_embeddings WHERE capture_id = %s", (capture_id,))
-        for idx, (vec, ch) in enumerate(zip(vecs, chunks)):
-            conn.execute(
-                "INSERT INTO capture_embeddings "
-                "(capture_id, user_id, chunk_idx, embedding, chunk_text, model, embed_v, source_hash, updated_at) "
-                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, now())",
-                (capture_id, user_id, idx, vec, ch, model, EMBED_V, source_hash),
-            )
+        conn.cursor().executemany(
+            "INSERT INTO capture_embeddings "
+            "(capture_id, user_id, chunk_idx, embedding, chunk_text, model, embed_v, source_hash, updated_at) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, now())",
+            [(capture_id, user_id, idx, vec, ch, model, EMBED_V, source_hash)
+             for idx, (vec, ch) in enumerate(zip(vecs, chunks))],
+        )
     return True
 
 
@@ -452,10 +452,19 @@ def _capture_max_sims(snap: _Snapshot, qv: np.ndarray):
     if mat.shape[0]:
         sims = _cosines(mat, qv)
         np.maximum.at(best, owner, sims)  # per-capture max, vectorised over chunks
-        for j in range(len(owner)):
-            o = int(owner[j])
+        # Argmax chunk text per capture: sort chunks by (owner, sim) and take
+        # each owner group's last entry — one Python step per capture, not per
+        # chunk. The sim == best guard keeps an all-negative capture's text at
+        # None (best stays at its 0 init, which no chunk matches).
+        order = np.lexsort((sims, owner))
+        owners_sorted = owner[order]
+        group_last = np.flatnonzero(
+            np.r_[owners_sorted[1:] != owners_sorted[:-1], True])
+        for pos in group_last:
+            j = int(order[pos])
+            o = int(owners_sorted[pos])
             if texts[j] is not None and float(sims[j]) == float(best[o]):
-                best_text[o] = texts[j]  # the argmax chunk's text (ties: last wins)
+                best_text[o] = texts[j]
     return best, best_text
 
 
@@ -509,14 +518,40 @@ def neighbors(user_id: str, query: str, limit: int = 20) -> list[Fragment]:
             for i in order]
 
 
+def _stored_query_vec(row: dict) -> np.ndarray | None:
+    """A capture's own query vector rebuilt from its stored chunks: the
+    normalised mean of its active-model chunk vectors — for the common
+    single-chunk capture that is exactly the stored vector, i.e. the same
+    embedding a fresh embed of the content would produce. None when nothing
+    usable is stored (no chunks yet, stale model, mixed dims) — the caller
+    falls back to a fresh embed."""
+    if row.get("model") != active_embed_model():
+        return None
+    chunks = row.get("chunks") or []
+    if not chunks:
+        return None
+    vecs = [np.frombuffer(b, dtype=np.float32) for b in chunks]
+    dim = len(vecs[0])
+    if dim == 0 or any(len(v) != dim for v in vecs):
+        return None
+    if len(vecs) == 1:
+        return vecs[0]
+    mat = np.vstack(vecs)
+    norms = np.linalg.norm(mat, axis=1, keepdims=True)
+    norms[norms == 0] = 1.0
+    return (mat / norms).mean(axis=0)
+
+
 def related(user_id: str, capture_id: str, limit: int = 10) -> list[dict]:
     """Semantic neighbours of ONE capture, for the 'Related' surface: score the
     user's other captures against this capture's meaning (max cosine over their
-    chunks), excluding the capture itself. The query vector is the capture's full
-    content freshly embedded — with chunked storage there is no single stored
-    vector to reuse, and Related is an on-open surface, not a hot path. Returns
-    dicts shaped like /find items. Empty — never an error — when embeddings are
-    disabled or the capture has no indexable text (media-only / missing)."""
+    chunks), excluding the capture itself. The query vector is rebuilt from the
+    capture's own stored chunk vectors (_stored_query_vec), so opening Related
+    normally costs no embed round-trip; a fresh full-content embed is the
+    fallback when nothing usable is stored (just created, model switched,
+    backfill pending). Returns dicts shaped like /find items. Empty — never an
+    error — when embeddings are disabled or the capture has no indexable text
+    (media-only / missing)."""
     if not EMBED_ENABLED:
         return []
     snap = _snapshot(user_id)
@@ -524,7 +559,10 @@ def related(user_id: str, capture_id: str, limit: int = 10) -> list[dict]:
     own = next((r for r in metas if r["id"] == capture_id), None)
     if own is None or not own["content"].strip():
         return []
-    best, _ = _capture_max_sims(snap, embed(own["content"]))
+    qv = _stored_query_vec(own)
+    if qv is None:
+        qv = embed(own["content"])
+    best, _ = _capture_max_sims(snap, qv)
     out: list[dict] = []
     for i in np.argsort(-best):
         if metas[i]["id"] == capture_id:

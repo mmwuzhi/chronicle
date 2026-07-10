@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, memo } from "react";
 import { useTranslation } from "react-i18next";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { useQueryClient } from "@tanstack/react-query";
@@ -64,7 +64,13 @@ export function AutoTextarea({
   );
 }
 
-export function CaptureCard({
+// Memoized: the cache patchers keep untouched items' references, so a
+// single-item mutation re-renders only that card — provided the callbacks
+// passed down are stable (the captures route useCallback-wraps them).
+// onUseTranscript receives the whole capture (the card already holds it) so
+// the parent handler doesn't have to close over the captures array, which
+// would give it a new identity on every data change.
+export const CaptureCard = memo(function CaptureCard({
   c,
   onDelete,
   onSaveText,
@@ -78,7 +84,7 @@ export function CaptureCard({
   onDelete: (id: string) => void;
   onSaveText: (id: string, text: string) => void;
   onSaveTranscript: (id: string, transcript: string) => void;
-  onUseTranscript: (id: string, mode: "append" | "replace") => void;
+  onUseTranscript: (capture: CaptureBody, mode: "append" | "replace") => void;
   onRetryTranscription: (id: string) => void;
   onSetRemind: (id: string, at: string | null, hide: boolean) => void;
   onMutationError: () => void;
@@ -255,14 +261,14 @@ export function CaptureCard({
                 {c.rawText && (
                   <button
                     className="ch-btn ch-btn-sm"
-                    onClick={() => onUseTranscript(c.id, "append")}
+                    onClick={() => onUseTranscript(c, "append")}
                   >
                     {t("transcript.append")}
                   </button>
                 )}
                 <button
                   className="ch-btn ch-btn-primary ch-btn-sm"
-                  onClick={() => onUseTranscript(c.id, "replace")}
+                  onClick={() => onUseTranscript(c, "replace")}
                 >
                   {c.rawText
                     ? t("transcript.replace")
@@ -352,7 +358,7 @@ export function CaptureCard({
       </div>
     </li>
   );
-}
+});
 
 function CaptureAttachments({
   attachments,

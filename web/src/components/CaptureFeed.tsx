@@ -11,7 +11,7 @@ interface CaptureFeedProps {
   onDelete: (id: string) => void;
   onSaveText: (id: string, text: string) => void;
   onSaveTranscript: (id: string, transcript: string) => void;
-  onUseTranscript: (id: string, mode: "append" | "replace") => void;
+  onUseTranscript: (capture: CaptureBody, mode: "append" | "replace") => void;
   onRetryTranscription: (id: string) => void;
   onSetRemind: (id: string, at: string | null, hide: boolean) => void;
   onMutationError: () => void;

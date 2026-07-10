@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import {
@@ -11,6 +11,7 @@ import {
   useRetryCaptureTranscription,
   useSetCaptureRemind,
   useUpdateCapture,
+  type CaptureBody,
 } from "../api";
 import {
   appendAttachmentInPages,
@@ -111,6 +112,56 @@ function Captures() {
       onError: () => mutationToast.show(tc("errors.mutationFailed")),
     },
   });
+
+  // Every feed callback is useCallback-stable (mutate/confirm/show are stable
+  // references) so the memoized CaptureCard rows actually skip re-rendering —
+  // and re-parsing their markdown — when a sibling item changes.
+  const onDelete = useCallback(
+    async (id: string) => {
+      const confirmed = await confirm({
+        title: tc("confirm.deleteCapture"),
+        description: tc("confirm.cannotUndo"),
+        confirmLabel: tc("actions.delete"),
+        variant: "danger",
+      });
+      if (confirmed) remove.mutate({ id });
+    },
+    [confirm, remove.mutate, tc],
+  );
+  const onSaveText = useCallback(
+    (id: string, rawText: string) => update.mutate({ id, data: { rawText } }),
+    [update.mutate],
+  );
+  const onSaveTranscript = useCallback(
+    (id: string, transcript: string) =>
+      update.mutate({ id, data: { transcript } }),
+    [update.mutate],
+  );
+  const onUseTranscript = useCallback(
+    (capture: CaptureBody, mode: "append" | "replace") => {
+      if (!capture.transcript) return;
+      const rawText =
+        mode === "append" && capture.rawText
+          ? `${capture.rawText}\n\n${capture.transcript}`
+          : capture.transcript;
+      update.mutate({ id: capture.id, data: { rawText } });
+    },
+    [update.mutate],
+  );
+  const onRetryTranscription = useCallback(
+    (id: string) => retryTranscription.mutate({ id }),
+    [retryTranscription.mutate],
+  );
+  const onSetRemind = useCallback(
+    (id: string, at: string | null, hide: boolean) =>
+      setRemind.mutate({ id, data: { at: at ?? undefined, hide } }),
+    [setRemind.mutate],
+  );
+  const onMutationError = useCallback(
+    () => mutationToast.show(tc("errors.mutationFailed")),
+    [mutationToast.show, tc],
+  );
+
   if (captureQuery.error) {
     if (captureQuery.error.status === 401) {
       void navigate({ to: "/login" });
@@ -179,35 +230,13 @@ function Captures() {
           hasMore={captureQuery.hasNextPage}
           loadingMore={captureQuery.isFetchingNextPage}
           onLoadMore={() => void captureQuery.fetchNextPage()}
-          onDelete={async (id) => {
-            const confirmed = await confirm({
-              title: tc("confirm.deleteCapture"),
-              description: tc("confirm.cannotUndo"),
-              confirmLabel: tc("actions.delete"),
-              variant: "danger",
-            });
-            if (confirmed) remove.mutate({ id });
-          }}
-          onSaveText={(id, rawText) => update.mutate({ id, data: { rawText } })}
-          onSaveTranscript={(id, transcript) =>
-            update.mutate({ id, data: { transcript } })
-          }
-          onUseTranscript={(id, mode) => {
-            const capture = captures.find((item) => item.id === id);
-            if (!capture?.transcript) return;
-            const rawText =
-              mode === "append" && capture.rawText
-                ? `${capture.rawText}\n\n${capture.transcript}`
-                : capture.transcript;
-            update.mutate({ id, data: { rawText } });
-          }}
-          onRetryTranscription={(id) => retryTranscription.mutate({ id })}
-          onSetRemind={(id, at, hide) =>
-            setRemind.mutate({ id, data: { at: at ?? undefined, hide } })
-          }
-          onMutationError={() =>
-            mutationToast.show(tc("errors.mutationFailed"))
-          }
+          onDelete={onDelete}
+          onSaveText={onSaveText}
+          onSaveTranscript={onSaveTranscript}
+          onUseTranscript={onUseTranscript}
+          onRetryTranscription={onRetryTranscription}
+          onSetRemind={onSetRemind}
+          onMutationError={onMutationError}
         />
       </main>
       <MutationToast message={mutationToast.message} />
