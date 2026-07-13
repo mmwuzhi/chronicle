@@ -38,7 +38,7 @@ Type safety flows end-to-end: Go structs → huma generates `/openapi.json` → 
 
 ## Local Setup
 
-**Prerequisites:** Docker or OrbStack, Go 1.26+, Node 22+, pnpm 11+, just
+**Prerequisites:** Docker or OrbStack, Go 1.26+, Node 22+, pnpm 11+, just, and `staticcheck` for API linting
 
 ```bash
 # 1. Clone and copy env

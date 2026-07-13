@@ -73,6 +73,7 @@ test:
 
 # vet + staticcheck the API
 lint:
+    @command -v staticcheck >/dev/null 2>&1 || { echo "staticcheck is required: go install honnef.co/go/tools/cmd/staticcheck@latest"; exit 1; }
     cd {{ api_dir }} && go vet ./... && staticcheck ./...
 
 # apply pending migrations
