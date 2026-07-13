@@ -277,6 +277,33 @@ WHERE id = (
 )
 RETURNING *;
 
+-- name: PrepareCaptureLinkFetch :execrows
+-- Pin the URL a claimed job is about to fetch. Backfilled jobs enter the queue
+-- with link_url NULL and derive the exact target from raw_text in Go; persisting
+-- it before the network request gives every terminal write a generation token.
+-- If an edit already superseded this claim (status is no longer processing or a
+-- different URL is stored), zero rows are updated and the stale worker stops.
+UPDATE captures
+SET link_url = sqlc.arg('link_url')::text
+WHERE id = sqlc.arg('id')
+  AND media_key IS NULL
+  AND deleted_at IS NULL
+  AND transcription_status = 'processing'
+  AND (link_url IS NULL OR link_url = sqlc.arg('link_url')::text);
+
+-- name: SkipUnresolvedLinkFetch :execrows
+-- A coarse SQL backfill match contained no URL accepted by the Go grammar. Only
+-- skip the still-current NULL-link claim; if the user added a real URL after the
+-- claim, EnqueueCaptureLinkFetch has already replaced both link_url and status.
+UPDATE captures
+SET transcription_status = 'skipped',
+    next_transcription_at = NULL
+WHERE id = sqlc.arg('id')
+  AND media_key IS NULL
+  AND deleted_at IS NULL
+  AND link_url IS NULL
+  AND transcription_status = 'processing';
+
 -- name: MinScheduledLinkFetchIn :one
 -- Seconds until the earliest not-yet-claimable link-fetch job comes due (failure
 -- backoff or a crashed 'processing' lease). Link-job counterpart to
@@ -288,10 +315,13 @@ WHERE transcription_status IN ('pending', 'processing')
   AND deleted_at IS NULL
   AND next_transcription_at > now();
 
--- name: CompleteCaptureLinkFetch :exec
+-- name: CompleteCaptureLinkFetch :execrows
 -- Store the fetched page text as the capture's transcript (now its indexable
 -- content) and record the resolved URL, so a backfilled row that entered the
 -- queue without link_url ends up with the URL the worker actually fetched.
+-- The URL + processing predicate is a compare-and-set lease: an older request
+-- that finishes after the user changed/removed the URL must not restore stale
+-- content or cancel the replacement job.
 UPDATE captures
 SET transcript = $2,
     link_url = $3,
@@ -299,7 +329,44 @@ SET transcript = $2,
     transcription_model = $4,
     transcribed_at = now(),
     next_transcription_at = NULL
-WHERE id = $1;
+WHERE id = $1
+  AND media_key IS NULL
+  AND deleted_at IS NULL
+  AND link_url = $3
+  AND transcription_status = 'processing';
+
+-- name: FailCaptureLinkFetch :execrows
+-- Link-job counterpart to FailCaptureTranscription, guarded by the URL lease so
+-- an old failed request cannot strand a newly-enqueued URL (whose attempts were
+-- reset to zero) with a NULL retry time.
+UPDATE captures
+SET transcription_status = CASE
+      WHEN transcription_attempts >= 4 THEN 'failed'::transcription_status
+      ELSE 'pending'::transcription_status
+    END,
+    next_transcription_at = CASE transcription_attempts
+      WHEN 1 THEN now() + interval '1 minute'
+      WHEN 2 THEN now() + interval '5 minutes'
+      WHEN 3 THEN now() + interval '30 minutes'
+      ELSE NULL
+    END
+WHERE id = sqlc.arg('id')
+  AND media_key IS NULL
+  AND deleted_at IS NULL
+  AND link_url = sqlc.arg('link_url')::text
+  AND transcription_status = 'processing';
+
+-- name: SkipCaptureLinkFetch :execrows
+-- A successfully fetched page had no extractable text. Like complete/fail, only
+-- the still-current claimed URL may leave the queue.
+UPDATE captures
+SET transcription_status = 'skipped',
+    next_transcription_at = NULL
+WHERE id = sqlc.arg('id')
+  AND media_key IS NULL
+  AND deleted_at IS NULL
+  AND link_url = sqlc.arg('link_url')::text
+  AND transcription_status = 'processing';
 
 -- name: ClearCaptureLinkFetch :exec
 -- The URL was edited out of a text capture: drop the link-derived transcript and

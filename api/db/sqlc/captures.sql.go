@@ -161,7 +161,7 @@ func (q *Queries) ClearCaptureLinkFetch(ctx context.Context, id uuid.UUID) error
 	return err
 }
 
-const completeCaptureLinkFetch = `-- name: CompleteCaptureLinkFetch :exec
+const completeCaptureLinkFetch = `-- name: CompleteCaptureLinkFetch :execrows
 UPDATE captures
 SET transcript = $2,
     link_url = $3,
@@ -170,6 +170,10 @@ SET transcript = $2,
     transcribed_at = now(),
     next_transcription_at = NULL
 WHERE id = $1
+  AND media_key IS NULL
+  AND deleted_at IS NULL
+  AND link_url = $3
+  AND transcription_status = 'processing'
 `
 
 type CompleteCaptureLinkFetchParams struct {
@@ -182,14 +186,20 @@ type CompleteCaptureLinkFetchParams struct {
 // Store the fetched page text as the capture's transcript (now its indexable
 // content) and record the resolved URL, so a backfilled row that entered the
 // queue without link_url ends up with the URL the worker actually fetched.
-func (q *Queries) CompleteCaptureLinkFetch(ctx context.Context, arg CompleteCaptureLinkFetchParams) error {
-	_, err := q.db.Exec(ctx, completeCaptureLinkFetch,
+// The URL + processing predicate is a compare-and-set lease: an older request
+// that finishes after the user changed/removed the URL must not restore stale
+// content or cancel the replacement job.
+func (q *Queries) CompleteCaptureLinkFetch(ctx context.Context, arg CompleteCaptureLinkFetchParams) (int64, error) {
+	result, err := q.db.Exec(ctx, completeCaptureLinkFetch,
 		arg.ID,
 		arg.Transcript,
 		arg.LinkUrl,
 		arg.TranscriptionModel,
 	)
-	return err
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const completeCaptureTranscription = `-- name: CompleteCaptureTranscription :exec
@@ -515,6 +525,41 @@ type EnqueueCaptureLinkFetchParams struct {
 func (q *Queries) EnqueueCaptureLinkFetch(ctx context.Context, arg EnqueueCaptureLinkFetchParams) error {
 	_, err := q.db.Exec(ctx, enqueueCaptureLinkFetch, arg.ID, arg.LinkUrl)
 	return err
+}
+
+const failCaptureLinkFetch = `-- name: FailCaptureLinkFetch :execrows
+UPDATE captures
+SET transcription_status = CASE
+      WHEN transcription_attempts >= 4 THEN 'failed'::transcription_status
+      ELSE 'pending'::transcription_status
+    END,
+    next_transcription_at = CASE transcription_attempts
+      WHEN 1 THEN now() + interval '1 minute'
+      WHEN 2 THEN now() + interval '5 minutes'
+      WHEN 3 THEN now() + interval '30 minutes'
+      ELSE NULL
+    END
+WHERE id = $1
+  AND media_key IS NULL
+  AND deleted_at IS NULL
+  AND link_url = $2::text
+  AND transcription_status = 'processing'
+`
+
+type FailCaptureLinkFetchParams struct {
+	ID      uuid.UUID `json:"id"`
+	LinkUrl string    `json:"link_url"`
+}
+
+// Link-job counterpart to FailCaptureTranscription, guarded by the URL lease so
+// an old failed request cannot strand a newly-enqueued URL (whose attempts were
+// reset to zero) with a NULL retry time.
+func (q *Queries) FailCaptureLinkFetch(ctx context.Context, arg FailCaptureLinkFetchParams) (int64, error) {
+	result, err := q.db.Exec(ctx, failCaptureLinkFetch, arg.ID, arg.LinkUrl)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const failCaptureTranscription = `-- name: FailCaptureTranscription :exec
@@ -1027,6 +1072,34 @@ func (q *Queries) PermanentDeleteCapture(ctx context.Context, arg PermanentDelet
 	return media_key, err
 }
 
+const prepareCaptureLinkFetch = `-- name: PrepareCaptureLinkFetch :execrows
+UPDATE captures
+SET link_url = $1::text
+WHERE id = $2
+  AND media_key IS NULL
+  AND deleted_at IS NULL
+  AND transcription_status = 'processing'
+  AND (link_url IS NULL OR link_url = $1::text)
+`
+
+type PrepareCaptureLinkFetchParams struct {
+	LinkUrl string    `json:"link_url"`
+	ID      uuid.UUID `json:"id"`
+}
+
+// Pin the URL a claimed job is about to fetch. Backfilled jobs enter the queue
+// with link_url NULL and derive the exact target from raw_text in Go; persisting
+// it before the network request gives every terminal write a generation token.
+// If an edit already superseded this claim (status is no longer processing or a
+// different URL is stored), zero rows are updated and the stale worker stops.
+func (q *Queries) PrepareCaptureLinkFetch(ctx context.Context, arg PrepareCaptureLinkFetchParams) (int64, error) {
+	result, err := q.db.Exec(ctx, prepareCaptureLinkFetch, arg.LinkUrl, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const restoreCapture = `-- name: RestoreCapture :one
 UPDATE captures
 SET deleted_at = NULL
@@ -1179,6 +1252,32 @@ func (q *Queries) SetCaptureRemind(ctx context.Context, arg SetCaptureRemindPara
 	return i, err
 }
 
+const skipCaptureLinkFetch = `-- name: SkipCaptureLinkFetch :execrows
+UPDATE captures
+SET transcription_status = 'skipped',
+    next_transcription_at = NULL
+WHERE id = $1
+  AND media_key IS NULL
+  AND deleted_at IS NULL
+  AND link_url = $2::text
+  AND transcription_status = 'processing'
+`
+
+type SkipCaptureLinkFetchParams struct {
+	ID      uuid.UUID `json:"id"`
+	LinkUrl string    `json:"link_url"`
+}
+
+// A successfully fetched page had no extractable text. Like complete/fail, only
+// the still-current claimed URL may leave the queue.
+func (q *Queries) SkipCaptureLinkFetch(ctx context.Context, arg SkipCaptureLinkFetchParams) (int64, error) {
+	result, err := q.db.Exec(ctx, skipCaptureLinkFetch, arg.ID, arg.LinkUrl)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const skipCaptureTranscription = `-- name: SkipCaptureTranscription :exec
 UPDATE captures
 SET transcription_status = 'skipped',
@@ -1193,6 +1292,28 @@ WHERE id = $1
 func (q *Queries) SkipCaptureTranscription(ctx context.Context, id uuid.UUID) error {
 	_, err := q.db.Exec(ctx, skipCaptureTranscription, id)
 	return err
+}
+
+const skipUnresolvedLinkFetch = `-- name: SkipUnresolvedLinkFetch :execrows
+UPDATE captures
+SET transcription_status = 'skipped',
+    next_transcription_at = NULL
+WHERE id = $1
+  AND media_key IS NULL
+  AND deleted_at IS NULL
+  AND link_url IS NULL
+  AND transcription_status = 'processing'
+`
+
+// A coarse SQL backfill match contained no URL accepted by the Go grammar. Only
+// skip the still-current NULL-link claim; if the user added a real URL after the
+// claim, EnqueueCaptureLinkFetch has already replaced both link_url and status.
+func (q *Queries) SkipUnresolvedLinkFetch(ctx context.Context, id uuid.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, skipUnresolvedLinkFetch, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const updateCapture = `-- name: UpdateCapture :one

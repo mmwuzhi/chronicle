@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -114,23 +116,44 @@ func (w *worker) processAvailable(ctx context.Context) (time.Duration, error) {
 			target = capture.FirstURL(c.RawText.String)
 		}
 		if target == "" {
-			if err := w.q.SkipCaptureTranscription(ctx, c.ID); err != nil {
+			if _, err := w.q.SkipUnresolvedLinkFetch(ctx, c.ID); err != nil {
 				return 0, err
 			}
+			continue
+		}
+		prepared, err := w.q.PrepareCaptureLinkFetch(ctx, db.PrepareCaptureLinkFetchParams{
+			ID:      c.ID,
+			LinkUrl: target,
+		})
+		if err != nil {
+			return 0, err
+		}
+		if prepared == 0 {
+			// The user edited or removed the URL after this worker claimed it.
+			// The replacement state owns the row now; never fetch or terminally
+			// update an obsolete generation.
 			continue
 		}
 
 		body, err := w.fetch(ctx, target)
 		if err != nil {
-			if failErr := w.q.FailCaptureTranscription(ctx, c.ID); failErr != nil {
+			failed, failErr := w.q.FailCaptureLinkFetch(ctx, db.FailCaptureLinkFetchParams{
+				ID:      c.ID,
+				LinkUrl: target,
+			})
+			if failErr != nil {
 				return 0, failErr
+			}
+			if failed == 0 {
+				continue // a newer URL generation superseded this failure
 			}
 			slog.Warn(
 				"link fetch attempt failed",
 				"traceId", "link-fetch-worker",
 				"captureId", c.ID,
 				"attempt", c.TranscriptionAttempts,
-				"err", err,
+				"targetHost", fetchTargetHost(target),
+				"category", fetchErrorCategory(err),
 			)
 			continue
 		}
@@ -140,23 +163,54 @@ func (w *worker) processAvailable(ctx context.Context) (time.Duration, error) {
 		if content == "" {
 			// A reachable page with no extractable text: skip so it leaves the
 			// queue instead of failing and retrying to the same empty result.
-			if err := w.q.SkipCaptureTranscription(ctx, c.ID); err != nil {
+			if _, err := w.q.SkipCaptureLinkFetch(ctx, db.SkipCaptureLinkFetchParams{
+				ID:      c.ID,
+				LinkUrl: target,
+			}); err != nil {
 				return 0, err
 			}
 			continue
 		}
 
-		if err := w.q.CompleteCaptureLinkFetch(ctx, db.CompleteCaptureLinkFetchParams{
+		completed, err := w.q.CompleteCaptureLinkFetch(ctx, db.CompleteCaptureLinkFetchParams{
 			ID:                 c.ID,
 			Transcript:         pgtype.Text{String: content, Valid: true},
 			LinkUrl:            pgtype.Text{String: target, Valid: true},
 			TranscriptionModel: pgtype.Text{String: linkFetchModel, Valid: true},
-		}); err != nil {
+		})
+		if err != nil {
 			return 0, err
+		}
+		if completed == 0 {
+			continue // a newer URL generation superseded this result
 		}
 		// Transcript is now the capture's richest indexable content — re-embed it.
 		w.rag.Index(c.UserID.String(), c.ID.String())
 	}
+}
+
+// Fetch errors can include the full request URL (including signed query strings)
+// through net/url.Error. Keep logs diagnostic without copying captured secrets.
+func fetchErrorCategory(err error) string {
+	if errors.Is(err, ErrBlockedAddress) {
+		return "blocked_address"
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return "deadline"
+	}
+	var netErr net.Error
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		return "timeout"
+	}
+	return "request_failed"
+}
+
+func fetchTargetHost(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return "invalid"
+	}
+	return u.Hostname()
 }
 
 // nextScheduledIn mirrors the transcription worker's helper: seconds until the

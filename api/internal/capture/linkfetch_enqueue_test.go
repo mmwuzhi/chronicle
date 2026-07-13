@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	db "github.com/sikaoshenmi/chronicle/db/sqlc"
@@ -50,9 +51,14 @@ func TestCreateEnqueuesLinkFetch(t *testing.T) {
 		t.Fatalf("expected 200, got %d", resp.StatusCode)
 	}
 	var out struct {
-		ID string `json:"id"`
+		ID                  string  `json:"id"`
+		Transcript          *string `json:"transcript"`
+		TranscriptionStatus string  `json:"transcriptionStatus"`
 	}
 	decodeBody(t, resp, &out)
+	if out.TranscriptionStatus != "pending" || out.Transcript != nil {
+		t.Fatalf("create response must reflect enqueued state: status=%q transcript=%v", out.TranscriptionStatus, out.Transcript)
+	}
 
 	status, linkURL, _ := readLinkState(t, pool, out.ID)
 	if status != "pending" {
@@ -206,7 +212,20 @@ func TestUpdateChangesLinkURL(t *testing.T) {
 	id := createCapture(t, srv, token, map[string]any{"rawText": "see https://old.example.com/a"})
 	markEnriched(t, pool, id, "https://old.example.com/a", "old page text")
 
-	patchRawText(t, srv, token, id, "see https://new.example.com/b instead")
+	resp := do(t, srv.Client(), http.MethodPatch, srv.URL+"/captures/"+id, token,
+		map[string]any{"rawText": "see https://new.example.com/b instead"})
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("patch rawText: got %d", resp.StatusCode)
+	}
+	var updated struct {
+		Transcript          *string `json:"transcript"`
+		TranscriptionStatus string  `json:"transcriptionStatus"`
+	}
+	decodeBody(t, resp, &updated)
+	if updated.TranscriptionStatus != "pending" || updated.Transcript != nil {
+		t.Fatalf("update response must reflect replacement queue: status=%q transcript=%v", updated.TranscriptionStatus, updated.Transcript)
+	}
 
 	status, linkURL, transcript := readLinkState(t, pool, id)
 	if status != "pending" {
@@ -248,7 +267,20 @@ func TestUpdateRemovesURL(t *testing.T) {
 	id := createCapture(t, srv, token, map[string]any{"rawText": "read https://example.com/gone"})
 	markEnriched(t, pool, id, "https://example.com/gone", "gone page text")
 
-	patchRawText(t, srv, token, id, "read nothing now")
+	resp := do(t, srv.Client(), http.MethodPatch, srv.URL+"/captures/"+id, token,
+		map[string]any{"rawText": "read nothing now"})
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("patch rawText: got %d", resp.StatusCode)
+	}
+	var updated struct {
+		Transcript          *string `json:"transcript"`
+		TranscriptionStatus string  `json:"transcriptionStatus"`
+	}
+	decodeBody(t, resp, &updated)
+	if updated.TranscriptionStatus != "none" || updated.Transcript != nil {
+		t.Fatalf("update response must reflect cleared link state: status=%q transcript=%v", updated.TranscriptionStatus, updated.Transcript)
+	}
 
 	status, linkURL, transcript := readLinkState(t, pool, id)
 	if status != "none" {
@@ -259,5 +291,87 @@ func TestUpdateRemovesURL(t *testing.T) {
 	}
 	if transcript != nil {
 		t.Errorf("transcript = %v, want nil (stale page text dropped)", transcript)
+	}
+}
+
+func TestStaleLinkFetchCannotOverwriteReplacementURL(t *testing.T) {
+	srv, pool := newServerOpts(t, true)
+	_, token := createTestUser(t, pool)
+	queries := db.New(pool)
+	ctx := context.Background()
+	oldURL := "https://old.example.com/a"
+	newURL := "https://new.example.com/b"
+	id := createCapture(t, srv, token, map[string]any{"rawText": "see " + oldURL})
+	captureID := uuid.MustParse(id)
+
+	claimed, err := queries.ClaimPendingLinkFetch(ctx)
+	if err != nil || claimed.ID != captureID {
+		t.Fatalf("claim old URL: capture=%s err=%v", claimed.ID, err)
+	}
+	if n, err := queries.PrepareCaptureLinkFetch(ctx, db.PrepareCaptureLinkFetchParams{
+		ID: captureID, LinkUrl: oldURL,
+	}); err != nil || n != 1 {
+		t.Fatalf("prepare old URL: rows=%d err=%v", n, err)
+	}
+
+	// While A is in flight, the user changes the authoritative text to B.
+	patchRawText(t, srv, token, id, "see "+newURL)
+
+	// Every possible terminal path from A must become a stale no-op.
+	if n, err := queries.CompleteCaptureLinkFetch(ctx, db.CompleteCaptureLinkFetchParams{
+		ID:                 captureID,
+		Transcript:         pgtype.Text{String: "old page", Valid: true},
+		LinkUrl:            pgtype.Text{String: oldURL, Valid: true},
+		TranscriptionModel: pgtype.Text{String: "link-fetch", Valid: true},
+	}); err != nil || n != 0 {
+		t.Fatalf("stale complete: rows=%d err=%v", n, err)
+	}
+	if n, err := queries.FailCaptureLinkFetch(ctx, db.FailCaptureLinkFetchParams{
+		ID: captureID, LinkUrl: oldURL,
+	}); err != nil || n != 0 {
+		t.Fatalf("stale fail: rows=%d err=%v", n, err)
+	}
+	if n, err := queries.SkipCaptureLinkFetch(ctx, db.SkipCaptureLinkFetchParams{
+		ID: captureID, LinkUrl: oldURL,
+	}); err != nil || n != 0 {
+		t.Fatalf("stale skip: rows=%d err=%v", n, err)
+	}
+
+	status, linkURL, transcript := readLinkState(t, pool, id)
+	if status != "pending" || linkURL == nil || *linkURL != newURL || transcript != nil {
+		t.Fatalf("replacement state changed: status=%q linkURL=%v transcript=%v", status, linkURL, transcript)
+	}
+}
+
+func TestStaleLinkFetchCannotRestoreRemovedURL(t *testing.T) {
+	srv, pool := newServerOpts(t, true)
+	_, token := createTestUser(t, pool)
+	queries := db.New(pool)
+	ctx := context.Background()
+	oldURL := "https://old.example.com/a"
+	id := createCapture(t, srv, token, map[string]any{"rawText": "see " + oldURL})
+	captureID := uuid.MustParse(id)
+
+	if _, err := queries.ClaimPendingLinkFetch(ctx); err != nil {
+		t.Fatalf("claim old URL: %v", err)
+	}
+	if n, err := queries.PrepareCaptureLinkFetch(ctx, db.PrepareCaptureLinkFetchParams{
+		ID: captureID, LinkUrl: oldURL,
+	}); err != nil || n != 1 {
+		t.Fatalf("prepare old URL: rows=%d err=%v", n, err)
+	}
+	patchRawText(t, srv, token, id, "the link was removed")
+
+	if n, err := queries.CompleteCaptureLinkFetch(ctx, db.CompleteCaptureLinkFetchParams{
+		ID:                 captureID,
+		Transcript:         pgtype.Text{String: "old page", Valid: true},
+		LinkUrl:            pgtype.Text{String: oldURL, Valid: true},
+		TranscriptionModel: pgtype.Text{String: "link-fetch", Valid: true},
+	}); err != nil || n != 0 {
+		t.Fatalf("stale complete after removal: rows=%d err=%v", n, err)
+	}
+	status, linkURL, transcript := readLinkState(t, pool, id)
+	if status != "none" || linkURL != nil || transcript != nil {
+		t.Fatalf("removed state changed: status=%q linkURL=%v transcript=%v", status, linkURL, transcript)
 	}
 }

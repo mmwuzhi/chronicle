@@ -255,6 +255,14 @@ func (h *handler) create(ctx context.Context, input *CaptureCreateInput) (*Creat
 	// On create the prior link_url is always absent, so reconcile just enqueues
 	// a fetch when the new text carries a URL — and re-indexes once itself.
 	indexed := h.reconcileLinkFetch(ctx, c)
+	if indexed {
+		// Reconciliation is a second DB write (queue/clear). Return the resource as
+		// it exists after the whole create operation, not the pre-enqueue row.
+		c, err = h.q.GetCapture(ctx, db.GetCaptureParams{ID: c.ID, UserID: uid})
+		if err != nil {
+			return nil, huma.Error500InternalServerError("internal error")
+		}
+	}
 	// Only index when there's text to embed and reconcile didn't already do it
 	// (indexing twice would also run the sidecar's LLM extraction twice);
 	// media-only captures get indexed once their transcript lands
@@ -366,6 +374,15 @@ func (h *handler) update(ctx context.Context, input *CaptureUpdateInput) (*Updat
 	indexed := false
 	if input.Body.RawText != nil {
 		indexed = h.reconcileLinkFetch(ctx, c)
+	}
+	if indexed {
+		// reconcileLinkFetch performs a second DB write. Mutation consumers cache
+		// this body, so serialize the final queue/transcript state, not UpdateCapture's
+		// earlier RETURNING row.
+		c, err = h.q.GetCapture(ctx, db.GetCaptureParams{ID: c.ID, UserID: uid})
+		if err != nil {
+			return nil, huma.Error500InternalServerError("internal error")
+		}
 	}
 	// Reindex only when the indexable text actually changed and reconcile didn't
 	// already do it — an empty PATCH must not trigger embedding + extraction,
