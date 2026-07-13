@@ -38,7 +38,8 @@ function Captures() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const confirm = useConfirm();
-  const mutationToast = useMutationToast();
+  const { message: mutationMessage, show: showMutationToast } =
+    useMutationToast();
   const todosEnabled = useTodoEnabled();
   const [tab, setTab] = useState<Tab>("all");
   // Captures with a future reminder are filtered out of the list until they come
@@ -74,42 +75,42 @@ function Captures() {
   const create = useCreateCapture({
     mutation: {
       onSuccess: (capture) => prependCaptureToPages(queryClient, capture),
-      onError: () => mutationToast.show(tc("errors.mutationFailed")),
+      onError: () => showMutationToast(tc("errors.mutationFailed")),
     },
   });
-  const update = useUpdateCapture({
+  const { mutate: updateCapture } = useUpdateCapture({
     mutation: {
       onSuccess: patchCapture,
-      onError: () => mutationToast.show(tc("errors.mutationFailed")),
+      onError: () => showMutationToast(tc("errors.mutationFailed")),
     },
   });
-  const remove = useDeleteCapture({
+  const { mutate: deleteCapture } = useDeleteCapture({
     mutation: {
       onSuccess: (_data, variables) =>
         removeCaptureFromPages(queryClient, variables.id),
-      onError: () => mutationToast.show(tc("errors.mutationFailed")),
+      onError: () => showMutationToast(tc("errors.mutationFailed")),
     },
   });
-  const retryTranscription = useRetryCaptureTranscription({
+  const { mutate: retryCaptureTranscription } = useRetryCaptureTranscription({
     mutation: {
       onSuccess: patchCapture,
       onError: () => {
         invalidateCaptures();
-        mutationToast.show(tc("errors.mutationFailed"));
+        showMutationToast(tc("errors.mutationFailed"));
       },
     },
   });
-  const setRemind = useSetCaptureRemind({
+  const { mutate: setCaptureRemind } = useSetCaptureRemind({
     mutation: {
       onSuccess: patchCapture,
-      onError: () => mutationToast.show(tc("errors.mutationFailed")),
+      onError: () => showMutationToast(tc("errors.mutationFailed")),
     },
   });
   const addAttachment = useAddCaptureAttachment({
     mutation: {
       onSuccess: (attachment, variables) =>
         appendAttachmentInPages(queryClient, variables.id, attachment),
-      onError: () => mutationToast.show(tc("errors.mutationFailed")),
+      onError: () => showMutationToast(tc("errors.mutationFailed")),
     },
   });
 
@@ -124,18 +125,18 @@ function Captures() {
         confirmLabel: tc("actions.delete"),
         variant: "danger",
       });
-      if (confirmed) remove.mutate({ id });
+      if (confirmed) deleteCapture({ id });
     },
-    [confirm, remove.mutate, tc],
+    [confirm, deleteCapture, tc],
   );
   const onSaveText = useCallback(
-    (id: string, rawText: string) => update.mutate({ id, data: { rawText } }),
-    [update.mutate],
+    (id: string, rawText: string) => updateCapture({ id, data: { rawText } }),
+    [updateCapture],
   );
   const onSaveTranscript = useCallback(
     (id: string, transcript: string) =>
-      update.mutate({ id, data: { transcript } }),
-    [update.mutate],
+      updateCapture({ id, data: { transcript } }),
+    [updateCapture],
   );
   const onUseTranscript = useCallback(
     (capture: CaptureBody, mode: "append" | "replace") => {
@@ -144,22 +145,22 @@ function Captures() {
         mode === "append" && capture.rawText
           ? `${capture.rawText}\n\n${capture.transcript}`
           : capture.transcript;
-      update.mutate({ id: capture.id, data: { rawText } });
+      updateCapture({ id: capture.id, data: { rawText } });
     },
-    [update.mutate],
+    [updateCapture],
   );
   const onRetryTranscription = useCallback(
-    (id: string) => retryTranscription.mutate({ id }),
-    [retryTranscription.mutate],
+    (id: string) => retryCaptureTranscription({ id }),
+    [retryCaptureTranscription],
   );
   const onSetRemind = useCallback(
     (id: string, at: string | null, hide: boolean) =>
-      setRemind.mutate({ id, data: { at: at ?? undefined, hide } }),
-    [setRemind.mutate],
+      setCaptureRemind({ id, data: { at: at ?? undefined, hide } }),
+    [setCaptureRemind],
   );
   const onMutationError = useCallback(
-    () => mutationToast.show(tc("errors.mutationFailed")),
-    [mutationToast.show, tc],
+    () => showMutationToast(tc("errors.mutationFailed")),
+    [showMutationToast, tc],
   );
 
   if (captureQuery.error) {
@@ -239,7 +240,7 @@ function Captures() {
           onMutationError={onMutationError}
         />
       </main>
-      <MutationToast message={mutationToast.message} />
+      <MutationToast message={mutationMessage} />
     </>
   );
 }
