@@ -49,7 +49,7 @@ struct PinnedStickyView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 8) {
                     if !content.isEmpty {
-                        StickySelectableText(markdown: content, onDoubleClick: onOpen)
+                        StickySelectableText(markdown: content, onDoubleClick: onOpen, onCancel: onUnpin)
                     } else if thumbURL == nil {
                         Text("(media capture)").foregroundStyle(.secondary)
                     }
@@ -151,10 +151,12 @@ func renderedMarkdown(_ md: String) -> AttributedString {
 private struct StickySelectableText: NSViewRepresentable {
     let attributed: NSAttributedString
     let onDoubleClick: () -> Void
+    let onCancel: () -> Void
 
-    init(markdown: String, onDoubleClick: @escaping () -> Void) {
+    init(markdown: String, onDoubleClick: @escaping () -> Void, onCancel: @escaping () -> Void) {
         self.attributed = Self.render(markdown)
         self.onDoubleClick = onDoubleClick
+        self.onCancel = onCancel
     }
 
     func makeNSView(context: Context) -> SelectableRowText.RowTextView {
@@ -171,6 +173,7 @@ private struct StickySelectableText: NSViewRepresentable {
 
     func updateNSView(_ tv: SelectableRowText.RowTextView, context: Context) {
         tv.onDoubleClick = onDoubleClick
+        tv.onCancel = onCancel
         if tv.string != attributed.string {
             tv.textStorage?.setAttributedString(attributed)
         }

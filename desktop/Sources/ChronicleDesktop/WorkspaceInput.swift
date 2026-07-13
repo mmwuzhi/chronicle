@@ -170,6 +170,10 @@ final class SubmitTextView: NSTextView {
     }
 
     override func cancelOperation(_ sender: Any?) {
+        guard !hasMarkedText() else {
+            super.cancelOperation(sender)
+            return
+        }
         onCancel?()
     }
 

@@ -182,6 +182,9 @@ struct PinnedEdgeBar: View {
 struct SelectableRowText: NSViewRepresentable {
     let text: String
     var onDoubleClick: (() -> Void)?
+    var onCancel: (() -> Void)?
+    var font: NSFont = .preferredFont(forTextStyle: .body)
+    var maximumNumberOfLines: Int = 0
 
     func makeNSView(context: Context) -> RowTextView {
         let tv = RowTextView()
@@ -190,8 +193,10 @@ struct SelectableRowText: NSViewRepresentable {
         tv.drawsBackground = false
         tv.textContainerInset = .zero
         tv.textContainer?.lineFragmentPadding = 0
-        tv.font = .preferredFont(forTextStyle: .body)
+        tv.font = font
         tv.textColor = .labelColor
+        tv.textContainer?.maximumNumberOfLines = maximumNumberOfLines
+        tv.textContainer?.lineBreakMode = maximumNumberOfLines > 0 ? .byTruncatingTail : .byWordWrapping
         tv.isVerticallyResizable = false
         tv.isHorizontallyResizable = false
         return tv
@@ -199,6 +204,10 @@ struct SelectableRowText: NSViewRepresentable {
 
     func updateNSView(_ tv: RowTextView, context: Context) {
         tv.onDoubleClick = onDoubleClick
+        tv.onCancel = onCancel
+        tv.font = font
+        tv.textContainer?.maximumNumberOfLines = maximumNumberOfLines
+        tv.textContainer?.lineBreakMode = maximumNumberOfLines > 0 ? .byTruncatingTail : .byWordWrapping
         if tv.string != text { tv.string = text }
     }
 
@@ -208,7 +217,6 @@ struct SelectableRowText: NSViewRepresentable {
     // container tracks the placed frame width instead (widthTracksTextView), and
     // this measures the same wrap statelessly.
     func sizeThatFits(_ proposal: ProposedViewSize, nsView tv: RowTextView, context: Context) -> CGSize? {
-        let font = tv.font ?? .preferredFont(forTextStyle: .body)
         let proposed = proposal.width ?? .infinity
         let wrapWidth = proposed.isFinite && proposed > 0 ? proposed : .greatestFiniteMagnitude
         let measured = (text as NSString).boundingRect(
@@ -216,12 +224,17 @@ struct SelectableRowText: NSViewRepresentable {
             options: [.usesLineFragmentOrigin, .usesFontLeading],
             attributes: [.font: font],
         ).size
+        let lineHeight = ceil(font.ascender - font.descender + font.leading)
+        let height = maximumNumberOfLines > 0
+            ? min(ceil(measured.height), lineHeight * CGFloat(maximumNumberOfLines))
+            : ceil(measured.height)
         let width = wrapWidth == .greatestFiniteMagnitude ? ceil(measured.width) : wrapWidth
-        return CGSize(width: width, height: ceil(measured.height))
+        return CGSize(width: width, height: height)
     }
 
     final class RowTextView: NSTextView {
         var onDoubleClick: (() -> Void)?
+        var onCancel: (() -> Void)?
 
         // The main window may not be key (quick panel, stickies); without this the
         // first click only activates the window and selection needs a second try.
@@ -233,6 +246,22 @@ struct SelectableRowText: NSViewRepresentable {
                 return
             }
             super.mouseDown(with: event)
+        }
+
+        override func cancelOperation(_ sender: Any?) {
+            guard !hasMarkedText(), let onCancel else {
+                super.cancelOperation(sender)
+                return
+            }
+            onCancel()
+        }
+
+        override func keyDown(with event: NSEvent) {
+            guard event.keyCode == 53, !hasMarkedText(), let onCancel else {
+                super.keyDown(with: event)
+                return
+            }
+            onCancel()
         }
     }
 }
@@ -265,6 +294,7 @@ struct CaptureRow: View {
     var onSaveAndContinue: (() -> Void)?
     var onDiscardAndContinue: (() -> Void)?
     var onKeepEditing: (() -> Void)?
+    var onCancel: (() -> Void)?
 
     @State private var hovering = false
     @State private var fallbackEditing = false
@@ -356,6 +386,7 @@ struct CaptureRow: View {
             SelectableRowText(
                 text: item.content,
                 onDoubleClick: onEdit != nil ? { beginEditingFromContent() } : nil,
+                onCancel: onCancel,
             )
         }
         // Resting metadata stays tertiary; the whole line firms up to secondary

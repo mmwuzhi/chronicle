@@ -3,8 +3,30 @@ import SwiftUI
 import ChronicleDesktopCore
 
 final class QuickCapturePanel: NSPanel {
+    var onCancel: (() -> Void)?
+
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { true }
+
+    override func cancelOperation(_ sender: Any?) {
+        onCancel?()
+    }
+
+    override func keyDown(with event: NSEvent) {
+        guard event.keyCode == 53, shouldUsePanelCancelFallback else {
+            super.keyDown(with: event)
+            return
+        }
+        onCancel?()
+    }
+
+    private var shouldUsePanelCancelFallback: Bool {
+        guard let responder = firstResponder else { return true }
+        if let textView = responder as? NSTextView {
+            return !textView.isEditable && !textView.hasMarkedText()
+        }
+        return true
+    }
 }
 
 @MainActor
@@ -44,6 +66,7 @@ final class QuickCapturePanelController: NSWindowController, NSWindowDelegate {
             onSubmit: { [weak self] text, remindAt, keepVisible in self?.onSubmit(text, remindAt, keepVisible) },
             onClose: { [weak self] in self?.hide(restoringPreviousFocus: true) },
             onHeightChange: { [weak self] height in self?.resize(to: height) },
+            onCancelHandlerChange: { [weak panel] handler in panel?.onCancel = handler },
         )
         hostingView = NSHostingView(rootView: root)
         hostingView.translatesAutoresizingMaskIntoConstraints = false

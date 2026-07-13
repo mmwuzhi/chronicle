@@ -12,6 +12,7 @@ struct PanelContentView: View {
     let onSubmit: (String, Date?, Bool) -> Void
     let onClose: () -> Void
     let onHeightChange: (CGFloat) -> Void
+    let onCancelHandlerChange: (@escaping () -> Void) -> Void
 
     @State private var mode: RecallMode = .capture
     @State private var texts: [RecallMode: String] = [.capture: "", .search: "", .ask: ""]
@@ -95,10 +96,14 @@ struct PanelContentView: View {
         .onPreferenceChange(PanelHeightKey.self) { onHeightChange($0) }
         .background(shortcutButtons)
         .onAppear {
+            onCancelHandlerChange(escape)
             DispatchQueue.main.async { focused = true }
         }
         .onReceive(NotificationCenter.default.publisher(for: .chroniclePanelShown)) { _ in
             reset()
+        }
+        .onChange(of: expanded) { _ in
+            onCancelHandlerChange(escape)
         }
         .onReceive(NotificationCenter.default.publisher(for: .chroniclePinsChanged)) { _ in
             pinTick &+= 1
@@ -215,6 +220,7 @@ struct PanelContentView: View {
                 pinTick &+= 1
             },
             isPinned: isPinned,
+            onCancel: escape,
         )
     }
 
@@ -224,14 +230,20 @@ struct PanelContentView: View {
             Button { copy(answer) } label: { Label("Copy", systemImage: "doc.on.doc") }
                 .buttonStyle(.borderless).font(.caption).foregroundStyle(.secondary)
         }
-        Text(answer).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
+        SelectableRowText(text: answer, onCancel: escape)
+            .frame(maxWidth: .infinity, alignment: .leading)
         if !sources.isEmpty {
             Divider().padding(.vertical, 4)
             Text("Sources").font(.caption).foregroundStyle(.secondary)
             ForEach(sources) { s in
                 HStack(alignment: .top, spacing: 6) {
                     Text("[\(s.n)]").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
-                    Text(s.content).font(.caption).lineLimit(2).textSelection(.enabled)
+                    SelectableRowText(
+                        text: s.content,
+                        onCancel: escape,
+                        font: .systemFont(ofSize: NSFont.smallSystemFontSize),
+                        maximumNumberOfLines: 2,
+                    )
                 }
                 .padding(.vertical, 2)
             }
