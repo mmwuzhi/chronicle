@@ -1,6 +1,6 @@
 {
   "brand": "Chronicle",
-  "tagline": "パーソナル生産性OS",
+  "tagline": "何でも記録。あとで見つかる。",
   "nav": {
     "home": "ホーム",
     "captures": "キャプチャ",
@@ -39,7 +39,7 @@
     "add": "追加",
     "clear": "クリア",
     "polish": "推敲",
-    "polishResult": "AI 提案",
+    "polishResult": "AIによる提案",
     "accept": "採用",
     "copy": "コピー",
     "dismiss": "閉じる"
