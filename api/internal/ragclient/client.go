@@ -28,14 +28,41 @@ var ErrDisabled = errors.New("rag sidecar not configured")
 // can still be written — a cold model that overruns this returns an error the
 // caller degrades on, rather than a truncated/never-written response.
 const (
-	indexTimeout = 10 * time.Second
-	findTimeout  = 20 * time.Second
-	askTimeout   = 25 * time.Second
+	indexTimeout      = 10 * time.Second
+	invalidateTimeout = 2 * time.Second
+	findTimeout       = 20 * time.Second
+	askTimeout        = 25 * time.Second
 )
 
 type Client struct {
 	baseURL string
 	http    *http.Client
+}
+
+// Invalidate drops the sidecar's cached corpus snapshot for one user after a
+// capture enters or leaves the live corpus. It is separate from Index because
+// restore/delete visibility must change without extraction or webhook side
+// effects. A disabled client is a successful no-op.
+func (c *Client) Invalidate(ctx context.Context, userID string) error {
+	if c == nil {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(ctx, invalidateTimeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/invalidate", nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("X-User-Id", userID)
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		return fmt.Errorf("rag invalidate status %d", resp.StatusCode)
+	}
+	return nil
 }
 
 // New returns a client, or nil if baseURL is empty (RAG disabled). A nil *Client

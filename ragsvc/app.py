@@ -74,6 +74,17 @@ def warmup() -> dict[str, str]:
     return {"status": "warming"}
 
 
+@app.post("/invalidate")
+def invalidate(user_id: str = Header(..., alias="X-User-Id")) -> dict[str, str]:
+    """Drop one user's in-process corpus snapshot after a membership mutation.
+
+    This is deliberately separate from /index: delete/restore must refresh recall
+    visibility without re-running extraction or firing outbound webhooks.
+    """
+    rag.invalidate_corpus(user_id)
+    return {"status": "invalidated"}
+
+
 class IndexIn(BaseModel):
     capture_id: str
 

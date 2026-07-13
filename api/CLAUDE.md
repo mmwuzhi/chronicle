@@ -66,6 +66,11 @@ visible from any single file. Setup and commands live in the root `Justfile`.
 - On capture write, the API calls the sidecar's `/index` to embed + extract.
   Indexing is best-effort: a capture write must not fail because the sidecar
   is down (same policy as R2 media purge on permanent delete).
+- Capture visibility mutations that do not run `/index` (trash, restore,
+  permanent delete, empty trash) must call the sidecar's `/invalidate` for the
+  affected user. Otherwise its per-user corpus cache can serve stale rows until
+  the TTL expires. Invalidation is still best-effort; the database mutation is
+  the source of truth.
 - `/captures/upload` bypasses huma (multipart needs the raw `*http.Request`),
   so it is absent from `/openapi.json` and has no orval hook — the web client
   calls it manually. An optional `text` form field becomes the capture's

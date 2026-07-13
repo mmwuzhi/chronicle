@@ -36,6 +36,10 @@ func newServer(t *testing.T) (*httptest.Server, *pgxpool.Pool) {
 // enrichment: with it on, creating a text capture that contains a URL enqueues a
 // link-fetch job (no worker runs in tests, so the row simply lands 'pending').
 func newServerOpts(t *testing.T, linkFetch bool) (*httptest.Server, *pgxpool.Pool) {
+	return newServerOptsWithRAG(t, linkFetch, "")
+}
+
+func newServerOptsWithRAG(t *testing.T, linkFetch bool, ragURL string) (*httptest.Server, *pgxpool.Pool) {
 	t.Helper()
 	pool := testutil.NewPool(t)
 	testutil.Truncate(t, pool, "captures", "users")
@@ -61,7 +65,7 @@ func newServerOpts(t *testing.T, linkFetch bool) (*httptest.Server, *pgxpool.Poo
 	// nil store + empty bucket: permanent delete still hard-deletes the row; R2
 	// media cleanup is simply skipped (no object storage wired in tests). nil
 	// kick: no transcription worker to wake in tests.
-	capture.Register(api, pool, ragclient.New(""), nil, "", authMW, createMW, nil, linkFetch, nil)
+	capture.Register(api, pool, ragclient.New(ragURL), nil, "", authMW, createMW, nil, linkFetch, nil)
 
 	srv := httptest.NewServer(r)
 	t.Cleanup(srv.Close)
@@ -1363,6 +1367,67 @@ func TestTrash_DeleteListRestore(t *testing.T) {
 	decodeBody(t, trash2, &trashed2)
 	if len(trashed2) != 0 {
 		t.Fatalf("trash should be empty after restore, got %d", len(trashed2))
+	}
+}
+
+func TestTrashMembershipMutationsInvalidateRAGCorpus(t *testing.T) {
+	var invalidatedUsers []string
+	ragSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && r.URL.Path == "/index" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		if r.Method != http.MethodPost || r.URL.Path != "/invalidate" {
+			t.Errorf("unexpected RAG request: %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		invalidatedUsers = append(invalidatedUsers, r.Header.Get("X-User-Id"))
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer ragSrv.Close()
+
+	srv, pool := newServerOptsWithRAG(t, false, ragSrv.URL)
+	userID, token := createTestUser(t, pool)
+	id := createCapture(t, srv, token, map[string]any{"rawText": "cache membership"})
+
+	requests := []struct {
+		method string
+		path   string
+		want   int
+	}{
+		{http.MethodDelete, "/captures/" + id, http.StatusNoContent},
+		{http.MethodPost, "/captures/" + id + "/restore", http.StatusOK},
+		{http.MethodDelete, "/captures/" + id, http.StatusNoContent},
+		{http.MethodDelete, "/captures/" + id + "/permanent", http.StatusNoContent},
+	}
+	for _, tc := range requests {
+		resp := do(t, srv.Client(), tc.method, srv.URL+tc.path, token, nil)
+		resp.Body.Close()
+		if resp.StatusCode != tc.want {
+			t.Fatalf("%s %s: status=%d want=%d", tc.method, tc.path, resp.StatusCode, tc.want)
+		}
+	}
+
+	trashedID := createCapture(t, srv, token, map[string]any{"rawText": "empty me"})
+	resp := do(t, srv.Client(), http.MethodDelete, srv.URL+"/captures/"+trashedID, token, nil)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("trash before empty: status=%d", resp.StatusCode)
+	}
+	resp = do(t, srv.Client(), http.MethodPost, srv.URL+"/trash/empty", token, nil)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("empty trash: status=%d", resp.StatusCode)
+	}
+
+	if len(invalidatedUsers) != 6 {
+		t.Fatalf("invalidation calls=%d want=6", len(invalidatedUsers))
+	}
+	for i, got := range invalidatedUsers {
+		if got != userID {
+			t.Fatalf("invalidation %d user=%q want=%q", i, got, userID)
+		}
 	}
 }
 

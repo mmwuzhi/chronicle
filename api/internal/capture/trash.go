@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	db "github.com/sikaoshenmi/chronicle/db/sqlc"
+	"github.com/sikaoshenmi/chronicle/internal/middleware"
 )
 
 // --- delete ---
@@ -36,6 +37,7 @@ func (h *handler) delete(ctx context.Context, input *CaptureDeleteInput) (*struc
 		}
 		return nil, huma.Error500InternalServerError("internal error")
 	}
+	h.invalidateCorpus(ctx, uid)
 	return nil, nil
 }
 
@@ -96,6 +98,7 @@ func (h *handler) restore(ctx context.Context, input *CaptureRestoreInput) (*Upd
 		}
 		return nil, huma.Error500InternalServerError("internal error")
 	}
+	h.invalidateCorpus(ctx, uid)
 	return &UpdateOutput{Body: toBody(c)}, nil
 }
 
@@ -122,6 +125,7 @@ func (h *handler) permanentDelete(ctx context.Context, input *CapturePermanentDe
 		return nil, huma.Error500InternalServerError("internal error")
 	}
 	h.purgeMedia(ctx, mediaKey)
+	h.invalidateCorpus(ctx, uid)
 	return nil, nil
 }
 
@@ -145,9 +149,21 @@ func (h *handler) emptyTrash(ctx context.Context, _ *CaptureEmptyTrashInput) (*E
 	for _, k := range keys {
 		h.purgeMedia(ctx, k)
 	}
+	h.invalidateCorpus(ctx, uid)
 	out := &EmptyTrashOutput{}
 	out.Body.Purged = len(keys)
 	return out, nil
+}
+
+func (h *handler) invalidateCorpus(ctx context.Context, uid uuid.UUID) {
+	if err := h.rag.Invalidate(ctx, uid.String()); err != nil {
+		slog.WarnContext(
+			ctx, "rag corpus invalidation failed",
+			"traceId", middleware.GetTraceID(ctx),
+			"userId", uid,
+			"err", err,
+		)
+	}
 }
 
 // purgeMedia best-effort deletes a capture's R2 object after a permanent delete.

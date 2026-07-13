@@ -1,5 +1,6 @@
 import json
 
+import httpx
 import numpy as np
 import pytest
 
@@ -113,6 +114,9 @@ def test_post_pins_connection_to_vetted_ip(monkeypatch):
         def raise_for_status(self):
             pass
 
+        def close(self):
+            captured["closed"] = True
+
     class _Client:
         def __init__(self, *a, **k):
             pass
@@ -128,7 +132,8 @@ def test_post_pins_connection_to_vetted_ip(monkeypatch):
                             extensions=kw.get("extensions"))
             return object()
 
-        def send(self, request):
+        def send(self, request, **kw):
+            captured["stream"] = kw.get("stream")
             return _Resp()
 
     monkeypatch.setattr(webhook.httpx, "Client", _Client)
@@ -137,6 +142,8 @@ def test_post_pins_connection_to_vetted_ip(monkeypatch):
     assert "93.184.216.34" in captured["url"]
     assert captured["headers"]["Host"] == "example.com"
     assert captured["extensions"]["sni_hostname"] == b"example.com"
+    assert captured["stream"] is True
+    assert captured["closed"] is True
 
 
 def test_post_rejects_dns_rebind_to_private(monkeypatch):
@@ -145,3 +152,29 @@ def test_post_rejects_dns_rebind_to_private(monkeypatch):
     monkeypatch.setattr(webhook.socket, "getaddrinfo", _fake_getaddrinfo("10.0.0.5"))
     with pytest.raises(RuntimeError):
         webhook._post("http://rebind.example/hook", {}, True)
+
+
+def test_delivery_log_never_prints_target_query_secret(monkeypatch, capsys):
+    secret_url = "https://hooks.example/path?token=super-secret"
+    rule = {
+        "id": "rule-1", "name": "safe name", "target_url": secret_url,
+        "keywords": [], "semantic_query": None, "semantic_threshold": 0.6,
+        "payload_template": "{}",
+    }
+    frag = {"content": "x", "embeddings": [], "metadata": None}
+    monkeypatch.setattr(webhook.rag, "webhooks_enabled", lambda _user: [rule])
+    monkeypatch.setattr(webhook.rag, "get_fragment", lambda _capture, _user: frag)
+
+    request = httpx.Request("POST", secret_url)
+    response = httpx.Response(500, request=request)
+    monkeypatch.setattr(
+        webhook, "_post",
+        lambda *_args: (_ for _ in ()).throw(
+            httpx.HTTPStatusError("failed", request=request, response=response)),
+    )
+
+    webhook.fire("capture-1", "user-1")
+    logged = capsys.readouterr().err
+    assert "http_500" in logged
+    assert "super-secret" not in logged
+    assert secret_url not in logged

@@ -179,8 +179,27 @@ def _post(url: str, payload: object, is_json: bool) -> None:
             request = client.build_request("POST", pinned_url,
                                            content=str(payload).encode("utf-8"),
                                            headers=headers, extensions=extensions)
-        r = client.send(request)
-    r.raise_for_status()
+        # Do not buffer an untrusted response body. Webhook delivery only needs
+        # the status line; httpx's default stream=False would read an arbitrarily
+        # large or never-ending body into memory before returning.
+        r = client.send(request, stream=True)
+        try:
+            r.raise_for_status()
+        finally:
+            r.close()
+
+
+def _delivery_error_category(error: Exception) -> str:
+    """Stable diagnostics that never stringify a URL-bearing HTTPX exception."""
+    if isinstance(error, httpx.HTTPStatusError):
+        return f"http_{error.response.status_code}"
+    if isinstance(error, httpx.TimeoutException):
+        return "timeout"
+    if isinstance(error, httpx.NetworkError):
+        return "network"
+    if isinstance(error, RuntimeError):
+        return "target_rejected"
+    return "delivery_failed"
 
 
 def fire(capture_id: str, user_id: str) -> None:
@@ -207,5 +226,7 @@ def fire(capture_id: str, user_id: str) -> None:
             payload, is_json = render(rule["payload_template"], frag)
             _post(rule["target_url"], payload, is_json)
         except Exception as e:  # noqa: BLE001
-            print(f"[webhook] {capture_id} rule '{rule['name']}' delivery failed: {e}",
-                  file=sys.stderr)
+            # HTTPX errors include the full target URL, which may carry a webhook
+            # secret in its query string. Log identity + category only.
+            print(f"[webhook] {capture_id} rule '{rule['name']}' delivery failed "
+                  f"({_delivery_error_category(e)})", file=sys.stderr)

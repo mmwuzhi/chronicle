@@ -92,3 +92,11 @@ def test_rerank_api_ok_reflects_env(monkeypatch):
 def test_api_is_an_accepted_backend():
     # The PATCH /config validator must accept the new `api` backend.
     assert "api" in app._RERANK_BACKENDS
+
+
+def test_invalidate_endpoint_drops_only_requested_user(monkeypatch):
+    seen = []
+    monkeypatch.setattr(app.rag, "invalidate_corpus", seen.append)
+
+    assert app.invalidate(user_id="user-123") == {"status": "invalidated"}
+    assert seen == ["user-123"]

@@ -10,8 +10,8 @@ map plus the rules that span modules.
 
 ## Module map
 
-- `app.py` — HTTP surface: `/health`, `/warmup`, `/index`, `/find`, `/ask`,
-  `/backfill`, webhook test scoring.
+- `app.py` — HTTP surface: `/health`, `/warmup`, `/index`, `/invalidate`,
+  `/find`, `/ask`, `/backfill`, webhook test scoring.
 - `rag.py` — storage + retrieval core on Chronicle's PostgreSQL. Embeddings
   are float32 BYTEA blobs, one row per (capture, chunk); retrieval is an exact
   numpy cosine full-scan over one user's chunks, reduced to a per-capture max.
@@ -49,7 +49,9 @@ endpoints that skip the user scoping.
   cheap; the cost was reloading + re-decoding the whole corpus per search.
   A single-process cache (`_snapshot`) fixes that without new infrastructure:
   writes through this process invalidate immediately, a TTL bounds staleness
-  from writes the Go API makes on its own. `CORPUS_CACHE_TTL=0` disables it.
+  from writes the Go API makes on its own. Go-side visibility mutations call
+  `/invalidate`; keep that endpoint user-scoped. `CORPUS_CACHE_TTL=0` disables
+  the cache.
 - **Chunked embeddings, max-over-chunks recall.** Long content (a fetched
   link page, a long transcript) is split into overlapping windows, each
   embedded on its own, so it is findable by any part instead of through one
