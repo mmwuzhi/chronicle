@@ -12,6 +12,34 @@ func capturePayloadUsesDesktopDefaults() {
 }
 
 @Test
+func apiEndpointRequiresHTTPSExceptForLoopback() {
+    #expect(ChronicleAPIEndpoint.validated("https://api.example.com") != nil)
+    #expect(ChronicleAPIEndpoint.validated("http://localhost:8080") != nil)
+    #expect(ChronicleAPIEndpoint.validated("http://127.0.0.2:8080") != nil)
+    #expect(ChronicleAPIEndpoint.validated("http://[::1]:8080") != nil)
+
+    #expect(ChronicleAPIEndpoint.validated("http://api.example.com") == nil)
+    #expect(ChronicleAPIEndpoint.validated("http://192.168.1.10:8080") == nil)
+    #expect(ChronicleAPIEndpoint.validated("http://127.evil.example:8080") == nil)
+    #expect(ChronicleAPIEndpoint.validated("http://127.0.0.1.evil.example:8080") == nil)
+    #expect(ChronicleAPIEndpoint.validated("ftp://localhost") == nil)
+    #expect(ChronicleAPIEndpoint.validated("https://user:secret@example.com") == nil)
+    #expect(ChronicleAPIEndpoint.validated("https:missing-host") == nil)
+}
+
+@Test
+func captureSyncGateSingleFlightsEachLocalCapture() {
+    let gate = CaptureSyncGate()
+
+    #expect(gate.begin("capture-1"))
+    #expect(!gate.begin("capture-1"))
+    #expect(gate.begin("capture-2"))
+
+    gate.end("capture-1")
+    #expect(gate.begin("capture-1"))
+}
+
+@Test
 func decodesQueuedCaptureFromBeforeTodoFacet() throws {
     // Offline queues serialized by pre-todo-facet builds carry the removed
     // classifiedAs field; replaying them must decode (unknown keys ignored).

@@ -15,6 +15,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var hotKeyController: HotKeyController?
     private let settings = SettingsStore()
     private let localStore = LocalCaptureStore(fileURL: ChronicleDesktopPaths.defaultLocalDatabaseURL())
+    private let captureSyncGate = CaptureSyncGate()
     // Offline semantic search over the local cache via a local Ollama. Lazy so it
     // can reference localStore; degrades to keyword search when Ollama is absent.
     private lazy var localSemantic = LocalSemanticSearch(store: localStore, embedder: LocalEmbedder())
@@ -437,6 +438,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @discardableResult
     func sync(_ record: LocalCaptureRecord, using client: CaptureAPIClient, notifySuccess: Bool) async -> Bool {
+        guard captureSyncGate.begin(record.id) else { return false }
+        defer { captureSyncGate.end(record.id) }
+
         do {
             let serverId = try await client.send(record.payload)
             // sentText = the snapshot we just POSTed; if the user edited this row

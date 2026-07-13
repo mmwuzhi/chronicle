@@ -120,8 +120,9 @@ a capture came from later — use `ios_shortcut_ocr`, `ios_shortcut_text`, or
 Optionally add **Show Notification** after the request with `Captured in
 Chronicle`.
 
-> For local development, point the URL at `http://<your-mac-ip>:8080/captures`
-> while `make api` is running and your phone is on the same network.
+> Do not send a capture token over plain LAN HTTP. For local phone testing, put
+> the API behind an HTTPS tunnel or a local TLS reverse proxy, use that `https://`
+> capture URL, and revoke the temporary token immediately after testing.
 
 ## 3. Bind it
 

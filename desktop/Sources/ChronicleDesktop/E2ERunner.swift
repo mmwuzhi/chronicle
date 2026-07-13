@@ -68,7 +68,7 @@ struct E2ERunner {
     }
 
     private func config() throws -> ChronicleConfig {
-        guard let apiURL = URL(string: try required("CHRONICLE_API_URL")) else {
+        guard let apiURL = ChronicleAPIEndpoint.validated(try required("CHRONICLE_API_URL")) else {
             throw E2EError.invalidURL(environment["CHRONICLE_API_URL"] ?? "")
         }
         return ChronicleConfig(apiURL: apiURL, token: try required("CHRONICLE_DESKTOP_E2E_TOKEN"))

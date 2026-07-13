@@ -20,11 +20,15 @@ final class SettingsStore {
 
     func load() -> ChronicleConfig {
         let apiURL = configuredAPIURL()
-        let token = defaults.string(forKey: Key.token) ?? ""
+        // A URL saved by an older build may be remote plaintext HTTP. Do not
+        // silently move its bearer token onto the localhost fallback; require a
+        // fresh sign-in after the endpoint is corrected.
+        let token = configuredURLIsRejected ? "" : (defaults.string(forKey: Key.token) ?? "")
         return ChronicleConfig(apiURL: apiURL, token: token)
     }
 
     func save(_ config: ChronicleConfig) {
+        guard ChronicleAPIEndpoint.isAllowed(config.apiURL) else { return }
         defaults.set(config.token, forKey: Key.token)
         defaults.set(config.apiURL.absoluteString, forKey: Key.apiURL)
         // Remembered forever: gates the first-run onboarding window. A returning
@@ -38,6 +42,13 @@ final class SettingsStore {
     var hasSignedInOnce: Bool { defaults.bool(forKey: Key.signedInOnce) }
 
     func saveAPIURL(_ url: URL) {
+        guard ChronicleAPIEndpoint.isAllowed(url) else { return }
+        if Self.credentialOrigin(of: configuredAPIURL()) != Self.credentialOrigin(of: url) {
+            // A bearer token is scoped to the server that issued it. Changing
+            // origin must not forward that credential (or its refresh cookie) to
+            // a different host; sign in again after saving the new endpoint.
+            signOut()
+        }
         defaults.set(url.absoluteString, forKey: Key.apiURL)
     }
 
@@ -64,15 +75,34 @@ final class SettingsStore {
     // The env override stays useful for dev (`CHRONICLE_API_URL`) until the user
     // sets one explicitly in Settings.
     private func configuredAPIURL() -> URL {
-        if let raw = defaults.string(forKey: Key.apiURL), let url = URL(string: raw) {
+        if let raw = defaults.string(forKey: Key.apiURL),
+           let url = ChronicleAPIEndpoint.validated(raw)
+        {
             return url
         }
         if let raw = ProcessInfo.processInfo.environment["CHRONICLE_API_URL"],
-           let url = URL(string: raw)
+           let url = ChronicleAPIEndpoint.validated(raw)
         {
             return url
         }
         return Self.defaultAPIURL
+    }
+
+    private var configuredURLIsRejected: Bool {
+        if let raw = defaults.string(forKey: Key.apiURL) {
+            return ChronicleAPIEndpoint.validated(raw) == nil
+        }
+        if let raw = ProcessInfo.processInfo.environment["CHRONICLE_API_URL"] {
+            return ChronicleAPIEndpoint.validated(raw) == nil
+        }
+        return false
+    }
+
+    private static func credentialOrigin(of url: URL) -> String {
+        let scheme = url.scheme?.lowercased() ?? ""
+        let host = url.host?.lowercased() ?? ""
+        let port = url.port ?? (scheme == "https" ? 443 : 80)
+        return "\(scheme)://\(host):\(port)"
     }
 
     func loadShortcut() -> ShortcutSpec {

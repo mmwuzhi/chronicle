@@ -7,6 +7,43 @@ import ChronicleDesktopCore
 @MainActor
 @Suite("Main window navigation")
 struct MainWindowNavigationTests {
+    @Test("stored plaintext remote endpoint invalidates its bearer token")
+    func unsafeStoredEndpointCannotBeUsedWithCredentials() {
+        let defaults = UserDefaults(suiteName: UUID().uuidString)!
+        defaults.set("http://192.168.1.10:8080", forKey: "apiURL")
+        defaults.set("bearer-secret", forKey: "token")
+
+        let config = SettingsStore(defaults: defaults).load()
+
+        #expect(config.apiURL.absoluteString == "http://localhost:8080")
+        #expect(config.token.isEmpty)
+    }
+
+    @Test("changing API origin clears credentials")
+    func changingAPIOriginRequiresFreshSignIn() {
+        let defaults = UserDefaults(suiteName: UUID().uuidString)!
+        defaults.set("https://one.example/api", forKey: "apiURL")
+        defaults.set("bearer-secret", forKey: "token")
+        let store = SettingsStore(defaults: defaults)
+
+        store.saveAPIURL(URL(string: "https://two.example/api")!)
+
+        #expect(store.load().apiURL.absoluteString == "https://two.example/api")
+        #expect(store.load().token.isEmpty)
+    }
+
+    @Test("changing API path on the same origin keeps credentials")
+    func changingAPIPathKeepsSession() {
+        let defaults = UserDefaults(suiteName: UUID().uuidString)!
+        defaults.set("https://one.example/api", forKey: "apiURL")
+        defaults.set("bearer-secret", forKey: "token")
+        let store = SettingsStore(defaults: defaults)
+
+        store.saveAPIURL(URL(string: "https://one.example/v2")!)
+
+        #expect(store.load().token == "bearer-secret")
+    }
+
     @Test("collapsing from the hovered titlebar button does not reopen on button exit")
     func collapseFromHoveredButtonIgnoresExitGrace() {
         let navigation = MainWindowNavigation(defaults: UserDefaults(suiteName: UUID().uuidString)!)

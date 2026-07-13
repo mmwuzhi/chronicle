@@ -50,6 +50,15 @@ only when the cache schema next changes for another reason (`TODO.md`).
 - **Offline-first error handling:** a server or auth error must never blank
   already-shown local results; save failures fall back to the queue, not to
   an error dialog.
+- **One create POST per local capture at a time.** Immediate save, session
+  refresh, and manual retry may drain the same pending row concurrently; route
+  every create sync through `CaptureSyncGate` and release it on every outcome.
+- **Bearer credentials require a secure API endpoint.** Remote API URLs must
+  use HTTPS; plain HTTP is allowed only for loopback development hosts. Keep
+  validation centralized in `ChronicleAPIEndpoint` so settings, environment
+  overrides, and stored sessions cannot diverge. Changing scheme, host, or
+  effective port clears the old bearer token and refresh cookie; never carry a
+  credential across API origins.
 
 ## Gotchas
 

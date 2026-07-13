@@ -46,17 +46,20 @@ final class SettingsModel: ObservableObject {
 
     var currentShortcut: ShortcutSpec { settings.loadShortcut() }
 
-    private var currentURL: URL { URL(string: apiURLString) ?? settings.load().apiURL }
+    private var currentURL: URL? { ChronicleAPIEndpoint.validated(apiURLString) }
 
     func saveAPIURL() {
-        guard let url = URL(string: apiURLString.trimmingCharacters(in: .whitespaces)),
-              url.scheme != nil
-        else {
-            status = "Enter a valid URL (e.g. https://api.example.com)"
+        guard let url = currentURL else {
+            status = "Use HTTPS for remote servers (HTTP is allowed only on localhost)."
             return
         }
+        let wasSignedIn = isSignedIn
         settings.saveAPIURL(url)
-        status = "Server URL saved."
+        isSignedIn = settings.load().isUsable
+        status = isSignedIn ? "Server URL saved." : "Server URL saved. Sign in to this server."
+        if wasSignedIn != isSignedIn {
+            onSignInChanged()
+        }
     }
 
     func saveShortcut(_ spec: ShortcutSpec) {
@@ -70,7 +73,10 @@ final class SettingsModel: ObservableObject {
             status = "Email and password are required."
             return
         }
-        let url = currentURL
+        guard let url = currentURL else {
+            status = "Use HTTPS for remote servers (HTTP is allowed only on localhost)."
+            return
+        }
         let client = AuthAPIClient(apiURL: url)
         let pw = password
         Task { @MainActor in
@@ -96,7 +102,7 @@ final class SettingsModel: ObservableObject {
     }
 
     func signOut() {
-        let url = currentURL
+        let url = currentURL ?? settings.load().apiURL
         // Snapshot the refresh cookie, then clear ALL local credentials up front.
         // onSignInChanged() (and the upload/reminder sync it triggers) must not run
         // while a usable token still points at the account being signed out, and a
