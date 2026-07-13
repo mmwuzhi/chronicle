@@ -2,14 +2,19 @@ package auth
 
 import (
 	"context"
+	"crypto/sha256"
+	"crypto/subtle"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
+	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/redis/go-redis/v9"
@@ -19,11 +24,22 @@ import (
 	"github.com/sikaoshenmi/chronicle/internal/middleware"
 )
 
-const oauthStateTTL = 10 * time.Minute
+const (
+	oauthStateTTL          = 10 * time.Minute
+	desktopOAuthHandoffTTL = 2 * time.Minute
+	desktopOAuthClient     = "desktop"
+)
 
 type oauthStateData struct {
-	Action string `json:"action,omitempty"`
-	UserID string `json:"userId,omitempty"`
+	Action        string `json:"action,omitempty"`
+	UserID        string `json:"userId,omitempty"`
+	Client        string `json:"client,omitempty"`
+	CodeChallenge string `json:"codeChallenge,omitempty"`
+}
+
+type desktopOAuthHandoffData struct {
+	UserID        string `json:"userId"`
+	CodeChallenge string `json:"codeChallenge"`
 }
 
 func (h *handler) storeOAuthState(ctx context.Context, r *http.Request) (string, error) {
@@ -33,6 +49,17 @@ func (h *handler) storeOAuthState(ctx context.Context, r *http.Request) (string,
 	}
 
 	data := oauthStateData{}
+	if client := r.URL.Query().Get("client"); client != "" {
+		if client != desktopOAuthClient {
+			return "", fmt.Errorf("unsupported oauth client")
+		}
+		challenge := r.URL.Query().Get("code_challenge")
+		if r.URL.Query().Get("code_challenge_method") != "S256" || !isValidPKCEChallenge(challenge) {
+			return "", fmt.Errorf("desktop oauth requires a valid S256 PKCE challenge")
+		}
+		data.Client = client
+		data.CodeChallenge = challenge
+	}
 	if r.URL.Query().Get("action") == "link" {
 		raw := ""
 		if auth := r.Header.Get("Authorization"); strings.HasPrefix(auth, "Bearer ") {
@@ -285,6 +312,10 @@ func (h *handler) finishOAuth(w http.ResponseWriter, r *http.Request, ctx contex
 	}
 
 	if user.TotpEnabled {
+		if stateData.Client == desktopOAuthClient {
+			http.Redirect(w, r, desktopOAuthCallbackURL(url.Values{"error": {"mfa_required"}}), http.StatusFound)
+			return
+		}
 		mfaToken, err := NewMFAToken(user.ID.String(), h.secret)
 		if err != nil {
 			slog.ErrorContext(ctx, "mfa token generation failed", "traceId", traceID, "err", err)
@@ -292,6 +323,36 @@ func (h *handler) finishOAuth(w http.ResponseWriter, r *http.Request, ctx contex
 			return
 		}
 		http.Redirect(w, r, frontendURL+"/auth/mfa?mfa_token="+mfaToken, http.StatusFound)
+		return
+	}
+
+	if stateData.Client == desktopOAuthClient {
+		if h.rdb == nil {
+			slog.ErrorContext(ctx, "desktop oauth handoff unavailable", "traceId", traceID)
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+		code, err := randomHex(32)
+		if err != nil {
+			slog.ErrorContext(ctx, "desktop oauth code generation failed", "traceId", traceID, "err", err)
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+		handoff, err := json.Marshal(desktopOAuthHandoffData{
+			UserID:        user.ID.String(),
+			CodeChallenge: stateData.CodeChallenge,
+		})
+		if err != nil {
+			slog.ErrorContext(ctx, "desktop oauth handoff encoding failed", "traceId", traceID, "err", err)
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+		if err := h.rdb.Set(ctx, "oauth:desktop:"+code, handoff, desktopOAuthHandoffTTL).Err(); err != nil {
+			slog.ErrorContext(ctx, "desktop oauth handoff store failed", "traceId", traceID, "err", err)
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+		http.Redirect(w, r, desktopOAuthCallbackURL(url.Values{"code": {code}}), http.StatusFound)
 		return
 	}
 
@@ -330,4 +391,128 @@ func (h *handler) finishOAuth(w http.ResponseWriter, r *http.Request, ctx contex
 	})
 
 	http.Redirect(w, r, frontendURL+"/auth/callback?access_token="+accessToken, http.StatusFound)
+}
+
+func desktopOAuthCallbackURL(query url.Values) string {
+	return (&url.URL{
+		Scheme:   "chronicle",
+		Host:     "oauth",
+		Path:     "/callback",
+		RawQuery: query.Encode(),
+	}).String()
+}
+
+type DesktopOAuthExchangeInput struct {
+	Body struct {
+		Code         string `json:"code" minLength:"1"`
+		CodeVerifier string `json:"codeVerifier" minLength:"43" maxLength:"128"`
+	}
+}
+
+type DesktopOAuthExchangeOutput struct {
+	Body struct {
+		AccessToken string `json:"accessToken"`
+	}
+}
+
+func (h *handler) desktopOAuthExchange(ctx context.Context, input *DesktopOAuthExchangeInput) (*DesktopOAuthExchangeOutput, error) {
+	if h.rdb == nil {
+		return nil, huma.Error503ServiceUnavailable("desktop oauth is unavailable")
+	}
+	code := strings.TrimSpace(input.Body.Code)
+	key := "oauth:desktop:" + code
+	encodedHandoff, err := h.rdb.Get(ctx, key).Result()
+	if err == redis.Nil {
+		return nil, huma.Error401Unauthorized("invalid or expired oauth code")
+	}
+	if err != nil {
+		slog.ErrorContext(ctx, "desktop oauth handoff read failed", "traceId", middleware.GetTraceID(ctx), "err", err)
+		return nil, huma.Error500InternalServerError("internal error")
+	}
+	var handoff desktopOAuthHandoffData
+	if err := json.Unmarshal([]byte(encodedHandoff), &handoff); err != nil {
+		slog.ErrorContext(ctx, "desktop oauth handoff contained invalid data", "traceId", middleware.GetTraceID(ctx), "err", err)
+		return nil, huma.Error500InternalServerError("internal error")
+	}
+	if !isValidPKCEVerifier(input.Body.CodeVerifier) || !matchesPKCEChallenge(input.Body.CodeVerifier, handoff.CodeChallenge) {
+		return nil, huma.Error401Unauthorized("invalid oauth code verifier")
+	}
+	consumedHandoff, err := h.rdb.GetDel(ctx, key).Result()
+	if err == redis.Nil {
+		return nil, huma.Error401Unauthorized("invalid or expired oauth code")
+	}
+	if err != nil {
+		slog.ErrorContext(ctx, "desktop oauth handoff consume failed", "traceId", middleware.GetTraceID(ctx), "err", err)
+		return nil, huma.Error500InternalServerError("internal error")
+	}
+	if subtle.ConstantTimeCompare([]byte(encodedHandoff), []byte(consumedHandoff)) != 1 {
+		return nil, huma.Error401Unauthorized("invalid or expired oauth code")
+	}
+
+	userID, err := uuid.Parse(handoff.UserID)
+	if err != nil {
+		slog.ErrorContext(ctx, "desktop oauth handoff contained invalid user", "traceId", middleware.GetTraceID(ctx), "err", err)
+		return nil, huma.Error500InternalServerError("internal error")
+	}
+
+	accessToken, err := NewAccessToken(userID.String(), h.secret)
+	if err != nil {
+		slog.ErrorContext(ctx, "access token generation failed", "traceId", middleware.GetTraceID(ctx), "err", err)
+		return nil, huma.Error500InternalServerError("internal error")
+	}
+	rawRefresh, hashedRefresh, err := NewRefreshToken()
+	if err != nil {
+		slog.ErrorContext(ctx, "refresh token generation failed", "traceId", middleware.GetTraceID(ctx), "err", err)
+		return nil, huma.Error500InternalServerError("internal error")
+	}
+	if _, err := h.q.CreateRefreshToken(ctx, db.CreateRefreshTokenParams{
+		UserID:    userID,
+		TokenHash: hashedRefresh,
+		ExpiresAt: pgtype.Timestamptz{Time: time.Now().Add(RefreshTokenTTL), Valid: true},
+	}); err != nil {
+		slog.ErrorContext(ctx, "failed to store refresh token", "traceId", middleware.GetTraceID(ctx), "err", err)
+		return nil, huma.Error500InternalServerError("internal error")
+	}
+
+	setRefreshCookie(ctx, rawRefresh, RefreshTokenTTL)
+	out := &DesktopOAuthExchangeOutput{}
+	out.Body.AccessToken = accessToken
+	return out, nil
+}
+
+func isValidPKCEChallenge(challenge string) bool {
+	if len(challenge) != 43 {
+		return false
+	}
+	for _, c := range []byte(challenge) {
+		if !isPKCEUnreserved(c) || c == '.' || c == '~' {
+			return false
+		}
+	}
+	return true
+}
+
+func isValidPKCEVerifier(verifier string) bool {
+	if len(verifier) < 43 || len(verifier) > 128 {
+		return false
+	}
+	for _, c := range []byte(verifier) {
+		if !isPKCEUnreserved(c) {
+			return false
+		}
+	}
+	return true
+}
+
+func isPKCEUnreserved(c byte) bool {
+	return c >= 'a' && c <= 'z' ||
+		c >= 'A' && c <= 'Z' ||
+		c >= '0' && c <= '9' ||
+		c == '-' || c == '.' || c == '_' || c == '~'
+}
+
+func matchesPKCEChallenge(verifier, expected string) bool {
+	digest := sha256.Sum256([]byte(verifier))
+	actual := base64.RawURLEncoding.EncodeToString(digest[:])
+	return subtle.ConstantTimeCompare([]byte(actual), []byte(expected)) == 1
 }

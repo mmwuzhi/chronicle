@@ -9,8 +9,8 @@ import SwiftUI
 //   • body: the capture text with inline markdown, an optional image thumbnail, and
 //     the timestamp pinned below it (hover → precise).
 //   • double-click anywhere opens the capture's detail window. The body text keeps
-//     native click-drag selection via the row lists' NSTextView approach
-//     (SelectableRowText.RowTextView): double-click goes to the open action instead
+//     native click-drag selection via the shared RowTextView implementation:
+//     double-click goes to the open action instead
 //     of word selection — the same trade the main window's rows make for editing.
 //   • bottom edge: an invisible resize bar (drag to grow/shrink vertically).
 //
@@ -144,7 +144,7 @@ func renderedMarkdown(_ md: String) -> AttributedString {
 
 // MARK: - Selectable body text
 
-/// Sticky body text: the row lists' NSTextView (native click-drag selection,
+/// Sticky body text: a shared NSTextView (native click-drag selection,
 /// `clickCount == 2` handed to the open action instead of word selection). SwiftUI's
 /// `Text` + `.textSelection` swallows double-clicks in its AppKit host, which made
 /// most of a text-dense sticky a dead zone for the open gesture.

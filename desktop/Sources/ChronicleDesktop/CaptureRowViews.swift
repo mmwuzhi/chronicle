@@ -7,62 +7,42 @@ import ChronicleDesktopCore
 
 // MARK: - Row actions
 
-/// One icon action in a row's trailing slot: fixed 24×22 footprint, its own
-/// hover/pressed wash, and no hit testing while hidden (an invisible button
-/// must not swallow clicks on the empty space beside a row).
+/// One low-contrast icon action in a row's trailing slot with a fixed 24×22
+/// footprint and pressed feedback. It intentionally owns no hover state: these
+/// buttons live inside virtualized scrolling rows.
 private struct RowActionButton: View {
     let systemImage: String
     let help: String
-    // Shown only while the pointer is on this button; resting state stays
-    // secondary so a danger tint doesn't shout from every hovered row.
-    var hoverTint: Color?
-    var visible: Bool
     let action: () -> Void
-
-    @State private var hovering = false
 
     var body: some View {
         Button(action: action) {
             Image(systemName: systemImage)
                 .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(hovering ? (hoverTint ?? .secondary) : .secondary)
+                .foregroundStyle(.secondary)
         }
-        .buttonStyle(RowActionButtonStyle(hovering: hovering))
-        .onHover { hovering = $0 }
-        // A hidden control must not announce itself: .help registers its tooltip
-        // area regardless of opacity, so without the gate the empty space beside
-        // an un-hovered row pops "Copy"/"Delete" tips over invisible buttons.
-        .help(visible ? help : "")
-        .opacity(visible ? 1 : 0)
-        .allowsHitTesting(visible)
+        .buttonStyle(RowActionButtonStyle())
+        .accessibilityLabel(help)
     }
 }
 
 private struct RowActionButtonStyle: ButtonStyle {
-    var hovering: Bool
-
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .frame(width: 24, height: 22)
             .background(
-                Color.primary.opacity(configuration.isPressed ? 0.12 : (hovering ? 0.07 : 0)),
+                Color.primary.opacity(configuration.isPressed ? 0.12 : 0),
                 in: RoundedRectangle(cornerRadius: 6),
             )
             .contentShape(RoundedRectangle(cornerRadius: 6))
     }
 }
 
-/// Shared hover action group for capture rows. Keeping this separate prevents the
-/// main window and quick search panel from drifting into different button sets.
-/// Layered by universality (rag's model): copy (universal, safe) stays direct;
-/// low-frequency state actions (pin, remove link) fold into ⋯; open stays direct
-/// because it is the list's only route into the detail window (double-click is
-/// taken by editing); delete sits last and only turns danger-red under the
-/// pointer — the same "red only at the moment of intent" rule as the web's
-/// overflow menu (the 5s undo toast is the actual safety net).
+/// Shared, geometry-stable action group for capture rows. A single quiet
+/// overflow affordance keeps repeated rows content-first while preserving a
+/// discoverable path to every contextual action. It stays visible instead of
+/// mutating per-row state as content moves under the pointer during scrolling.
 struct CaptureRowActions: View {
-    var hovering: Bool
-    var onCopy: () -> Void
     var onDelete: (() -> Void)?
     var onOpen: (() -> Void)?
     var onUnlink: (() -> Void)?
@@ -70,88 +50,128 @@ struct CaptureRowActions: View {
     var isPinned: Bool = false
 
     var body: some View {
-        HStack(spacing: 2) {
-            RowActionButton(systemImage: "doc.on.doc", help: "Copy",
-                            visible: hovering, action: onCopy)
-            if onPin != nil || onUnlink != nil {
-                RowActionMenu(visible: hovering) {
-                    if let onPin {
-                        Button(action: onPin) {
-                            Label(isPinned ? "Unpin from desktop" : "Pin to desktop",
-                                  systemImage: isPinned ? "pin.slash" : "pin")
-                        }
-                    }
-                    if let onUnlink {
-                        Button(action: onUnlink) {
-                            Label("Remove link", systemImage: "minus.circle")
-                        }
-                    }
-                }
-            }
-            if let onOpen {
-                RowActionButton(systemImage: "arrow.up.forward.square", help: "Open",
-                                visible: hovering, action: onOpen)
-            }
-            if let onDelete {
-                RowActionButton(systemImage: "trash", help: "Delete",
-                                hoverTint: .red.opacity(0.85),
-                                visible: hovering, action: onDelete)
-            }
+        if hasActions {
+            RowActionMenu(
+                onOpen: onOpen,
+                onPin: onPin,
+                onUnlink: onUnlink,
+                onDelete: onDelete,
+                isPinned: isPinned,
+            )
+            .frame(width: 24, alignment: .trailing)
         }
-        .animation(.easeOut(duration: 0.12), value: hovering)
-        .frame(width: Self.slotWidth(
-            onOpen: onOpen,
-            onDelete: onDelete,
-            onUnlink: onUnlink,
-            onPin: onPin
-        ), alignment: .trailing)
     }
 
-    // One fixed slot per visible action so long content never collides with icons.
-    static func slotWidth(
-        onOpen: (() -> Void)?,
-        onDelete: (() -> Void)?,
-        onUnlink: (() -> Void)?,
-        onPin: (() -> Void)?
-    ) -> CGFloat {
-        let count = 1 + (onOpen == nil ? 0 : 1) + (onDelete == nil ? 0 : 1)
-            + (onUnlink == nil && onPin == nil ? 0 : 1)
-        return CGFloat(count) * 24 + CGFloat(count - 1) * 2
+    private var hasActions: Bool {
+        onOpen != nil || onPin != nil || onUnlink != nil || onDelete != nil
     }
 }
 
-/// The ⋯ overflow in a row's trailing slot: same 24×22 footprint and hover wash
-/// as its sibling buttons, hidden (and not hit-testable) until the row is hovered.
-private struct RowActionMenu<Items: View>: View {
-    var visible: Bool
-    @ViewBuilder var items: () -> Items
-
-    @State private var hovering = false
+/// The ⋯ overflow in a row's trailing slot. It deliberately stays a plain Button:
+/// SwiftUI Menu mounts an AppKitPopUpAdaptor/NSPopUpButton, and moving rows through
+/// the pointer while scrolling repeatedly creates and destroys that platform view.
+/// On macOS 26 this can trap LazyVStack in a non-terminating layout pass. Build the
+/// short-lived NSMenu only after a click instead.
+private struct RowActionMenu: View {
+    var onOpen: (() -> Void)?
+    var onPin: (() -> Void)?
+    var onUnlink: (() -> Void)?
+    var onDelete: (() -> Void)?
+    var isPinned: Bool
 
     var body: some View {
-        Menu(content: items) {
-            Image(systemName: "ellipsis")
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(.secondary)
+        RowActionButton(systemImage: "ellipsis", help: "More") {
+            CaptureRowOverflowMenu.present(
+                onOpen: onOpen,
+                onPin: onPin,
+                onUnlink: onUnlink,
+                onDelete: onDelete,
+                isPinned: isPinned,
+            )
         }
-        .menuStyle(.borderlessButton)
-        // The borderless menu style paints its label with the environment tint,
-        // overriding the label's own foregroundStyle — without this counter-tint
-        // the window root's brand tint turns the ⋯ green.
-        .tint(Color.secondary)
-        .menuIndicator(.hidden)
-        .fixedSize()
-        .frame(width: 24, height: 22)
-        .background(
-            Color.primary.opacity(hovering ? 0.07 : 0),
-            in: RoundedRectangle(cornerRadius: 6),
+    }
+}
+
+enum CaptureRowOverflowMenu {
+    @MainActor
+    static func make(
+        onOpen: (() -> Void)?,
+        onPin: (() -> Void)?,
+        onUnlink: (() -> Void)?,
+        onDelete: (() -> Void)?,
+        isPinned: Bool
+    ) -> NSMenu {
+        let menu = NSMenu()
+        if let onOpen {
+            menu.addItem(ClosureMenuItem(
+                title: "Open",
+                systemImage: "arrow.up.forward.square",
+                action: onOpen,
+            ))
+        }
+        if let onPin {
+            menu.addItem(ClosureMenuItem(
+                title: isPinned ? "Unpin from desktop" : "Pin to desktop",
+                systemImage: isPinned ? "pin.slash" : "pin",
+                action: onPin,
+            ))
+        }
+        if let onUnlink {
+            menu.addItem(ClosureMenuItem(
+                title: "Remove link",
+                systemImage: "minus.circle",
+                action: onUnlink,
+            ))
+        }
+        if let onDelete {
+            if !menu.items.isEmpty {
+                menu.addItem(.separator())
+            }
+            menu.addItem(ClosureMenuItem(
+                title: "Delete",
+                systemImage: "trash",
+                action: onDelete,
+            ))
+        }
+        return menu
+    }
+
+    @MainActor
+    static func present(
+        onOpen: (() -> Void)?,
+        onPin: (() -> Void)?,
+        onUnlink: (() -> Void)?,
+        onDelete: (() -> Void)?,
+        isPinned: Bool
+    ) {
+        make(
+            onOpen: onOpen,
+            onPin: onPin,
+            onUnlink: onUnlink,
+            onDelete: onDelete,
+            isPinned: isPinned,
         )
-        .contentShape(RoundedRectangle(cornerRadius: 6))
-        .onHover { hovering = $0 }
-        // Same gate as RowActionButton: no tooltip while hidden.
-        .help(visible ? "More" : "")
-        .opacity(visible ? 1 : 0)
-        .allowsHitTesting(visible)
+            .popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
+    }
+
+    private final class ClosureMenuItem: NSMenuItem {
+        private let handler: () -> Void
+
+        init(title: String, systemImage: String, action: @escaping () -> Void) {
+            self.handler = action
+            super.init(title: title, action: #selector(invoke), keyEquivalent: "")
+            image = NSImage(systemSymbolName: systemImage, accessibilityDescription: title)
+            target = self
+        }
+
+        @available(*, unavailable)
+        required init(coder: NSCoder) {
+            fatalError("init(coder:) has not been implemented")
+        }
+
+        @objc private func invoke() {
+            handler()
+        }
     }
 }
 
@@ -171,14 +191,31 @@ struct PinnedEdgeBar: View {
     }
 }
 
+/// Compact, geometry-stable metadata for virtualized capture rows.
+struct CaptureRowMetadata: View {
+    let todoState: CaptureTodoState?
+    let createdAt: String
+
+    var body: some View {
+        HStack(spacing: 4) {
+            if let todoState {
+                Image(systemName: todoState == .done ? "checkmark.square" : "square")
+                Text(todoState == .done ? "Done" : "Todo")
+                Text("·")
+            }
+            Text(CaptureTime.display(createdAt))
+                .accessibilityLabel(CaptureTime.precise(createdAt))
+        }
+        .font(.caption2)
+        .foregroundStyle(.tertiary)
+    }
+}
+
 // MARK: - Row body text
 
-/// Row body text: native click-drag selection without surrendering double-click.
-/// SwiftUI's `.textSelection` wraps the glyphs in an AppKit host that consumes
-/// double-clicks for word selection before any SwiftUI gesture can run, so rows
-/// could never open their editor from the text itself. This NSTextView keeps
-/// single-click selection and hands `clickCount == 2` to the row's edit action;
-/// rows without one (link picker, drafts) keep the native word selection.
+/// Selectable body text for non-virtualized recall results. Scrolling capture
+/// rows deliberately use pure SwiftUI Text, while the quick panel's answer and
+/// sources keep native click-drag selection through this lightweight wrapper.
 struct SelectableRowText: NSViewRepresentable {
     let text: String
     var onDoubleClick: (() -> Void)?
@@ -269,12 +306,11 @@ struct SelectableRowText: NSViewRepresentable {
 
 // MARK: - Capture row
 
-/// One capture/hit row: content, timestamp, hover-revealed shared actions, and
+/// One capture/hit row: content, timestamp, stable shared actions, and
 /// double-click-to-edit (when `onEdit` is provided). Matches rag's row geometry:
 /// fixed right-hand action slot so long content never collides with the icons.
 struct CaptureRow: View {
     let item: RowItem
-    var onCopy: () -> Void
     var onDelete: (() -> Void)?
     var onEdit: ((String) -> Void)?
     var onOpen: (() -> Void)?
@@ -295,9 +331,7 @@ struct CaptureRow: View {
     var onSaveAndContinue: (() -> Void)?
     var onDiscardAndContinue: (() -> Void)?
     var onKeepEditing: (() -> Void)?
-    var onCancel: (() -> Void)?
 
-    @State private var hovering = false
     @State private var fallbackEditing = false
     @State private var fallbackText = ""
     @State private var draftFocused = false
@@ -345,14 +379,12 @@ struct CaptureRow: View {
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .contentShape(Rectangle())
-                    // simultaneousGesture, not onTapGesture: the selectable Text
-                    // consumes double-clicks for word selection on macOS, so a
-                    // plain tap gesture on it never fires.
+                    // Keep editing on the whole text column. Resting list text is
+                    // deliberately pure SwiftUI so LazyVStack never has to reflow
+                    // a platform NSTextView while scrolling.
                     .simultaneousGesture(TapGesture(count: 2).onEnded { beginEditingFromContent() })
 
                     CaptureRowActions(
-                        hovering: hovering,
-                        onCopy: onCopy,
                         onDelete: onDelete,
                         onOpen: onOpen,
                         onUnlink: onUnlink,
@@ -368,14 +400,9 @@ struct CaptureRow: View {
         // so the hover wash lines up across surfaces.
         .padding(.horizontal, rowIsEditing ? 0 : RowStyle.horizontalInset)
         .contentShape(Rectangle())
-        .background(
-            Color.primary.opacity(hovering && !rowIsEditing ? RowStyle.washOpacity : 0),
-            in: RoundedRectangle(cornerRadius: RowStyle.cornerRadius),
-        )
         .overlay(alignment: .leading) {
             PinnedEdgeBar(isPinned: isPinned && !rowIsEditing)
         }
-        .onHover { hovering = $0 }
     }
 
     @ViewBuilder
@@ -384,26 +411,15 @@ struct CaptureRow: View {
             Text("(media capture)")
                 .foregroundStyle(.secondary)
         } else {
-            SelectableRowText(
-                text: item.content,
-                onDoubleClick: onEdit != nil ? { beginEditingFromContent() } : nil,
-                onCancel: onCancel,
-            )
+            Text(item.content)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
-        // Resting metadata stays tertiary; the whole line firms up to secondary
-        // on hover because that's the moment the user is actually reading it.
-        // The todo marker mirrors the web card's footer vocabulary (Todo/Done).
-        HStack(spacing: 4) {
-            if let todo = item.todoState {
-                Image(systemName: todo == .done ? "checkmark.square" : "square")
-                Text(todo == .done ? "Done" : "Todo")
-                Text("·")
-            }
-            Text(hovering ? CaptureTime.precise(item.createdAt)
-                          : CaptureTime.display(item.createdAt))
-        }
-        .font(.caption2)
-        .foregroundStyle(hovering ? HierarchicalShapeStyle.secondary : .tertiary)
+        // Resting metadata stays tertiary. The todo marker mirrors the web card's
+        // footer vocabulary (Todo/Done).
+        CaptureRowMetadata(
+            todoState: item.todoState,
+            createdAt: item.createdAt,
+        )
     }
 
     private var editContainer: some View {

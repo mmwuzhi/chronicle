@@ -7,6 +7,49 @@ import SwiftUI
 // button. No capture state lives here.
 
 @MainActor
+final class MainWindowSidebarHoverState: ObservableObject {
+    @Published private(set) var peeking = false
+
+    private var buttonHovering = false
+    private var railHovering = false
+    private var suppressed = false
+
+    var railPeeking: Bool {
+        suppressed == false && railHovering
+    }
+
+    func setButtonHovering(_ hovering: Bool) {
+        if hovering == false, suppressed {
+            suppressed = false
+        }
+        guard buttonHovering != hovering else {
+            updatePeeking()
+            return
+        }
+        buttonHovering = hovering
+        updatePeeking()
+    }
+
+    func setRailHovering(_ hovering: Bool) {
+        guard railHovering != hovering else { return }
+        railHovering = hovering
+        updatePeeking()
+    }
+
+    func setSuppressed(_ suppressed: Bool) {
+        guard self.suppressed != suppressed else { return }
+        self.suppressed = suppressed
+        updatePeeking()
+    }
+
+    private func updatePeeking() {
+        let next = suppressed == false && (buttonHovering || railHovering)
+        guard peeking != next else { return }
+        peeking = next
+    }
+}
+
+@MainActor
 final class MainWindowNavigation: ObservableObject {
     private static let modeKey = "ChronicleMainWindowMode"
     private static let tabsExpandedKey = "ChronicleMainWindowTabsExpanded"
@@ -20,20 +63,16 @@ final class MainWindowNavigation: ObservableObject {
         didSet { defaults.set(tabsExpanded, forKey: Self.tabsExpandedKey) }
     }
 
-    @Published private var tabsButtonHovering = false
-    @Published private var tabsRailHovering = false
-    @Published private var tabsHoverGrace = false
-    @Published private var tabsHoverSuppressed = false
     @Published private(set) var suppressTabsExpandedAnimation = false
-    private var tabsHoverGraceTask: Task<Void, Never>?
+    let sidebarHover = MainWindowSidebarHoverState()
     private var tabsAnimationSuppressionTask: Task<Void, Never>?
 
     var tabsPeeking: Bool {
-        tabsHoverSuppressed == false && (tabsButtonHovering || tabsRailHovering || tabsHoverGrace)
+        sidebarHover.peeking
     }
 
     var tabsRailPeeking: Bool {
-        tabsHoverSuppressed == false && tabsRailHovering
+        sidebarHover.railPeeking
     }
 
     init(defaults: UserDefaults = .standard) {
@@ -52,43 +91,11 @@ final class MainWindowNavigation: ObservableObject {
     }
 
     func setTabsButtonHovering(_ hovering: Bool) {
-        if hovering == false, tabsHoverSuppressed {
-            tabsHoverSuppressed = false
-            tabsButtonHovering = false
-            tabsHoverGraceTask?.cancel()
-            tabsHoverGrace = false
-            return
-        }
-        if hovering == false {
-            tabsHoverSuppressed = false
-        }
-        setTabsHovering(hovering) { self.tabsButtonHovering = $0 }
+        sidebarHover.setButtonHovering(hovering)
     }
 
     func setTabsRailHovering(_ hovering: Bool) {
-        setTabsHovering(hovering) { self.tabsRailHovering = $0 }
-    }
-
-    private func setTabsHovering(_ hovering: Bool, assign: @escaping (Bool) -> Void) {
-        if hovering {
-            tabsHoverGraceTask?.cancel()
-            tabsHoverGrace = false
-            assign(true)
-        } else {
-            assign(false)
-            holdTabsOpenBriefly()
-        }
-    }
-
-    private func holdTabsOpenBriefly() {
-        guard tabsButtonHovering == false, tabsRailHovering == false else { return }
-        tabsHoverGraceTask?.cancel()
-        tabsHoverGrace = true
-        tabsHoverGraceTask = Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(180))
-            guard Task.isCancelled == false else { return }
-            tabsHoverGrace = false
-        }
+        sidebarHover.setRailHovering(hovering)
     }
 
     func toggleTabsExpanded() {
@@ -96,11 +103,12 @@ final class MainWindowNavigation: ObservableObject {
         setTabsExpandedAnimationSuppressed(shouldSuppressExpansionAnimation)
         tabsExpanded.toggle()
         if tabsExpanded {
-            tabsHoverSuppressed = false
+            // The collapsed overlay is about to leave the hierarchy, so it can no
+            // longer deliver a matching mouseExited event for its tracking area.
+            sidebarHover.setRailHovering(false)
+            sidebarHover.setSuppressed(false)
         } else {
-            tabsHoverGraceTask?.cancel()
-            tabsHoverGrace = false
-            tabsHoverSuppressed = true
+            sidebarHover.setSuppressed(true)
         }
     }
 
@@ -116,31 +124,25 @@ final class MainWindowNavigation: ObservableObject {
     }
 }
 
-extension View {
-    // Same macOS 26 availability rationale as `panelGlass` in
-    // PanelContentView.swift, but full-bleed (no corner radius) since the rail
-    // hugs the window's leading edge rather than floating as its own panel.
-    // The stutter this was first blamed for was actually the browse/trash
-    // lists missing `LazyVStack` (see MainView.swift), not this material.
-    @ViewBuilder
-    fileprivate func sidebarGlass() -> some View {
-        if #available(macOS 26, *) {
-            glassEffect(.regular, in: Rectangle())
-        } else {
-            background(.regularMaterial)
-        }
-    }
+enum MainWindowLayout {
+    static let minimumSize = NSSize(width: 700, height: 520)
+    static let titlebarInset: CGFloat = 38
 }
 
 struct MainTabRail: View {
     static let width: CGFloat = 148
     static let edgePeekInset: CGFloat = 2
     static let edgePeekWidth: CGFloat = 5
+    // Roughly three CJK characters at the sidebar's text size. This is a
+    // spatial tolerance, not a close delay: once the pointer leaves this
+    // region the floating rail still dismisses immediately.
+    static let hoverBufferWidth: CGFloat = 54
+    static let collapsedHoverWidth = edgePeekInset + edgePeekWidth
+    static let floatingHoverWidth = width + hoverBufferWidth
 
     let modes: [MainView.Mode]
     let selected: MainView.Mode
     let floating: Bool
-    let onHover: (Bool) -> Void
     let onSelect: (MainView.Mode) -> Void
 
     var body: some View {
@@ -152,23 +154,23 @@ struct MainTabRail: View {
             Spacer()
 
             if modes.contains(.settings) {
+                Divider()
+                    .padding(.horizontal, 8)
+                    .padding(.bottom, 2)
                 tabButton(.settings)
             }
         }
         .padding(.horizontal, 10)
-        .padding(.vertical, 14)
+        .padding(.top, MainWindowLayout.titlebarInset + 14)
+        .padding(.bottom, 14)
         .frame(width: Self.width)
         .frame(maxHeight: .infinity)
-        .sidebarGlass()
+        .background(Color.chronicleSidebar)
         .overlay(alignment: .trailing) {
-            LinearGradient(
-                colors: [Color.white.opacity(0.55), Color.white.opacity(0.05)],
-                startPoint: .top, endPoint: .bottom,
-            )
+            Color.primary.opacity(0.08)
             .frame(width: 1)
         }
         .shadow(color: Color.black.opacity(floating ? 0.12 : 0), radius: floating ? 18 : 0, x: floating ? 8 : 0, y: 0)
-        .onHover(perform: onHover)
     }
 
     private func tabButton(_ mode: MainView.Mode) -> some View {
@@ -188,13 +190,72 @@ struct MainTabRail: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .foregroundStyle(isSelected ? Color.primary : Color.secondary)
             .background(
-                isSelected ? AnyShapeStyle(Color.chronicleAccent.opacity(0.22))
+                isSelected ? AnyShapeStyle(Color.chronicleAccent.opacity(0.14))
                            : AnyShapeStyle(Color.clear),
                 in: RoundedRectangle(cornerRadius: 8),
             )
         }
-        .buttonStyle(.plain)
+        .buttonStyle(SidebarButtonStyle())
         .help(mode.rawValue)
+        .accessibilityIdentifier("main-navigation-\(mode.rawValue.lowercased())")
+    }
+}
+
+/// One continuous tracking region grows from the edge trigger to the rail plus
+/// its spatial tolerance. Keeping the same view alive avoids an exit/enter
+/// handoff between two sensors, which used to retrigger the peek transition.
+/// Tracking does not intercept clicks, so content under the buffer stays active.
+struct SidebarHoverRegion: NSViewRepresentable {
+    let onHover: (Bool) -> Void
+
+    func makeNSView(context: Context) -> SidebarHoverTrackingView {
+        let view = SidebarHoverTrackingView()
+        view.onHover = onHover
+        return view
+    }
+
+    func updateNSView(_ view: SidebarHoverTrackingView, context: Context) {
+        view.onHover = onHover
+    }
+}
+
+final class SidebarHoverTrackingView: NSView {
+    var onHover: ((Bool) -> Void)?
+    private var hoverTrackingArea: NSTrackingArea?
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let hoverTrackingArea {
+            removeTrackingArea(hoverTrackingArea)
+        }
+        let area = NSTrackingArea(
+            rect: bounds,
+            options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+            owner: self,
+            userInfo: nil,
+        )
+        addTrackingArea(area)
+        hoverTrackingArea = area
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    override func mouseEntered(with event: NSEvent) {
+        super.mouseEntered(with: event)
+        onHover?(true)
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        super.mouseExited(with: event)
+        onHover?(false)
+    }
+}
+
+private struct SidebarButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.97 : 1)
+            .animation(.easeOut(duration: 0.1), value: configuration.isPressed)
     }
 }
 
@@ -227,12 +288,15 @@ final class MainWindowController: NSObject {
 
     private func makeWindow() -> NSWindow {
         let w = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 680, height: 520),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            contentRect: NSRect(origin: .zero, size: MainWindowLayout.minimumSize),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered, defer: false,
         )
         w.title = "Chronicle"
         w.titleVisibility = .hidden
+        w.titlebarAppearsTransparent = true
+        w.titlebarSeparatorStyle = .none
+        w.backgroundColor = .windowBackgroundColor
         w.center()
         w.setFrameAutosaveName("ChronicleMainWindow")
         w.isReleasedWhenClosed = false
@@ -264,7 +328,7 @@ final class MainWindowController: NSObject {
             target: self,
             action: #selector(toggleSidebarTabs),
         )
-        button.bezelStyle = .texturedRounded
+        button.isBordered = false
         button.imagePosition = .imageOnly
         button.setButtonType(.momentaryPushIn)
         button.toolTip = navigation.tabsExpanded ? "Collapse tabs" : "Expand tabs"
@@ -304,6 +368,17 @@ private final class HoverSidebarButton: NSButton {
 
     private static let hoverSize = NSSize(width: 22, height: 22)
     private var hoverTrackingArea: NSTrackingArea?
+    private var hovering = false {
+        didSet { updateVisualState() }
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        wantsLayer = true
+        layer?.cornerRadius = 7
+        layer?.masksToBounds = true
+        updateVisualState()
+    }
 
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
@@ -323,12 +398,21 @@ private final class HoverSidebarButton: NSButton {
 
     override func mouseEntered(with event: NSEvent) {
         super.mouseEntered(with: event)
+        hovering = true
         onHoverChange?(true)
     }
 
     override func mouseExited(with event: NSEvent) {
         super.mouseExited(with: event)
+        hovering = false
         onHoverChange?(false)
+    }
+
+    private func updateVisualState() {
+        contentTintColor = hovering ? .labelColor : .secondaryLabelColor
+        layer?.backgroundColor = NSColor.labelColor
+            .withAlphaComponent(hovering ? 0.08 : 0)
+            .cgColor
     }
 }
 

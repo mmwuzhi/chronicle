@@ -9,15 +9,23 @@ import SwiftUI
 // MARK: - Brand
 
 extension Color {
-    /// Chronicle's brand green — the web app's `--accent: #0e9e6e` — fixed
+    /// Chronicle's mint accent — the web app's `--accent: #16b982` — fixed
     /// instead of following the macOS system accent: the two ends should read
     /// as one product, and a user-chosen system accent (orange, blue, …) was
     /// the loudest visual split between them. Lightened in dark mode so it
     /// keeps contrast on dark surfaces.
     static let chronicleAccent = Color(nsColor: NSColor(name: nil) { appearance in
         appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
-            ? NSColor(srgbRed: 0.18, green: 0.76, blue: 0.55, alpha: 1)
-            : NSColor(srgbRed: 0.055, green: 0.62, blue: 0.431, alpha: 1)
+            ? NSColor(srgbRed: 0.36, green: 0.86, blue: 0.71, alpha: 1)
+            : NSColor(srgbRed: 0.086, green: 0.725, blue: 0.510, alpha: 1)
+    })
+
+    /// A quiet, slightly mint-tinted navigation surface. Unlike the old glass
+    /// rail, it stays opaque when the sidebar peeks over text-heavy content.
+    static let chronicleSidebar = Color(nsColor: NSColor(name: nil) { appearance in
+        appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            ? NSColor(srgbRed: 0.105, green: 0.125, blue: 0.116, alpha: 1)
+            : NSColor(srgbRed: 0.953, green: 0.969, blue: 0.961, alpha: 1)
     })
 }
 

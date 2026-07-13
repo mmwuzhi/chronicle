@@ -1,9 +1,10 @@
 import AppKit
+import AuthenticationServices
 import SwiftUI
 import ChronicleDesktopCore
 
-// Settings window (replaces the old single NSAlert). Sections, top to bottom:
-// Account (sign in / out), Connection (API URL), Shortcut, Reminders, Retry
+// Settings surface (replaces the old single NSAlert). Sections, top to bottom:
+// Account (with a focused sign-in sheet), Connection (API URL), Shortcut, Reminders, Retry
 // Queue (offline captures awaiting sync), and Webhooks (the capture-webhook CRUD,
 // ported from rag3's settings). Visual language matches the rest of the app:
 // Divider rows, hover-only icon buttons, caption/secondary hierarchy.
@@ -15,6 +16,9 @@ final class SettingsModel: ObservableObject {
     @Published var password = ""
     @Published var isSignedIn: Bool
     @Published var status: String?
+    @Published var authError: String?
+    @Published var isAuthenticating = false
+    @Published var isSignInPresented = false
     @Published var pendingCount = 0
 
     let clients: CaptureClients
@@ -23,6 +27,10 @@ final class SettingsModel: ObservableObject {
     private let onSaveShortcut: (ShortcutSpec) -> Void
     private let onSignInChanged: () -> Void
     private let retry: () async -> (sent: Int, remaining: Int)
+    private var webAuthenticationSession: ASWebAuthenticationSession?
+    private var authenticationTask: Task<Void, Never>?
+    private var authenticationGate = AuthenticationAttemptGate()
+    private let oauthPresentationContext = OAuthPresentationContext()
 
     init(
         settings: SettingsStore,
@@ -68,37 +76,183 @@ final class SettingsModel: ObservableObject {
     }
 
     func signIn() {
+        guard !isAuthenticating else { return }
         let email = email.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !email.isEmpty, !password.isEmpty else {
-            status = "Email and password are required."
+            authError = "Email and password are required."
+            return
+        }
+        guard email.range(
+            of: #"^[^@\s]+@[^@\s]+\.[^@\s]+$"#,
+            options: .regularExpression,
+        ) != nil else {
+            authError = "Enter a valid email address."
             return
         }
         guard let url = currentURL else {
-            status = "Use HTTPS for remote servers (HTTP is allowed only on localhost)."
+            authError = "Use HTTPS for remote servers (HTTP is allowed only on localhost)."
             return
         }
         let client = AuthAPIClient(apiURL: url)
         let pw = password
-        Task { @MainActor in
+        guard let attemptID = beginAuthentication() else { return }
+        authError = nil
+        authenticationTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer { self.finishAuthentication(attemptID) }
             do {
                 let response = try await client.login(email: email, password: pw)
+                guard !Task.isCancelled, self.authenticationGate.accepts(attemptID) else { return }
                 if response.mfaRequired == true {
-                    status = "MFA accounts can't sign in from the desktop yet."
+                    self.authError = "MFA accounts can't sign in from the desktop yet."
                     return
                 }
                 guard let token = response.accessToken, !token.isEmpty else {
-                    status = "Sign in failed: no token returned."
+                    self.authError = "Sign in failed: no token returned."
                     return
                 }
-                settings.save(ChronicleConfig(apiURL: url, token: token))
-                isSignedIn = true
-                password = ""
-                status = "Signed in."
-                onSignInChanged()
+                self.completeSignIn(token: token, apiURL: url)
             } catch {
-                status = "Sign in failed: \(error.localizedDescription)"
+                guard !Task.isCancelled, self.authenticationGate.accepts(attemptID) else { return }
+                self.authError = "Sign in failed. Check your email and password."
             }
         }
+    }
+
+    func signIn(provider: OAuthProvider) {
+        guard !isAuthenticating else { return }
+        guard let url = currentURL else {
+            authError = "Use HTTPS for remote servers (HTTP is allowed only on localhost)."
+            return
+        }
+        let client = AuthAPIClient(apiURL: url)
+        let pkce = DesktopOAuthPKCE.generate()
+        let startURL: URL
+        do {
+            startURL = try client.desktopOAuthStartURL(
+                provider: provider,
+                codeChallenge: pkce.challenge,
+            )
+        } catch {
+            authError = "Couldn't start \(provider.displayName) sign in."
+            return
+        }
+
+        authError = nil
+        guard let attemptID = beginAuthentication() else { return }
+        let session = ASWebAuthenticationSession(
+            url: startURL,
+            callbackURLScheme: "chronicle",
+        ) { [weak self] callbackURL, error in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                guard self.authenticationGate.accepts(attemptID) else { return }
+                self.webAuthenticationSession = nil
+                guard error == nil else {
+                    self.finishAuthentication(attemptID)
+                    return
+                }
+                guard let callbackURL,
+                      let components = URLComponents(url: callbackURL, resolvingAgainstBaseURL: false)
+                else {
+                    self.authError = "\(provider.displayName) returned an invalid response."
+                    self.finishAuthentication(attemptID)
+                    return
+                }
+                if components.queryItems?.first(where: { $0.name == "error" })?.value == "mfa_required" {
+                    self.authError = "MFA accounts can't sign in from the desktop yet."
+                    self.finishAuthentication(attemptID)
+                    return
+                }
+                guard let code = components.queryItems?.first(where: { $0.name == "code" })?.value,
+                      !code.isEmpty
+                else {
+                    self.authError = "\(provider.displayName) returned no sign-in code."
+                    self.finishAuthentication(attemptID)
+                    return
+                }
+                self.exchangeOAuthCode(
+                    code,
+                    codeVerifier: pkce.verifier,
+                    provider: provider,
+                    client: client,
+                    apiURL: url,
+                    attemptID: attemptID,
+                )
+            }
+        }
+        session.presentationContextProvider = oauthPresentationContext
+        session.prefersEphemeralWebBrowserSession = false
+        webAuthenticationSession = session
+        guard session.start() else {
+            webAuthenticationSession = nil
+            authError = "Couldn't open \(provider.displayName) sign in."
+            finishAuthentication(attemptID)
+            return
+        }
+    }
+
+    func presentSignIn() {
+        authError = nil
+        isSignInPresented = true
+    }
+
+    func cancelSignIn() {
+        authenticationTask?.cancel()
+        authenticationTask = nil
+        authenticationGate.cancel()
+        webAuthenticationSession?.cancel()
+        webAuthenticationSession = nil
+        isAuthenticating = false
+        authError = nil
+        isSignInPresented = false
+    }
+
+    private func exchangeOAuthCode(
+        _ code: String,
+        codeVerifier: String,
+        provider: OAuthProvider,
+        client: AuthAPIClient,
+        apiURL: URL,
+        attemptID: UUID
+    ) {
+        authenticationTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer { self.finishAuthentication(attemptID) }
+            do {
+                let token = try await client.exchangeDesktopOAuthCode(
+                    code,
+                    codeVerifier: codeVerifier,
+                )
+                guard !Task.isCancelled, self.authenticationGate.accepts(attemptID) else { return }
+                self.completeSignIn(token: token, apiURL: apiURL)
+            } catch {
+                guard !Task.isCancelled, self.authenticationGate.accepts(attemptID) else { return }
+                self.authError = "Couldn't finish \(provider.displayName) sign in. Try again."
+            }
+        }
+    }
+
+    private func beginAuthentication() -> UUID? {
+        guard let attemptID = authenticationGate.begin() else { return nil }
+        isAuthenticating = true
+        return attemptID
+    }
+
+    private func finishAuthentication(_ attemptID: UUID) {
+        guard authenticationGate.finish(attemptID) else { return }
+        authenticationTask = nil
+        isAuthenticating = false
+    }
+
+    private func completeSignIn(token: String, apiURL: URL) {
+        settings.save(ChronicleConfig(apiURL: apiURL, token: token))
+        isSignedIn = true
+        password = ""
+        authError = nil
+        isSignInPresented = false
+        status = "Signed in."
+        onSignInChanged()
     }
 
     func signOut() {
@@ -132,9 +286,35 @@ final class SettingsModel: ObservableObject {
     }
 }
 
+struct AuthenticationAttemptGate {
+    private(set) var activeID: UUID?
+
+    mutating func begin() -> UUID? {
+        guard activeID == nil else { return nil }
+        let id = UUID()
+        activeID = id
+        return id
+    }
+
+    func accepts(_ id: UUID) -> Bool {
+        activeID == id
+    }
+
+    mutating func finish(_ id: UUID) -> Bool {
+        guard activeID == id else { return false }
+        activeID = nil
+        return true
+    }
+
+    mutating func cancel() {
+        activeID = nil
+    }
+}
+
 struct SettingsView: View {
     @ObservedObject var model: SettingsModel
     @AppStorage(ReminderNotifier.enabledKey) private var notifyOnDue = true
+    @State private var showingSignIn = false
 
     var body: some View {
         ScrollView {
@@ -157,7 +337,10 @@ struct SettingsView: View {
             }
             .padding(20)
         }
-        .frame(minWidth: 520, minHeight: 600)
+        .frame(minWidth: 520, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .sheet(isPresented: $showingSignIn) {
+            SignInSheet(model: model)
+        }
     }
 
     private var accountSection: some View {
@@ -166,18 +349,22 @@ struct SettingsView: View {
             if model.isSignedIn {
                 HStack {
                     Label("Signed in", systemImage: "checkmark.seal.fill")
-                        .foregroundStyle(.green)
+                        .foregroundStyle(Color.chronicleAccent)
                     Spacer()
                     Button("Sign Out") { model.signOut() }
                 }
             } else {
-                WorkspaceField(prompt: "Email", text: $model.email, compact: true)
-                WorkspaceField(prompt: "Password", text: $model.password,
-                               secure: true, compact: true, onSubmit: { model.signIn() })
                 HStack {
+                    Label("Not signed in", systemImage: "person.crop.circle")
+                        .foregroundStyle(.secondary)
                     Spacer()
-                    Button("Sign In") { model.signIn() }.keyboardShortcut(.defaultAction)
+                    Button("Sign In…") {
+                        model.authError = nil
+                        showingSignIn = true
+                    }
                 }
+                Text("Sign in to sync captures and use server-backed recall.")
+                    .font(.caption).foregroundStyle(.secondary)
             }
         }
     }
@@ -243,6 +430,99 @@ struct SettingsView: View {
             Text("Captures made offline (or before signing in) sync here once you're online.")
                 .font(.caption).foregroundStyle(.secondary)
         }
+    }
+}
+
+struct SignInSheet: View {
+    @ObservedObject var model: SettingsModel
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Sign in to Chronicle")
+                    .font(.title2.weight(.semibold))
+                Text("Use the same account you use on the web.")
+                    .font(.callout).foregroundStyle(.secondary)
+            }
+
+            providerButton(.google, icon: "g.circle.fill")
+            providerButton(.github, icon: "chevron.left.forwardslash.chevron.right")
+
+            HStack(spacing: 10) {
+                Divider()
+                Text("or use email")
+                    .font(.caption).foregroundStyle(.tertiary)
+                    .fixedSize()
+                Divider()
+            }
+
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Email").font(.caption).foregroundStyle(.secondary)
+                WorkspaceField(prompt: "you@example.com", text: $model.email, compact: true)
+                Text("Password").font(.caption).foregroundStyle(.secondary)
+                WorkspaceField(
+                    prompt: "Password",
+                    text: $model.password,
+                    secure: true,
+                    compact: true,
+                    onSubmit: { model.signIn() },
+                )
+            }
+
+            if let error = model.authError {
+                Text(error)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            HStack {
+                if model.isAuthenticating {
+                    ProgressView().controlSize(.small)
+                }
+                Spacer()
+                Button("Cancel") {
+                    model.cancelSignIn()
+                    dismiss()
+                }
+                    .keyboardShortcut(.cancelAction)
+                Button("Sign In") { model.signIn() }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(model.isAuthenticating)
+            }
+        }
+        .padding(24)
+        .frame(width: 390)
+        .onChange(of: model.isSignedIn) { signedIn in
+            if signedIn { dismiss() }
+        }
+    }
+
+    private func providerButton(_ provider: OAuthProvider, icon: String) -> some View {
+        Button { model.signIn(provider: provider) } label: {
+            Label("Continue with \(provider.displayName)", systemImage: icon)
+                .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.large)
+        .disabled(model.isAuthenticating)
+    }
+}
+
+private extension OAuthProvider {
+    var displayName: String {
+        switch self {
+        case .google: "Google"
+        case .github: "GitHub"
+        }
+    }
+}
+
+@MainActor
+private final class OAuthPresentationContext: NSObject, ASWebAuthenticationPresentationContextProviding {
+    func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
+        NSApp.keyWindow ?? NSApp.mainWindow ?? NSApp.windows.first ?? NSWindow()
     }
 }
 

@@ -188,7 +188,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 return config.isUsable
                     ? WebhookAPIClient(config: config, refresher: authRefresher) : nil
             },
-            openSettings: { [weak self] in self?.showSettings() },
+            openSignIn: { [weak self] in self?.showSignIn() },
             openDetail: { [weak self] row in self?.detailWindowController?.open(row) },
             togglePin: { [weak self] row in self?.pinnedStickyController?.toggle(row) },
             isPinned: { [weak self] id in self?.pinnedStickyController?.isPinned(id) ?? false },
@@ -285,7 +285,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let appMenuItem = NSMenuItem()
         let appMenu = NSMenu()
-        appMenu.addItem(NSMenuItem(title: "Quit Chronicle", action: #selector(quitAction), keyEquivalent: "q"))
+        let settingsItem = NSMenuItem(title: "Settings…", action: #selector(showSettingsAction), keyEquivalent: ",")
+        settingsItem.target = self
+        appMenu.addItem(settingsItem)
+        appMenu.addItem(.separator())
+        let quitItem = NSMenuItem(title: "Quit Chronicle", action: #selector(quitAction), keyEquivalent: "q")
+        quitItem.target = self
+        appMenu.addItem(quitItem)
         appMenuItem.submenu = appMenu
         mainMenu.addItem(appMenuItem)
 
@@ -321,6 +327,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func showSettings() {
         mainWindowController.show(mode: .settings)
+    }
+
+    private func showSignIn() {
+        mainWindowController.show(mode: .ask)
+        settingsModel.presentSignIn()
     }
 
     // Re-sync reminders + offline captures after the signed-in state changes.

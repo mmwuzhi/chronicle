@@ -125,6 +125,14 @@ func Register(api huma.API, r chi.Router, pool *pgxpool.Pool, rdb *redis.Client,
 	}, h.login)
 
 	huma.Register(api, huma.Operation{
+		OperationID: "desktopOAuthExchange",
+		Method:      http.MethodPost,
+		Path:        "/auth/oauth/desktop/exchange",
+		Summary:     "Exchange a one-time desktop OAuth handoff code",
+		Tags:        []string{"auth"},
+	}, h.desktopOAuthExchange)
+
+	huma.Register(api, huma.Operation{
 		OperationID: "refresh",
 		Method:      http.MethodPost,
 		Path:        "/auth/refresh",

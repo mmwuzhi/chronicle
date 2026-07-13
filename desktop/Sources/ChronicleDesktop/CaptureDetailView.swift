@@ -257,7 +257,6 @@ struct CaptureDetailView: View {
             ForEach(model.linked) { row in
                 CaptureRow(
                     item: row,
-                    onCopy: { onCopy(row.content) },
                     onOpen: { model.open(row) },
                     onUnlink: { model.removeLink(row.id) },
                 )
@@ -273,7 +272,6 @@ struct CaptureDetailView: View {
             ForEach(model.related) { row in
                 CaptureRow(
                     item: row,
-                    onCopy: { onCopy(row.content) },
                     onOpen: { model.open(row) },
                 )
             }

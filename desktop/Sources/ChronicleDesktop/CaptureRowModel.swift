@@ -12,7 +12,7 @@ import ChronicleDesktopCore
 final class CaptureClients {
     let recall: () -> RecallAPIClient?
     let webhook: () -> WebhookAPIClient?
-    let openSettings: () -> Void
+    let openSignIn: () -> Void
     // Open the single-capture detail window focused on the given row.
     let openDetail: (RowItem) -> Void
     // Pin / unpin a capture as a desktop sticky, and read whether one is pinned.
@@ -39,7 +39,7 @@ final class CaptureClients {
     init(
         recall: @escaping () -> RecallAPIClient?,
         webhook: @escaping () -> WebhookAPIClient?,
-        openSettings: @escaping () -> Void,
+        openSignIn: @escaping () -> Void,
         openDetail: @escaping (RowItem) -> Void = { _ in },
         togglePin: @escaping (RowItem) -> Void = { _ in },
         isPinned: @escaping (String) -> Bool = { _ in false },
@@ -52,7 +52,7 @@ final class CaptureClients {
     ) {
         self.recall = recall
         self.webhook = webhook
-        self.openSettings = openSettings
+        self.openSignIn = openSignIn
         self.openDetail = openDetail
         self.togglePin = togglePin
         self.isPinned = isPinned

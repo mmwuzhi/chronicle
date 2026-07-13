@@ -3,10 +3,10 @@
 
 /* ── Design tokens ─────────────────────────────────────────────────────── */
 :root {
-  --accent: #0e9e6e;
+  --accent: #16b982;
   --accent-strong: color-mix(in srgb, var(--accent) 84%, #000);
   --accent-weak: color-mix(in srgb, var(--accent) 13%, #fff);
-  --accent-text: #ffffff;
+  --accent-text: #063b2b;
 
   --bg: #f7f8f9;
   --bg-tint: #eef0f2;

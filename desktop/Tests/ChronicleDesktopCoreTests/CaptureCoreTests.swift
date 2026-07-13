@@ -90,6 +90,32 @@ func authClientBuildsLoginRequest() throws {
 }
 
 @Test
+func authClientBuildsDesktopOAuthFlowRequests() throws {
+    let client = AuthAPIClient(apiURL: URL(string: "https://api.example.com/v1")!)
+    let verifier = "0123456789012345678901234567890123456789012"
+    let challenge = DesktopOAuthPKCE.challenge(for: verifier)
+
+    let startURL = try client.desktopOAuthStartURL(provider: .google, codeChallenge: challenge)
+    let exchange = try client.makeDesktopOAuthExchangeRequest(
+        code: "one-time-code",
+        codeVerifier: verifier,
+    )
+
+    #expect(startURL.absoluteString == "https://api.example.com/v1/auth/google?client=desktop&code_challenge=_RpfHqw8pAZIomzVUE7sjRmHSM543WVdC4o-Kc4_3C0&code_challenge_method=S256")
+    #expect(exchange.url?.absoluteString == "https://api.example.com/v1/auth/oauth/desktop/exchange")
+    #expect(exchange.httpMethod == "POST")
+    #expect(exchange.httpShouldHandleCookies)
+    let body = try #require(exchange.httpBody)
+    let decoded = try JSONDecoder().decode(DesktopOAuthExchangeRequest.self, from: body)
+    #expect(decoded.code == "one-time-code")
+    #expect(decoded.codeVerifier == verifier)
+
+    let generated = DesktopOAuthPKCE.generate()
+    #expect(generated.verifier.count == 43)
+    #expect(generated.challenge == DesktopOAuthPKCE.challenge(for: generated.verifier))
+}
+
+@Test
 func hotKeyParserParsesDefaultShortcut() throws {
     let spec = try #require(HotKeyParser.parse("control+option+space"))
 

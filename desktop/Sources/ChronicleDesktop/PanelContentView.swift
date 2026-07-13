@@ -211,7 +211,6 @@ struct PanelContentView: View {
         _ = pinTick
         return CaptureRow(
             item: row,
-            onCopy: { copy(row.content) },
             onDelete: { delete(row) },
             onEdit: nil,
             onOpen: { clients.openDetail(row) },
@@ -220,7 +219,6 @@ struct PanelContentView: View {
                 pinTick &+= 1
             },
             isPinned: isPinned,
-            onCancel: escape,
         )
     }
 
@@ -253,7 +251,7 @@ struct PanelContentView: View {
     private func signInPrompt(_ message: String) -> some View {
         HStack(spacing: 8) {
             Text(message).font(.callout).foregroundStyle(.secondary)
-            Button("Open Settings") { clients.openSettings() }
+            Button("Sign in") { clients.openSignIn() }
                 .buttonStyle(.link).font(.callout)
             Spacer()
         }
@@ -399,11 +397,6 @@ struct PanelContentView: View {
         DispatchQueue.main.async { focused = true }
     }
 
-    private func copy(_ s: String) {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(s, forType: .string)
-    }
-
     private func delete(_ row: RowItem) {
         let plan = captureDeletePlan(for: row, hasServerClient: clients.recall() != nil)
         guard plan != .unavailable else { return }
@@ -432,6 +425,11 @@ struct PanelContentView: View {
                 recentRows.removeAll { $0.id == id }
             }
         }
+    }
+
+    private func copy(_ s: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(s, forType: .string)
     }
 
 }

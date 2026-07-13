@@ -12,8 +12,9 @@ to a local SQLite cache that works without an account.
 swift run ChronicleDesktop
 ```
 
-The app starts in the menu bar. Use Settings to sign in with a Chronicle email
-and password (MFA login is not implemented yet). It targets
+The app starts in the menu bar. Use Sign In from the main window's Ask composer
+or Account settings to open the account sheet, then continue with Google,
+GitHub, or a Chronicle email and password (MFA login is not implemented yet). It targets
 `http://localhost:8080` by default; set `CHRONICLE_API_URL` for another
 endpoint.
 
@@ -32,18 +33,17 @@ Reminder notifications require the packaged `.app` (`make desktop-app` or
 
 ## Capture rows
 
-Rows in the quick panel and main window share one set of hover actions, layered
-by universality: **copy** stays direct; low-frequency state actions (**pin to
-desktop**, **remove link**) fold into a **⋯** menu; **open** stays direct — the
-list's only route into a detail window, since double-clicking a row edits it in
-place; **delete** sits last in red. A pinned row shows a quiet accent bar on its
-left edge instead of a lit icon.
+Rows in the quick panel and main window keep one always-visible **⋯** affordance
+instead of mounting several hover controls in every scrolling row. Its menu
+contains **open**, **pin/unpin**, **remove link**, and **delete** when those
+actions apply. Double-clicking an editable row edits it in place. A pinned row
+shows a quiet accent bar on its left edge instead of a lit icon.
 
 ## Detail windows
 
 Every capture can open in its own independent window; several stay open side by
 side, and opening a capture that is already on screen just focuses its window.
-Entry points: a row's open button, double-clicking a desktop sticky, and
+Entry points: **Open** in a row's overflow, double-clicking a desktop sticky, and
 tapping a reminder notification. The detail window shows the capture together
 with its linked and related captures.
 

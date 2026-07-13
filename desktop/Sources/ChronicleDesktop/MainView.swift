@@ -5,7 +5,7 @@ import ChronicleDesktopCore
 // The resizable main window (ported from rag3's MainView): two modes.
 // Browse — empty query shows everything (newest first, paged); typing searches.
 // Ask — query-time analysis with cited sources. Rows are editable (double-click)
-// and deletable (hover), both wired to the capture API.
+// and editable or deletable through their row overflow, wired to the capture API.
 //
 // Split across files: window chrome (navigation model, tab rail, window
 // controller) lives in MainWindowChrome.swift; the trash pane in
@@ -41,8 +41,11 @@ struct MainView: View {
     @State private var pendingEditTarget: RowItem?
 
     @State private var askQuery = ""
+    @State private var submittedQuestion = ""
     @State private var answer = ""
     @State private var sources: [AskSource] = []
+    @State private var askFocused = false
+    @State private var askEditorHeight: CGFloat = 38
 
     @State private var busy = false
     @State private var error = ""
@@ -107,43 +110,31 @@ struct MainView: View {
                         modes: Mode.allCases,
                         selected: navigation.mode,
                         floating: false,
-                        onHover: { navigation.setTabsRailHovering($0) },
                         onSelect: select,
                     )
                     .transition(.move(edge: .leading).combined(with: .opacity))
                 }
 
                 tabContent
+                    .padding(.top, MainWindowLayout.titlebarInset)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
 
             if navigation.tabsExpanded == false {
-                HStack(spacing: 0) {
-                    Color.clear
-                        .frame(width: MainTabRail.edgePeekInset)
-                        .allowsHitTesting(false)
-                    Color.clear
-                        .frame(width: MainTabRail.edgePeekWidth)
-                        .contentShape(Rectangle())
-                        .onHover { navigation.setTabsRailHovering($0) }
-                }
-                .frame(maxHeight: .infinity)
-                .zIndex(2)
-            }
-
-            if navigation.tabsPeeking && navigation.tabsExpanded == false {
-                MainTabRail(
+                CollapsedSidebarOverlay(
+                    hover: navigation.sidebarHover,
                     modes: Mode.allCases,
                     selected: navigation.mode,
-                    floating: true,
-                    onHover: { navigation.setTabsRailHovering($0) },
                     onSelect: select,
                 )
                 .zIndex(1)
-                .transition(.move(edge: .leading).combined(with: .opacity))
             }
         }
-        .frame(minWidth: 700, minHeight: 520)
+        .ignoresSafeArea(edges: .top)
+        .frame(
+            minWidth: MainWindowLayout.minimumSize.width,
+            minHeight: MainWindowLayout.minimumSize.height,
+        )
         .overlay(alignment: .bottom) {
             if pendingDeleteId != nil {
                 UndoDeleteToast(onUndo: undoDelete)
@@ -159,10 +150,24 @@ struct MainView: View {
                 .disabled(pendingDeleteId == nil)
         }
         .animation(.easeInOut(duration: 0.2), value: pendingDeleteId)
-        .animation(.easeOut(duration: 0.16), value: navigation.tabsPeeking)
         .animation(navigation.tabsExpandedAnimation, value: navigation.tabsExpanded)
+        .sheet(isPresented: $settingsModel.isSignInPresented) {
+            SignInSheet(model: settingsModel)
+        }
         .task {
             await loadBrowse(reset: true)
+        }
+        .onChange(of: settingsModel.isSignedIn) { isSignedIn in
+            signedIn = isSignedIn
+            if isSignedIn {
+                offline = false
+                Task { await loadBrowse(reset: true) }
+            } else {
+                fragments = []
+                localRows = clients.localRecent(200)
+                rebuildBrowseRows()
+                if searched { runBrowse() }
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: .chronicleMainShown)) { _ in
             if navigation.mode == .browse && !searched { Task { await loadBrowse(reset: true) } }
@@ -179,11 +184,17 @@ struct MainView: View {
 
     @ViewBuilder private var tabContent: some View {
         switch navigation.mode {
-        case .browse, .ask:
+        case .browse:
             VStack(spacing: 12) {
-                contentHeader
+                WorkspaceField(
+                    icon: "magnifyingglass",
+                    prompt: "Search captures…",
+                    text: $query,
+                    onSubmit: runBrowse,
+                    disabled: busy,
+                )
 
-                if busy && !(navigation.mode == .browse && editDraft != nil) {
+                if busy && editDraft == nil {
                     ProgressView().frame(maxWidth: .infinity)
                 }
                 if !error.isEmpty {
@@ -193,24 +204,26 @@ struct MainView: View {
 
                 ScrollView {
                     // LazyVStack, not a plain ForEach: browse rows accumulate across
-                    // pagination (`maybeLoadMore`) and each row backs its selectable
-                    // text with a native NSTextView (see SelectableRowText). Without
-                    // laziness every loaded row, on- or off-screen, stays fully
-                    // mounted, so any reflow (scroll, sidebar width change) had to
-                    // re-lay-out all of them at once.
+                    // pagination (`maybeLoadMore`). Resting rows stay pure SwiftUI;
+                    // platform text views inside this virtualized stack can trap
+                    // macOS 26 in a layout pass after rapid scrolling.
                     LazyVStack(alignment: .leading, spacing: 8) {
-                        content
+                        browseContent
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.trailing, 8)
                 }
             }
             .padding(16)
+        case .ask:
+            askWorkspace
         case .trash:
             MainTrashPane(clients: clients, captureEventToken: captureEventToken)
         case .settings:
             VStack(spacing: 0) {
-                contentHeader
+                Text("Settings")
+                    .font(.headline)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 16)
                     .padding(.top, 14)
                     .padding(.bottom, 10)
@@ -220,83 +233,110 @@ struct MainView: View {
         }
     }
 
-    @ViewBuilder private var contentHeader: some View {
-        HStack(spacing: 10) {
-            switch navigation.mode {
-            case .browse:
-                WorkspaceField(icon: "magnifyingglass", prompt: "Search captures…",
-                               text: $query, onSubmit: runBrowse, disabled: busy)
-            case .ask:
-                WorkspaceField(icon: "sparkles",
-                               prompt: "Ask a question, e.g. what did I work on this week",
-                               text: $askQuery, onSubmit: runAsk, disabled: busy)
-            case .trash:
-                // Never rendered — trash mode mounts MainTrashPane, which brings
-                // its own filter/Empty header.
-                EmptyView()
-            case .settings:
-                Text("Settings")
-                    .font(.headline)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
+    @ViewBuilder private var browseContent: some View {
+        // Browse + search work offline against the local store; the server's
+        // semantic results merge in on top when signed in.
+        if rows.isEmpty && editDraft == nil && !searched && !busy {
+            Text((signedIn && !offline) ? "No captures yet." : "No local captures yet — capture something or sign in to sync.")
+                .foregroundStyle(.secondary).padding(.top, 8)
         }
+        // The draft edits in place inside the ForEach. This fallback only
+        // renders when the edited row left the list mid-edit (e.g. a new
+        // search filtered it out), so the draft can't get lost off-list.
+        if let draft = editDraft, !rows.contains(where: { $0.id == draft.id }) {
+            editRow(draft)
+                .padding(.bottom, 4)
+        }
+        if busy && editDraft != nil {
+            ProgressView()
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 12)
+        }
+        if searched && rows.isEmpty && !busy {
+            Text("No matches.")
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.top, editDraft == nil ? 8 : 0)
+        }
+        ForEach(rows) { row in
+            Group {
+                if let draft = editDraft, draft.id == row.id {
+                    editRow(draft)
+                } else {
+                    CaptureRow(
+                        item: row,
+                        onDelete: { delete(row) },
+                        onEdit: { edit(row.id, $0) },
+                        onOpen: { clients.openDetail(row) },
+                        onPin: { clients.togglePin(row) },
+                        isPinned: clients.isPinned(row.id),
+                        onBeginEdit: { beginEdit(row) },
+                    )
+                }
+            }
+            .onAppear { maybeLoadMore(row) }
+        }
+        if loadingMore { ProgressView().controlSize(.small).frame(maxWidth: .infinity) }
     }
 
-    @ViewBuilder private var content: some View {
-        if navigation.mode == .browse {
-            // Browse + search work offline against the local store; the server's
-            // semantic results merge in on top when signed in.
-            if rows.isEmpty && editDraft == nil && !searched && !busy {
-                Text((signedIn && !offline) ? "No captures yet." : "No local captures yet — capture something or sign in to sync.")
-                    .foregroundStyle(.secondary).padding(.top, 8)
-            }
-            // The draft edits in place inside the ForEach. This fallback only
-            // renders when the edited row left the list mid-edit (e.g. a new
-            // search filtered it out), so the draft can't get lost off-list.
-            if let draft = editDraft, !rows.contains(where: { $0.id == draft.id }) {
-                editRow(draft)
-                    .padding(.bottom, 4)
-            }
-            if busy && editDraft != nil {
-                ProgressView()
-                    .frame(maxWidth: .infinity)
+    private var askWorkspace: some View {
+        VStack(spacing: 12) {
+            ZStack {
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 14) {
+                        askContent
+                    }
+                    .frame(maxWidth: 760, alignment: .leading)
+                    .frame(maxWidth: .infinity, alignment: .center)
                     .padding(.vertical, 12)
-            }
-            if searched && rows.isEmpty && !busy {
-                Text("No matches.")
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.top, editDraft == nil ? 8 : 0)
-            }
-            ForEach(rows) { row in
-                Group {
-                    if let draft = editDraft, draft.id == row.id {
-                        editRow(draft)
+                }
+
+                if submittedQuestion.isEmpty && answer.isEmpty && !busy {
+                    if signedIn {
+                        Text("Ask about anything you've captured.")
+                            .font(.callout)
+                            .foregroundStyle(.tertiary)
                     } else {
-                        CaptureRow(
-                            item: row,
-                            onCopy: { copy(row.content) },
-                            onDelete: { delete(row) },
-                            onEdit: { edit(row.id, $0) },
-                            onOpen: { clients.openDetail(row) },
-                            onPin: { clients.togglePin(row) },
-                            isPinned: clients.isPinned(row.id),
-                            onBeginEdit: { beginEdit(row) },
-                        )
+                        signInPrompt
                     }
                 }
-                .onAppear { maybeLoadMore(row) }
             }
-            if loadingMore { ProgressView().controlSize(.small).frame(maxWidth: .infinity) }
-        } else if !signedIn {
-            signInPrompt
-        } else {
-            askContent
+            .frame(maxHeight: .infinity)
+
+            if !error.isEmpty {
+                Text(error)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .frame(maxWidth: 760, alignment: .leading)
+                    .frame(maxWidth: .infinity)
+            }
+
+            askComposer
+                .frame(maxWidth: 760)
         }
+        .padding(.horizontal, 16)
+        .padding(.top, 14)
+        .padding(.bottom, 16)
     }
 
     @ViewBuilder private var askContent: some View {
-        if !answer.isEmpty {
+        if !submittedQuestion.isEmpty {
+            Text("Question")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+            Text(submittedQuestion)
+                .font(.title3.weight(.medium))
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Divider().padding(.vertical, 2)
+        }
+
+        if busy {
+            ProgressView("Searching your captures…")
+                .controlSize(.small)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.vertical, 8)
+        } else if !answer.isEmpty {
             HStack {
                 Spacer()
                 Button { copy(answer) } label: { Label("Copy", systemImage: "doc.on.doc") }
@@ -324,14 +364,70 @@ struct MainView: View {
 
     private var signInPrompt: some View {
         VStack(spacing: 6) {
-            Image(systemName: "person.crop.circle.badge.questionmark")
-                .font(.title2).foregroundStyle(.tertiary)
-            Text("Sign in to ask across your captures.").foregroundStyle(.secondary)
-            Text("Browse and search work offline; Ask needs the server.")
-                .font(.caption).foregroundStyle(.tertiary)
-            Button("Open Settings") { select(.settings) }.buttonStyle(.link)
+            Text("Ask works across your synced captures.")
+                .font(.headline)
+                .foregroundStyle(.secondary)
+            Text("Sign in below to use server-backed recall.")
+                .font(.callout)
+                .foregroundStyle(.tertiary)
         }
-        .frame(maxWidth: .infinity).padding(.vertical, 40)
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 40)
+    }
+
+    private var askComposer: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ModeTextEditor(
+                text: $askQuery,
+                focused: $askFocused,
+                placeholder: signedIn
+                    ? "Ask a question, e.g. what did I work on this week"
+                    : "Sign in to ask across your captures",
+                submitsOnEnter: true,
+                onSubmit: runAsk,
+                onCancel: { askFocused = false },
+                onHeight: { askEditorHeight = min(max($0, 38), 120) },
+                fontSize: 14,
+            )
+            .frame(height: askEditorHeight)
+            .disabled(!signedIn || busy)
+
+            HStack(spacing: 10) {
+                Text(signedIn ? "↩ Ask  ·  ⇧↩ New line" : "Sign in to ask across your captures")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                Spacer(minLength: 8)
+                if signedIn {
+                    Button(action: runAsk) {
+                        Image(systemName: "arrow.up")
+                            .frame(width: 16, height: 16)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .clipShape(Circle())
+                    .controlSize(.regular)
+                    .disabled(askQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || busy)
+                    .help("Ask")
+                    .accessibilityLabel("Ask")
+                } else {
+                    Button("Sign in") {
+                        settingsModel.presentSignIn()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.regular)
+                }
+            }
+        }
+        .padding(10)
+        .background(
+            Color.primary.opacity(0.045),
+            in: RoundedRectangle(cornerRadius: 12),
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(Color.primary.opacity(0.09), lineWidth: 1)
+        }
+        .accessibilityIdentifier("ask-composer")
+        .animation(.easeOut(duration: 0.12), value: askEditorHeight)
     }
 
     private func select(_ next: Mode) {
@@ -455,7 +551,12 @@ struct MainView: View {
         let q = askQuery.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !q.isEmpty, !busy else { return }
         guard let client = clients.recall() else { signedIn = false; return }
-        busy = true; error = ""
+        submittedQuestion = q
+        askQuery = ""
+        answer = ""
+        sources = []
+        busy = true
+        error = ""
         Task { @MainActor in
             do {
                 let res = try await client.ask(question: q)
@@ -471,7 +572,6 @@ struct MainView: View {
     private func editRow(_ draft: CaptureEditDraft) -> some View {
         CaptureRow(
             item: draft.item,
-            onCopy: { copy(draft.text) },
             onDelete: nil,
             onEdit: { _ in },
             onOpen: { clients.openDetail(draft.item) },
@@ -673,5 +773,50 @@ struct MainView: View {
 private extension MainWindowNavigation {
     var tabsExpandedAnimation: Animation? {
         suppressTabsExpandedAnimation || tabsRailPeeking ? nil : .spring(response: 0.3, dampingFraction: 0.92)
+    }
+}
+
+private struct CollapsedSidebarOverlay: View {
+    @ObservedObject var hover: MainWindowSidebarHoverState
+    let modes: [MainView.Mode]
+    let selected: MainView.Mode
+    let onSelect: (MainView.Mode) -> Void
+
+    var body: some View {
+        ZStack(alignment: .leading) {
+            SidebarHoverRegion {
+                hover.setRailHovering($0)
+            }
+            .frame(
+                width: hover.peeking
+                    ? MainTabRail.floatingHoverWidth
+                    : MainTabRail.collapsedHoverWidth,
+            )
+            .frame(maxHeight: .infinity)
+            .zIndex(2)
+
+            // Keep the small rail hierarchy mounted and animate only its
+            // presentation. Recreating its buttons on every edge crossing made
+            // repeated peeks hitch even after hover state stopped invalidating
+            // the browse tree.
+            MainTabRail(
+                modes: modes,
+                selected: selected,
+                floating: true,
+                onSelect: onSelect,
+            )
+            .opacity(hover.peeking ? 1 : 0)
+            .offset(x: hover.peeking ? 0 : -18)
+            .allowsHitTesting(hover.peeking)
+            .accessibilityHidden(!hover.peeking)
+            .animation(
+                hover.peeking
+                    ? .easeOut(duration: 0.17)
+                    : .easeIn(duration: 0.13),
+                value: hover.peeking,
+            )
+            .zIndex(1)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
     }
 }

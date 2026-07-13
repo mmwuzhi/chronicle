@@ -261,6 +261,24 @@ export interface CaptureUpdateInputBody {
   transcript?: string;
 }
 
+export interface DesktopOAuthExchangeInputBody {
+  /** A URL to the JSON Schema for this object. */
+  readonly $schema?: string;
+  /** @minLength 1 */
+  code: string;
+  /**
+     * @minLength 43
+     * @maxLength 128
+     */
+  codeVerifier: string;
+}
+
+export interface DesktopOAuthExchangeOutputBody {
+  /** A URL to the JSON Schema for this object. */
+  readonly $schema?: string;
+  accessToken: string;
+}
+
 export interface EmptyTrashOutputBody {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
@@ -1245,6 +1263,70 @@ export const useMfaVerify = <TError = ErrorModel,
         TContext
       > => {
       return useMutation(getMfaVerifyMutationOptions(options), queryClient);
+    }
+
+/**
+ * @summary Exchange a one-time desktop OAuth handoff code
+ */
+export const desktopOAuthExchange = (
+    desktopOAuthExchangeInputBody: NonReadonly<DesktopOAuthExchangeInputBody>,
+ signal?: AbortSignal
+) => {
+
+
+      return api<DesktopOAuthExchangeOutputBody>(
+      {url: `/auth/oauth/desktop/exchange`, method: 'POST',
+      headers: {'Content-Type': 'application/json', },
+      data: desktopOAuthExchangeInputBody, signal
+    },
+      );
+    }
+
+
+
+export const getDesktopOAuthExchangeMutationOptions = <TError = ErrorModel,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof desktopOAuthExchange>>, TError,{data: NonReadonly<DesktopOAuthExchangeInputBody>}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof desktopOAuthExchange>>, TError,{data: NonReadonly<DesktopOAuthExchangeInputBody>}, TContext> => {
+
+const mutationKey = ['desktopOAuthExchange'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof desktopOAuthExchange>>, {data: NonReadonly<DesktopOAuthExchangeInputBody>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  desktopOAuthExchange(data,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DesktopOAuthExchangeMutationResult = NonNullable<Awaited<ReturnType<typeof desktopOAuthExchange>>>
+    export type DesktopOAuthExchangeMutationBody = NonReadonly<DesktopOAuthExchangeInputBody>
+    export type DesktopOAuthExchangeMutationError = ErrorModel
+
+    /**
+ * @summary Exchange a one-time desktop OAuth handoff code
+ */
+export const useDesktopOAuthExchange = <TError = ErrorModel,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof desktopOAuthExchange>>, TError,{data: NonReadonly<DesktopOAuthExchangeInputBody>}, TContext>, }
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof desktopOAuthExchange>>,
+        TError,
+        {data: NonReadonly<DesktopOAuthExchangeInputBody>},
+        TContext
+      > => {
+      return useMutation(getDesktopOAuthExchangeMutationOptions(options), queryClient);
     }
 
 /**

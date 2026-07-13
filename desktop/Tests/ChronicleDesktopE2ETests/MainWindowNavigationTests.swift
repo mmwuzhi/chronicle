@@ -1,5 +1,7 @@
 import AppKit
+import Combine
 import Foundation
+import SwiftUI
 import Testing
 @testable import ChronicleDesktop
 import ChronicleDesktopCore
@@ -45,7 +47,7 @@ struct MainWindowNavigationTests {
     }
 
     @Test("collapsing from the hovered titlebar button does not reopen on button exit")
-    func collapseFromHoveredButtonIgnoresExitGrace() {
+    func collapseFromHoveredButtonIgnoresExit() {
         let navigation = MainWindowNavigation(defaults: UserDefaults(suiteName: UUID().uuidString)!)
 
         navigation.tabsExpanded = true
@@ -58,6 +60,232 @@ struct MainWindowNavigationTests {
 
         navigation.setTabsButtonHovering(false)
         #expect(!navigation.tabsPeeking)
+    }
+
+    @Test("expanding clears hover owned by the removed floating overlay")
+    func expandingClearsFloatingRailHover() {
+        let navigation = MainWindowNavigation(defaults: UserDefaults(suiteName: UUID().uuidString)!)
+        navigation.tabsExpanded = false
+        navigation.setTabsRailHovering(true)
+        #expect(navigation.tabsPeeking)
+
+        navigation.toggleTabsExpanded()
+
+        #expect(navigation.tabsExpanded)
+        #expect(!navigation.tabsPeeking)
+        #expect(!navigation.tabsRailPeeking)
+    }
+
+    @Test("floating sidebar uses one growing hover region and no time delay")
+    func floatingSidebarUsesContinuousSpatialBuffer() async {
+        let navigation = MainWindowNavigation(defaults: UserDefaults(suiteName: UUID().uuidString)!)
+        navigation.tabsExpanded = false
+        let clients = CaptureClients(
+            recall: { nil },
+            webhook: { nil },
+            openSignIn: {},
+            localSearch: { _ in [] },
+            localRecent: { _ in [] },
+            localDelete: { _ in },
+        )
+        let settingsModel = SettingsModel(
+            settings: SettingsStore(defaults: UserDefaults(suiteName: UUID().uuidString)!),
+            localStore: tempStore(),
+            clients: clients,
+            onSaveShortcut: { _ in },
+            onSignInChanged: {},
+            retry: { (0, 0) },
+        )
+        let host = NSHostingView(
+            rootView: MainView(clients: clients, navigation: navigation, settingsModel: settingsModel),
+        )
+        host.frame = NSRect(x: 0, y: 0, width: 700, height: 520)
+        host.layoutSubtreeIfNeeded()
+        await Task.yield()
+        host.layoutSubtreeIfNeeded()
+
+        let sensors: [SidebarHoverTrackingView] = host.descendants(
+            ofType: SidebarHoverTrackingView.self,
+        )
+        #expect(sensors.count == 1)
+        #expect(sensors.first?.frame.width == MainTabRail.collapsedHoverWidth)
+        #expect(MainTabRail.hoverBufferWidth == 54)
+        #expect(MainTabRail.floatingHoverWidth == 202)
+
+        var navigationInvalidations = 0
+        let invalidation = navigation.objectWillChange.sink {
+            navigationInvalidations += 1
+        }
+        navigation.setTabsRailHovering(true)
+        #expect(navigation.tabsPeeking)
+        await Task.yield()
+        host.layoutSubtreeIfNeeded()
+        let expandedSensors: [SidebarHoverTrackingView] = host.descendants(
+            ofType: SidebarHoverTrackingView.self,
+        )
+        #expect(expandedSensors.count == 1)
+        #expect(expandedSensors.first?.frame.width == MainTabRail.floatingHoverWidth)
+        #expect(navigationInvalidations == 0)
+
+        navigation.setTabsRailHovering(true)
+        #expect(navigationInvalidations == 0)
+
+        navigation.setTabsRailHovering(false)
+        #expect(!navigation.tabsPeeking)
+        await Task.yield()
+        host.layoutSubtreeIfNeeded()
+        #expect(navigationInvalidations == 0)
+        withExtendedLifetime(invalidation) {}
+    }
+
+    @Test("cancelled authentication attempts cannot complete later")
+    func cancelledAuthenticationAttemptIsRejected() throws {
+        var gate = AuthenticationAttemptGate()
+        let startedAttempt = gate.begin()
+        let attempt = try #require(startedAttempt)
+        let concurrentAttempt = gate.begin()
+
+        #expect(concurrentAttempt == nil)
+        #expect(gate.accepts(attempt))
+
+        gate.cancel()
+        let staleFinishAccepted = gate.finish(attempt)
+
+        #expect(!gate.accepts(attempt))
+        #expect(!staleFinishAccepted)
+    }
+
+    @Test("settings scroll viewport stays inside the minimum main window")
+    func settingsScrollViewportFitsMinimumWindow() async {
+        let clients = CaptureClients(
+            recall: { nil },
+            webhook: { nil },
+            openSignIn: {},
+            localSearch: { _ in [] },
+            localRecent: { _ in [] },
+            localDelete: { _ in },
+        )
+        let localStore = tempStore()
+        let settingsModel = SettingsModel(
+            settings: SettingsStore(defaults: UserDefaults(suiteName: UUID().uuidString)!),
+            localStore: localStore,
+            clients: clients,
+            onSaveShortcut: { _ in },
+            onSignInChanged: {},
+            retry: { (0, 0) },
+        )
+        let navigation = MainWindowNavigation(defaults: UserDefaults(suiteName: UUID().uuidString)!)
+        navigation.mode = .settings
+        let host = NSHostingView(
+            rootView: MainView(clients: clients, navigation: navigation, settingsModel: settingsModel),
+        )
+        host.frame = NSRect(x: 0, y: 0, width: 700, height: 520)
+        host.layoutSubtreeIfNeeded()
+        await Task.yield()
+        host.layoutSubtreeIfNeeded()
+
+        let scrollView: NSScrollView? = host.firstDescendant(ofType: NSScrollView.self)
+        #expect(scrollView != nil)
+        guard let scrollView else { return }
+        let viewport = scrollView.convert(scrollView.bounds, to: host)
+
+        #expect(host.bounds.contains(viewport))
+    }
+
+    @Test("ask workspace uses a multiline composer instead of a header field")
+    func askWorkspaceUsesMultilineComposer() async {
+        let clients = CaptureClients(
+            recall: { nil },
+            webhook: { nil },
+            openSignIn: {},
+            localSearch: { _ in [] },
+            localRecent: { _ in [] },
+            localDelete: { _ in },
+        )
+        let settingsModel = SettingsModel(
+            settings: SettingsStore(defaults: UserDefaults(suiteName: UUID().uuidString)!),
+            localStore: tempStore(),
+            clients: clients,
+            onSaveShortcut: { _ in },
+            onSignInChanged: {},
+            retry: { (0, 0) },
+        )
+        let navigation = MainWindowNavigation(defaults: UserDefaults(suiteName: UUID().uuidString)!)
+        navigation.mode = .ask
+        let host = NSHostingView(
+            rootView: MainView(clients: clients, navigation: navigation, settingsModel: settingsModel),
+        )
+        host.frame = NSRect(x: 0, y: 0, width: 700, height: 520)
+        host.layoutSubtreeIfNeeded()
+        await Task.yield()
+        host.layoutSubtreeIfNeeded()
+
+        let textView: SubmitTextView? = host.firstDescendant(ofType: SubmitTextView.self)
+        let singleLineField: NSTextField? = host.firstDescendant(ofType: NSTextField.self)
+        #expect(textView != nil)
+        #expect(textView?.isVerticallyResizable == true)
+        #expect(singleLineField == nil)
+    }
+
+    @Test("capture overflow builds its menu only after a click")
+    func captureOverflowAvoidsEmbeddedPopup() async {
+        let host = NSHostingView(
+            rootView: CaptureRowActions(
+                onDelete: nil,
+                onOpen: nil,
+                onUnlink: nil,
+                onPin: {},
+            )
+            .frame(width: 120, height: 30),
+        )
+        host.frame = NSRect(x: 0, y: 0, width: 120, height: 30)
+        host.layoutSubtreeIfNeeded()
+        await Task.yield()
+        host.layoutSubtreeIfNeeded()
+
+        let popup: NSPopUpButton? = host.firstDescendant(ofType: NSPopUpButton.self)
+        #expect(popup == nil)
+
+        let menu = CaptureRowOverflowMenu.make(
+            onOpen: {},
+            onPin: {},
+            onUnlink: {},
+            onDelete: {},
+            isPinned: false,
+        )
+        #expect(menu.items.filter { !$0.isSeparatorItem }.map(\.title) == [
+            "Open", "Pin to desktop", "Remove link", "Delete",
+        ])
+        #expect(menu.items.dropLast().last?.isSeparatorItem == true)
+    }
+
+    @Test("capture metadata keeps the compact timestamp in the row")
+    func captureMetadataKeepsCompactTimestamp() {
+        let createdAt = "2026-07-04T14:35:00Z"
+        let metadata = NSHostingView(rootView: CaptureRowMetadata(
+            todoState: nil, createdAt: createdAt,
+        ))
+
+        #expect(metadata.fittingSize.width < 100)
+    }
+
+    @Test("virtualized capture rows do not mount platform text views")
+    func captureRowAvoidsPlatformTextView() async {
+        let row = RowItem(
+            id: "row-1",
+            content: "A capture rendered inside a scrolling list",
+            createdAt: "2026-07-04T14:35:00Z",
+            modality: "text",
+            mediaUrl: nil,
+        )
+        let host = NSHostingView(rootView: CaptureRow(item: row))
+        host.frame = NSRect(x: 0, y: 0, width: 420, height: 90)
+        host.layoutSubtreeIfNeeded()
+        await Task.yield()
+        host.layoutSubtreeIfNeeded()
+
+        let textView: NSTextView? = host.firstDescendant(ofType: NSTextView.self)
+        #expect(textView == nil)
     }
 
     @Test("delete planning sends unsynced search rows to local delete")
@@ -140,5 +368,22 @@ struct MainWindowNavigationTests {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("chronicle-main-window-tests-\(UUID().uuidString).sqlite")
         return LocalCaptureStore(fileURL: url)
+    }
+}
+
+private extension NSView {
+    func firstDescendant<T: NSView>(ofType type: T.Type) -> T? {
+        for subview in subviews {
+            if let match = subview as? T { return match }
+            if let match = subview.firstDescendant(ofType: type) { return match }
+        }
+        return nil
+    }
+
+    func descendants<T: NSView>(ofType type: T.Type) -> [T] {
+        subviews.flatMap { subview in
+            (subview as? T).map { [$0] } ?? []
+                + subview.descendants(ofType: type)
+        }
     }
 }
