@@ -26,11 +26,12 @@ ALTER TABLE capture_embeddings ADD PRIMARY KEY (capture_id, chunk_idx);
 
 -- +goose Down
 
--- Collapse back to one row per capture: keep chunk 0, drop the rest, and restore
--- the single-column primary key. A backfill after downgrade rebuilds the single
--- vectors (needs_index re-embeds anything the old code can't read).
+-- The pre-chunk service cannot distinguish chunk 0 from a whole-document vector:
+-- model/source_hash still look current, so retaining chunk 0 would make its
+-- backfill incorrectly skip long captures. Drop every derived vector; the old
+-- needs_index path then sees a missing row and rebuilds one full-document vector.
 ALTER TABLE capture_embeddings DROP CONSTRAINT capture_embeddings_pkey;
-DELETE FROM capture_embeddings WHERE chunk_idx <> 0;
+DELETE FROM capture_embeddings;
 ALTER TABLE capture_embeddings DROP COLUMN chunk_text;
 ALTER TABLE capture_embeddings DROP COLUMN chunk_idx;
 ALTER TABLE capture_embeddings ADD PRIMARY KEY (capture_id);

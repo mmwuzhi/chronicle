@@ -6,10 +6,10 @@
 -- button/endpoint path, so no todo-ness lives only in the columns: open todos
 -- get " #todo", completed ones " #todo(done:YYYY-MM-DD)" dated from done_at.
 -- Trashed captures are included so a restore stays consistent. The guard regex
--- skips texts that already carry a standalone #todo token (boundary: start or
--- whitespace before; end, or a character that cannot extend a tag name, after —
--- '(' is allowed as a terminator here so an existing parameterised tag is never
--- double-appended).
+-- skips texts that already carry one of the exact runtime-valid shapes: #todo,
+-- #todo(done), or #todo(done:YYYY-MM-DD). The trailing boundary deliberately
+-- excludes '(' so malformed parameters such as #todo(later) do not make a row
+-- look canonical; those rows receive a valid tag and become text/column-consistent.
 UPDATE captures
 SET raw_text = CASE
       WHEN raw_text IS NULL OR raw_text = '' THEN ''
@@ -21,7 +21,10 @@ SET raw_text = CASE
       ELSE '#todo'
     END
 WHERE todo_at IS NOT NULL
-  AND (raw_text IS NULL OR raw_text !~ '(^|[[:space:]])#todo([^[:alnum:]_-]|$)');
+  AND (
+    raw_text IS NULL
+    OR raw_text !~ '(^|[[:space:]])#todo(\(done(:[0-9]{4}-[0-9]{2}-[0-9]{2})?\))?([^[:alnum:]_(-]|$)'
+  );
 
 -- +goose Down
 
