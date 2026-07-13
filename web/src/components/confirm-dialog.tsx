@@ -1,30 +1,11 @@
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
+import { useCallback, useRef, useState, type ReactNode } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { useTranslation } from "react-i18next";
-
-interface ConfirmOptions {
-  title: string;
-  description: string;
-  confirmLabel?: string;
-  cancelLabel?: string;
-  variant?: "danger" | "default";
-}
-
-type ConfirmFn = (options: ConfirmOptions) => Promise<boolean>;
-const ConfirmContext = createContext<ConfirmFn | null>(null);
-
-export function useConfirm(): ConfirmFn {
-  const fn = useContext(ConfirmContext);
-  if (!fn) throw new Error("useConfirm must be used within ConfirmProvider");
-  return fn;
-}
+import {
+  ConfirmContext,
+  type ConfirmFn,
+  type ConfirmOptions,
+} from "../hooks/use-confirm";
 
 export function ConfirmProvider({ children }: { children: ReactNode }) {
   const { t } = useTranslation();

@@ -1,7 +1,7 @@
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "@tanstack/react-router";
 import { useDeleteAccount } from "../../api";
-import { useConfirm } from "../confirm-dialog";
+import { useConfirm } from "../../hooks/use-confirm";
 
 export function DangerSection() {
   const { t } = useTranslation("settings");

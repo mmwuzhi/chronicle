@@ -23,7 +23,7 @@ import { CaptureComposer } from "../components/CaptureComposer";
 import { CaptureFeed } from "../components/CaptureFeed";
 import { MutationToast } from "../components/mutation-toast";
 import { Nav } from "../components/nav";
-import { useConfirm } from "../components/confirm-dialog";
+import { useConfirm } from "../hooks/use-confirm";
 import { useMutationToast } from "../hooks/use-mutation-toast";
 import { useTodoEnabled } from "../hooks/use-todo-enabled";
 import type { CloudAttachmentDraft } from "../lib/cloudDrive";

@@ -10,7 +10,7 @@ import {
   usePermanentlyDeleteCapture,
   useRestoreCapture,
 } from "../api";
-import { useConfirm } from "../components/confirm-dialog";
+import { useConfirm } from "../hooks/use-confirm";
 import { Nav } from "../components/nav";
 import { TrashList } from "../components/TrashList";
 

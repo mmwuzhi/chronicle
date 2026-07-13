@@ -13,7 +13,7 @@ import type { CaptureBody, ReviewTodayParams } from "../api";
 import { CaptureFeed } from "../components/CaptureFeed";
 import { MutationToast } from "../components/mutation-toast";
 import { Nav } from "../components/nav";
-import { useConfirm } from "../components/confirm-dialog";
+import { useConfirm } from "../hooks/use-confirm";
 import { useMutationToast } from "../hooks/use-mutation-toast";
 
 export const Route = createFileRoute("/review")({ component: Review });

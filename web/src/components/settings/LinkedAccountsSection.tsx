@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useQueryClient } from "@tanstack/react-query";
 import { useGetMe } from "../../api";
-import { useConfirm } from "../confirm-dialog";
+import { useConfirm } from "../../hooks/use-confirm";
 import { apiFetch } from "../../lib/apiFetch";
 
 const OAUTH_PROVIDERS = ["google", "github"] as const;

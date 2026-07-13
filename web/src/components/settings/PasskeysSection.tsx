@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
-import { useConfirm } from "../confirm-dialog";
+import { useConfirm } from "../../hooks/use-confirm";
 import { apiFetch } from "../../lib/apiFetch";
 
 export function PasskeysSection() {
