@@ -17,7 +17,7 @@ Instead of forcing users to structure information up front, Chronicle focuses on
 - Related capture discovery
 - Voice transcription
 - AI-assisted memory retrieval
-- Optional task extraction
+- Lightweight todo and reminder facets
 
 ## Tech Stack
 
@@ -26,9 +26,9 @@ Instead of forcing users to structure information up front, Chronicle focuses on
 | Frontend | Vite + React + TanStack Router + TanStack Query |
 | Backend | Go + chi + huma v2 (OpenAPI-first) |
 | Desktop input | Swift macOS menu bar app |
-| Database | PostgreSQL — sqlc + pgx, goose migrations |
+| Database | PostgreSQL, sqlc + pgx, goose migrations |
 | Cache / rate limit | Redis (Upstash in prod) |
-| Auth | JWT — 15m access token + 30d refresh token, httpOnly cookies |
+| Auth | JWT: 15m access token + 30d refresh token, httpOnly cookies |
 | File storage | Cloudflare R2 for image/audio uploads |
 | Email | Resend for verification and password reset |
 | AI | OpenAI `gpt-4o-mini-transcribe` for voice transcription; Gemini/OpenAI-backed polish endpoints |
@@ -47,7 +47,7 @@ cd chronicle
 make setup          # copies .env.example → .env, starts postgres + redis, runs migrations
 
 # 2. Fill in secrets
-#    Edit .env — JWT_SECRET is required; feature integrations are optional for local dev
+#    Edit .env. JWT_SECRET is required; feature integrations are optional for local dev
 
 # 3. Start everything
 make dev            # full stack via docker compose watch
@@ -79,7 +79,7 @@ make migrate                        # apply pending
 make migrate-new name=add_foo       # create a new migration file
 
 # Go (from api/)
-go test -p 1 ./...                  # all tests (serial — packages share TEST_DATABASE_URL)
+go test -p 1 ./...                  # all tests (serial; packages share TEST_DATABASE_URL)
 go vet ./...
 
 # Frontend (from web/)
@@ -111,15 +111,15 @@ Full check before pushing:
 ```
 chronicle/
 ├── api/
-│   ├── cmd/server/        # main.go — entry point
+│   ├── cmd/server/        # main.go: entry point
 │   ├── internal/
-│   │   ├── config/        # envconfig — exits on missing required vars
+│   │   ├── config/        # envconfig: exits on missing required vars
 │   │   ├── middleware/    # trace ID, auth guard, rate limiter, request logger
-│   │   └── */handler.go   # one package per resource (task, capture, project…)
+│   │   └── */handler.go   # one package per resource (capture, auth, search…)
 │   ├── db/
-│   │   ├── migrations/    # goose .sql files — never edit by hand
-│   │   ├── queries/       # sqlc source — edit these to change queries
-│   │   └── sqlc/          # generated Go code — never edit by hand
+│   │   ├── migrations/    # goose .sql files: never edit by hand
+│   │   ├── queries/       # sqlc source: edit these to change queries
+│   │   └── sqlc/          # generated Go code: never edit by hand
 │   ├── Dockerfile
 │   └── fly.toml
 ├── desktop/
@@ -128,7 +128,7 @@ chronicle/
 │   └── ios-quick-capture.md  # iOS Action Button / Share Sheet setup guide
 └── web/
     └── src/
-        ├── api/           # orval-generated hooks — never edit by hand
+        ├── api/           # orval-generated hooks: never edit by hand
         ├── components/    # ui/ for Radix primitives, settings/ for settings sections
         ├── constants/     # shared constants (status cycles, colors)
         ├── utils/         # shared pure utilities (formatting)
@@ -149,7 +149,7 @@ Required GitHub secrets: `FLY_API_TOKEN`, `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_AC
 
 ## Environment Variables
 
-See `.env.example` for the full list. The API exits immediately on startup if a required variable is missing — no silent fallbacks.
+See `.env.example` for the full list. The API exits immediately on startup if a required variable is missing; there are no silent fallbacks.
 
 Key variables:
 
@@ -160,7 +160,7 @@ Key variables:
 | `JWT_SECRET` | yes | Secret for signing JWTs |
 | `API_BASE_URL` | no | Public API base used for OAuth callback URLs |
 | `FRONTEND_URL` | no | Frontend origin for CORS and email links |
-| `R2_*` | no | Cloudflare R2 — needed for image/audio uploads |
+| `R2_*` | no | Cloudflare R2, needed for image/audio uploads |
 | `OPENAI_API_KEY` | no | Background transcription for recordings up to five minutes |
 | `OPENAI_BASE_URL` | no | OpenAI-compatible API base; defaults to `https://api.openai.com/v1` |
 | `OPENAI_TRANSCRIPTION_MODEL` | no | Audio transcription model; defaults to `gpt-4o-mini-transcribe` |
@@ -203,7 +203,7 @@ Users should never be required to maintain a complex organizational system.
 
 ## Future Work
 
-Deferred product work lives in [`TODO.md`](./TODO.md). Refactor oversized route files first, then revisit weekly digest emails and due-date reminders.
+Deferred product work lives in [`TODO.md`](./TODO.md). Prioritize capture, retrieval, related captures, and review over workflow features.
 
 ## Principles
 
