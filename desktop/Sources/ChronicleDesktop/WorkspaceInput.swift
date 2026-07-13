@@ -126,6 +126,7 @@ struct ModeTextEditor: NSViewRepresentable {
         context.coordinator.reportHeight()
     }
 
+    @MainActor
     final class Coordinator: NSObject, NSTextViewDelegate {
         var parent: ModeTextEditor
         weak var textView: SubmitTextView?
@@ -170,8 +171,8 @@ final class SubmitTextView: NSTextView {
     }
 
     override func cancelOperation(_ sender: Any?) {
-        guard !hasMarkedText() else {
-            super.cancelOperation(sender)
+        if hasMarkedText() {
+            inputContext?.discardMarkedText()
             return
         }
         onCancel?()

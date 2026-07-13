@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import Testing
 @testable import ChronicleDesktop
@@ -43,6 +44,59 @@ struct MainWindowNavigationTests {
 
         #expect(captureDeletePlan(for: row, hasServerClient: true) == .serverThenLocal(id: "server-1"))
         #expect(captureDeletePlan(for: row, hasServerClient: false) == .unavailable)
+    }
+
+    @Test("selectable text forwards cancel to the panel action")
+    func selectableTextForwardsCancel() {
+        let textView = SelectableRowText.RowTextView()
+        var cancelCount = 0
+        textView.onCancel = { cancelCount += 1 }
+
+        textView.cancelOperation(nil)
+
+        #expect(cancelCount == 1)
+    }
+
+    @Test("selectable text preserves IME composition on cancel")
+    func selectableTextPreservesMarkedText() {
+        let textView = SelectableRowText.RowTextView()
+        var cancelCount = 0
+        textView.onCancel = { cancelCount += 1 }
+        textView.setMarkedText("candidate", selectedRange: NSRange(location: 0, length: 9), replacementRange: NSRange(location: NSNotFound, length: 0))
+        #expect(textView.hasMarkedText())
+
+        textView.cancelOperation(nil)
+
+        #expect(cancelCount == 0)
+    }
+
+    @Test("capture input preserves IME composition on cancel")
+    func captureInputPreservesMarkedText() {
+        let textView = SubmitTextView()
+        var cancelCount = 0
+        textView.onCancel = { cancelCount += 1 }
+        textView.setMarkedText("candidate", selectedRange: NSRange(location: 0, length: 9), replacementRange: NSRange(location: NSNotFound, length: 0))
+        #expect(textView.hasMarkedText())
+
+        textView.cancelOperation(nil)
+
+        #expect(cancelCount == 0)
+    }
+
+    @Test("quick panel forwards cancel when no text responder handles it")
+    func quickPanelForwardsCancel() {
+        let panel = QuickCapturePanel(
+            contentRect: .zero,
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        var cancelCount = 0
+        panel.onCancel = { cancelCount += 1 }
+
+        panel.cancelOperation(nil)
+
+        #expect(cancelCount == 1)
     }
 
     private func tempStore() -> LocalCaptureStore {

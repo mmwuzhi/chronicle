@@ -249,10 +249,11 @@ struct SelectableRowText: NSViewRepresentable {
         }
 
         override func cancelOperation(_ sender: Any?) {
-            guard !hasMarkedText(), let onCancel else {
-                super.cancelOperation(sender)
+            if hasMarkedText() {
+                inputContext?.discardMarkedText()
                 return
             }
+            guard let onCancel else { return }
             onCancel()
         }
 
