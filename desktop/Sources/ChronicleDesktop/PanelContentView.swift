@@ -8,6 +8,7 @@ import ChronicleDesktopCore
 // with a small recent-captures preview; Ask stays collapsed until it has work.
 struct PanelContentView: View {
     let clients: CaptureClients
+    @ObservedObject private var localization = DesktopLocalization.shared
     // text, reminder time (nil = none), keepVisible (notify-only: stay in browse).
     let onSubmit: (String, Date?, Bool) -> Void
     let onClose: () -> Void
@@ -69,9 +70,9 @@ struct PanelContentView: View {
                     DatePicker("", selection: $remindAt, in: Date()...)
                         .labelsHidden().datePickerStyle(.field).controlSize(.small)
                     Spacer()
-                    Toggle("Keep visible", isOn: $remindKeepVisible)
+                    Toggle(L("Keep visible"), isOn: $remindKeepVisible)
                         .toggleStyle(.checkbox).controlSize(.small).font(.caption)
-                        .help("Notify only — the capture stays in browse instead of hiding until due")
+                        .help(L("Notify only — the capture stays in browse instead of hiding until due"))
                 }
                 .padding(.horizontal, 16)
                 .padding(.bottom, 6)
@@ -118,7 +119,7 @@ struct PanelContentView: View {
     private var toolbar: some View {
         HStack(spacing: 6) {
             PillModePicker(
-                segments: RecallMode.allCases.map { (id: $0, title: $0.rawValue, hint: $0.shortcutHint) },
+                segments: RecallMode.allCases.map { (id: $0, title: $0.title, hint: $0.shortcutHint) },
                 selected: mode,
                 onSelect: { switchMode(to: $0) },
             )
@@ -129,7 +130,7 @@ struct PanelContentView: View {
                 }
                 .buttonStyle(.borderless)
                 .foregroundStyle(remindOn ? Color.chronicleAccent : .secondary)
-                .help("Set a reminder")
+                .help(L("Set a reminder"))
             }
             Text(mode.sendHint).font(.system(size: 11)).foregroundStyle(.tertiary)
         }
@@ -170,12 +171,12 @@ struct PanelContentView: View {
 
     @ViewBuilder private var resultsContent: some View {
         if needsSignIn {
-            signInPrompt(mode == .ask ? "Sign in to ask across your captures."
-                                      : "Sign in to search your captures.")
+            signInPrompt(mode == .ask ? L("Sign in to ask across your captures.")
+                                      : L("Sign in to search your captures."))
         } else if busy {
             HStack(spacing: 8) {
                 ProgressView().controlSize(.small)
-                Text(mode == .ask ? "Thinking…" : "Searching…")
+                Text(mode == .ask ? L("Thinking…") : L("Searching…"))
                     .font(.caption).foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity, alignment: .center).padding(.vertical, 4)
@@ -183,20 +184,20 @@ struct PanelContentView: View {
             Text(error).foregroundStyle(.red).font(.caption)
         } else if mode == .search && searched {
             if degraded {
-                Text("⚠︎ Semantic search unavailable — keyword results.")
+                Text(L("⚠︎ Semantic search unavailable — keyword results."))
                     .font(.caption2).foregroundStyle(.secondary).padding(.bottom, 4)
             }
             if hits.isEmpty {
-                Text("No matches.").font(.caption).foregroundStyle(.secondary)
+                Text(L("No matches.")).font(.caption).foregroundStyle(.secondary)
             }
             ForEach(hits) { hit in
                 searchRow(hit)
             }
         } else if mode == .search && recentLoaded {
             if recentRows.isEmpty {
-                Text("No recent captures.").font(.caption).foregroundStyle(.secondary)
+                Text(L("No recent captures.")).font(.caption).foregroundStyle(.secondary)
             } else {
-                Text("Recent").font(.caption).foregroundStyle(.secondary).padding(.bottom, 4)
+                Text(L("Recent")).font(.caption).foregroundStyle(.secondary).padding(.bottom, 4)
                 ForEach(recentRows) { row in
                     searchRow(row)
                 }
@@ -225,14 +226,14 @@ struct PanelContentView: View {
     @ViewBuilder private var answerView: some View {
         HStack {
             Spacer()
-            Button { copy(answer) } label: { Label("Copy", systemImage: "doc.on.doc") }
+            Button { copy(answer) } label: { Label(L("Copy"), systemImage: "doc.on.doc") }
                 .buttonStyle(.borderless).font(.caption).foregroundStyle(.secondary)
         }
         SelectableRowText(text: answer, onCancel: escape)
             .frame(maxWidth: .infinity, alignment: .leading)
         if !sources.isEmpty {
             Divider().padding(.vertical, 4)
-            Text("Sources").font(.caption).foregroundStyle(.secondary)
+            Text(L("Sources")).font(.caption).foregroundStyle(.secondary)
             ForEach(sources) { s in
                 HStack(alignment: .top, spacing: 6) {
                     Text("[\(s.n)]").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
@@ -251,7 +252,7 @@ struct PanelContentView: View {
     private func signInPrompt(_ message: String) -> some View {
         HStack(spacing: 8) {
             Text(message).font(.callout).foregroundStyle(.secondary)
-            Button("Sign in") { clients.openSignIn() }
+            Button(L("Sign in")) { clients.openSignIn() }
                 .buttonStyle(.link).font(.callout)
             Spacer()
         }
@@ -361,7 +362,7 @@ struct PanelContentView: View {
             do {
                 let res = try await client.ask(question: question)
                 if Task.isCancelled { return }
-                answer = res.answer.isEmpty ? "No answer — not enough captures yet." : res.answer
+                answer = res.answer.isEmpty ? L("No answer — not enough captures yet.") : res.answer
                 sources = res.sources
             } catch let err { if !Task.isCancelled { error = describeCaptureError(err) } }
             busy = false

@@ -73,6 +73,7 @@ struct CaptureRowActions: View {
 /// On macOS 26 this can trap LazyVStack in a non-terminating layout pass. Build the
 /// short-lived NSMenu only after a click instead.
 private struct RowActionMenu: View {
+    @ObservedObject private var localization = DesktopLocalization.shared
     var onOpen: (() -> Void)?
     var onPin: (() -> Void)?
     var onUnlink: (() -> Void)?
@@ -80,7 +81,7 @@ private struct RowActionMenu: View {
     var isPinned: Bool
 
     var body: some View {
-        RowActionButton(systemImage: "ellipsis", help: "More") {
+        RowActionButton(systemImage: "ellipsis", help: L("More")) {
             CaptureRowOverflowMenu.present(
                 onOpen: onOpen,
                 onPin: onPin,
@@ -104,21 +105,21 @@ enum CaptureRowOverflowMenu {
         let menu = NSMenu()
         if let onOpen {
             menu.addItem(ClosureMenuItem(
-                title: "Open",
+                title: L("Open"),
                 systemImage: "arrow.up.forward.square",
                 action: onOpen,
             ))
         }
         if let onPin {
             menu.addItem(ClosureMenuItem(
-                title: isPinned ? "Unpin from desktop" : "Pin to desktop",
+                title: isPinned ? L("Unpin from desktop") : L("Pin to desktop"),
                 systemImage: isPinned ? "pin.slash" : "pin",
                 action: onPin,
             ))
         }
         if let onUnlink {
             menu.addItem(ClosureMenuItem(
-                title: "Remove link",
+                title: L("Remove link"),
                 systemImage: "minus.circle",
                 action: onUnlink,
             ))
@@ -128,7 +129,7 @@ enum CaptureRowOverflowMenu {
                 menu.addItem(.separator())
             }
             menu.addItem(ClosureMenuItem(
-                title: "Delete",
+                title: L("Delete"),
                 systemImage: "trash",
                 action: onDelete,
             ))
@@ -193,6 +194,7 @@ struct PinnedEdgeBar: View {
 
 /// Compact, geometry-stable metadata for virtualized capture rows.
 struct CaptureRowMetadata: View {
+    @ObservedObject private var localization = DesktopLocalization.shared
     let todoState: CaptureTodoState?
     let createdAt: String
 
@@ -200,7 +202,7 @@ struct CaptureRowMetadata: View {
         HStack(spacing: 4) {
             if let todoState {
                 Image(systemName: todoState == .done ? "checkmark.square" : "square")
-                Text(todoState == .done ? "Done" : "Todo")
+                Text(todoState == .done ? L("Done") : L("Todo"))
                 Text("·")
             }
             Text(CaptureTime.display(createdAt))
@@ -310,6 +312,7 @@ struct SelectableRowText: NSViewRepresentable {
 /// double-click-to-edit (when `onEdit` is provided). Matches rag's row geometry:
 /// fixed right-hand action slot so long content never collides with the icons.
 struct CaptureRow: View {
+    @ObservedObject private var localization = DesktopLocalization.shared
     let item: RowItem
     var onDelete: (() -> Void)?
     var onEdit: ((String) -> Void)?
@@ -408,7 +411,7 @@ struct CaptureRow: View {
     @ViewBuilder
     private var restingContent: some View {
         if item.content.isEmpty {
-            Text("(media capture)")
+            Text(L("(media capture)"))
                 .foregroundStyle(.secondary)
         } else {
             Text(item.content)
@@ -448,12 +451,12 @@ struct CaptureRow: View {
             HStack(spacing: 8) {
                 Spacer(minLength: 12)
                 Button { cancelDraft() } label: {
-                    CaptureDraftButtonLabel(title: "Cancel", shortcut: "esc")
+                    CaptureDraftButtonLabel(title: L("Cancel"), shortcut: "esc")
                 }
                     .keyboardShortcut(.cancelAction)
                     .buttonStyle(CaptureDraftButtonStyle(kind: .secondary))
                 Button { commitDraft() } label: {
-                    CaptureDraftButtonLabel(title: "Save", shortcut: "⌘↩")
+                    CaptureDraftButtonLabel(title: L("Save"), shortcut: "⌘↩")
                 }
                     .keyboardShortcut(.return, modifiers: .command)
                     .buttonStyle(CaptureDraftButtonStyle(kind: .primary))
@@ -470,14 +473,14 @@ struct CaptureRow: View {
         HStack(spacing: 8) {
             Image(systemName: "exclamationmark.circle")
                 .foregroundStyle(Color.chronicleAccent)
-            Text("Unsaved changes")
+            Text(L("Unsaved changes"))
                 .font(.caption.weight(.medium))
             Spacer(minLength: 12)
-            Button("Keep editing") { onKeepEditing?() }
+            Button(L("Keep editing")) { onKeepEditing?() }
                 .buttonStyle(CaptureDraftButtonStyle(kind: .secondary))
-            Button("Discard") { onDiscardAndContinue?() }
+            Button(L("Discard")) { onDiscardAndContinue?() }
                 .buttonStyle(CaptureDraftButtonStyle(kind: .secondary))
-            Button("Save") { onSaveAndContinue?() }
+            Button(L("Save")) { onSaveAndContinue?() }
                 .buttonStyle(CaptureDraftButtonStyle(kind: .primary))
                 .disabled(!canSaveDraft)
         }
@@ -579,11 +582,12 @@ struct CaptureDraftButtonStyle: ButtonStyle {
 /// action; ⌘Z is wired alongside it by the host view.
 struct UndoDeleteToast: View {
     var onUndo: () -> Void
+    @ObservedObject private var localization = DesktopLocalization.shared
 
     var body: some View {
         HStack(spacing: 12) {
-            Text("Capture deleted").font(.callout)
-            Button("Undo", action: onUndo)
+            Text(L("Capture deleted")).font(.callout)
+            Button(L("Undo"), action: onUndo)
                 .buttonStyle(.plain)
                 .foregroundStyle(Color.chronicleAccent)
                 .font(.callout.weight(.medium))

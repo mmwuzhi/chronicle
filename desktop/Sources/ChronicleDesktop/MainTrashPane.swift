@@ -7,6 +7,7 @@ import ChronicleDesktopCore
 // reshow and on capture changes posted by other surfaces.
 struct MainTrashPane: View {
     let clients: CaptureClients
+    @ObservedObject private var localization = DesktopLocalization.shared
     // MainView's capture-event token, shared so posts from trash actions are
     // recognised as "own" by every surface in this window and don't trigger a
     // stomping reload over the removal animations.
@@ -47,15 +48,15 @@ struct MainTrashPane: View {
         // Per-row permanent delete is irreversible; confirm before hard-deleting,
         // matching Empty Trash and the web flow.
         .confirmationDialog(
-            "Delete this capture permanently? This can't be undone.",
+            L("Delete this capture permanently? This can't be undone."),
             isPresented: Binding(
                 get: { pendingPermanentDeleteId != nil },
                 set: { if !$0 { pendingPermanentDeleteId = nil } },
             ),
             presenting: pendingPermanentDeleteId,
         ) { id in
-            Button("Delete Permanently", role: .destructive) { permanentlyDelete(id) }
-            Button("Cancel", role: .cancel) {}
+            Button(L("Delete Permanently"), role: .destructive) { permanentlyDelete(id) }
+            Button(L("Cancel"), role: .cancel) {}
         }
         .task { await load() }
         .onReceive(NotificationCenter.default.publisher(for: .chronicleMainShown)) { _ in
@@ -69,19 +70,21 @@ struct MainTrashPane: View {
 
     @ViewBuilder private var header: some View {
         HStack(spacing: 10) {
-            WorkspaceField(icon: "magnifyingglass", prompt: "Filter trash",
+            WorkspaceField(icon: "magnifyingglass", prompt: L("Filter trash"),
                            text: $trashQuery, disabled: false)
             if !trash.isEmpty {
-                Button("Empty", role: .destructive) { confirmingEmptyTrash = true }
+                Button(L("Empty"), role: .destructive) { confirmingEmptyTrash = true }
                     .buttonStyle(.borderless).font(.caption).foregroundStyle(.red)
                     .confirmationDialog(
-                        "Permanently delete all \(trash.count) captures in the trash?",
+                        DesktopLocalization.shared.format(
+                            "Permanently delete all %d captures in the trash?", trash.count
+                        ),
                         isPresented: $confirmingEmptyTrash, titleVisibility: .visible,
                     ) {
-                        Button("Empty Trash", role: .destructive) { emptyTrash() }
-                        Button("Cancel", role: .cancel) {}
+                        Button(L("Empty Trash"), role: .destructive) { emptyTrash() }
+                        Button(L("Cancel"), role: .cancel) {}
                     } message: {
-                        Text("This can't be undone.")
+                        Text(L("This can't be undone."))
                     }
             }
         }
@@ -100,7 +103,7 @@ struct MainTrashPane: View {
         let items = filteredTrash
         if items.isEmpty {
             if loaded {
-                Text(trashQuery.isEmpty ? "Trash is empty." : "No trashed captures match.")
+                Text(trashQuery.isEmpty ? L("Trash is empty.") : L("No trashed captures match."))
                     .foregroundStyle(.secondary).padding(.top, 8)
             }
         } else {
@@ -115,19 +118,21 @@ struct MainTrashPane: View {
                     .font(.caption).foregroundStyle(.secondary).padding(.top, 3)
             }
             VStack(alignment: .leading, spacing: 3) {
-                Text(capture.content.isEmpty ? "(media capture)" : capture.content)
+                Text(capture.content.isEmpty ? L("(media capture)") : capture.content)
                     .textSelection(.enabled).lineLimit(6)
                     .foregroundStyle(capture.content.isEmpty ? .secondary : .primary)
                 HStack(spacing: 8) {
-                    Text("Deleted \(CaptureTime.display(capture.deletedAt ?? capture.createdAt))")
+                    Text(DesktopLocalization.shared.format(
+                        "Deleted %@", CaptureTime.display(capture.deletedAt ?? capture.createdAt)
+                    ))
                         .font(.caption2).foregroundStyle(.secondary)
                     Spacer(minLength: 8)
                     Button { restore(capture.id) } label: {
-                        Label("Restore", systemImage: "arrow.uturn.backward")
+                        Label(L("Restore"), systemImage: "arrow.uturn.backward")
                     }
                     .buttonStyle(.borderless).font(.caption)
                     Button(role: .destructive) { pendingPermanentDeleteId = capture.id } label: {
-                        Label("Delete", systemImage: "trash")
+                        Label(L("Delete"), systemImage: "trash")
                     }
                     .buttonStyle(.borderless).font(.caption).foregroundStyle(.red)
                 }

@@ -18,6 +18,7 @@ import SwiftUI
 // content (short note → small window; long note → scrolls). Once the user drags the
 // resize bar, `onManualResize` fires and the controller stops auto-fitting that pin.
 struct PinnedStickyView: View {
+    @ObservedObject private var localization = DesktopLocalization.shared
     let content: String
     let createdAt: String
     let mediaType: String
@@ -51,7 +52,7 @@ struct PinnedStickyView: View {
                     if !content.isEmpty {
                         StickySelectableText(markdown: content, onDoubleClick: onOpen, onCancel: onUnpin)
                     } else if thumbURL == nil {
-                        Text("(media capture)").foregroundStyle(.secondary)
+                        Text(L("(media capture)")).foregroundStyle(.secondary)
                     }
                     if let thumbURL { StickyThumbnail(url: thumbURL) }
                 }
@@ -92,7 +93,7 @@ struct PinnedStickyView: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.borderless)
-                .help("Unpin from desktop (or press Esc)")
+                .help(L("Unpin from desktop (or press Esc)"))
                 Spacer()
                 Button(action: onCopy) {
                     Image(systemName: "doc.on.doc")
@@ -102,7 +103,7 @@ struct PinnedStickyView: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.borderless)
-                .help("Copy")
+                .help(L("Copy"))
             }
             .opacity(headerHovering ? 1 : 0)
             .padding(.horizontal, 6)

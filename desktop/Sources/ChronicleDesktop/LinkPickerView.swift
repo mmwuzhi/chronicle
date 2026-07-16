@@ -14,6 +14,7 @@ struct LinkPickerView: View {
     // this capture and everything already linked).
     var search: @MainActor (String) async -> [RowItem]
     var onPick: (RowItem) -> Void
+    @ObservedObject private var localization = DesktopLocalization.shared
 
     @State private var query = ""
     @State private var results: [RowItem] = []
@@ -31,7 +32,7 @@ struct LinkPickerView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            WorkspaceField(icon: "magnifyingglass", prompt: "Search captures to link…", text: $query,
+            WorkspaceField(icon: "magnifyingglass", prompt: L("Search captures to link…"), text: $query,
                            compact: true, onSubmit: runSearch)
 
             if searching {
@@ -50,8 +51,8 @@ struct LinkPickerView: View {
     }
 
     private var emptyMessage: String {
-        if !hasQuery { return "Search to find captures to link." }
-        return didSearch ? "No matches." : "Press return to search."
+        if !hasQuery { return L("Search to find captures to link.") }
+        return didSearch ? L("No matches.") : L("Press return to search.")
     }
 
     private func rowLabel(_ row: RowItem) -> some View {
@@ -59,7 +60,7 @@ struct LinkPickerView: View {
             Image(systemName: "plus.circle")
                 .foregroundStyle(.secondary).font(.caption).padding(.top, 2)
             VStack(alignment: .leading, spacing: 2) {
-                Text(row.content.isEmpty ? "(media capture)" : row.content)
+                Text(row.content.isEmpty ? L("(media capture)") : row.content)
                     .lineLimit(2).foregroundStyle(.primary)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 Text(CaptureTime.display(row.createdAt))

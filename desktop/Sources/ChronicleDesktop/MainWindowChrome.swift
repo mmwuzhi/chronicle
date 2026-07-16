@@ -130,6 +130,7 @@ enum MainWindowLayout {
 }
 
 struct MainTabRail: View {
+    @ObservedObject private var localization = DesktopLocalization.shared
     static let width: CGFloat = 148
     static let edgePeekInset: CGFloat = 2
     static let edgePeekWidth: CGFloat = 5
@@ -180,7 +181,7 @@ struct MainTabRail: View {
                 Image(systemName: mode.icon)
                     .font(.system(size: 14, weight: .medium))
                     .frame(width: 20, height: 20)
-                Text(mode.rawValue)
+                Text(mode.title)
                     .font(.system(size: 13, weight: .medium))
                     .lineLimit(1)
                 Spacer(minLength: 0)
@@ -196,7 +197,7 @@ struct MainTabRail: View {
             )
         }
         .buttonStyle(SidebarButtonStyle())
-        .help(mode.rawValue)
+        .help(mode.title)
         .accessibilityIdentifier("main-navigation-\(mode.rawValue.lowercased())")
     }
 }
@@ -271,6 +272,12 @@ final class MainWindowController: NSObject {
         self.clients = clients
         self.settingsModel = settingsModel
         super.init()
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(languageChanged),
+            name: .chronicleLanguageChanged,
+            object: nil,
+        )
     }
 
     func show(mode: MainView.Mode? = nil) {
@@ -331,7 +338,7 @@ final class MainWindowController: NSObject {
         button.isBordered = false
         button.imagePosition = .imageOnly
         button.setButtonType(.momentaryPushIn)
-        button.toolTip = navigation.tabsExpanded ? "Collapse tabs" : "Expand tabs"
+        button.toolTip = navigation.tabsExpanded ? L("Collapse tabs") : L("Expand tabs")
         button.onHoverChange = { [weak self] hovering in
             self?.navigation.setTabsButtonHovering(hovering)
         }
@@ -352,13 +359,19 @@ final class MainWindowController: NSObject {
     @objc private func toggleSidebarTabs() {
         navigation.toggleTabsExpanded()
         titlebarSidebarButton?.image = sidebarImage()
-        titlebarSidebarButton?.toolTip = navigation.tabsExpanded ? "Collapse tabs" : "Expand tabs"
+        titlebarSidebarButton?.toolTip = navigation.tabsExpanded ? L("Collapse tabs") : L("Expand tabs")
+    }
+
+    @objc private func languageChanged() {
+        titlebarSidebarButton?.toolTip = navigation.tabsExpanded
+            ? L("Collapse tabs") : L("Expand tabs")
+        titlebarSidebarButton?.image = sidebarImage()
     }
 
     private func sidebarImage() -> NSImage {
         NSImage(
             systemSymbolName: navigation.tabsExpanded ? "sidebar.left" : "sidebar.right",
-            accessibilityDescription: navigation.tabsExpanded ? "Collapse tabs" : "Expand tabs",
+            accessibilityDescription: navigation.tabsExpanded ? L("Collapse tabs") : L("Expand tabs"),
         ) ?? NSImage()
     }
 }

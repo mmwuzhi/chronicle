@@ -214,11 +214,12 @@ func captureDeletePlan(for row: RowItem, hasServerClient: Bool) -> CaptureDelete
 
 /// One user-facing line for a capture-API failure, shared by every surface
 /// (main window, quick panel, trash) so wording stays consistent.
+@MainActor
 func describeCaptureError(_ error: Error) -> String {
     switch error {
-    case CaptureAPIError.httpStatus(401): "Session expired — sign in again from Settings."
-    case CaptureAPIError.httpStatus(503): "Ask is unavailable — the recall service is offline."
-    default: "Error: \(error.localizedDescription)"
+    case CaptureAPIError.httpStatus(401): L("Session expired — sign in again from Settings.")
+    case CaptureAPIError.httpStatus(503): L("Ask is unavailable — the recall service is offline.")
+    default: DesktopLocalization.shared.format("Error: %@", error.localizedDescription)
     }
 }
 
@@ -231,11 +232,15 @@ enum RecallMode: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
+    @MainActor
+    var title: String { L(rawValue) }
+
+    @MainActor
     var placeholder: String {
         switch self {
-        case .capture: "Capture a thought…"
-        case .search: "Search captures…"
-        case .ask: "Ask a question…"
+        case .capture: L("Capture a thought…")
+        case .search: L("Search captures…")
+        case .ask: L("Ask a question…")
         }
     }
 
@@ -247,11 +252,12 @@ enum RecallMode: String, CaseIterable, Identifiable {
         }
     }
 
+    @MainActor
     var sendHint: String {
         switch self {
-        case .capture: "⌘↩ Save"
-        case .search: "↩ Search"
-        case .ask: "↩ Ask"
+        case .capture: L("⌘↩ Save")
+        case .search: L("↩ Search")
+        case .ask: L("↩ Ask")
         }
     }
 }
@@ -274,6 +280,8 @@ enum CaptureTime {
     nonisolated(unsafe) private static let isoPlain = ISO8601DateFormatter()
     private static let sameYear = dateFormatter("MMM d")
     private static let otherYear = dateFormatter("MMM d, yyyy")
+    private static let sameYearChinese = dateFormatter("M月d日", locale: "zh_CN")
+    private static let otherYearChinese = dateFormatter("yyyy年M月d日", locale: "zh_CN")
     // Same shape as the web app's precise stamp ("Jul 4, 2026 · 2:35pm") so the
     // two ends speak one time language.
     private static let exact: DateFormatter = {
@@ -282,13 +290,14 @@ enum CaptureTime {
         f.pmSymbol = "pm"
         return f
     }()
+    private static let exactChinese = dateFormatter("yyyy年M月d日 · HH:mm", locale: "zh_CN")
 
-    private static func dateFormatter(_ format: String) -> DateFormatter {
+    private static func dateFormatter(_ format: String, locale: String = "en_US_POSIX") -> DateFormatter {
         let f = DateFormatter()
         // POSIX locale pins the fixed format: without it macOS rewrites h↔HH to
-        // match the user's 12/24-hour setting (QA1480) and localizes month names,
-        // while the desktop UI is English-only.
-        f.locale = Locale(identifier: "en_US_POSIX")
+        // match the user's 12/24-hour setting (QA1480). English stays pinned to
+        // the web timestamp contract; the Chinese formatters use zh_CN explicitly.
+        f.locale = Locale(identifier: locale)
         f.dateFormat = format
         return f
     }
@@ -298,20 +307,25 @@ enum CaptureTime {
     }
 
     /// Compact relative stamp ("3m", "2h", "Jun 6") for the resting row state.
+    @MainActor
     static func display(_ value: String) -> String {
         guard let date = parse(value) else { return "" }
         let secs = Date().timeIntervalSince(date)
-        if secs < 60 { return "just now" }
-        if secs < 3600 { return "\(Int(secs / 60))m" }
-        if secs < 86400 { return "\(Int(secs / 3600))h" }
-        if secs < 604800 { return "\(Int(secs / 86400))d" }
+        if secs < 60 { return L("just now") }
+        if secs < 3600 { return DesktopLocalization.shared.format("%dm", Int(secs / 60)) }
+        if secs < 86400 { return DesktopLocalization.shared.format("%dh", Int(secs / 3600)) }
+        if secs < 604800 { return DesktopLocalization.shared.format("%dd", Int(secs / 86400)) }
         let sameCalendarYear = Calendar.current.isDate(date, equalTo: Date(), toGranularity: .year)
+        if DesktopLocalization.shared.usesChinese {
+            return (sameCalendarYear ? sameYearChinese : otherYearChinese).string(from: date)
+        }
         return (sameCalendarYear ? sameYear : otherYear).string(from: date)
     }
 
     /// Exact stamp, revealed on hover (avoids the system tooltip's delay).
+    @MainActor
     static func precise(_ value: String) -> String {
         guard let date = parse(value) else { return "" }
-        return exact.string(from: date)
+        return (DesktopLocalization.shared.usesChinese ? exactChinese : exact).string(from: date)
     }
 }

@@ -76,7 +76,7 @@ final class CaptureDetailModel: ObservableObject {
         } catch {
             guard !Task.isCancelled, id == capture.id else { return }
             if case CaptureAPIError.httpStatus(401) = error {
-                self.error = "Session expired — sign in again from Settings."
+                self.error = L("Session expired — sign in again from Settings.")
             }
         }
         if let items = try? await client.related(id: id) {
@@ -137,7 +137,7 @@ final class CaptureDetailModel: ObservableObject {
     private func handleMutateError(_ error: Error, id: String) {
         guard id == capture.id else { return }
         if case CaptureAPIError.httpStatus(401) = error {
-            self.error = "Session expired — sign in again from Settings."
+            self.error = L("Session expired — sign in again from Settings.")
         }
     }
 
@@ -154,6 +154,7 @@ final class CaptureDetailModel: ObservableObject {
 
 struct CaptureDetailView: View {
     @ObservedObject var model: CaptureDetailModel
+    @ObservedObject private var localization = DesktopLocalization.shared
     var onCopy: (String) -> Void
 
     @State private var showPicker = false
@@ -167,19 +168,19 @@ struct CaptureDetailView: View {
                     Button(action: model.goBack) {
                         Image(systemName: "chevron.left")
                     }
-                    .buttonStyle(.borderless).foregroundStyle(.secondary).help("Back")
+                    .buttonStyle(.borderless).foregroundStyle(.secondary).help(L("Back"))
                 }
-                Text("Capture").font(.headline)
+                Text(L("Capture")).font(.headline)
                 Spacer()
                 Button { model.togglePin() } label: {
-                    Label(model.isPinned ? "Pinned" : "Pin",
+                    Label(model.isPinned ? L("Pinned") : L("Pin"),
                           systemImage: model.isPinned ? "pin.fill" : "pin")
                 }
                 .buttonStyle(.borderless).font(.caption)
                 .foregroundStyle(model.isPinned ? Color.chronicleAccent : .secondary)
-                .help(model.isPinned ? "Unpin from desktop" : "Pin to desktop")
+                .help(model.isPinned ? L("Unpin from desktop") : L("Pin to desktop"))
                 Button { onCopy(model.capture.content) } label: {
-                    Label("Copy", systemImage: "doc.on.doc")
+                    Label(L("Copy"), systemImage: "doc.on.doc")
                 }
                 .buttonStyle(.borderless).font(.caption).foregroundStyle(.secondary)
             }
@@ -187,7 +188,7 @@ struct CaptureDetailView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
                     VStack(alignment: .leading, spacing: 6) {
-                        Text(model.capture.content.isEmpty ? "(media capture)" : model.capture.content)
+                        Text(model.capture.content.isEmpty ? L("(media capture)") : model.capture.content)
                             .textSelection(.enabled)
                             .foregroundStyle(model.capture.content.isEmpty ? .secondary : .primary)
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -217,7 +218,7 @@ struct CaptureDetailView: View {
 
                         Divider()
 
-                        Text("Related").font(.caption).foregroundStyle(.secondary)
+                        Text(L("Related")).font(.caption).foregroundStyle(.secondary)
                         relatedSection
                     }
                 }
@@ -234,11 +235,11 @@ struct CaptureDetailView: View {
 
     private var linkedHeader: some View {
         HStack {
-            Text("Linked").font(.caption).foregroundStyle(.secondary)
+            Text(L("Linked")).font(.caption).foregroundStyle(.secondary)
             Spacer()
             if model.signedIn {
                 Button { showPicker.toggle() } label: {
-                    Label(showPicker ? "Done" : "Link",
+                    Label(showPicker ? L("Done") : L("Link"),
                           systemImage: showPicker ? "checkmark" : "plus")
                 }
                 .buttonStyle(.borderless).font(.caption).foregroundStyle(.secondary)
@@ -248,10 +249,10 @@ struct CaptureDetailView: View {
 
     @ViewBuilder private var linkedSection: some View {
         if !model.signedIn {
-            Text("Sign in to manage links.")
+            Text(L("Sign in to manage links."))
                 .foregroundStyle(.secondary).font(.caption)
         } else if model.linked.isEmpty {
-            Text("No linked captures yet.")
+            Text(L("No linked captures yet."))
                 .foregroundStyle(.secondary).font(.caption)
         } else {
             ForEach(model.linked) { row in
@@ -266,7 +267,7 @@ struct CaptureDetailView: View {
 
     @ViewBuilder private var relatedSection: some View {
         if model.related.isEmpty {
-            Text("No related captures yet.")
+            Text(L("No related captures yet."))
                 .foregroundStyle(.secondary).font(.caption)
         } else {
             ForEach(model.related) { row in
@@ -356,7 +357,7 @@ final class CaptureDetailWindowController: NSObject, NSWindowDelegate {
     private static func title(for row: RowItem) -> String {
         let firstLine = row.content.split(whereSeparator: \.isNewline).first.map(String.init) ?? ""
         let trimmed = firstLine.trimmingCharacters(in: .whitespaces)
-        if trimmed.isEmpty { return "Capture" }
+        if trimmed.isEmpty { return L("Capture") }
         return trimmed.count > 40 ? String(trimmed.prefix(40)) + "…" : trimmed
     }
 

@@ -64,6 +64,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self, selector: #selector(capturesChangedForStatusItem),
             name: .chronicleCapturesChanged, object: nil,
         )
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(languageChanged),
+            name: .chronicleLanguageChanged, object: nil,
+        )
         installHotKey()
         installReminderNotifier()
         refreshSessionIfPossible()
@@ -159,8 +163,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if status.signedOut {
             let n = status.pending
             button.toolTip = n > 0
-                ? "Chronicle — signed out · \(n) capture\(n == 1 ? "" : "s") waiting to sync"
-                : "Chronicle — signed out · sign in to sync"
+                ? DesktopLocalization.shared.format(
+                    n == 1
+                        ? "Chronicle — signed out · %d capture waiting to sync"
+                        : "Chronicle — signed out · %d captures waiting to sync",
+                    n
+                )
+                : L("Chronicle — signed out · sign in to sync")
         } else {
             button.toolTip = "Chronicle"
         }
@@ -269,13 +278,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // default until it does), then track every session change from here on.
         updateStatusItemAppearance()
 
+        installStatusItemMenu()
+    }
+
+    private func installStatusItemMenu() {
         let menu = NSMenu()
-        menu.addItem(NSMenuItem(title: "Quick Capture", action: #selector(showQuickCaptureAction), keyEquivalent: ""))
-        menu.addItem(NSMenuItem(title: "Open Chronicle", action: #selector(showMainAction), keyEquivalent: ""))
+        menu.addItem(NSMenuItem(title: L("Quick Capture"), action: #selector(showQuickCaptureAction), keyEquivalent: ""))
+        menu.addItem(NSMenuItem(title: L("Open Chronicle"), action: #selector(showMainAction), keyEquivalent: ""))
         menu.addItem(.separator())
-        menu.addItem(NSMenuItem(title: "Settings…", action: #selector(showSettingsAction), keyEquivalent: ","))
+        menu.addItem(NSMenuItem(title: L("Settings…"), action: #selector(showSettingsAction), keyEquivalent: ","))
         menu.addItem(.separator())
-        menu.addItem(NSMenuItem(title: "Quit Chronicle", action: #selector(quitAction), keyEquivalent: "q"))
+        menu.addItem(NSMenuItem(title: L("Quit Chronicle"), action: #selector(quitAction), keyEquivalent: "q"))
         menu.items.forEach { $0.target = self }
         statusItem.menu = menu
     }
@@ -285,25 +298,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let appMenuItem = NSMenuItem()
         let appMenu = NSMenu()
-        let settingsItem = NSMenuItem(title: "Settings…", action: #selector(showSettingsAction), keyEquivalent: ",")
+        let settingsItem = NSMenuItem(title: L("Settings…"), action: #selector(showSettingsAction), keyEquivalent: ",")
         settingsItem.target = self
         appMenu.addItem(settingsItem)
         appMenu.addItem(.separator())
-        let quitItem = NSMenuItem(title: "Quit Chronicle", action: #selector(quitAction), keyEquivalent: "q")
+        let quitItem = NSMenuItem(title: L("Quit Chronicle"), action: #selector(quitAction), keyEquivalent: "q")
         quitItem.target = self
         appMenu.addItem(quitItem)
         appMenuItem.submenu = appMenu
         mainMenu.addItem(appMenuItem)
 
         let editMenuItem = NSMenuItem()
-        let editMenu = NSMenu(title: "Edit")
-        editMenu.addItem(NSMenuItem(title: "Undo", action: Selector(("undo:")), keyEquivalent: "z"))
-        editMenu.addItem(NSMenuItem(title: "Redo", action: Selector(("redo:")), keyEquivalent: "Z"))
+        let editMenu = NSMenu(title: L("Edit"))
+        editMenu.addItem(NSMenuItem(title: L("Undo"), action: Selector(("undo:")), keyEquivalent: "z"))
+        editMenu.addItem(NSMenuItem(title: L("Redo"), action: Selector(("redo:")), keyEquivalent: "Z"))
         editMenu.addItem(.separator())
-        editMenu.addItem(NSMenuItem(title: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x"))
-        editMenu.addItem(NSMenuItem(title: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c"))
-        editMenu.addItem(NSMenuItem(title: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v"))
-        editMenu.addItem(NSMenuItem(title: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a"))
+        editMenu.addItem(NSMenuItem(title: L("Cut"), action: #selector(NSText.cut(_:)), keyEquivalent: "x"))
+        editMenu.addItem(NSMenuItem(title: L("Copy"), action: #selector(NSText.copy(_:)), keyEquivalent: "c"))
+        editMenu.addItem(NSMenuItem(title: L("Paste"), action: #selector(NSText.paste(_:)), keyEquivalent: "v"))
+        editMenu.addItem(NSMenuItem(title: L("Select All"), action: #selector(NSText.selectAll(_:)), keyEquivalent: "a"))
         editMenuItem.submenu = editMenu
         mainMenu.addItem(editMenuItem)
 
@@ -320,6 +333,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func showMainAction() { mainWindowController.show() }
     @objc private func showSettingsAction() { showSettings() }
     @objc private func quitAction() { NSApp.terminate(nil) }
+
+    @objc private func languageChanged() {
+        installApplicationMenu()
+        installStatusItemMenu()
+        updateStatusItemAppearance()
+    }
 
     private func showQuickCapture() {
         panelController.show()
@@ -383,16 +402,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Task { await localSemantic.ensureIndexed() }
 
             guard let client = makeClient() else {
-                showNotification(title: "Saved locally — sign in to sync", body: trimmed)
+                showNotification(title: L("Saved locally — sign in to sync"), body: trimmed)
                 return
             }
 
-            showNotification(title: "Capture saved", body: trimmed)
+            showNotification(title: L("Capture saved"), body: trimmed)
             Task {
                 await sync(record, using: client, notifySuccess: false)
             }
         } catch {
-            showNotification(title: "Capture failed", body: error.localizedDescription)
+            showNotification(title: L("Capture failed"), body: error.localizedDescription)
             return
         }
     }
@@ -463,7 +482,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             CaptureEvents.postChanged()
             if notifySuccess {
                 await MainActor.run {
-                    self.showNotification(title: "Capture synced", body: record.payload.rawText)
+                    self.showNotification(title: L("Capture synced"), body: record.payload.rawText)
                 }
             }
             return true
@@ -471,7 +490,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             try? localStore.markFailed(localId: record.id, error: error)
             if notifySuccess {
                 await MainActor.run {
-                    self.showNotification(title: "Capture saved locally", body: "Sync will retry later.")
+                    self.showNotification(title: L("Capture saved locally"), body: L("Sync will retry later."))
                 }
             }
             return false

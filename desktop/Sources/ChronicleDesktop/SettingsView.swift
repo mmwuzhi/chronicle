@@ -1,5 +1,6 @@
 import AppKit
 import AuthenticationServices
+import ServiceManagement
 import SwiftUI
 import ChronicleDesktopCore
 
@@ -58,13 +59,13 @@ final class SettingsModel: ObservableObject {
 
     func saveAPIURL() {
         guard let url = currentURL else {
-            status = "Use HTTPS for remote servers (HTTP is allowed only on localhost)."
+            status = L("Use HTTPS for remote servers (HTTP is allowed only on localhost).")
             return
         }
         let wasSignedIn = isSignedIn
         settings.saveAPIURL(url)
         isSignedIn = settings.load().isUsable
-        status = isSignedIn ? "Server URL saved." : "Server URL saved. Sign in to this server."
+        status = isSignedIn ? L("Server URL saved.") : L("Server URL saved. Sign in to this server.")
         if wasSignedIn != isSignedIn {
             onSignInChanged()
         }
@@ -79,18 +80,18 @@ final class SettingsModel: ObservableObject {
         guard !isAuthenticating else { return }
         let email = email.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !email.isEmpty, !password.isEmpty else {
-            authError = "Email and password are required."
+            authError = L("Email and password are required.")
             return
         }
         guard email.range(
             of: #"^[^@\s]+@[^@\s]+\.[^@\s]+$"#,
             options: .regularExpression,
         ) != nil else {
-            authError = "Enter a valid email address."
+            authError = L("Enter a valid email address.")
             return
         }
         guard let url = currentURL else {
-            authError = "Use HTTPS for remote servers (HTTP is allowed only on localhost)."
+            authError = L("Use HTTPS for remote servers (HTTP is allowed only on localhost).")
             return
         }
         let client = AuthAPIClient(apiURL: url)
@@ -104,17 +105,17 @@ final class SettingsModel: ObservableObject {
                 let response = try await client.login(email: email, password: pw)
                 guard !Task.isCancelled, self.authenticationGate.accepts(attemptID) else { return }
                 if response.mfaRequired == true {
-                    self.authError = "MFA accounts can't sign in from the desktop yet."
+                    self.authError = L("MFA accounts can't sign in from the desktop yet.")
                     return
                 }
                 guard let token = response.accessToken, !token.isEmpty else {
-                    self.authError = "Sign in failed: no token returned."
+                    self.authError = L("Sign in failed: no token returned.")
                     return
                 }
                 self.completeSignIn(token: token, apiURL: url)
             } catch {
                 guard !Task.isCancelled, self.authenticationGate.accepts(attemptID) else { return }
-                self.authError = "Sign in failed. Check your email and password."
+                self.authError = L("Sign in failed. Check your email and password.")
             }
         }
     }
@@ -122,7 +123,7 @@ final class SettingsModel: ObservableObject {
     func signIn(provider: OAuthProvider) {
         guard !isAuthenticating else { return }
         guard let url = currentURL else {
-            authError = "Use HTTPS for remote servers (HTTP is allowed only on localhost)."
+            authError = L("Use HTTPS for remote servers (HTTP is allowed only on localhost).")
             return
         }
         let client = AuthAPIClient(apiURL: url)
@@ -134,7 +135,9 @@ final class SettingsModel: ObservableObject {
                 codeChallenge: pkce.challenge,
             )
         } catch {
-            authError = "Couldn't start \(provider.displayName) sign in."
+            authError = DesktopLocalization.shared.format(
+                "Couldn't start %@ sign in.", provider.displayName
+            )
             return
         }
 
@@ -155,19 +158,23 @@ final class SettingsModel: ObservableObject {
                 guard let callbackURL,
                       let components = URLComponents(url: callbackURL, resolvingAgainstBaseURL: false)
                 else {
-                    self.authError = "\(provider.displayName) returned an invalid response."
+                    self.authError = DesktopLocalization.shared.format(
+                        "%@ returned an invalid response.", provider.displayName
+                    )
                     self.finishAuthentication(attemptID)
                     return
                 }
                 if components.queryItems?.first(where: { $0.name == "error" })?.value == "mfa_required" {
-                    self.authError = "MFA accounts can't sign in from the desktop yet."
+                    self.authError = L("MFA accounts can't sign in from the desktop yet.")
                     self.finishAuthentication(attemptID)
                     return
                 }
                 guard let code = components.queryItems?.first(where: { $0.name == "code" })?.value,
                       !code.isEmpty
                 else {
-                    self.authError = "\(provider.displayName) returned no sign-in code."
+                    self.authError = DesktopLocalization.shared.format(
+                        "%@ returned no sign-in code.", provider.displayName
+                    )
                     self.finishAuthentication(attemptID)
                     return
                 }
@@ -186,7 +193,9 @@ final class SettingsModel: ObservableObject {
         webAuthenticationSession = session
         guard session.start() else {
             webAuthenticationSession = nil
-            authError = "Couldn't open \(provider.displayName) sign in."
+            authError = DesktopLocalization.shared.format(
+                "Couldn't open %@ sign in.", provider.displayName
+            )
             finishAuthentication(attemptID)
             return
         }
@@ -228,7 +237,9 @@ final class SettingsModel: ObservableObject {
                 self.completeSignIn(token: token, apiURL: apiURL)
             } catch {
                 guard !Task.isCancelled, self.authenticationGate.accepts(attemptID) else { return }
-                self.authError = "Couldn't finish \(provider.displayName) sign in. Try again."
+                self.authError = DesktopLocalization.shared.format(
+                    "Couldn't finish %@ sign in. Try again.", provider.displayName
+                )
             }
         }
     }
@@ -251,7 +262,7 @@ final class SettingsModel: ObservableObject {
         password = ""
         authError = nil
         isSignInPresented = false
-        status = "Signed in."
+        status = L("Signed in.")
         onSignInChanged()
     }
 
@@ -266,7 +277,7 @@ final class SettingsModel: ObservableObject {
         let cookies = settings.apiCookies()
         settings.signOut()
         isSignedIn = false
-        status = "Signed out."
+        status = L("Signed out.")
         onSignInChanged()
         Task {
             try? await AuthAPIClient(apiURL: url).logout(cookies: cookies)
@@ -280,7 +291,9 @@ final class SettingsModel: ObservableObject {
     func retryNow() {
         Task { @MainActor in
             let result = await retry()
-            status = "Synced \(result.sent); \(result.remaining) still waiting."
+            status = DesktopLocalization.shared.format(
+                "Synced %d; %d still waiting.", result.sent, result.remaining
+            )
             refreshPending()
         }
     }
@@ -313,12 +326,17 @@ struct AuthenticationAttemptGate {
 
 struct SettingsView: View {
     @ObservedObject var model: SettingsModel
+    @ObservedObject private var localization = DesktopLocalization.shared
     @AppStorage(ReminderNotifier.enabledKey) private var notifyOnDue = true
     @State private var showingSignIn = false
+    @State private var launchAtLogin = Self.launchAtLoginRequested(for: SMAppService.mainApp.status)
+    @State private var launchAtLoginError: String?
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
+                generalSection
+                Divider()
                 accountSection
                 Divider()
                 connectionSection
@@ -343,27 +361,88 @@ struct SettingsView: View {
         }
     }
 
+    private var generalSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(L("General")).font(.headline)
+            Picker(L("Language"), selection: Binding(
+                get: { localization.language },
+                set: { localization.set($0) }
+            )) {
+                Text(L("System")).tag(InterfaceLanguage.system)
+                Text("English").tag(InterfaceLanguage.english)
+                Text("简体中文").tag(InterfaceLanguage.chinese)
+            }
+            .pickerStyle(.segmented)
+
+            Toggle(isOn: Binding(
+                get: { launchAtLogin },
+                set: { enabled in updateLaunchAtLogin(enabled) }
+            )) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(L("Launch at Login"))
+                    Text(L("Open Chronicle automatically when you sign in to your Mac."))
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            .toggleStyle(.switch)
+
+            if let launchAtLoginError {
+                Text(launchAtLoginError)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            }
+        }
+    }
+
+    private func updateLaunchAtLogin(_ enabled: Bool) {
+        do {
+            if enabled {
+                try SMAppService.mainApp.register()
+            } else {
+                try SMAppService.mainApp.unregister()
+            }
+            launchAtLogin = enabled
+            launchAtLoginError = nil
+        } catch {
+            launchAtLogin = Self.launchAtLoginRequested(for: SMAppService.mainApp.status)
+            launchAtLoginError = Bundle.main.bundleIdentifier == nil
+                ? L("Launch at Login is available only from the packaged app.")
+                : error.localizedDescription
+        }
+    }
+
+    static func launchAtLoginRequested(for status: SMAppService.Status) -> Bool {
+        switch status {
+        case .enabled, .requiresApproval:
+            true
+        case .notFound, .notRegistered:
+            false
+        @unknown default:
+            false
+        }
+    }
+
     private var accountSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Account").font(.headline)
+            Text(L("Account")).font(.headline)
             if model.isSignedIn {
                 HStack {
-                    Label("Signed in", systemImage: "checkmark.seal.fill")
+                    Label(L("Signed in"), systemImage: "checkmark.seal.fill")
                         .foregroundStyle(Color.chronicleAccent)
                     Spacer()
-                    Button("Sign Out") { model.signOut() }
+                    Button(L("Sign Out")) { model.signOut() }
                 }
             } else {
                 HStack {
-                    Label("Not signed in", systemImage: "person.crop.circle")
+                    Label(L("Not signed in"), systemImage: "person.crop.circle")
                         .foregroundStyle(.secondary)
                     Spacer()
-                    Button("Sign In…") {
+                    Button(L("Sign In…")) {
                         model.authError = nil
                         showingSignIn = true
                     }
                 }
-                Text("Sign in to sync captures and use server-backed recall.")
+                Text(L("Sign in to sync captures and use server-backed recall."))
                     .font(.caption).foregroundStyle(.secondary)
             }
         }
@@ -371,20 +450,20 @@ struct SettingsView: View {
 
     private var connectionSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Server").font(.headline)
+            Text(L("Server")).font(.headline)
             HStack {
                 WorkspaceField(prompt: "https://api.example.com", text: $model.apiURLString,
                                compact: true)
-                Button("Save") { model.saveAPIURL() }
+                Button(L("Save")) { model.saveAPIURL() }
             }
-            Text("The Chronicle API the desktop app talks to.")
+            Text(L("The Chronicle API the desktop app talks to."))
                 .font(.caption).foregroundStyle(.secondary)
         }
     }
 
     private var shortcutSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Quick Capture Shortcut").font(.headline)
+            Text(L("Quick Capture Shortcut")).font(.headline)
             ShortcutRecorder(initial: model.currentShortcut) { model.saveShortcut($0) }
                 .frame(height: 20)
                 .padding(.horizontal, 10).padding(.vertical, 6)
@@ -392,18 +471,18 @@ struct SettingsView: View {
                 .overlay(
                     RoundedRectangle(cornerRadius: 8).stroke(Color.primary.opacity(0.08), lineWidth: 1),
                 )
-            Text("Click the field, then press a shortcut (or double-tap Control).")
+            Text(L("Click the field, then press a shortcut (or double-tap Control)."))
                 .font(.caption).foregroundStyle(.secondary)
         }
     }
 
     private var remindersSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Reminders").font(.headline)
+            Text(L("Reminders")).font(.headline)
             Toggle(isOn: $notifyOnDue) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Show a system notification when a reminder is due")
-                    Text("Reminders are scheduled locally and fire even when the app is closed.")
+                    Text(L("Show a system notification when a reminder is due"))
+                    Text(L("Reminders are scheduled locally and fire even when the app is closed."))
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }
@@ -414,20 +493,25 @@ struct SettingsView: View {
     private var retryQueueSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("Retry Queue").font(.headline)
+                Text(L("Retry Queue")).font(.headline)
                 Spacer()
                 Button { model.refreshPending() } label: { Image(systemName: "arrow.clockwise") }
-                    .buttonStyle(.borderless).foregroundStyle(.secondary).help("Refresh")
+                    .buttonStyle(.borderless).foregroundStyle(.secondary).help(L("Refresh"))
             }
             HStack {
                 Text(model.pendingCount == 0
-                     ? "All captures are synced."
-                     : "\(model.pendingCount) capture\(model.pendingCount == 1 ? "" : "s") waiting to sync.")
+                     ? L("All captures are synced.")
+                     : DesktopLocalization.shared.format(
+                        model.pendingCount == 1
+                            ? "%d capture waiting to sync."
+                            : "%d captures waiting to sync.",
+                        model.pendingCount
+                     ))
                     .foregroundStyle(model.pendingCount == 0 ? .secondary : .primary)
                 Spacer()
-                Button("Retry Now") { model.retryNow() }.disabled(model.pendingCount == 0)
+                Button(L("Retry Now")) { model.retryNow() }.disabled(model.pendingCount == 0)
             }
-            Text("Captures made offline (or before signing in) sync here once you're online.")
+            Text(L("Captures made offline (or before signing in) sync here once you're online."))
                 .font(.caption).foregroundStyle(.secondary)
         }
     }
@@ -435,14 +519,15 @@ struct SettingsView: View {
 
 struct SignInSheet: View {
     @ObservedObject var model: SettingsModel
+    @ObservedObject private var localization = DesktopLocalization.shared
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             VStack(alignment: .leading, spacing: 4) {
-                Text("Sign in to Chronicle")
+                Text(L("Sign in to Chronicle"))
                     .font(.title2.weight(.semibold))
-                Text("Use the same account you use on the web.")
+                Text(L("Use the same account you use on the web."))
                     .font(.callout).foregroundStyle(.secondary)
             }
 
@@ -451,18 +536,18 @@ struct SignInSheet: View {
 
             HStack(spacing: 10) {
                 Divider()
-                Text("or use email")
+                Text(L("or use email"))
                     .font(.caption).foregroundStyle(.tertiary)
                     .fixedSize()
                 Divider()
             }
 
             VStack(alignment: .leading, spacing: 10) {
-                Text("Email").font(.caption).foregroundStyle(.secondary)
+                Text(L("Email")).font(.caption).foregroundStyle(.secondary)
                 WorkspaceField(prompt: "you@example.com", text: $model.email, compact: true)
-                Text("Password").font(.caption).foregroundStyle(.secondary)
+                Text(L("Password")).font(.caption).foregroundStyle(.secondary)
                 WorkspaceField(
-                    prompt: "Password",
+                    prompt: L("Password"),
                     text: $model.password,
                     secure: true,
                     compact: true,
@@ -482,12 +567,12 @@ struct SignInSheet: View {
                     ProgressView().controlSize(.small)
                 }
                 Spacer()
-                Button("Cancel") {
+                Button(L("Cancel")) {
                     model.cancelSignIn()
                     dismiss()
                 }
                     .keyboardShortcut(.cancelAction)
-                Button("Sign In") { model.signIn() }
+                Button(L("Sign In")) { model.signIn() }
                     .keyboardShortcut(.defaultAction)
                     .disabled(model.isAuthenticating)
             }
@@ -501,7 +586,7 @@ struct SignInSheet: View {
 
     private func providerButton(_ provider: OAuthProvider, icon: String) -> some View {
         Button { model.signIn(provider: provider) } label: {
-            Label("Continue with \(provider.displayName)", systemImage: icon)
+            Label(DesktopLocalization.shared.format("Continue with %@", provider.displayName), systemImage: icon)
                 .frame(maxWidth: .infinity)
         }
         .buttonStyle(.bordered)
@@ -546,6 +631,8 @@ struct ShortcutRecorder: NSViewRepresentable {
 struct WebhooksSection: View {
     let clients: CaptureClients
 
+    @ObservedObject private var localization = DesktopLocalization.shared
+
     @State private var rules: [WebhookRule] = []
     @State private var error = ""
     @State private var editing: EditTarget?
@@ -561,20 +648,20 @@ struct WebhooksSection: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Webhooks").font(.headline)
-                    Text("POST a templated payload to an external service when a capture matches.")
+                    Text(L("Webhooks")).font(.headline)
+                    Text(L("POST a templated payload to an external service when a capture matches."))
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 Spacer()
                 if clients.webhook() != nil {
                     Button { editing = EditTarget(rule: nil) } label: {
-                        Label("Add Rule", systemImage: "plus")
+                        Label(L("Add Rule"), systemImage: "plus")
                     }
                 }
             }
 
             if clients.webhook() == nil {
-                Text("Sign in to manage webhooks.").font(.callout).foregroundStyle(.secondary)
+                Text(L("Sign in to manage webhooks.")).font(.callout).foregroundStyle(.secondary)
             } else if !error.isEmpty {
                 Text(error).foregroundStyle(.red).font(.caption)
             }
@@ -582,8 +669,8 @@ struct WebhooksSection: View {
             if rules.isEmpty && clients.webhook() != nil && loaded {
                 VStack(spacing: 6) {
                     Image(systemName: "arrow.up.forward.app").font(.title2).foregroundStyle(.tertiary)
-                    Text("No rules yet").foregroundStyle(.secondary)
-                    Text("e.g. captures mentioning an amount go to a ledger service.")
+                    Text(L("No rules yet")).foregroundStyle(.secondary)
+                    Text(L("e.g. captures mentioning an amount go to a ledger service."))
                         .font(.caption).foregroundStyle(.tertiary)
                 }
                 .frame(maxWidth: .infinity).padding(.vertical, 24)
@@ -612,10 +699,10 @@ struct WebhooksSection: View {
             }
             Spacer()
             Button { editing = EditTarget(rule: rule) } label: { Image(systemName: "pencil") }
-                .buttonStyle(.borderless).foregroundStyle(.secondary).help("Edit")
+                .buttonStyle(.borderless).foregroundStyle(.secondary).help(L("Edit"))
                 .opacity(hoverID == rule.id ? 1 : 0)
             Button { delete(rule) } label: { Image(systemName: "trash") }
-                .buttonStyle(.borderless).foregroundStyle(.secondary).help("Delete")
+                .buttonStyle(.borderless).foregroundStyle(.secondary).help(L("Delete"))
                 .opacity(hoverID == rule.id ? 1 : 0)
         }
         .contentShape(Rectangle())
@@ -627,11 +714,13 @@ struct WebhooksSection: View {
 
     private func summary(_ rule: WebhookRule) -> String {
         var conds: [String] = []
-        if !rule.keywords.isEmpty { conds.append("keywords " + rule.keywords.joined(separator: ", ")) }
-        if let q = rule.semanticQuery, !q.isEmpty {
-            conds.append("semantic “\(q)” ≥ \(String(format: "%.2f", rule.semanticThreshold))")
+        if !rule.keywords.isEmpty {
+            conds.append(L("keywords") + " " + rule.keywords.joined(separator: ", "))
         }
-        let cond = conds.isEmpty ? "every capture" : conds.joined(separator: " | ")
+        if let q = rule.semanticQuery, !q.isEmpty {
+            conds.append(L("semantic") + " “\(q)” ≥ \(String(format: "%.2f", rule.semanticThreshold))")
+        }
+        let cond = conds.isEmpty ? L("every capture") : conds.joined(separator: " | ")
         let host = URL(string: rule.targetUrl)?.host ?? rule.targetUrl
         return "\(cond) → \(host)"
     }
@@ -670,6 +759,7 @@ private struct WebhookEditor: View {
     let onDone: () async -> Void
 
     @Environment(\.dismiss) private var dismiss
+    @ObservedObject private var localization = DesktopLocalization.shared
     @State private var draft: WebhookDraft
     @State private var keywordsText: String
     @State private var busy = false
@@ -687,12 +777,12 @@ private struct WebhookEditor: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text(rule == nil ? "New Webhook" : "Edit Webhook").font(.headline)
+            Text(rule == nil ? L("New Webhook") : L("Edit Webhook")).font(.headline)
 
             Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 10, verticalSpacing: 10) {
                 GridRow {
-                    label("Name")
-                    WorkspaceField(prompt: "Ledger", text: $draft.name, compact: true)
+                    label(L("Name"))
+                    WorkspaceField(prompt: L("Ledger"), text: $draft.name, compact: true)
                 }
                 GridRow {
                     label("URL")
@@ -700,15 +790,15 @@ private struct WebhookEditor: View {
                                    text: $draft.targetUrl, compact: true)
                 }
                 GridRow {
-                    label("Keywords")
-                    WorkspaceField(prompt: "comma-separated, any match fires; optional",
+                    label(L("Keywords"))
+                    WorkspaceField(prompt: L("comma-separated, any match fires; optional"),
                                    text: $keywordsText, compact: true)
                 }
                 GridRow {
-                    label("Semantic")
+                    label(L("Semantic"))
                     VStack(alignment: .leading, spacing: 4) {
                         WorkspaceField(
-                            prompt: "describe what to match; empty = no semantic match",
+                            prompt: L("describe what to match; empty = no semantic match"),
                             text: Binding(
                                 get: { draft.semanticQuery ?? "" },
                                 set: { draft.semanticQuery = $0 }),
@@ -725,12 +815,12 @@ private struct WebhookEditor: View {
                     }
                 }
                 GridRow {
-                    label("Payload")
+                    label(L("Payload"))
                     VStack(alignment: .leading, spacing: 4) {
                         TextEditor(text: $draft.payloadTemplate)
                             .font(.callout.monospaced()).frame(height: 90)
                             .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(.separator))
-                        Text("Placeholders: [capture.text] [capture.id] [capture.created_at]")
+                        Text(L("Placeholders: [capture.text] [capture.id] [capture.created_at]"))
                             .font(.caption2).foregroundStyle(.tertiary).textSelection(.enabled)
                     }
                 }
@@ -744,11 +834,11 @@ private struct WebhookEditor: View {
             }
 
             HStack {
-                Button("Save & Test") { Task { await save(thenTest: true) } }
+                Button(L("Save & Test")) { Task { await save(thenTest: true) } }
                     .disabled(!valid || busy)
                 Spacer()
-                Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
-                Button("Save") { Task { await save(thenTest: false); if error.isEmpty { dismiss() } } }
+                Button(L("Cancel")) { dismiss() }.keyboardShortcut(.cancelAction)
+                Button(L("Save")) { Task { await save(thenTest: false); if error.isEmpty { dismiss() } } }
                     .keyboardShortcut(.defaultAction).disabled(!valid || busy)
             }
         }
@@ -767,7 +857,7 @@ private struct WebhookEditor: View {
     }
 
     private func save(thenTest: Bool) async {
-        guard let client = clients.webhook() else { error = "Sign in to save webhooks."; return }
+        guard let client = clients.webhook() else { error = L("Sign in to save webhooks."); return }
         busy = true; error = ""; testResult = nil
         draft.keywords = keywordsText
             .split(whereSeparator: { ",，".contains($0) })
@@ -790,14 +880,19 @@ private struct WebhookEditor: View {
 
     // Score the saved rule against the user's most recent capture (no delivery).
     private func runTest(client: WebhookAPIClient, ruleID: String) async -> String {
-        guard let recall = clients.recall() else { return "Sign in to test." }
+        guard let recall = clients.recall() else { return L("Sign in to test.") }
         do {
             let page = try await recall.recent(limit: 1)
-            guard let latest = page.items.first else { return "No captures yet to test against." }
+            guard let latest = page.items.first else { return L("No captures yet to test against.") }
             let result = try await client.test(id: ruleID, captureId: latest.id)
             let score = result.score.map { String(format: "%.3f", $0) } ?? "n/a"
-            return "Against your latest capture: \(result.matched ? "matched" : "no match") (score \(score))."
-        } catch { return "Test failed: \(error.localizedDescription)" }
+            return DesktopLocalization.shared.format(
+                "Against your latest capture: %@ (score %@).",
+                result.matched ? L("matched") : L("no match"), score
+            )
+        } catch {
+            return DesktopLocalization.shared.format("Test failed: %@", error.localizedDescription)
+        }
     }
 }
 
@@ -823,7 +918,7 @@ final class SettingsWindowController {
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered, defer: false,
         )
-        w.title = "Chronicle Settings"
+        w.title = L("Chronicle Settings")
         w.center()
         w.isReleasedWhenClosed = false
         w.isRestorable = false // no uninvited reopen on relaunch (see main window)

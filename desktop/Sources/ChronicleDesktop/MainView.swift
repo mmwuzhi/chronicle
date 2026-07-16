@@ -14,10 +14,14 @@ struct MainView: View {
     let clients: CaptureClients
     @ObservedObject var navigation: MainWindowNavigation
     @ObservedObject var settingsModel: SettingsModel
+    @ObservedObject private var localization = DesktopLocalization.shared
 
     enum Mode: String, CaseIterable, Identifiable {
         case browse = "Browse", ask = "Ask", trash = "Trash", settings = "Settings"
         var id: String { rawValue }
+
+        @MainActor
+        var title: String { L(rawValue) }
 
         var icon: String {
             switch self {
@@ -188,7 +192,7 @@ struct MainView: View {
             VStack(spacing: 12) {
                 WorkspaceField(
                     icon: "magnifyingglass",
-                    prompt: "Search captures…",
+                    prompt: L("Search captures…"),
                     text: $query,
                     onSubmit: runBrowse,
                     disabled: busy,
@@ -221,7 +225,7 @@ struct MainView: View {
             MainTrashPane(clients: clients, captureEventToken: captureEventToken)
         case .settings:
             VStack(spacing: 0) {
-                Text("Settings")
+                Text(L("Settings"))
                     .font(.headline)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 16)
@@ -237,7 +241,7 @@ struct MainView: View {
         // Browse + search work offline against the local store; the server's
         // semantic results merge in on top when signed in.
         if rows.isEmpty && editDraft == nil && !searched && !busy {
-            Text((signedIn && !offline) ? "No captures yet." : "No local captures yet — capture something or sign in to sync.")
+            Text((signedIn && !offline) ? L("No captures yet.") : L("No local captures yet — capture something or sign in to sync."))
                 .foregroundStyle(.secondary).padding(.top, 8)
         }
         // The draft edits in place inside the ForEach. This fallback only
@@ -253,7 +257,7 @@ struct MainView: View {
                 .padding(.vertical, 12)
         }
         if searched && rows.isEmpty && !busy {
-            Text("No matches.")
+            Text(L("No matches."))
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.top, editDraft == nil ? 8 : 0)
@@ -293,7 +297,7 @@ struct MainView: View {
 
                 if submittedQuestion.isEmpty && answer.isEmpty && !busy {
                     if signedIn {
-                        Text("Ask about anything you've captured.")
+                        Text(L("Ask about anything you've captured."))
                             .font(.callout)
                             .foregroundStyle(.tertiary)
                     } else {
@@ -321,7 +325,7 @@ struct MainView: View {
 
     @ViewBuilder private var askContent: some View {
         if !submittedQuestion.isEmpty {
-            Text("Question")
+            Text(L("Question"))
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
             Text(submittedQuestion)
@@ -339,13 +343,13 @@ struct MainView: View {
         } else if !answer.isEmpty {
             HStack {
                 Spacer()
-                Button { copy(answer) } label: { Label("Copy", systemImage: "doc.on.doc") }
+                Button { copy(answer) } label: { Label(L("Copy"), systemImage: "doc.on.doc") }
                     .buttonStyle(.borderless).font(.caption).foregroundStyle(.secondary)
             }
             Text(answer).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
             if !sources.isEmpty {
                 Divider().padding(.vertical, 4)
-                Text("Sources").font(.caption).foregroundStyle(.secondary)
+                Text(L("Sources")).font(.caption).foregroundStyle(.secondary)
                 ForEach(sources) { s in
                     HStack(alignment: .top, spacing: 8) {
                         Text("[\(s.n)]").font(.callout.monospacedDigit()).foregroundStyle(.secondary)
@@ -364,10 +368,10 @@ struct MainView: View {
 
     private var signInPrompt: some View {
         VStack(spacing: 6) {
-            Text("Ask works across your synced captures.")
+            Text(L("Ask works across your synced captures."))
                 .font(.headline)
                 .foregroundStyle(.secondary)
-            Text("Sign in below to use server-backed recall.")
+            Text(L("Sign in below to use server-backed recall."))
                 .font(.callout)
                 .foregroundStyle(.tertiary)
         }
@@ -381,8 +385,8 @@ struct MainView: View {
                 text: $askQuery,
                 focused: $askFocused,
                 placeholder: signedIn
-                    ? "Ask a question, e.g. what did I work on this week"
-                    : "Sign in to ask across your captures",
+                    ? L("Ask a question, e.g. what did I work on this week")
+                    : L("Sign in to ask across your captures"),
                 submitsOnEnter: true,
                 onSubmit: runAsk,
                 onCancel: { askFocused = false },
@@ -393,7 +397,7 @@ struct MainView: View {
             .disabled(!signedIn || busy)
 
             HStack(spacing: 10) {
-                Text(signedIn ? "↩ Ask  ·  ⇧↩ New line" : "Sign in to ask across your captures")
+                Text(signedIn ? L("↩ Ask  ·  ⇧↩ New line") : L("Sign in to ask across your captures"))
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
                 Spacer(minLength: 8)
@@ -406,10 +410,10 @@ struct MainView: View {
                     .clipShape(Circle())
                     .controlSize(.regular)
                     .disabled(askQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || busy)
-                    .help("Ask")
-                    .accessibilityLabel("Ask")
+                    .help(L("Ask"))
+                    .accessibilityLabel(L("Ask"))
                 } else {
-                    Button("Sign in") {
+                    Button(L("Sign in")) {
                         settingsModel.presentSignIn()
                     }
                     .buttonStyle(.borderedProminent)
@@ -654,7 +658,7 @@ struct MainView: View {
         // browse fragment), so edit it directly against the server instead.
         guard clients.localSetText(id, text) else {
             guard let client = clients.recall() else {
-                error = "Not signed in — sign in from Settings to edit."
+                error = L("Not signed in — sign in from Settings to edit.")
                 return
             }
             Task { @MainActor in
