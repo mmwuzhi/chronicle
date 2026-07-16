@@ -5,7 +5,7 @@ Deferred work.
 ## Capture-First Roadmap
 
 - Web feed virtualization: the captures list keeps every loaded page mounted. Load-more is a manual button, so growth is bounded in practice. If deep feeds ever jank, add @tanstack/react-virtual. Measure first; the 2026-07-11 memoization pass already removed the markdown re-parse cost.
-- Desktop polish (remaining): launch at login, app signing. (Shipped: packaged app via `scripts/build-app.sh`, sign-in/token flow in Settings, queue retry with sent/remaining in Settings, configurable global hotkey.)
+- Desktop polish (remaining): app signing. (Shipped: packaged app via `scripts/build-app.sh`, sign-in/token flow in Settings, queue retry with sent/remaining in Settings, configurable global hotkey, live English/Chinese localization, launch at login.)
 - Automatic developer capture: Git commits, GitHub pull requests, GitHub issues, and VSCode activity.
 - Browser extension capture: save selected text, current page, and research notes into the capture inbox.
 - Mobile capture (deferred; direction decided, not yet built):
@@ -20,6 +20,7 @@ Deferred work.
 
 - Memory decay: importance score, last-viewed/search/reference counters, low-priority archive candidates, and weekly cleanup suggestions.
 - Memory consolidation: periodic AI summaries that compress repeated raw captures into durable long-term knowledge.
+- MCP retrieval access: add revocable long-lived credentials with explicit read/search scopes and per-user authorization before exposing capture search or retrieval. Keep the current capture tokens create-only. Start with read-only retrieval, then evaluate capture creation as a separate scope.
 - Agent workflows: defer until capture volume, search quality, and memory-management primitives are reliable.
 
 ## Todo Facet Follow-ups (2026-07-03)
