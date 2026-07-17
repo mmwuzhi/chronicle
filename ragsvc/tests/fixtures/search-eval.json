@@ -1,0 +1,64 @@
+{
+  "documents": [
+    {
+      "id": "ramen",
+      "content": "今天午饭吃了拉面，花了 1200 日元",
+      "created_at": "2026-07-10T12:00:00+09:00",
+      "modality": "text"
+    },
+    {
+      "id": "quote",
+      "content": "客户会议决定下周三发送第二版报价",
+      "created_at": "2026-07-11T09:00:00+09:00",
+      "modality": "audio"
+    },
+    {
+      "id": "design",
+      "content": "設計会議で検索結果の説明を確認した",
+      "created_at": "2026-07-12T15:00:00+09:00",
+      "modality": "text"
+    },
+    {
+      "id": "function-words",
+      "content": "我说周五再确认一次",
+      "created_at": "2026-07-13T08:00:00+09:00",
+      "modality": "text"
+    },
+    {
+      "id": "noise",
+      "content": "晚上看了一部老电影",
+      "created_at": "2026-07-14T20:00:00+09:00",
+      "modality": "text"
+    }
+  ],
+  "cases": [
+    {
+      "name": "cjk literal plus bm25",
+      "query": "拉面 1200",
+      "relevant": ["ramen"],
+      "vector_scores": {"ramen": 0.74, "noise": 0.33},
+      "rerank_scores": {"ramen": 0.96, "noise": 0.02}
+    },
+    {
+      "name": "cross-language semantic paraphrase",
+      "query": "when is the revised quote due",
+      "relevant": ["quote"],
+      "vector_scores": {"quote": 0.82, "noise": 0.35},
+      "rerank_scores": {"quote": 0.93, "noise": 0.01}
+    },
+    {
+      "name": "japanese literal survives rerank",
+      "query": "設計会議",
+      "relevant": ["design"],
+      "vector_scores": {"design": 0.68, "quote": 0.34},
+      "rerank_scores": {"design": 0.01, "quote": 0.0}
+    },
+    {
+      "name": "information-poor query stays literal",
+      "query": "我说",
+      "relevant": ["function-words"],
+      "vector_scores": {"function-words": 0.62, "noise": 0.8},
+      "rerank_scores": {"function-words": 0.2, "noise": 0.99}
+    }
+  ]
+}

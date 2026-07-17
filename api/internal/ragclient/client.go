@@ -81,6 +81,7 @@ func (c *Client) Enabled() bool { return c != nil }
 type FindItem struct {
 	ID        string  `json:"id"`
 	Content   string  `json:"content"`
+	Snippet   string  `json:"snippet"`
 	CreatedAt string  `json:"created_at"`
 	Modality  string  `json:"modality"`
 	Score     float64 `json:"score"`

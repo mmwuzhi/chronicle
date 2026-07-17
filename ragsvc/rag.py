@@ -21,26 +21,22 @@ Differences from the rag original, all driven by Chronicle's schema:
 """
 from __future__ import annotations
 
-import datetime as dt
-import hashlib
-import json
 import os
 import threading
 import time
 import unicodedata
-import urllib.request
 from collections import OrderedDict
 from dataclasses import dataclass
 
 import numpy as np
-import ollama
 from dotenv import load_dotenv
-from psycopg.types.json import Json
-from psycopg_pool import ConnectionPool
+
+import corpus
+import embedding
+import repository
 
 load_dotenv()
 
-DATABASE_URL = os.getenv("DATABASE_URL", "")
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 MODEL_BGE = os.getenv("EMBED_MODEL_BGE", "bge-m3")
 
@@ -104,27 +100,11 @@ _STOPCHARS = set(
     "はをがのにへともでやかねよ"
 )
 
-_POOL: ConnectionPool | None = None
-
-
-def pool() -> ConnectionPool:
-    """Lazily open a shared connection pool to the same Postgres as the Go API."""
-    global _POOL
-    if _POOL is None:
-        if not DATABASE_URL:
-            raise RuntimeError("DATABASE_URL is not set")
-        _POOL = ConnectionPool(DATABASE_URL, min_size=1, max_size=8, open=True)
-    return _POOL
-
-
 # Indexed content = the user's note (raw_text) AND the transcript, both when
 # present — a voice capture can carry a typed note plus its transcription, and the
 # old keyword search matched either, so indexing only one would silently hide the
 # other. concat_ws skips NULLs; NULLIF('') drops empty fields; trim cleans the
 # seam. Empty string only when the capture has no text at all (media-only).
-_CONTENT = "trim(both ' ' from concat_ws(' ', NULLIF(c.raw_text, ''), NULLIF(c.transcript, '')))"
-
-
 def _content_chars(text: str) -> int:
     """Count of "content chars": excludes whitespace, punctuation/symbols, and
     function words. Zero = no topical information. Query side uses it to gate
@@ -158,25 +138,9 @@ def embed(text: str) -> np.ndarray:
     return _embed_ollama(text)
 
 
-_OLLAMA_CLIENT: ollama.Client | None = None
-
-
-def _ollama_client() -> ollama.Client:
-    """Shared Ollama client so back-to-back embeds (backfill re-indexes whole
-    corpora) reuse one HTTP connection instead of opening one per call.
-
-    trust_env=False: a corporate proxy's HTTP_PROXY would otherwise hijack the
-    localhost call to Ollama. Local calls never go through a proxy."""
-    global _OLLAMA_CLIENT
-    if _OLLAMA_CLIENT is None:
-        _OLLAMA_CLIENT = ollama.Client(host=OLLAMA_BASE_URL, trust_env=False)
-    return _OLLAMA_CLIENT
-
-
 def _embed_ollama(text: str) -> np.ndarray:
     """Local Ollama embedding."""
-    resp = _ollama_client().embeddings(model=MODEL_BGE, prompt=text[:4096])
-    return np.array(resp["embedding"], dtype=np.float32)
+    return embedding.ollama_embed(text, MODEL_BGE, OLLAMA_BASE_URL)
 
 
 def _embed_openai(text: str) -> np.ndarray:
@@ -184,33 +148,7 @@ def _embed_openai(text: str) -> np.ndarray:
     discipline as the claude -p call). base/key default to the shared OPENAI_*
     config; EMBED_* overrides exist for when the embedding endpoint is a
     different provider than the chat endpoint."""
-    base = (os.getenv("EMBED_BASE_URL") or os.getenv("OPENAI_BASE_URL")
-            or "https://api.openai.com/v1").rstrip("/")
-    key = os.getenv("EMBED_API_KEY") or os.getenv("OPENAI_API_KEY") or ""
-    if not key:
-        raise RuntimeError("embedding API key not configured (EMBED_API_KEY/OPENAI_API_KEY)")
-    body = json.dumps({"input": text[:8000], "model": EMBED_MODEL_OPENAI}).encode()
-    req = urllib.request.Request(
-        f"{base}/embeddings", data=body,
-        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"})
-    with urllib.request.urlopen(req, timeout=60) as r:
-        data = json.load(r)
-    return np.array(data["data"][0]["embedding"], dtype=np.float32)
-
-
-def _iso(value: dt.datetime) -> str:
-    """TIMESTAMPTZ → local-time ISO string (seconds). Local so that date
-    bucketing (on_date, time-window questions in dates.py) lines up with the
-    user's local 'today', not UTC."""
-    return value.astimezone().isoformat(timespec="seconds")
-
-
-def _md5(content: str) -> str:
-    """Content fingerprint for staleness detection. md5 (not security-sensitive,
-    just change detection) so Postgres can compute the same hash inline with its
-    built-in md5() — letting backfill find rows whose stored hash no longer
-    matches the current capture text."""
-    return hashlib.md5(content.encode("utf-8")).hexdigest()
+    return embedding.openai_embed(text, EMBED_MODEL_OPENAI)
 
 
 @dataclass
@@ -225,9 +163,7 @@ class Fragment:
 def clear_derived(capture_id: str) -> None:
     """Drop a capture's derived embedding + metadata (used when its text is
     cleared, so removed facts don't linger in search / Ask context)."""
-    with pool().connection() as conn:
-        conn.execute("DELETE FROM capture_embeddings WHERE capture_id = %s", (capture_id,))
-        conn.execute("DELETE FROM capture_metadata WHERE capture_id = %s", (capture_id,))
+    repository.clear_derived(capture_id)
 
 
 def chunk_content(text: str) -> list[str]:
@@ -236,20 +172,7 @@ def chunk_content(text: str) -> list[str]:
     captures are short, so this is a single chunk exactly as before chunking. The
     overlap keeps a phrase straddling a window boundary recoverable from at least
     one chunk. Deterministic; the unit of retrieval, not display."""
-    text = text.strip()
-    if not text:
-        return []
-    if len(text) <= CHUNK_CHARS:
-        return [text]
-    step = max(1, CHUNK_CHARS - CHUNK_OVERLAP)
-    chunks: list[str] = []
-    for start in range(0, len(text), step):
-        piece = text[start:start + CHUNK_CHARS].strip()
-        if piece:
-            chunks.append(piece)
-        if start + CHUNK_CHARS >= len(text):
-            break  # this window reached the end; stop before a fully-overlapped tail
-    return chunks
+    return embedding.chunk_content(text, CHUNK_CHARS, CHUNK_OVERLAP)
 
 
 def index_capture(capture_id: str, user_id: str) -> bool:
@@ -274,41 +197,27 @@ def index_capture(capture_id: str, user_id: str) -> bool:
         return False
 
     model = active_embed_model()
-    source_hash = _md5(content)
+    source_hash = repository.content_hash(content)
     chunks = chunk_content(content)
     # Embed outside the write transaction — the model round-trips are the slow
     # part and must not hold a row lock. The re-read below guards staleness.
     vecs = [embed(ch).astype(np.float32).tobytes() for ch in chunks]
-    with pool().connection() as conn:
-        cur = conn.execute(
-            f"SELECT {_CONTENT} FROM captures c WHERE c.id = %s AND c.user_id = %s AND c.deleted_at IS NULL",
-            (capture_id, user_id),
-        ).fetchone()
-        if cur is None:
-            return False
-        if (cur[0] or "").strip() != content:
-            return False  # content moved on; the newer index task owns this row
-        conn.execute("DELETE FROM capture_embeddings WHERE capture_id = %s", (capture_id,))
-        conn.cursor().executemany(
-            "INSERT INTO capture_embeddings "
-            "(capture_id, user_id, chunk_idx, embedding, chunk_text, model, embed_v, source_hash, updated_at) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, now())",
-            [(capture_id, user_id, idx, vec, ch, model, EMBED_V, source_hash)
-             for idx, (vec, ch) in enumerate(zip(vecs, chunks))],
-        )
-    return True
+    return repository.replace_embeddings_if_content_matches(
+        capture_id,
+        user_id,
+        content,
+        vecs,
+        chunks,
+        model,
+        EMBED_V,
+        source_hash,
+    )
 
 
 def get_content(capture_id: str, user_id: str) -> str | None:
     """The indexable text of one capture (transcript or raw_text), or None if the
     capture doesn't exist / isn't this user's. Empty string means media-only."""
-    with pool().connection() as conn:
-        row = conn.execute(
-            f"SELECT {_CONTENT} FROM captures c "
-            "WHERE c.id = %s AND c.user_id = %s AND c.deleted_at IS NULL",
-            (capture_id, user_id),
-        ).fetchone()
-    return (row[0] or "") if row is not None else None
+    return repository.get_content(capture_id, user_id)
 
 
 def _rows(user_id: str) -> list[dict]:
@@ -319,48 +228,10 @@ def _rows(user_id: str) -> list[dict]:
     vector with a None text. model / source_hash are identical across a capture's
     chunks (index_capture writes them together), so max() collapses each to that
     single value; a capture with no embedding yet gets empty arrays and NULLs."""
-    with pool().connection() as conn:
-        rows = conn.execute(
-            f"SELECT c.id::text, {_CONTENT} AS content, c.created_at, "
-            "       m.data, c.media_type::text, "
-            "       array_agg(e.embedding ORDER BY e.chunk_idx) "
-            "         FILTER (WHERE e.embedding IS NOT NULL) AS embeddings, "
-            "       array_agg(e.chunk_text ORDER BY e.chunk_idx) "
-            "         FILTER (WHERE e.embedding IS NOT NULL) AS chunk_texts, "
-            "       max(e.model) AS model, max(e.source_hash) AS source_hash "
-            "FROM captures c "
-            "LEFT JOIN capture_metadata m ON m.capture_id = c.id "
-            "LEFT JOIN capture_embeddings e ON e.capture_id = c.id "
-            "WHERE c.user_id = %s AND c.deleted_at IS NULL "
-            "GROUP BY c.id, m.data",
-            (user_id,),
-        ).fetchall()
-    return [{"id": r[0], "content": r[1] or "", "created_at": _iso(r[2]),
-             "metadata": r[3], "modality": r[4],
-             "chunks": [bytes(b) for b in (r[5] or [])],
-             "chunk_texts": list(r[6] or []),
-             "model": r[7], "source_hash": r[8]}
-            for r in rows]
+    return repository.load_rows(user_id)
 
 
-@dataclass
-class _Snapshot:
-    """One user's cached corpus: the loaded rows plus the flattened chunk matrix
-    decoded from their embedding bytes (built lazily on first vector use). `model`
-    is the active embedding model at build time — a backend switch changes it and
-    forces a rebuild, so a snapshot never mixes vector spaces. Snapshots are
-    immutable once cached except for the lazily-filled chunk arrays; invalidation
-    replaces the whole entry rather than mutating rows, so a channel iterating an
-    old snapshot's rows always sees chunk owners aligned to those same rows.
-    chunk_owner[j] is the index into `rows` that chunk-matrix row j belongs to;
-    chunk_txt[j] is that chunk's text (None for pre-chunking single vectors)."""
-    rows: list[dict]
-    model: str
-    built_at: float
-    chunk_mat: np.ndarray | None = None
-    chunk_owner: np.ndarray | None = None
-    chunk_txt: list | None = None
-    chunk_dim: int = 0
+_Snapshot = corpus.Snapshot
 
 
 _corpus_cache: "OrderedDict[str, _Snapshot]" = OrderedDict()
@@ -420,24 +291,7 @@ def _snapshot_chunks(snap: _Snapshot, dim: int):
     wrong-dim chunk sits in an incompatible vector space, so it is skipped and its
     capture simply scores 0 until backfill re-embeds it (same guard the old
     per-row matrix applied). Returns (matrix, owner, texts)."""
-    if snap.chunk_mat is not None and snap.chunk_dim == dim:
-        return snap.chunk_mat, snap.chunk_owner, snap.chunk_txt
-    active = active_embed_model()
-    vecs: list[np.ndarray] = []
-    owners: list[int] = []
-    texts: list = []
-    for i, r in enumerate(snap.rows):
-        if r.get("model") != active:
-            continue
-        for emb, txt in zip(r.get("chunks") or [], r.get("chunk_texts") or []):
-            if emb and len(emb) // 4 == dim:
-                vecs.append(np.frombuffer(emb, dtype=np.float32))
-                owners.append(i)
-                texts.append(txt)
-    mat = np.vstack(vecs) if vecs else np.zeros((0, dim), dtype=np.float32)
-    owner = np.asarray(owners, dtype=np.int64)
-    snap.chunk_mat, snap.chunk_owner, snap.chunk_txt, snap.chunk_dim = mat, owner, texts, dim
-    return mat, owner, texts
+    return corpus.snapshot_chunks(snap, dim, active_embed_model())
 
 
 def _capture_max_sims(snap: _Snapshot, qv: np.ndarray):
@@ -445,51 +299,27 @@ def _capture_max_sims(snap: _Snapshot, qv: np.ndarray):
     the text of that best chunk (handed to the reranker so it scores the matched
     fragment, not a long document's truncated opening). Both are aligned to
     snap.rows; a capture with no active-model chunk scores 0 with None text."""
-    mat, owner, texts = _snapshot_chunks(snap, len(qv))
-    n = len(snap.rows)
-    best = np.zeros(n, dtype=np.float32)
-    best_text: list = [None] * n
-    if mat.shape[0]:
-        sims = _cosines(mat, qv)
-        np.maximum.at(best, owner, sims)  # per-capture max, vectorised over chunks
-        # Argmax chunk text per capture: sort chunks by (owner, sim) and take
-        # each owner group's last entry — one Python step per capture, not per
-        # chunk. The sim == best guard keeps an all-negative capture's text at
-        # None (best stays at its 0 init, which no chunk matches).
-        order = np.lexsort((sims, owner))
-        owners_sorted = owner[order]
-        group_last = np.flatnonzero(
-            np.r_[owners_sorted[1:] != owners_sorted[:-1], True])
-        for pos in group_last:
-            j = int(order[pos])
-            o = int(owners_sorted[pos])
-            if texts[j] is not None and float(sims[j]) == float(best[o]):
-                best_text[o] = texts[j]
-    return best, best_text
+    return corpus.capture_max_sims(snap, qv, active_embed_model())
 
 
 def _cosines(mat: np.ndarray, qv: np.ndarray) -> np.ndarray:
     """Exact cosine similarity (full scan). Zero-vector rows score 0."""
-    if mat.size == 0:
-        return np.zeros(0, dtype=np.float32)
-    qn = qv / (np.linalg.norm(qv) or 1.0)
-    norms = np.linalg.norm(mat, axis=1)
-    norms[norms == 0] = 1.0
-    return (mat @ qn) / norms
+    return corpus.cosines(mat, qv)
 
 
 def recent(user_id: str, limit: int = 50, offset: int = 0) -> list[Fragment]:
     """Most recent captures, newest first (id tiebreak for same-second stability)."""
-    with pool().connection() as conn:
-        rows = conn.execute(
-            f"SELECT c.id::text, {_CONTENT} AS content, c.created_at, m.data, "
-            "       c.media_type::text "
-            "FROM captures c LEFT JOIN capture_metadata m ON m.capture_id = c.id "
-            "WHERE c.user_id = %s AND c.deleted_at IS NULL "
-            "ORDER BY c.created_at DESC, c.id DESC LIMIT %s OFFSET %s",
-            (user_id, limit, offset),
-        ).fetchall()
-    return [Fragment(r[0], r[1] or "", _iso(r[2]), r[3], r[4]) for r in rows]
+    rows = repository.recent(user_id, limit, offset)
+    return [
+        Fragment(
+            row["id"],
+            row["content"],
+            row["created_at"],
+            row["metadata"],
+            row["modality"],
+        )
+        for row in rows
+    ]
 
 
 def neighbors(user_id: str, query: str, limit: int = 20) -> list[Fragment]:
@@ -624,39 +454,17 @@ def all_fragments(user_id: str) -> list[dict]:
     with embeddings disabled — search_corpus routes here so that path never
     SELECTs the embedding BYTEA it would discard. With embeddings on, the one
     shared _rows load (which does carry the vectors) serves every channel."""
-    with pool().connection() as conn:
-        rows = conn.execute(
-            f"SELECT c.id::text, {_CONTENT} AS content, c.created_at, "
-            "       m.data, c.media_type::text "
-            "FROM captures c LEFT JOIN capture_metadata m ON m.capture_id = c.id "
-            "WHERE c.user_id = %s AND c.deleted_at IS NULL",
-            (user_id,),
-        ).fetchall()
-    return [{"id": r[0], "content": r[1] or "", "created_at": _iso(r[2]),
-             "metadata": r[3], "modality": r[4]} for r in rows]
+    return repository.load_fragments(user_id)
 
 
 def on_date(user_id: str, d: str, limit: int = 50) -> list[dict]:
     """Captures on a given local day (YYYY-MM-DD), newest first.
 
-    Bounds are computed in the process's local timezone (the same one _iso and
-    dates.parse_range use) and queried as a half-open timestamptz range, so date
-    bucketing is correct regardless of the Postgres session timezone."""
-    day = dt.date.fromisoformat(d)
-    local_tz = dt.datetime.now().astimezone().tzinfo
-    lo = dt.datetime.combine(day, dt.time.min, local_tz)
-    hi = lo + dt.timedelta(days=1)
-    with pool().connection() as conn:
-        rows = conn.execute(
-            f"SELECT c.id::text, {_CONTENT} AS content, c.created_at, c.media_type::text "
-            "FROM captures c "
-            "WHERE c.user_id = %s AND c.deleted_at IS NULL "
-            "AND c.created_at >= %s AND c.created_at < %s "
-            "ORDER BY c.created_at DESC, c.id DESC LIMIT %s",
-            (user_id, lo, hi, limit),
-        ).fetchall()
-    return [{"id": r[0], "content": r[1] or "", "created_at": _iso(r[2]),
-             "modality": r[3], "score": 1.0, "lexical": False} for r in rows]
+    Bounds are computed in the process's local timezone (the same one repository
+    timestamp formatting and dates.parse_range use) and queried as a half-open
+    timestamptz range, so date bucketing is correct regardless of the Postgres
+    session timezone."""
+    return repository.on_date(user_id, d, limit)
 
 
 def update_metadata(capture_id: str, user_id: str, meta: dict, content: str) -> None:
@@ -668,39 +476,14 @@ def update_metadata(capture_id: str, user_id: str, meta: dict, content: str) -> 
     embeddings: re-read the current content and only write if it still matches the
     text this metadata was extracted from — so a slow older job can't recreate
     stale facts after a newer edit (or a clear) moved on."""
-    with pool().connection() as conn:
-        cur = conn.execute(
-            f"SELECT {_CONTENT} FROM captures c WHERE c.id = %s AND c.user_id = %s AND c.deleted_at IS NULL",
-            (capture_id, user_id),
-        ).fetchone()
-        if cur is None or (cur[0] or "") != content:
-            return  # content moved on; the newer extraction job owns this row
-        conn.execute(
-            "INSERT INTO capture_metadata (capture_id, user_id, data, extract_v, source_hash, updated_at) "
-            "VALUES (%s, %s, %s, %s, %s, now()) "
-            "ON CONFLICT (capture_id) DO UPDATE SET "
-            "data = EXCLUDED.data, extract_v = EXCLUDED.extract_v, "
-            "source_hash = EXCLUDED.source_hash, updated_at = now()",
-            (capture_id, user_id, Json(meta), int(meta.get("extract_v", 0)), _md5(content)),
-        )
+    repository.update_metadata(capture_id, user_id, meta, content)
 
 
 def needs_extract(user_id: str, current_version: int) -> list[dict]:
     """Captures needing (re-)extraction: no metadata, an older extract version, or
     metadata whose source_hash no longer matches the current content (edited while
     the sidecar was down). The hash check is what stops stale facts lingering."""
-    with pool().connection() as conn:
-        rows = conn.execute(
-            f"SELECT c.id::text, {_CONTENT} AS content, c.media_type::text "
-            "FROM captures c LEFT JOIN capture_metadata m ON m.capture_id = c.id "
-            "WHERE c.user_id = %s AND c.deleted_at IS NULL "
-            f"AND {_CONTENT} <> '' "
-            "AND (m.capture_id IS NULL OR COALESCE(m.extract_v, 0) < %s "
-            f"     OR m.source_hash IS DISTINCT FROM md5({_CONTENT})) "
-            "ORDER BY c.created_at",
-            (user_id, current_version),
-        ).fetchall()
-    return [{"id": r[0], "content": r[1] or "", "modality": r[2]} for r in rows]
+    return repository.needs_extract(user_id, current_version)
 
 
 def needs_index(user_id: str) -> list[str]:
@@ -714,19 +497,7 @@ def needs_index(user_id: str) -> list[str]:
     Empty when embeddings are disabled (nothing to embed)."""
     if not EMBED_ENABLED:
         return []
-    with pool().connection() as conn:
-        rows = conn.execute(
-            f"SELECT c.id::text FROM captures c "
-            "WHERE c.user_id = %s AND c.deleted_at IS NULL "
-            f"AND {_CONTENT} <> '' "
-            "AND NOT EXISTS ("
-            "  SELECT 1 FROM capture_embeddings e "
-            "  WHERE e.capture_id = c.id AND e.model = %s "
-            f"    AND e.source_hash = md5({_CONTENT}) AND e.embed_v >= %s) "
-            "ORDER BY c.created_at",
-            (user_id, active_embed_model(), EMBED_V),
-        ).fetchall()
-    return [r[0] for r in rows]
+    return repository.needs_index(user_id, active_embed_model(), EMBED_V)
 
 
 def orphaned_derived(user_id: str) -> list[str]:
@@ -735,40 +506,22 @@ def orphaned_derived(user_id: str) -> list[str]:
     clear-on-edit never ran. Backfill clears these so deleted facts don't linger
     in search / Ask context. (needs_index/needs_extract skip empty captures, so
     this is the path that catches them.)"""
-    with pool().connection() as conn:
-        rows = conn.execute(
-            f"SELECT c.id::text FROM captures c "
-            "WHERE c.user_id = %s "
-            f"AND {_CONTENT} = '' "
-            "AND (EXISTS (SELECT 1 FROM capture_embeddings e WHERE e.capture_id = c.id) "
-            "  OR EXISTS (SELECT 1 FROM capture_metadata m WHERE m.capture_id = c.id))",
-            (user_id,),
-        ).fetchall()
-    return [r[0] for r in rows]
+    return repository.orphaned_derived(user_id)
 
 
 def all_user_ids() -> list[str]:
     """Every user id (backfill iterates per user since retrieval is per user)."""
-    with pool().connection() as conn:
-        rows = conn.execute("SELECT id::text FROM users").fetchall()
-    return [r[0] for r in rows]
+    return repository.all_user_ids()
 
 
 # ── runtime config (global rag_config key/value) ──
 
 def config_get(key: str) -> str | None:
-    with pool().connection() as conn:
-        r = conn.execute("SELECT value FROM rag_config WHERE key = %s", (key,)).fetchone()
-    return r[0] if r else None
+    return repository.config_get(key)
 
 
 def config_set(key: str, value: str) -> None:
-    with pool().connection() as conn:
-        conn.execute(
-            "INSERT INTO rag_config (key, value) VALUES (%s, %s) "
-            "ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value",
-            (key, value),
-        )
+    repository.config_set(key, value)
 
 
 # ── webhooks (event-driven outbound; Go owns the capture_webhooks table CRUD) ──
@@ -777,17 +530,7 @@ def config_set(key: str, value: str) -> None:
 def webhooks_enabled(user_id: str) -> list[dict]:
     """Enabled, non-deleted webhook rules for one user. Go owns this table and
     its CRUD API; the sidecar only reads rules here to match + deliver."""
-    with pool().connection() as conn:
-        rows = conn.execute(
-            "SELECT id::text, name, target_url, keywords, semantic_query, "
-            "semantic_threshold, payload_template FROM capture_webhooks "
-            "WHERE user_id = %s AND enabled = true AND deleted_at IS NULL",
-            (user_id,),
-        ).fetchall()
-    return [{"id": r[0], "name": r[1], "target_url": r[2],
-             "keywords": list(r[3] or []), "semantic_query": r[4],
-             "semantic_threshold": float(r[5]), "payload_template": r[6]}
-            for r in rows]
+    return repository.webhooks_enabled(user_id)
 
 
 def get_fragment(capture_id: str, user_id: str) -> dict | None:
@@ -795,24 +538,4 @@ def get_fragment(capture_id: str, user_id: str) -> dict | None:
     matching and template rendering. `embeddings` is the list of the capture's
     chunk vectors (empty if unembedded); matches() takes the max cosine over them.
     None if the capture isn't this user's."""
-    with pool().connection() as conn:
-        row = conn.execute(
-            f"SELECT c.id::text, {_CONTENT} AS content, c.created_at, "
-            "       array_agg(e.embedding ORDER BY e.chunk_idx) "
-            "         FILTER (WHERE e.embedding IS NOT NULL) AS embeddings, m.data "
-            "FROM captures c "
-            "LEFT JOIN capture_embeddings e ON e.capture_id = c.id "
-            "LEFT JOIN capture_metadata m ON m.capture_id = c.id "
-            "WHERE c.id = %s AND c.user_id = %s AND c.deleted_at IS NULL "
-            "GROUP BY c.id, m.data",
-            (capture_id, user_id),
-        ).fetchone()
-    if row is None:
-        return None
-    return {
-        "id": row[0],
-        "content": row[1] or "",
-        "created_at": _iso(row[2]) if row[2] else None,
-        "embeddings": [bytes(b) for b in (row[3] or [])],
-        "metadata": row[4],
-    }
+    return repository.get_fragment(capture_id, user_id)

@@ -3,8 +3,10 @@ package search
 import (
 	"context"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
@@ -27,6 +29,7 @@ type recallHandler struct {
 type RecallItem struct {
 	ID        string  `json:"id"`
 	Content   string  `json:"content"`
+	Snippet   string  `json:"snippet,omitempty"`
 	CreatedAt string  `json:"createdAt"`
 	Modality  string  `json:"modality"`
 	Score     float64 `json:"score"`
@@ -62,7 +65,7 @@ func (h *recallHandler) find(ctx context.Context, input *FindInput) (*FindOutput
 	if err == nil {
 		for _, it := range items {
 			out.Body.Items = append(out.Body.Items, RecallItem{
-				ID: it.ID, Content: it.Content, CreatedAt: it.CreatedAt,
+				ID: it.ID, Content: it.Content, Snippet: it.Snippet, CreatedAt: it.CreatedAt,
 				Modality: it.Modality, Score: it.Score, Lexical: it.Lexical,
 			})
 		}
@@ -87,6 +90,7 @@ func (h *recallHandler) find(ctx context.Context, input *FindInput) (*FindOutput
 		out.Body.Items = append(out.Body.Items, RecallItem{
 			ID:        c.ID.String(),
 			Content:   content,
+			Snippet:   searchSnippet(content, query, 240),
 			CreatedAt: c.CreatedAt.Time.UTC().Format(time.RFC3339),
 			Modality:  string(c.MediaType),
 			Score:     0,
@@ -95,6 +99,63 @@ func (h *recallHandler) find(ctx context.Context, input *FindInput) (*FindOutput
 	}
 	out.Body.Degraded = true
 	return out, nil
+}
+
+func searchSnippet(text, query string, maxRunes int) string {
+	textRunes := []rune(strings.Join(strings.Fields(text), " "))
+	if len(textRunes) <= maxRunes {
+		return string(textRunes)
+	}
+	lowerText := make([]rune, len(textRunes))
+	for i, r := range textRunes {
+		lowerText[i] = unicode.ToLower(r)
+	}
+	find := func(needle []rune) int {
+		if len(needle) == 0 || len(needle) > len(lowerText) {
+			return -1
+		}
+		for i := 0; i <= len(lowerText)-len(needle); i++ {
+			if slices.Equal(lowerText[i:i+len(needle)], needle) {
+				return i
+			}
+		}
+		return -1
+	}
+	lowerRunes := func(value string) []rune {
+		runes := []rune(strings.TrimSpace(value))
+		for i, r := range runes {
+			runes[i] = unicode.ToLower(r)
+		}
+		return runes
+	}
+	at := find(lowerRunes(query))
+	if at < 0 {
+		for _, term := range strings.Fields(query) {
+			needle := lowerRunes(term)
+			if len(needle) < 2 {
+				continue
+			}
+			if at = find(needle); at >= 0 {
+				break
+			}
+		}
+	}
+	if at < 0 {
+		at = 0
+	}
+	start := max(0, at-maxRunes/3)
+	end := min(len(textRunes), start+maxRunes)
+	if end == len(textRunes) {
+		start = max(0, end-maxRunes)
+	}
+	body := strings.TrimSpace(string(textRunes[start:end]))
+	if start > 0 {
+		body = "…" + body
+	}
+	if end < len(textRunes) {
+		body += "…"
+	}
+	return body
 }
 
 type AskInput struct {

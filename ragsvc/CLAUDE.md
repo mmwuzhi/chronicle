@@ -12,9 +12,13 @@ map plus the rules that span modules.
 
 - `app.py` — HTTP surface: `/health`, `/warmup`, `/index`, `/invalidate`,
   `/find`, `/ask`, `/backfill`, webhook test scoring.
-- `rag.py` — storage + retrieval core on Chronicle's PostgreSQL. Embeddings
-  are float32 BYTEA blobs, one row per (capture, chunk); retrieval is an exact
-  numpy cosine full-scan over one user's chunks, reduced to a per-capture max.
+- `rag.py` — compatibility facade and retrieval orchestration.
+- `repository.py` — PostgreSQL queries and guarded derived-data writes.
+- `embedding.py` — Ollama/OpenAI-compatible embedding providers and chunking.
+- `corpus.py` — cached snapshot shape and pure numpy vector operations.
+  Embeddings are float32 BYTEA blobs, one row per (capture, chunk); retrieval
+  is an exact numpy cosine full-scan over one user's chunks, reduced to a
+  per-capture max.
   A user's decoded corpus (rows + chunk matrix) is cached in-process per user
   (`_snapshot`, TTL + explicit invalidation on write) so back-to-back searches
   don't reload and re-decode the whole corpus from Postgres.

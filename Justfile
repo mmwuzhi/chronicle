@@ -106,6 +106,12 @@ rag-test:
     @test -d {{ rag_dir }}/.venv || just rag-setup
     cd {{ rag_dir }} && .venv/bin/python -m pytest -q
 
+# run the deterministic end-to-end search policy evaluation and print Hit@1,
+# Hit@3, and MRR (model/network independent; suitable for CI and local tuning)
+rag-eval:
+    @test -d {{ rag_dir }}/.venv || just rag-setup
+    cd {{ rag_dir }} && .venv/bin/python -m pytest -q -s tests/test_search_eval.py
+
 # run a long-lived dev command, exiting 0 when it is stopped with Ctrl-C
 _quiet cmd:
     @interrupted=0; \

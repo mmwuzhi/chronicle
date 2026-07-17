@@ -43,6 +43,53 @@ _last_used = 0.0
 _unloader_started = False
 
 
+def _snippet(text: str, query: str, max_chars: int = 240) -> str:
+    """Short plain-text evidence for one result.
+
+    Literal hits are centered around the full query (or its first matching
+    whitespace-delimited term). Semantic hits use the already-selected best
+    chunk and are capped for transport; clients may line-clamp it further.
+    """
+    clean = " ".join((text or "").split())
+    if len(clean) <= max_chars:
+        return clean
+    lower = clean.lower()
+    q = query.strip().lower()
+    at = lower.find(q) if q else -1
+    if at < 0:
+        for term in q.split():
+            if len(term) < 2:
+                continue
+            at = lower.find(term)
+            if at >= 0:
+                break
+    if at < 0:
+        at = 0
+    start = max(0, at - max_chars // 3)
+    end = min(len(clean), start + max_chars)
+    if end == len(clean):
+        start = max(0, end - max_chars)
+    body = clean[start:end].strip()
+    return ("…" if start > 0 else "") + body + ("…" if end < len(clean) else "")
+
+
+def _public_results(items: list[dict], query: str) -> list[dict]:
+    """Strip internal ranking fields and attach display evidence."""
+    public: list[dict] = []
+    for item in items:
+        evidence = item.get("rerank_text") or item.get("content") or ""
+        public.append({
+            "id": item["id"],
+            "content": item.get("content") or "",
+            "snippet": _snippet(evidence, query),
+            "created_at": item["created_at"],
+            "modality": item["modality"],
+            "score": float(item.get("score", 0.0)),
+            "lexical": bool(item.get("lexical", False)),
+        })
+    return public
+
+
 def _get_reranker():
     """Lazy-load bge-reranker (sentence-transformers), fp16. Locked so the warmup
     and request threads never load two copies."""
@@ -231,7 +278,8 @@ def search(user_id: str, query: str, limit: int = SEARCH_TOPK) -> list[dict]:
     m = _DATE_RE.match(q)
     if m:
         y, mo, d = (int(x) for x in m.groups())
-        return rag.on_date(user_id, f"{y:04d}-{mo:02d}-{d:02d}", limit)
+        return _public_results(
+            rag.on_date(user_id, f"{y:04d}-{mo:02d}-{d:02d}", limit), q)
 
     # One corpus load for the whole request: the BM25 channel below uses `corpus`
     # directly, and candidates reads the same per-user cached snapshot (a cache
@@ -246,7 +294,7 @@ def search(user_id: str, query: str, limit: int = SEARCH_TOPK) -> list[dict]:
         kept.sort(key=lambda c: c["created_at"], reverse=True)
         for c in kept:
             c["score"] = 1.0
-        return kept[:limit]
+        return _public_results(kept[:limit], q)
 
     # L1 BM25 recall folded into candidates. Multi-word queries fail whole-string
     # ILIKE and may miss the 0.3 vector floor; shared tokens catch them. BM25
@@ -271,7 +319,7 @@ def search(user_id: str, query: str, limit: int = SEARCH_TOPK) -> list[dict]:
         for c in cands:
             c["score"] = c["vscore"]
         cands.sort(key=lambda c: (not c["lexical"], -c["vscore"]))
-        return cands[:limit]
+        return _public_results(cands[:limit], q)
 
     for c, s in zip(cands, scores):
         c["score"] = float(s)
@@ -284,4 +332,4 @@ def search(user_id: str, query: str, limit: int = SEARCH_TOPK) -> list[dict]:
             or (c["vscore"] >= VECTOR_TAIL
                 and _content_chars(c["content"]) >= TAIL_MIN_CHARS)]
     kept.sort(key=lambda c: (not c["lexical"], -max(c["score"], c["vscore"] - 0.5)))
-    return kept[:limit]
+    return _public_results(kept[:limit], q)
