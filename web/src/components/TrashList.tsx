@@ -1,10 +1,10 @@
 import { useTranslation } from "react-i18next";
-import type { CaptureBody } from "../api";
-import { fmtListTime } from "../utils/format";
-import { Markdown } from "./Markdown";
-import { Button } from "./ui/button";
-import { Card } from "./ui/card";
-import { Meta } from "./ui/page";
+import type { CaptureBody } from "@/api";
+import { fmtListTime } from "@/utils/format";
+import { Markdown } from "@/components/Markdown";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Meta } from "@/components/ui/page";
 
 const SNIPPET_MAX = 280;
 

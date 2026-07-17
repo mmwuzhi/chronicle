@@ -1,8 +1,8 @@
 import { useTranslation } from "react-i18next";
-import type { CaptureBody } from "../api";
-import { CaptureCard } from "./CaptureCard";
-import { Button } from "./ui/button";
-import { EmptyState, Meta } from "./ui/page";
+import type { CaptureBody } from "@/api";
+import { CaptureCard } from "@/components/CaptureCard";
+import { Button } from "@/components/ui/button";
+import { EmptyState, Meta } from "@/components/ui/page";
 
 interface CaptureFeedProps {
   captures: CaptureBody[];

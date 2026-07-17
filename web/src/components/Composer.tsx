@@ -1,14 +1,14 @@
 import { useState } from "react";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { trailingTagToken } from "../utils/todo";
-import { AutoTextarea } from "./CaptureCard";
-import { cn } from "../lib/cn";
-import { TodoChip } from "./ui/badge";
-import { Button } from "./ui/button";
-import { Card } from "./ui/card";
-import { FieldError } from "./ui/field";
-import { Meta } from "./ui/page";
+import { trailingTagToken } from "@/utils/todo";
+import { AutoTextarea } from "@/components/CaptureCard";
+import { cn } from "@/lib/cn";
+import { TodoChip } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { FieldError } from "@/components/ui/field";
+import { Meta } from "@/components/ui/page";
 
 const AttachIcon = () => (
   <svg

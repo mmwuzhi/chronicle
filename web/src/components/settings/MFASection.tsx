@@ -1,12 +1,12 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useQueryClient } from "@tanstack/react-query";
-import { useGetMe } from "../../api";
-import { MFASetupModal } from "./MFASetupModal";
-import { MFADisableModal } from "./MFADisableModal";
-import { Badge } from "../ui/badge";
-import { Button } from "../ui/button";
-import { SettingsLabel, SettingsRow } from "../ui/settings-row";
+import { useGetMe } from "@/api";
+import { MFASetupModal } from "@/components/settings/MFASetupModal";
+import { MFADisableModal } from "@/components/settings/MFADisableModal";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { SettingsLabel, SettingsRow } from "@/components/ui/settings-row";
 
 export function MFASection() {
   const { t } = useTranslation("settings");

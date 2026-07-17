@@ -1,15 +1,20 @@
 import { useState } from "react";
-import { useChangePassword } from "../../api";
+import { useChangePassword } from "@/api";
 import { useTranslation } from "react-i18next";
-import { Button } from "../ui/button";
+import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogClose,
   DialogContent,
   DialogDescription,
   DialogTitle,
-} from "../ui/dialog";
-import { FieldError, FieldGroup, FieldLabel, Input } from "../ui/field";
+} from "@/components/ui/dialog";
+import {
+  FieldError,
+  FieldGroup,
+  FieldLabel,
+  Input,
+} from "@/components/ui/field";
 
 export function PasswordModal({
   open,

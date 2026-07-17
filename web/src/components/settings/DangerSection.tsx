@@ -1,9 +1,9 @@
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "@tanstack/react-router";
-import { useDeleteAccount } from "../../api";
-import { useConfirm } from "../../hooks/use-confirm";
-import { Button } from "../ui/button";
-import { FieldError } from "../ui/field";
+import { useDeleteAccount } from "@/api";
+import { useConfirm } from "@/hooks/use-confirm";
+import { Button } from "@/components/ui/button";
+import { FieldError } from "@/components/ui/field";
 
 export function DangerSection() {
   const { t } = useTranslation("settings");

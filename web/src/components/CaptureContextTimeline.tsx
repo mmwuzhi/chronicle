@@ -1,10 +1,10 @@
 import { useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
-import type { CaptureBody } from "../api";
-import { Markdown } from "./Markdown";
-import { cn } from "../lib/cn";
-import { Card } from "./ui/card";
-import { Meta } from "./ui/page";
+import type { CaptureBody } from "@/api";
+import { Markdown } from "@/components/Markdown";
+import { cn } from "@/lib/cn";
+import { Card } from "@/components/ui/card";
+import { Meta } from "@/components/ui/page";
 
 interface CaptureContextTimelineProps {
   items: CaptureBody[];

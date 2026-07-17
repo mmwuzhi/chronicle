@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { todoProgress } from "./todo";
+import { todoProgress } from "@/utils/todo";
 
 describe("todoProgress", () => {
   it("counts only flagged captures", () => {

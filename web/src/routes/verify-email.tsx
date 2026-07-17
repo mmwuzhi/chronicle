@@ -2,9 +2,9 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMutation } from "@tanstack/react-query";
 import { useEffect } from "react";
 import { z } from "zod/v3";
-import { api } from "../lib/axios";
+import { api } from "@/lib/axios";
 import { useTranslation } from "react-i18next";
-import { AuthPanel, AuthShell } from "../components/ui/auth-shell";
+import { AuthPanel, AuthShell } from "@/components/ui/auth-shell";
 
 export const Route = createFileRoute("/verify-email")({
   validateSearch: z.object({ token: z.string().default("") }),

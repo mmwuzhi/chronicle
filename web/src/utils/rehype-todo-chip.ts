@@ -1,4 +1,4 @@
-import { TODO_TAG_RE } from "./todo";
+import { TODO_TAG_RE } from "@/utils/todo";
 
 // Rehype plugin: render the #todo system tag as a chip. Walks the hast tree
 // after remark→rehype, splits text nodes on the tag grammar (shared with the

@@ -26,6 +26,22 @@ export default defineConfig([
     },
   },
   {
+    files: ["src/**/*.{ts,tsx}"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: ["./*", "../*"],
+              message: "Use the @/ alias for imports within web/src.",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
     // TanStack Router owns HMR for file routes. Each route must export Route
     // while keeping its component local, which conflicts with this React-only
     // module-shape rule even though the router plugin handles refresh correctly.

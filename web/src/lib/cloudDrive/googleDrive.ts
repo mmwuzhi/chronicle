@@ -1,5 +1,8 @@
-import type { CloudAttachmentDraft, CloudDriveProviderAdapter } from "./types";
-import { CloudDriveError } from "./types";
+import type {
+  CloudAttachmentDraft,
+  CloudDriveProviderAdapter,
+} from "@/lib/cloudDrive/types";
+import { CloudDriveError } from "@/lib/cloudDrive/types";
 
 export const GOOGLE_DRIVE_FILE_SCOPE =
   "https://www.googleapis.com/auth/drive.file";

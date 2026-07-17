@@ -1,8 +1,8 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Button, buttonClassName } from "./ui/button";
-import { FieldError } from "./ui/field";
+import { Button, buttonClassName } from "@/components/ui/button";
+import { FieldError } from "@/components/ui/field";
 
 function GoogleIcon() {
   return (

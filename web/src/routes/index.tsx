@@ -1,19 +1,19 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
-import { useGetMe, useListCapturePage } from "../api";
-import type { CaptureBody } from "../api";
+import { useGetMe, useListCapturePage } from "@/api";
+import type { CaptureBody } from "@/api";
 
-import { Nav } from "../components/nav";
-import { timeAgo } from "../utils/format";
-import { buttonClassName } from "../components/ui/button";
-import { Card } from "../components/ui/card";
+import { Nav } from "@/components/nav";
+import { timeAgo } from "@/utils/format";
+import { buttonClassName } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import {
   EmptyState,
   Meta,
   PageHeader,
   PageShell,
   PageTitle,
-} from "../components/ui/page";
+} from "@/components/ui/page";
 
 export const Route = createFileRoute("/")({ component: Index });
 

@@ -8,11 +8,11 @@ import {
   useListWebhooks,
   useUpdateWebhook,
   type WebhookBody,
-} from "../../api";
-import { Button } from "../ui/button";
-import { Card } from "../ui/card";
-import { Input, Textarea } from "../ui/field";
-import { Meta } from "../ui/page";
+} from "@/api";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Input, Textarea } from "@/components/ui/field";
+import { Meta } from "@/components/ui/page";
 
 // Manage capture webhooks: a capture matching a rule (keyword OR semantic) fires
 // a templated POST to an external URL. Matching/delivery run in the ragsvc

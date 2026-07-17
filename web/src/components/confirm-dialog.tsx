@@ -4,14 +4,14 @@ import {
   ConfirmContext,
   type ConfirmFn,
   type ConfirmOptions,
-} from "../hooks/use-confirm";
-import { Button } from "./ui/button";
+} from "@/hooks/use-confirm";
+import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogTitle,
-} from "./ui/dialog";
+} from "@/components/ui/dialog";
 
 export function ConfirmProvider({ children }: { children: ReactNode }) {
   const { t } = useTranslation();

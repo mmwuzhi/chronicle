@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
 
-import { parseTodoTag } from "./todo";
+import { parseTodoTag } from "@/utils/todo";
 
 // The #todo grammar is defined twice — TODO_TAG_RE here and todoTagRe in
 // api/internal/capture/todotag.go — and the root CLAUDE.md requires them to

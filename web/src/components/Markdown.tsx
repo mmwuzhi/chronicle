@@ -1,7 +1,7 @@
 import { memo } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { rehypeTodoChip } from "../utils/rehype-todo-chip";
+import { rehypeTodoChip } from "@/utils/rehype-todo-chip";
 
 // Memoized on the source string: react-markdown runs the full remark → rehype
 // parse on every render, so without this a single-item cache patch re-parses

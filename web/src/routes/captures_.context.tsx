@@ -1,11 +1,11 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { useTranslation } from "react-i18next";
-import { useGetCaptureContext } from "../api";
-import { CaptureContextTimeline } from "../components/CaptureContextTimeline";
-import { CaptureRelated } from "../components/CaptureRelated";
-import { Nav } from "../components/nav";
-import { buttonClassName } from "../components/ui/button";
+import { useGetCaptureContext } from "@/api";
+import { CaptureContextTimeline } from "@/components/CaptureContextTimeline";
+import { CaptureRelated } from "@/components/CaptureRelated";
+import { Nav } from "@/components/nav";
+import { buttonClassName } from "@/components/ui/button";
 import {
   Meta,
   PageError,
@@ -13,7 +13,7 @@ import {
   PageShell,
   PageSubtitle,
   PageTitle,
-} from "../components/ui/page";
+} from "@/components/ui/page";
 
 export const Route = createFileRoute("/captures_/context")({
   validateSearch: (search: Record<string, unknown>) => ({

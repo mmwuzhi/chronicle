@@ -4,7 +4,7 @@ import {
   fmtListTime,
   fmtPreciseDateTime,
   timeAgo,
-} from "./format";
+} from "@/utils/format";
 
 describe("fmtListTime", () => {
   it("uses relative time under seven days", () => {

@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
-import { useFind, useListCapturePage } from "../api";
-import type { CaptureBody } from "../api";
-import { fmtDate } from "../utils/format";
-import { EmptyState, Meta } from "./ui/page";
+import { useFind, useListCapturePage } from "@/api";
+import type { CaptureBody } from "@/api";
+import { fmtDate } from "@/utils/format";
+import { EmptyState, Meta } from "@/components/ui/page";
 
 const resultClassName =
   "flex w-full cursor-pointer items-center gap-[11px] rounded-control border-0 bg-transparent px-[11px] py-[9px] text-left font-app text-inherit hover:bg-tint";

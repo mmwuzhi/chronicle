@@ -2,7 +2,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { z } from "zod/v3";
 import { useTranslation } from "react-i18next";
-import { AuthShell } from "../components/ui/auth-shell";
+import { AuthShell } from "@/components/ui/auth-shell";
 
 export const Route = createFileRoute("/auth/callback")({
   validateSearch: z.object({ access_token: z.string().default("") }),

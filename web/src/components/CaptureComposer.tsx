@@ -4,9 +4,9 @@ import {
   getCloudDriveProvider,
   isCloudDriveError,
   type CloudAttachmentDraft,
-} from "../lib/cloudDrive";
-import { apiClient } from "../lib/axios";
-import { Composer } from "./Composer";
+} from "@/lib/cloudDrive";
+import { apiClient } from "@/lib/axios";
+import { Composer } from "@/components/Composer";
 
 interface UploadResult {
   id: string;

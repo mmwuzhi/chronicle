@@ -1,9 +1,9 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { AuthPanel, AuthShell } from "./ui/auth-shell";
-import { Button } from "./ui/button";
-import { FieldError, Input } from "./ui/field";
+import { AuthPanel, AuthShell } from "@/components/ui/auth-shell";
+import { Button } from "@/components/ui/button";
+import { FieldError, Input } from "@/components/ui/field";
 
 // Second step of password sign-in when the account has TOTP enabled: exchanges
 // the short-lived mfaToken plus the user's code for a real session. Plain fetch,

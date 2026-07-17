@@ -4,20 +4,20 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod/v3";
 import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
-import { api } from "../lib/axios";
+import { api } from "@/lib/axios";
 import { useTranslation } from "react-i18next";
 import {
   AuthPanel,
   AuthShell,
   authPanelClassName,
-} from "../components/ui/auth-shell";
-import { Button } from "../components/ui/button";
+} from "@/components/ui/auth-shell";
+import { Button } from "@/components/ui/button";
 import {
   FieldError,
   FieldGroup,
   FieldLabel,
   Input,
-} from "../components/ui/field";
+} from "@/components/ui/field";
 
 export const Route = createFileRoute("/forgot-password")({
   component: ForgotPassword,

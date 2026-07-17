@@ -1,15 +1,15 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { apiFetch } from "../../lib/apiFetch";
-import { Button } from "../ui/button";
+import { apiFetch } from "@/lib/apiFetch";
+import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogClose,
   DialogContent,
   DialogDescription,
   DialogTitle,
-} from "../ui/dialog";
-import { FieldError, Input } from "../ui/field";
+} from "@/components/ui/dialog";
+import { FieldError, Input } from "@/components/ui/field";
 
 export function MFADisableModal({
   open,

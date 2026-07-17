@@ -5,7 +5,7 @@ import {
   type CaptureBody,
   type CapturePageBody,
   type ListCapturePageParams,
-} from "../api";
+} from "@/api";
 
 // In-place updates for the cached /captures/page infinite lists, so single-item
 // mutations (edit, todo, remind, transcription progress) don't invalidate and

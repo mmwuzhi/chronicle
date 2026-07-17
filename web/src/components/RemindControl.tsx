@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { fmtPreciseDateTime } from "../utils/format";
-import { Button } from "./ui/button";
-import { Input } from "./ui/field";
+import { fmtPreciseDateTime } from "@/utils/format";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/field";
 
 function BellIcon(): React.JSX.Element {
   return (

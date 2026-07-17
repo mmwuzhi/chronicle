@@ -9,12 +9,12 @@ import {
   useRelatedCaptures,
   useRemoveCaptureLink,
   type CaptureBody,
-} from "../api";
-import { fmtListTime, fmtPreciseDateTime } from "../utils/format";
-import { todoProgress } from "../utils/todo";
-import { useTodoEnabled } from "../hooks/use-todo-enabled";
-import { Button } from "./ui/button";
-import { Meta } from "./ui/page";
+} from "@/api";
+import { fmtListTime, fmtPreciseDateTime } from "@/utils/format";
+import { todoProgress } from "@/utils/todo";
+import { useTodoEnabled } from "@/hooks/use-todo-enabled";
+import { Button } from "@/components/ui/button";
+import { Meta } from "@/components/ui/page";
 
 const RELATED_LIMIT = 10;
 const SNIPPET_MAX = 140;

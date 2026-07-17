@@ -30,6 +30,9 @@ Rules that apply across the entire codebase. Read before writing new code.
 
 ## TypeScript (`web/`)
 
+- Use the `@/` alias for imports within `web/src/`. Do not add relative `./`
+  or `../` imports in handwritten source; generated files (`src/api/` and
+  `src/routeTree.gen.ts`) are exempt.
 - No `any`. Use `unknown` and narrow explicitly if the type is genuinely unknown.
 - No non-null assertions (`!`) unless you add a comment explaining why null is impossible.
 - Explicit return types on all exported functions.

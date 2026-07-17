@@ -5,18 +5,18 @@ import {
 } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
 import { z } from "zod";
-import { Nav } from "../components/nav";
-import { useGetMe } from "../api";
+import { Nav } from "@/components/nav";
+import { useGetMe } from "@/api";
 import { useTranslation } from "react-i18next";
 import { useQueryClient } from "@tanstack/react-query";
-import { AccountSection } from "../components/settings/AccountSection";
-import { PasskeysSection } from "../components/settings/PasskeysSection";
-import { MFASection } from "../components/settings/MFASection";
-import { DangerSection } from "../components/settings/DangerSection";
-import { WebhooksSection } from "../components/settings/WebhooksSection";
-import { QuickCaptureTokenSection } from "../components/settings/QuickCaptureTokenSection";
-import { PageHeader, PageShell, PageTitle } from "../components/ui/page";
-import { sectionTabClassName } from "../components/ui/tab";
+import { AccountSection } from "@/components/settings/AccountSection";
+import { PasskeysSection } from "@/components/settings/PasskeysSection";
+import { MFASection } from "@/components/settings/MFASection";
+import { DangerSection } from "@/components/settings/DangerSection";
+import { WebhooksSection } from "@/components/settings/WebhooksSection";
+import { QuickCaptureTokenSection } from "@/components/settings/QuickCaptureTokenSection";
+import { PageHeader, PageShell, PageTitle } from "@/components/ui/page";
+import { sectionTabClassName } from "@/components/ui/tab";
 
 export const Route = createFileRoute("/settings")({
   component: Settings,

@@ -1,6 +1,12 @@
-import { createGoogleDriveAdapter, MAX_CLOUD_FILE_BYTES } from "./googleDrive";
-import type { CloudDriveProviderAdapter, CloudDriveProviderId } from "./types";
-import { CloudDriveError } from "./types";
+import {
+  createGoogleDriveAdapter,
+  MAX_CLOUD_FILE_BYTES,
+} from "@/lib/cloudDrive/googleDrive";
+import type {
+  CloudDriveProviderAdapter,
+  CloudDriveProviderId,
+} from "@/lib/cloudDrive/types";
+import { CloudDriveError } from "@/lib/cloudDrive/types";
 
 function createUnsupportedAdapter(
   id: Exclude<CloudDriveProviderId, "google_drive">,
@@ -40,6 +46,6 @@ export type {
   CloudDriveErrorCode,
   CloudDriveProviderAdapter,
   CloudDriveProviderId,
-} from "./types";
-export { CloudDriveError, isCloudDriveError } from "./types";
+} from "@/lib/cloudDrive/types";
+export { CloudDriveError, isCloudDriveError } from "@/lib/cloudDrive/types";
 export { MAX_CLOUD_FILE_BYTES };

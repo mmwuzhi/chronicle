@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
-import type { CaptureBody, CapturePageBody } from "../api";
+import type { CaptureBody, CapturePageBody } from "@/api";
 import {
   captureMatchesPageParams,
   patchCapturePages,
   prependCaptureToPagesData,
   removeCaptureFromPagesData,
-} from "./capture-cache";
+} from "@/utils/capture-cache";
 
 function capture(overrides: Partial<CaptureBody> = {}): CaptureBody {
   return {

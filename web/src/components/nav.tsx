@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
-import { SearchModal } from "./search-modal";
+import { SearchModal } from "@/components/search-modal";
 
 const HomeIcon = () => (
   <svg fill="none" stroke="currentColor" strokeWidth={1.75} viewBox="0 0 24 24">

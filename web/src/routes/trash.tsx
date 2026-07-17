@@ -9,11 +9,11 @@ import {
   useListTrashedCaptures,
   usePermanentlyDeleteCapture,
   useRestoreCapture,
-} from "../api";
-import { useConfirm } from "../hooks/use-confirm";
-import { Nav } from "../components/nav";
-import { TrashList } from "../components/TrashList";
-import { Button, buttonClassName } from "../components/ui/button";
+} from "@/api";
+import { useConfirm } from "@/hooks/use-confirm";
+import { Nav } from "@/components/nav";
+import { TrashList } from "@/components/TrashList";
+import { Button, buttonClassName } from "@/components/ui/button";
 import {
   Meta,
   PageError,
@@ -21,7 +21,7 @@ import {
   PageShell,
   PageSubtitle,
   PageTitle,
-} from "../components/ui/page";
+} from "@/components/ui/page";
 
 export const Route = createFileRoute("/trash")({ component: Trash });
 

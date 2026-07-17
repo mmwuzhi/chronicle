@@ -6,12 +6,12 @@ import {
   useCreateCaptureToken,
   useListCaptureTokens,
   useRevokeCaptureToken,
-} from "../../api";
-import { fmtDate } from "../../utils/format";
-import { Button } from "../ui/button";
-import { Card } from "../ui/card";
-import { Input } from "../ui/field";
-import { Meta } from "../ui/page";
+} from "@/api";
+import { fmtDate } from "@/utils/format";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/field";
+import { Meta } from "@/components/ui/page";
 
 // Long-lived, create-only capture tokens for headless quick-capture clients
 // (the iOS Action Button shortcut). The raw token is shown exactly once at

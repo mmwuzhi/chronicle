@@ -12,32 +12,32 @@ import {
   useSetCaptureRemind,
   useUpdateCapture,
   type CaptureBody,
-} from "../api";
+} from "@/api";
 import {
   appendAttachmentInPages,
   patchCaptureInPages,
   prependCaptureToPages,
   removeCaptureFromPages,
-} from "../utils/capture-cache";
-import { CaptureComposer } from "../components/CaptureComposer";
+} from "@/utils/capture-cache";
+import { CaptureComposer } from "@/components/CaptureComposer";
 import {
   CaptureFilterBar,
   type CaptureTab,
-} from "../components/CaptureFilterBar";
-import { CaptureFeed } from "../components/CaptureFeed";
-import { MutationToast } from "../components/mutation-toast";
-import { Nav } from "../components/nav";
-import { useConfirm } from "../hooks/use-confirm";
-import { useMutationToast } from "../hooks/use-mutation-toast";
-import { useTodoEnabled } from "../hooks/use-todo-enabled";
-import type { CloudAttachmentDraft } from "../lib/cloudDrive";
+} from "@/components/CaptureFilterBar";
+import { CaptureFeed } from "@/components/CaptureFeed";
+import { MutationToast } from "@/components/mutation-toast";
+import { Nav } from "@/components/nav";
+import { useConfirm } from "@/hooks/use-confirm";
+import { useMutationToast } from "@/hooks/use-mutation-toast";
+import { useTodoEnabled } from "@/hooks/use-todo-enabled";
+import type { CloudAttachmentDraft } from "@/lib/cloudDrive";
 import {
   PageError,
   PageHeader,
   PageShell,
   PageSubtitle,
   PageTitle,
-} from "../components/ui/page";
+} from "@/components/ui/page";
 
 export const Route = createFileRoute("/captures")({ component: Captures });
 

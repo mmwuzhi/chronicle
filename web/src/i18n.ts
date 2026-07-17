@@ -2,23 +2,23 @@ import i18n from "i18next";
 import { initReactI18next } from "react-i18next";
 import LanguageDetector from "i18next-browser-languagedetector";
 
-import enCommon from "./locales/en/common.json";
-import enAuth from "./locales/en/auth.json";
-import enCaptures from "./locales/en/captures.json";
-import enSettings from "./locales/en/settings.json";
-import enDashboard from "./locales/en/dashboard.json";
+import enCommon from "@/locales/en/common.json";
+import enAuth from "@/locales/en/auth.json";
+import enCaptures from "@/locales/en/captures.json";
+import enSettings from "@/locales/en/settings.json";
+import enDashboard from "@/locales/en/dashboard.json";
 
-import jaCommon from "./locales/ja/common.json";
-import jaAuth from "./locales/ja/auth.json";
-import jaCaptures from "./locales/ja/captures.json";
-import jaSettings from "./locales/ja/settings.json";
-import jaDashboard from "./locales/ja/dashboard.json";
+import jaCommon from "@/locales/ja/common.json";
+import jaAuth from "@/locales/ja/auth.json";
+import jaCaptures from "@/locales/ja/captures.json";
+import jaSettings from "@/locales/ja/settings.json";
+import jaDashboard from "@/locales/ja/dashboard.json";
 
-import zhCommon from "./locales/zh/common.json";
-import zhAuth from "./locales/zh/auth.json";
-import zhCaptures from "./locales/zh/captures.json";
-import zhSettings from "./locales/zh/settings.json";
-import zhDashboard from "./locales/zh/dashboard.json";
+import zhCommon from "@/locales/zh/common.json";
+import zhAuth from "@/locales/zh/auth.json";
+import zhCaptures from "@/locales/zh/captures.json";
+import zhSettings from "@/locales/zh/settings.json";
+import zhDashboard from "@/locales/zh/dashboard.json";
 
 i18n
   .use(LanguageDetector)

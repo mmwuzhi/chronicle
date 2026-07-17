@@ -8,13 +8,13 @@ import {
   useReviewToday,
   useSetCaptureRemind,
   useUpdateCapture,
-} from "../api";
-import type { CaptureBody, ReviewTodayParams } from "../api";
-import { CaptureFeed } from "../components/CaptureFeed";
-import { MutationToast } from "../components/mutation-toast";
-import { Nav } from "../components/nav";
-import { useConfirm } from "../hooks/use-confirm";
-import { useMutationToast } from "../hooks/use-mutation-toast";
+} from "@/api";
+import type { CaptureBody, ReviewTodayParams } from "@/api";
+import { CaptureFeed } from "@/components/CaptureFeed";
+import { MutationToast } from "@/components/mutation-toast";
+import { Nav } from "@/components/nav";
+import { useConfirm } from "@/hooks/use-confirm";
+import { useMutationToast } from "@/hooks/use-mutation-toast";
 import {
   EmptyState,
   Meta,
@@ -23,7 +23,7 @@ import {
   PageShell,
   PageSubtitle,
   PageTitle,
-} from "../components/ui/page";
+} from "@/components/ui/page";
 
 export const Route = createFileRoute("/review")({ component: Review });
 

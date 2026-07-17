@@ -6,16 +6,16 @@ import {
   useDeleteCaptureAttachment,
   type CaptureAttachmentBody,
   type CaptureBody,
-} from "../api";
-import { fmtFileSize, fmtListTime, fmtPreciseDateTime } from "../utils/format";
-import { patchCaptureInPages } from "../utils/capture-cache";
-import { useTranscriptionPoll } from "../hooks/use-transcription-poll";
-import { Markdown } from "./Markdown";
-import { RemindControl } from "./RemindControl";
-import { cn } from "../lib/cn";
-import { Button, buttonClassName } from "./ui/button";
-import { Card } from "./ui/card";
-import { Meta } from "./ui/page";
+} from "@/api";
+import { fmtFileSize, fmtListTime, fmtPreciseDateTime } from "@/utils/format";
+import { patchCaptureInPages } from "@/utils/capture-cache";
+import { useTranscriptionPoll } from "@/hooks/use-transcription-poll";
+import { Markdown } from "@/components/Markdown";
+import { RemindControl } from "@/components/RemindControl";
+import { cn } from "@/lib/cn";
+import { Button, buttonClassName } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Meta } from "@/components/ui/page";
 
 export function AutoTextarea({
   value,

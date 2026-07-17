@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
-import { createGoogleDriveAdapter, MAX_CLOUD_FILE_BYTES } from "./googleDrive";
-import { isCloudDriveError } from "./types";
+import {
+  createGoogleDriveAdapter,
+  MAX_CLOUD_FILE_BYTES,
+} from "@/lib/cloudDrive/googleDrive";
+import { isCloudDriveError } from "@/lib/cloudDrive/types";
 
 type MockFetcher = (
   input: RequestInfo | URL,

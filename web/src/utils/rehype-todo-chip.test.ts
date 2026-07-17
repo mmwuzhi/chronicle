@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { rehypeTodoChip } from "./rehype-todo-chip";
-import { trailingTagToken } from "./todo";
+import { rehypeTodoChip } from "@/utils/rehype-todo-chip";
+import { trailingTagToken } from "@/utils/todo";
 
 interface Node {
   type: string;

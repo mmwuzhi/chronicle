@@ -1,15 +1,15 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useAsk } from "../api";
-import type { AskSource } from "../api";
-import { Nav } from "../components/nav";
-import { Markdown } from "../components/Markdown";
-import { fmtDate } from "../utils/format";
-import { Button } from "../components/ui/button";
-import { Card } from "../components/ui/card";
-import { Textarea } from "../components/ui/field";
-import { Meta, PageHeader, PageShell, PageTitle } from "../components/ui/page";
+import { useAsk } from "@/api";
+import type { AskSource } from "@/api";
+import { Nav } from "@/components/nav";
+import { Markdown } from "@/components/Markdown";
+import { fmtDate } from "@/utils/format";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Textarea } from "@/components/ui/field";
+import { Meta, PageHeader, PageShell, PageTitle } from "@/components/ui/page";
 
 export const Route = createFileRoute("/ask")({ component: Ask });
 

@@ -2,9 +2,9 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { z } from "zod/v3";
 import { useTranslation } from "react-i18next";
-import { AuthPanel, AuthShell } from "../components/ui/auth-shell";
-import { Button } from "../components/ui/button";
-import { FieldError, Input } from "../components/ui/field";
+import { AuthPanel, AuthShell } from "@/components/ui/auth-shell";
+import { Button } from "@/components/ui/button";
+import { FieldError, Input } from "@/components/ui/field";
 
 export const Route = createFileRoute("/auth/mfa")({
   validateSearch: z.object({ mfa_token: z.string().default("") }),

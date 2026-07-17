@@ -1,13 +1,13 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useGetMe } from "../../api";
-import { setTodoEnabled, useTodoEnabled } from "../../hooks/use-todo-enabled";
-import { apiFetch } from "../../lib/apiFetch";
-import { PasswordModal } from "./PasswordModal";
-import { LinkedAccountsSection } from "./LinkedAccountsSection";
-import { Button } from "../ui/button";
-import { Meta } from "../ui/page";
-import { SettingsLabel, SettingsRow } from "../ui/settings-row";
+import { useGetMe } from "@/api";
+import { setTodoEnabled, useTodoEnabled } from "@/hooks/use-todo-enabled";
+import { apiFetch } from "@/lib/apiFetch";
+import { PasswordModal } from "@/components/settings/PasswordModal";
+import { LinkedAccountsSection } from "@/components/settings/LinkedAccountsSection";
+import { Button } from "@/components/ui/button";
+import { Meta } from "@/components/ui/page";
+import { SettingsLabel, SettingsRow } from "@/components/ui/settings-row";
 
 const LANGS = [
   { code: "en", label: "English" },

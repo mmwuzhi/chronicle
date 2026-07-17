@@ -1,10 +1,10 @@
 import { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
-import { useConfirm } from "../../hooks/use-confirm";
-import { apiFetch } from "../../lib/apiFetch";
-import { Button } from "../ui/button";
-import { Meta } from "../ui/page";
-import { SettingsLabel, SettingsRow } from "../ui/settings-row";
+import { useConfirm } from "@/hooks/use-confirm";
+import { apiFetch } from "@/lib/apiFetch";
+import { Button } from "@/components/ui/button";
+import { Meta } from "@/components/ui/page";
+import { SettingsLabel, SettingsRow } from "@/components/ui/settings-row";
 
 export function PasskeysSection() {
   const { t } = useTranslation("settings");

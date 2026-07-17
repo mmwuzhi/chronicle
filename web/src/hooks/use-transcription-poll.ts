@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { useGetCapture, type CaptureBody } from "../api";
-import { patchCaptureInPages } from "../utils/capture-cache";
+import { useGetCapture, type CaptureBody } from "@/api";
+import { patchCaptureInPages } from "@/utils/capture-cache";
 
 const POLL_INTERVAL_MS = 3000;
 

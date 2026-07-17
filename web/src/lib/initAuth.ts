@@ -1,4 +1,4 @@
-import { apiClient } from "./axios";
+import { apiClient } from "@/lib/axios";
 
 function getTokenExpiry(token: string): number | null {
   try {

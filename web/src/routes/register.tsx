@@ -6,20 +6,20 @@ import { useRef, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { Turnstile } from "@marsidev/react-turnstile";
 import type { TurnstileInstance } from "@marsidev/react-turnstile";
-import { api } from "../lib/axios";
+import { api } from "@/lib/axios";
 import { useTranslation, Trans } from "react-i18next";
 import {
   AuthPanel,
   AuthShell,
   authPanelClassName,
-} from "../components/ui/auth-shell";
-import { Button, buttonClassName } from "../components/ui/button";
+} from "@/components/ui/auth-shell";
+import { Button, buttonClassName } from "@/components/ui/button";
 import {
   FieldError,
   FieldGroup,
   FieldLabel,
   Input,
-} from "../components/ui/field";
+} from "@/components/ui/field";
 
 const TURNSTILE_SITE_KEY = import.meta.env.VITE_TURNSTILE_SITE_KEY as
   | string
