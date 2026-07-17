@@ -322,6 +322,7 @@ export interface RecallItem {
   lexical: boolean;
   modality: string;
   score: number;
+  snippet?: string;
 }
 
 export interface FindOutputBody {

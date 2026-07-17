@@ -12,7 +12,7 @@ const AttachIcon = () => (
     stroke="currentColor"
     strokeWidth={1.75}
     viewBox="0 0 24 24"
-    style={{ flexShrink: 0 }}
+    className="ch-icon-noshrink"
   >
     <path
       strokeLinecap="round"
@@ -30,7 +30,7 @@ const MicIcon = () => (
     stroke="currentColor"
     strokeWidth={1.75}
     viewBox="0 0 24 24"
-    style={{ flexShrink: 0 }}
+    className="ch-icon-noshrink"
   >
     <path
       strokeLinecap="round"
@@ -131,10 +131,7 @@ export function Composer({
   };
 
   return (
-    <div
-      className="ch-card"
-      style={{ padding: "var(--pad)", marginBottom: 16 }}
-    >
+    <div className="ch-card ch-composer">
       <AutoTextarea
         value={value}
         onChange={(next) => {
@@ -157,12 +154,8 @@ export function Composer({
           }
         }}
         placeholder={placeholder}
-        className="ch-textarea"
+        className="ch-textarea ch-composer-textarea"
         style={{
-          border: "none",
-          boxShadow: "none",
-          padding: 0,
-          marginBottom: 10,
           minHeight: minRows ? `${minRows * 24}px` : undefined,
         }}
       />
@@ -183,45 +176,18 @@ export function Composer({
               <span className="ch-meta">{s.hint}</span>
             </button>
           ))}
-          <span className="ch-meta" style={{ marginLeft: "auto" }}>
-            Tab
-          </span>
+          <span className="ch-meta ch-tag-suggest-hint">Tab</span>
         </div>
       )}
       {extraControls}
 
       {suggestion !== null && (
-        <div
-          style={{
-            border: "1px solid var(--accent-weak)",
-            borderRadius: "var(--radius-sm)",
-            background:
-              "color-mix(in srgb, var(--accent-weak) 45%, transparent)",
-            padding: 10,
-            marginBottom: 10,
-          }}
-        >
-          <div
-            style={{
-              fontSize: "var(--fs-xs)",
-              color: "var(--accent-strong)",
-              fontWeight: 700,
-              marginBottom: 6,
-            }}
-          >
+        <div className="ch-polish-preview">
+          <div className="ch-polish-preview-label">
             {tc("actions.polishResult")}
           </div>
-          <div style={{ fontSize: "var(--fs-sm)", color: "var(--text)" }}>
-            {suggestion}
-          </div>
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "flex-end",
-              gap: 8,
-              marginTop: 10,
-            }}
-          >
+          <div className="ch-polish-preview-text">{suggestion}</div>
+          <div className="ch-polish-preview-actions">
             <button
               className="ch-btn ch-btn-ai ch-btn-sm"
               onClick={() => {
@@ -241,30 +207,23 @@ export function Composer({
         </div>
       )}
 
-      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+      <div className="ch-composer-actions">
         {onAttach && (
           <button
             className="ch-btn ch-btn-sm"
             onClick={onAttach}
             disabled={busy || recording}
-            style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
+            data-inline-icon
           >
             <AttachIcon /> {attachLabel}
           </button>
         )}
         {onRecord && (
           <button
-            className="ch-btn ch-btn-sm"
+            className={`ch-btn ch-btn-sm${recording ? " recording" : ""}`}
             onClick={onRecord}
             disabled={busy && !recording}
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 6,
-              ...(recording
-                ? { borderColor: "#c2410c", color: "#c2410c" }
-                : {}),
-            }}
+            data-inline-icon
           >
             {recording ? "■" : <MicIcon />} {recordLabel}
           </button>
@@ -276,17 +235,13 @@ export function Composer({
             disabled={
               polishing || !trimmed || suggestion !== null || polishDisabled
             }
-            style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
+            data-inline-icon
           >
             {polishing ? "..." : "*"} {tc("actions.polish")}
           </button>
         )}
-        <div style={{ flex: 1 }} />
-        {shownError && (
-          <span style={{ fontSize: "var(--fs-xs)", color: "#c2410c" }}>
-            {shownError}
-          </span>
-        )}
+        <div className="ch-flex-spacer" />
+        {shownError && <span className="ch-inline-error">{shownError}</span>}
         {busy && busyLabel && <span className="ch-meta">{busyLabel}</span>}
         <button
           className="ch-btn ch-btn-primary ch-btn-sm"

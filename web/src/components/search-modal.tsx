@@ -117,10 +117,7 @@ export function SearchModal({
               <div className="ch-sgroup">
                 {t("search.captures")}
                 {degraded && (
-                  <span
-                    className="ch-meta"
-                    style={{ marginLeft: 8, fontWeight: 400 }}
-                  >
+                  <span className="ch-meta ch-search-degraded">
                     {t("search.keywordFallback")}
                   </span>
                 )}
@@ -134,6 +131,9 @@ export function SearchModal({
                   <span className="s-ico">✦</span>
                   <span className="s-body">
                     <span className="s-title">{item.content || "—"}</span>
+                    {item.snippet && item.snippet !== item.content && (
+                      <span className="s-snippet">{item.snippet}</span>
+                    )}
                     <span className="s-sub">{fmtDate(item.createdAt)}</span>
                   </span>
                 </button>
