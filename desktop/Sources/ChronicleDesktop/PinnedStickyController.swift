@@ -115,7 +115,8 @@ final class PinnedStickyController: NSObject, NSWindowDelegate {
         }
         let pin = PersistedPin(
             id: row.id, content: row.content, createdAt: row.createdAt,
-            mediaType: row.modality, mediaUrl: row.mediaUrl, frame: nil)
+            mediaType: row.modality, mediaUrl: row.mediaUrl,
+            todoDone: row.todoState.map { $0 == .done }, frame: nil)
         saved[row.id] = pin
         let panel = makePanel(for: pin, cascade: true)
         windows[row.id] = panel
@@ -210,6 +211,7 @@ final class PinnedStickyController: NSObject, NSWindowDelegate {
             createdAt: pin.createdAt,
             mediaType: pin.mediaType ?? "text",
             mediaUrl: pin.mediaUrl,
+            todoState: pin.todoDone.map { $0 ? .done : .open },
             onUnpin: { [weak self] in self?.unpin(id) },
             onOpen: { [weak self] in self?.openDetail(id) },
             onCopy: { Self.copy(pin.content) },
@@ -280,6 +282,7 @@ final class PinnedStickyController: NSObject, NSWindowDelegate {
             saved[id]?.createdAt = capture.createdAt
             saved[id]?.mediaType = capture.mediaType
             saved[id]?.mediaUrl = capture.mediaUrl
+            saved[id]?.todoDone = capture.todoState.map { $0 == .done }
             persist()
             if let panel = windows[id], let pin = saved[id] {
                 setContent(panel, pin: pin)
@@ -292,7 +295,17 @@ final class PinnedStickyController: NSObject, NSWindowDelegate {
     private func load() {
         guard let data = try? Data(contentsOf: ChronicleDesktopPaths.defaultPinsURL()),
               let list = try? JSONDecoder().decode([PersistedPin].self, from: data) else { return }
-        for pin in list { saved[pin.id] = pin }
+        for var pin in list {
+            // Pins written before todoDone existed can still recover text-capture
+            // state offline from their cached source text. Transcript-only pins
+            // remain unknown until their normal best-effort server refresh.
+            if pin.todoDone == nil,
+               let state = CaptureTodoTag.state(in: pin.content)
+            {
+                pin.todoDone = state == .done
+            }
+            saved[pin.id] = pin
+        }
     }
 
     private func persist() {
@@ -333,6 +346,7 @@ private struct PersistedPin: Codable {
     var createdAt: String
     var mediaType: String?
     var mediaUrl: String?
+    var todoDone: Bool?
     var frame: NSRect?
     var manualHeight: Bool?
 }

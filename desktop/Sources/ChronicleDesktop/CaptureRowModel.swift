@@ -80,7 +80,14 @@ struct SessionStatus: Equatable {
 /// browsed capture (Capture) so the list rendering is shared.
 struct RowItem: Identifiable, Equatable {
     let id: String
+    // Text chosen for the current surface. This may be a transcript, a search
+    // projection, or cached sticky text and is never assumed to be writable.
     let content: String
+    var snippet: String?
+    // The capture's actual user-authored raw_text when this row came from a full
+    // CaptureBody or the local store. Search/related/sticky projections leave it
+    // nil; those surfaces must fetch the full capture before starting an edit.
+    let editableRawText: String?
     let createdAt: String
     // createdAt parsed once at construction — merge/sort comparators run per
     // pair, so parsing there re-parses the same strings hundreds of times.
@@ -109,6 +116,8 @@ struct RowItem: Identifiable, Equatable {
     init(_ hit: RecallItem) {
         id = hit.id
         content = hit.content
+        snippet = hit.snippet
+        editableRawText = nil
         createdAt = hit.createdAt
         createdDate = CaptureTime.parse(hit.createdAt)
         modality = hit.modality
@@ -121,6 +130,8 @@ struct RowItem: Identifiable, Equatable {
     init(_ capture: Capture) {
         id = capture.id
         content = capture.content
+        snippet = nil
+        editableRawText = capture.rawText ?? ""
         createdAt = capture.createdAt
         createdDate = CaptureTime.parse(capture.createdAt)
         modality = capture.mediaType
@@ -133,6 +144,8 @@ struct RowItem: Identifiable, Equatable {
     init(_ related: RelatedCapture) {
         id = related.id
         content = related.content
+        snippet = nil
+        editableRawText = nil
         createdAt = related.createdAt
         createdDate = CaptureTime.parse(related.createdAt)
         modality = related.modality
@@ -147,13 +160,15 @@ struct RowItem: Identifiable, Equatable {
     init(id: String, content: String, createdAt: String, modality: String, mediaUrl: String?) {
         self.id = id
         self.content = content
+        self.snippet = nil
+        self.editableRawText = nil
         self.createdAt = createdAt
         self.createdDate = CaptureTime.parse(createdAt)
         self.modality = modality
         self.synced = true
         self.dirty = false
         self.mediaUrl = mediaUrl
-        self.todoState = nil
+        self.todoState = CaptureTodoTag.state(in: content)
     }
 
     // From a local record. A synced record keys on its server id so it dedupes
@@ -165,13 +180,15 @@ struct RowItem: Identifiable, Equatable {
     init(_ record: LocalCaptureRecord) {
         id = record.serverId ?? record.id
         content = record.payload.rawText
+        snippet = nil
+        editableRawText = record.payload.rawText
         createdAt = RowItem.iso.string(from: record.createdAt)
         createdDate = record.createdAt
         modality = record.payload.mediaType
         synced = record.serverId != nil
         dirty = record.serverId != nil && (record.syncedAt.map { record.updatedAt > $0 } ?? true)
         mediaUrl = nil
-        todoState = nil
+        todoState = CaptureTodoTag.state(in: record.payload.rawText)
     }
 
     nonisolated(unsafe) private static let iso: ISO8601DateFormatter = {
@@ -179,19 +196,36 @@ struct RowItem: Identifiable, Equatable {
         f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return f
     }()
+
+    var displayText: String {
+        let visible = snippet.flatMap { $0.isEmpty ? nil : $0 } ?? content
+        guard todoState != nil else { return visible }
+        return CaptureTodoTag.displayText(from: visible)
+    }
+
+    mutating func mergeDisplayEvidence(from other: RowItem) {
+        guard snippet?.isEmpty != false,
+              let evidence = other.snippet,
+              !evidence.isEmpty
+        else {
+            return
+        }
+        snippet = evidence
+    }
 }
 
 struct CaptureEditDraft: Equatable {
     var item: RowItem
     var text: String
 
-    init(item: RowItem) {
+    init?(item: RowItem) {
+        guard let editableRawText = item.editableRawText else { return nil }
         self.item = item
-        self.text = item.content
+        self.text = editableRawText
     }
 
     var id: String { item.id }
-    var originalText: String { item.content }
+    var originalText: String { item.editableRawText ?? "" }
     var isDirty: Bool {
         text.trimmingCharacters(in: .whitespacesAndNewlines) != originalText
     }

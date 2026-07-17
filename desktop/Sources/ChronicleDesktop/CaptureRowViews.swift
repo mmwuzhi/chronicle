@@ -193,6 +193,29 @@ struct PinnedEdgeBar: View {
 }
 
 /// Compact, geometry-stable metadata for virtualized capture rows.
+struct TodoFacetChip: View {
+    let state: CaptureTodoState
+
+    var body: some View {
+        Text(state == .done ? "#todo ✓" : "#todo")
+            .font(.caption2.weight(.semibold))
+            .foregroundStyle(
+                state == .done
+                    ? Color.secondary.opacity(0.7)
+                    : Color.chronicleAccent
+            )
+            .padding(.horizontal, 6)
+            .padding(.vertical, 1)
+            .background(
+                state == .done
+                    ? Color.primary.opacity(0.05)
+                    : Color.chronicleAccent.opacity(0.12),
+                in: Capsule(),
+            )
+            .accessibilityLabel(state == .done ? L("Done") : L("Todo"))
+    }
+}
+
 struct CaptureRowMetadata: View {
     @ObservedObject private var localization = DesktopLocalization.shared
     let todoState: CaptureTodoState?
@@ -201,14 +224,11 @@ struct CaptureRowMetadata: View {
     var body: some View {
         HStack(spacing: 4) {
             if let todoState {
-                Image(systemName: todoState == .done ? "checkmark.square" : "square")
-                Text(todoState == .done ? L("Done") : L("Todo"))
-                Text("·")
+                TodoFacetChip(state: todoState)
             }
             Text(CaptureTime.display(createdAt))
                 .accessibilityLabel(CaptureTime.precise(createdAt))
         }
-        .font(.caption2)
         .foregroundStyle(.tertiary)
     }
 }
@@ -363,7 +383,8 @@ struct CaptureRow: View {
 
     private var canSaveDraft: Bool {
         let next = currentDraftText.trimmingCharacters(in: .whitespacesAndNewlines)
-        let original = item.content.trimmingCharacters(in: .whitespacesAndNewlines)
+        let original = (item.editableRawText ?? item.content)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
         return !next.isEmpty && next != original
     }
 
@@ -373,7 +394,7 @@ struct CaptureRow: View {
                 editContainer
             } else {
                 HStack(alignment: .top, spacing: 8) {
-                    if item.modality != "text" && item.content.isEmpty {
+                    if item.modality != "text" && item.displayText.isEmpty {
                         Image(systemName: item.modality == "audio" ? "waveform" : "photo")
                             .font(.caption).foregroundStyle(.secondary).padding(.top, 3)
                     }
@@ -410,11 +431,11 @@ struct CaptureRow: View {
 
     @ViewBuilder
     private var restingContent: some View {
-        if item.content.isEmpty {
+        if item.displayText.isEmpty {
             Text(L("(media capture)"))
                 .foregroundStyle(.secondary)
         } else {
-            Text(item.content)
+            Text(item.displayText)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         // Resting metadata stays tertiary. The todo marker mirrors the web card's
@@ -496,18 +517,19 @@ struct CaptureRow: View {
         }
         let next = fallbackText.trimmingCharacters(in: .whitespacesAndNewlines)
         fallbackEditing = false
-        guard !next.isEmpty, next != item.content else { return }
+        guard !next.isEmpty, next != item.editableRawText else { return }
         onEdit?(next)
     }
 
     private func beginEditingFromContent() {
-        guard onEdit != nil, !rowIsEditing, !item.content.isEmpty else { return }
+        guard onEdit != nil, !rowIsEditing, !item.displayText.isEmpty else { return }
         if let onBeginEdit {
             onBeginEdit()
-        } else {
-            fallbackText = item.content
-            fallbackEditing = true
+            return
         }
+        guard let editableRawText = item.editableRawText else { return }
+        fallbackText = editableRawText
+        fallbackEditing = true
     }
 
     private func cancelDraft() {

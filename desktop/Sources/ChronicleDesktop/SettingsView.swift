@@ -517,85 +517,7 @@ struct SettingsView: View {
     }
 }
 
-struct SignInSheet: View {
-    @ObservedObject var model: SettingsModel
-    @ObservedObject private var localization = DesktopLocalization.shared
-    @Environment(\.dismiss) private var dismiss
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(L("Sign in to Chronicle"))
-                    .font(.title2.weight(.semibold))
-                Text(L("Use the same account you use on the web."))
-                    .font(.callout).foregroundStyle(.secondary)
-            }
-
-            providerButton(.google, icon: "g.circle.fill")
-            providerButton(.github, icon: "chevron.left.forwardslash.chevron.right")
-
-            HStack(spacing: 10) {
-                Divider()
-                Text(L("or use email"))
-                    .font(.caption).foregroundStyle(.tertiary)
-                    .fixedSize()
-                Divider()
-            }
-
-            VStack(alignment: .leading, spacing: 10) {
-                Text(L("Email")).font(.caption).foregroundStyle(.secondary)
-                WorkspaceField(prompt: "you@example.com", text: $model.email, compact: true)
-                Text(L("Password")).font(.caption).foregroundStyle(.secondary)
-                WorkspaceField(
-                    prompt: L("Password"),
-                    text: $model.password,
-                    secure: true,
-                    compact: true,
-                    onSubmit: { model.signIn() },
-                )
-            }
-
-            if let error = model.authError {
-                Text(error)
-                    .font(.caption)
-                    .foregroundStyle(.red)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            HStack {
-                if model.isAuthenticating {
-                    ProgressView().controlSize(.small)
-                }
-                Spacer()
-                Button(L("Cancel")) {
-                    model.cancelSignIn()
-                    dismiss()
-                }
-                    .keyboardShortcut(.cancelAction)
-                Button(L("Sign In")) { model.signIn() }
-                    .keyboardShortcut(.defaultAction)
-                    .disabled(model.isAuthenticating)
-            }
-        }
-        .padding(24)
-        .frame(width: 390)
-        .onChange(of: model.isSignedIn) { signedIn in
-            if signedIn { dismiss() }
-        }
-    }
-
-    private func providerButton(_ provider: OAuthProvider, icon: String) -> some View {
-        Button { model.signIn(provider: provider) } label: {
-            Label(DesktopLocalization.shared.format("Continue with %@", provider.displayName), systemImage: icon)
-                .frame(maxWidth: .infinity)
-        }
-        .buttonStyle(.bordered)
-        .controlSize(.large)
-        .disabled(model.isAuthenticating)
-    }
-}
-
-private extension OAuthProvider {
+extension OAuthProvider {
     var displayName: String {
         switch self {
         case .google: "Google"
@@ -609,21 +531,6 @@ private final class OAuthPresentationContext: NSObject, ASWebAuthenticationPrese
     func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
         NSApp.keyWindow ?? NSApp.mainWindow ?? NSApp.windows.first ?? NSWindow()
     }
-}
-
-// MARK: - Shortcut recorder bridge
-
-struct ShortcutRecorder: NSViewRepresentable {
-    let initial: ShortcutSpec
-    let onChange: (ShortcutSpec) -> Void
-
-    func makeNSView(context: Context) -> ShortcutRecorderField {
-        let field = ShortcutRecorderField(shortcut: initial)
-        field.onChange = onChange
-        return field
-    }
-
-    func updateNSView(_ nsView: ShortcutRecorderField, context: Context) {}
 }
 
 // MARK: - Webhooks
@@ -893,38 +800,5 @@ private struct WebhookEditor: View {
         } catch {
             return DesktopLocalization.shared.format("Test failed: %@", error.localizedDescription)
         }
-    }
-}
-
-@MainActor
-final class SettingsWindowController {
-    private var window: NSWindow?
-    private let model: SettingsModel
-
-    init(model: SettingsModel) { self.model = model }
-
-    func show() {
-        model.refreshPending()
-        let w = window ?? makeWindow()
-        window = w
-        ScreenPlacement.centerOnActiveScreen(w)
-        w.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
-    }
-
-    private func makeWindow() -> NSWindow {
-        let w = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 540, height: 620),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable],
-            backing: .buffered, defer: false,
-        )
-        w.title = L("Chronicle Settings")
-        w.center()
-        w.isReleasedWhenClosed = false
-        w.isRestorable = false // no uninvited reopen on relaunch (see main window)
-        // Open on the active Space, not the one it was last shown on (see MainView).
-        w.collectionBehavior.insert(.moveToActiveSpace)
-        w.contentView = NSHostingView(rootView: SettingsView(model: model).tint(.chronicleAccent))
-        return w
     }
 }

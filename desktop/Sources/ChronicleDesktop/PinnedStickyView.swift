@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import ChronicleDesktopCore
 
 // The contents of a pinned desktop sticky — a borderless Liquid-Glass note ported
 // from rag4, adapted to Chronicle:
@@ -23,6 +24,7 @@ struct PinnedStickyView: View {
     let createdAt: String
     let mediaType: String
     let mediaUrl: String?
+    let todoState: CaptureTodoState?
     let onUnpin: () -> Void
     let onOpen: () -> Void
     let onCopy: () -> Void
@@ -44,13 +46,25 @@ struct PinnedStickyView: View {
         return url
     }
 
+    private var visibleContent: String {
+        guard todoState != nil else { return content }
+        return CaptureTodoTag.displayText(from: content)
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             header
             ScrollView {
                 VStack(alignment: .leading, spacing: 8) {
-                    if !content.isEmpty {
-                        StickySelectableText(markdown: content, onDoubleClick: onOpen, onCancel: onUnpin)
+                    if let todoState {
+                        TodoFacetChip(state: todoState)
+                    }
+                    if !visibleContent.isEmpty {
+                        StickySelectableText(
+                            markdown: visibleContent,
+                            onDoubleClick: onOpen,
+                            onCancel: onUnpin
+                        )
                     } else if thumbURL == nil {
                         Text(L("(media capture)")).foregroundStyle(.secondary)
                     }

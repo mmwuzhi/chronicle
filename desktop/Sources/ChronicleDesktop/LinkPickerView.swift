@@ -60,7 +60,11 @@ struct LinkPickerView: View {
             Image(systemName: "plus.circle")
                 .foregroundStyle(.secondary).font(.caption).padding(.top, 2)
             VStack(alignment: .leading, spacing: 2) {
-                Text(row.content.isEmpty ? L("(media capture)") : row.content)
+                Text(
+                    row.displayText.isEmpty
+                        ? L("(media capture)")
+                        : row.displayText
+                )
                     .lineLimit(2).foregroundStyle(.primary)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 Text(CaptureTime.display(row.createdAt))

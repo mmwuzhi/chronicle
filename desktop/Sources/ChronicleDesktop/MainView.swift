@@ -43,6 +43,7 @@ struct MainView: View {
     @State private var loadingMore = false
     @State private var editDraft: CaptureEditDraft?
     @State private var pendingEditTarget: RowItem?
+    @State private var loadingEditID: String?
 
     @State private var askQuery = ""
     @State private var submittedQuestion = ""
@@ -220,7 +221,20 @@ struct MainView: View {
             }
             .padding(16)
         case .ask:
-            askWorkspace
+            MainAskWorkspace(
+                signedIn: signedIn,
+                busy: busy,
+                error: error,
+                submittedQuestion: submittedQuestion,
+                answer: answer,
+                sources: sources,
+                query: $askQuery,
+                focused: $askFocused,
+                editorHeight: $askEditorHeight,
+                onAsk: runAsk,
+                onSignIn: settingsModel.presentSignIn,
+                onCopy: copy,
+            )
         case .trash:
             MainTrashPane(clients: clients, captureEventToken: captureEventToken)
         case .settings:
@@ -281,157 +295,6 @@ struct MainView: View {
             .onAppear { maybeLoadMore(row) }
         }
         if loadingMore { ProgressView().controlSize(.small).frame(maxWidth: .infinity) }
-    }
-
-    private var askWorkspace: some View {
-        VStack(spacing: 12) {
-            ZStack {
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 14) {
-                        askContent
-                    }
-                    .frame(maxWidth: 760, alignment: .leading)
-                    .frame(maxWidth: .infinity, alignment: .center)
-                    .padding(.vertical, 12)
-                }
-
-                if submittedQuestion.isEmpty && answer.isEmpty && !busy {
-                    if signedIn {
-                        Text(L("Ask about anything you've captured."))
-                            .font(.callout)
-                            .foregroundStyle(.tertiary)
-                    } else {
-                        signInPrompt
-                    }
-                }
-            }
-            .frame(maxHeight: .infinity)
-
-            if !error.isEmpty {
-                Text(error)
-                    .font(.caption)
-                    .foregroundStyle(.red)
-                    .frame(maxWidth: 760, alignment: .leading)
-                    .frame(maxWidth: .infinity)
-            }
-
-            askComposer
-                .frame(maxWidth: 760)
-        }
-        .padding(.horizontal, 16)
-        .padding(.top, 14)
-        .padding(.bottom, 16)
-    }
-
-    @ViewBuilder private var askContent: some View {
-        if !submittedQuestion.isEmpty {
-            Text(L("Question"))
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
-            Text(submittedQuestion)
-                .font(.title3.weight(.medium))
-                .textSelection(.enabled)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            Divider().padding(.vertical, 2)
-        }
-
-        if busy {
-            ProgressView("Searching your captures…")
-                .controlSize(.small)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.vertical, 8)
-        } else if !answer.isEmpty {
-            HStack {
-                Spacer()
-                Button { copy(answer) } label: { Label(L("Copy"), systemImage: "doc.on.doc") }
-                    .buttonStyle(.borderless).font(.caption).foregroundStyle(.secondary)
-            }
-            Text(answer).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
-            if !sources.isEmpty {
-                Divider().padding(.vertical, 4)
-                Text(L("Sources")).font(.caption).foregroundStyle(.secondary)
-                ForEach(sources) { s in
-                    HStack(alignment: .top, spacing: 8) {
-                        Text("[\(s.n)]").font(.callout.monospacedDigit()).foregroundStyle(.secondary)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(s.content)
-                            Text(String(s.createdAt.prefix(10)))
-                                .font(.caption2).foregroundStyle(.secondary)
-                        }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 6)
-                    Divider()
-                }
-            }
-        }
-    }
-
-    private var signInPrompt: some View {
-        VStack(spacing: 6) {
-            Text(L("Ask works across your synced captures."))
-                .font(.headline)
-                .foregroundStyle(.secondary)
-            Text(L("Sign in below to use server-backed recall."))
-                .font(.callout)
-                .foregroundStyle(.tertiary)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 40)
-    }
-
-    private var askComposer: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            ModeTextEditor(
-                text: $askQuery,
-                focused: $askFocused,
-                placeholder: signedIn
-                    ? L("Ask a question, e.g. what did I work on this week")
-                    : L("Sign in to ask across your captures"),
-                submitsOnEnter: true,
-                onSubmit: runAsk,
-                onCancel: { askFocused = false },
-                onHeight: { askEditorHeight = min(max($0, 38), 120) },
-                fontSize: 14,
-            )
-            .frame(height: askEditorHeight)
-            .disabled(!signedIn || busy)
-
-            HStack(spacing: 10) {
-                Text(signedIn ? L("↩ Ask  ·  ⇧↩ New line") : L("Sign in to ask across your captures"))
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-                Spacer(minLength: 8)
-                if signedIn {
-                    Button(action: runAsk) {
-                        Image(systemName: "arrow.up")
-                            .frame(width: 16, height: 16)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .clipShape(Circle())
-                    .controlSize(.regular)
-                    .disabled(askQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || busy)
-                    .help(L("Ask"))
-                    .accessibilityLabel(L("Ask"))
-                } else {
-                    Button(L("Sign in")) {
-                        settingsModel.presentSignIn()
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.regular)
-                }
-            }
-        }
-        .padding(10)
-        .background(
-            Color.primary.opacity(0.045),
-            in: RoundedRectangle(cornerRadius: 12),
-        )
-        .overlay {
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(Color.primary.opacity(0.09), lineWidth: 1)
-        }
-        .accessibilityIdentifier("ask-composer")
-        .animation(.easeOut(duration: 0.12), value: askEditorHeight)
     }
 
     private func select(_ next: Mode) {
@@ -500,10 +363,17 @@ struct MainView: View {
     // Append hits not already shown, keyed by id (local substring, then local
     // semantic, then server).
     private func mergeHits(_ more: [RowItem]) {
-        var seen = Set(hits.map(\.id))
-        for item in more where !seen.contains(item.id) {
+        var positions: [String: Int] = [:]
+        for index in hits.indices where positions[hits[index].id] == nil {
+            positions[hits[index].id] = index
+        }
+        for item in more {
+            if let index = positions[item.id] {
+                hits[index].mergeDisplayEvidence(from: item)
+                continue
+            }
+            positions[item.id] = hits.endIndex
             hits.append(item)
-            seen.insert(item.id)
         }
     }
 
@@ -597,7 +467,7 @@ struct MainView: View {
     // MARK: - Row actions
 
     private func beginEdit(_ row: RowItem) {
-        guard !row.content.isEmpty else { return }
+        guard !row.displayText.isEmpty || row.editableRawText != nil else { return }
         if let draft = editDraft {
             guard draft.id != row.id else { return }
             if draft.isDirty {
@@ -605,8 +475,34 @@ struct MainView: View {
                 return
             }
         }
-        editDraft = CaptureEditDraft(item: row)
         pendingEditTarget = nil
+        startEdit(row)
+    }
+
+    private func startEdit(_ row: RowItem) {
+        if let draft = CaptureEditDraft(item: row) {
+            loadingEditID = nil
+            editDraft = draft
+            return
+        }
+        guard row.synced, let client = clients.recall() else {
+            error = L("Sign in to edit this search result.")
+            return
+        }
+        loadingEditID = row.id
+        Task { @MainActor in
+            do {
+                let capture = try await client.capture(id: row.id)
+                guard loadingEditID == row.id else { return }
+                loadingEditID = nil
+                guard let draft = CaptureEditDraft(item: RowItem(capture)) else { return }
+                editDraft = draft
+            } catch let err {
+                guard loadingEditID == row.id else { return }
+                loadingEditID = nil
+                error = describeCaptureError(err)
+            }
+        }
     }
 
     private func updateEditDraft(_ text: String) {
@@ -626,6 +522,7 @@ struct MainView: View {
     }
 
     private func cancelActiveEdit() {
+        loadingEditID = nil
         editDraft = nil
         pendingEditTarget = nil
     }
@@ -633,18 +530,22 @@ struct MainView: View {
     private func saveAndContinuePendingEdit() {
         guard let target = pendingEditTarget else { return }
         let current = editDraft
-        editDraft = CaptureEditDraft(item: target)
+        editDraft = nil
         pendingEditTarget = nil
-        guard let current else { return }
-        let next = current.text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !next.isEmpty, next != current.originalText else { return }
-        edit(current.id, next)
+        if let current {
+            let next = current.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !next.isEmpty, next != current.originalText {
+                edit(current.id, next)
+            }
+        }
+        startEdit(target)
     }
 
     private func discardAndContinuePendingEdit() {
         guard let target = pendingEditTarget else { return }
-        editDraft = CaptureEditDraft(item: target)
+        editDraft = nil
         pendingEditTarget = nil
+        startEdit(target)
     }
 
     private func keepEditingCurrentDraft() {

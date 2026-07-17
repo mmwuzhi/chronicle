@@ -9,17 +9,19 @@ import Foundation
 public struct RecallItem: Codable, Equatable, Identifiable, Sendable {
     public let id: String
     public let content: String
+    public let snippet: String?
     public let createdAt: String
     public let modality: String
     public let score: Double
     public let lexical: Bool
 
     public init(
-        id: String, content: String, createdAt: String,
+        id: String, content: String, snippet: String? = nil, createdAt: String,
         modality: String, score: Double, lexical: Bool
     ) {
         self.id = id
         self.content = content
+        self.snippet = snippet
         self.createdAt = createdAt
         self.modality = modality
         self.score = score

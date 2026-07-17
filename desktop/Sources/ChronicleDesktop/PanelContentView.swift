@@ -44,6 +44,9 @@ struct PanelContentView: View {
     private var textBinding: Binding<String> {
         Binding(get: { texts[mode] ?? "" }, set: { texts[mode] = $0 })
     }
+    private var offersTodoSuggestion: Bool {
+        mode == .capture && CaptureTodoTag.offersSuggestion(for: text)
+    }
 
     private var expanded: Bool {
         searched || (mode == .search && recentLoaded) || !answer.isEmpty
@@ -52,14 +55,35 @@ struct PanelContentView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            ModeTextEditor(
-                text: textBinding, focused: $focused,
-                placeholder: mode.placeholder,
-                submitsOnEnter: mode != .capture,
-                onSubmit: submit, onCancel: escape,
-                onHeight: { h in inputHeight = min(max(h, 22), 120) },
-            )
-            .frame(height: inputHeight)
+            VStack(spacing: 6) {
+                ModeTextEditor(
+                    text: textBinding, focused: $focused,
+                    placeholder: mode.placeholder,
+                    submitsOnEnter: mode != .capture,
+                    onSubmit: submit, onCancel: escape,
+                    onHeight: { h in inputHeight = min(max(h, 22), 120) },
+                    hasCompletion: offersTodoSuggestion,
+                    onComplete: completeTodoSuggestion,
+                )
+                .frame(height: inputHeight)
+
+                if offersTodoSuggestion {
+                    Button(action: completeTodoSuggestion) {
+                        HStack(spacing: 8) {
+                            TodoFacetChip(state: .open)
+                            Text(L("Mark this capture as a todo"))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            Text(L("Tab"))
+                                .font(.caption2.monospaced())
+                                .foregroundStyle(.tertiary)
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
             .padding(.horizontal, 16)
             .padding(.top, 14)
             .padding(.bottom, 6)
@@ -283,6 +307,13 @@ struct PanelContentView: View {
         }
     }
 
+    private func completeTodoSuggestion() {
+        texts[.capture] = CaptureTodoTag.completingSuggestion(
+            in: texts[.capture] ?? ""
+        )
+        focused = true
+    }
+
     private func runFind(_ query: String) {
         inFlight?.cancel()
         collapseResults()
@@ -315,10 +346,17 @@ struct PanelContentView: View {
     // Append hits not already shown, keyed by id, preserving the order each source
     // returned them in (local substring, then local semantic, then server).
     private func mergeHits(_ more: [RowItem]) {
-        var seen = Set(hits.map(\.id))
-        for item in more where !seen.contains(item.id) {
+        var positions: [String: Int] = [:]
+        for index in hits.indices where positions[hits[index].id] == nil {
+            positions[hits[index].id] = index
+        }
+        for item in more {
+            if let index = positions[item.id] {
+                hits[index].mergeDisplayEvidence(from: item)
+                continue
+            }
+            positions[item.id] = hits.endIndex
             hits.append(item)
-            seen.insert(item.id)
         }
     }
 

@@ -15,7 +15,8 @@ target split, the invariants, and the gotchas.
   `bge-m3`), server recall client (`Recall.swift` — `/find` + `/ask`),
   reminders (`Reminder.swift`), webhooks (`Webhook.swift`), hotkey model
   (`HotKey.swift`, `DoubleTapDetector.swift`), row merge/sort
-  (`RowMerge.swift`), pure layout/focus math (`PanelLayout.swift`,
+  (`RowMerge.swift`), todo grammar/display derivation (`TodoTag.swift`),
+  pure layout/focus math (`PanelLayout.swift`,
   `QuickPanelFocusState.swift`), paths (`Paths.swift`).
 - `Sources/ChronicleDesktop/` — AppKit/SwiftUI shell: menu bar
   (`AppDelegate`), quick panel (`QuickCapturePanelController`,
@@ -46,7 +47,9 @@ only when the cache schema next changes for another reason (`TODO.md`).
 - **Search layers are independent, merged by capture id.** Keyword substring
   (local), on-device semantic (local Ollama), and server `/find` never
   depend on each other; local and server embeddings are different vector
-  spaces — dedup by id only, never compare scores across layers.
+  spaces — dedup by id only, never compare scores across layers. When a later
+  server result duplicates a local row, merge its evidence snippet into the
+  local row instead of discarding the evidence or replacing editable raw text.
 - **Offline-first error handling:** a server or auth error must never blank
   already-shown local results; save failures fall back to the queue, not to
   an error dialog.

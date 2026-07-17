@@ -67,6 +67,8 @@ struct ModeTextEditor: NSViewRepresentable {
     var onCancel: () -> Void
     var onHeight: (CGFloat) -> Void
     var fontSize: CGFloat = 16
+    var hasCompletion = false
+    var onComplete: (() -> Void)?
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -75,7 +77,9 @@ struct ModeTextEditor: NSViewRepresentable {
         tv.delegate = context.coordinator
         tv.onSubmit = onSubmit
         tv.onCancel = onCancel
+        tv.onComplete = onComplete
         tv.submitsOnEnter = submitsOnEnter
+        tv.hasCompletion = hasCompletion
         tv.string = text
         tv.placeholderString = placeholder
         tv.font = .systemFont(ofSize: fontSize)
@@ -108,7 +112,9 @@ struct ModeTextEditor: NSViewRepresentable {
         guard let tv = scroll.documentView as? SubmitTextView else { return }
         tv.onSubmit = onSubmit
         tv.onCancel = onCancel
+        tv.onComplete = onComplete
         tv.submitsOnEnter = submitsOnEnter
+        tv.hasCompletion = hasCompletion
         if tv.string != text { tv.string = text; tv.needsDisplay = true }
         if tv.placeholderString != placeholder {
             tv.placeholderString = placeholder
@@ -158,7 +164,9 @@ struct ModeTextEditor: NSViewRepresentable {
 final class SubmitTextView: NSTextView {
     var onSubmit: (() -> Void)?
     var onCancel: (() -> Void)?
+    var onComplete: (() -> Void)?
     var submitsOnEnter = true
+    var hasCompletion = false
     var placeholderString = ""
 
     override func insertNewline(_ sender: Any?) {
@@ -176,6 +184,14 @@ final class SubmitTextView: NSTextView {
             return
         }
         onCancel?()
+    }
+
+    override func insertTab(_ sender: Any?) {
+        if hasCompletion {
+            onComplete?()
+        } else {
+            super.insertTab(sender)
+        }
     }
 
     override func draw(_ dirtyRect: NSRect) {

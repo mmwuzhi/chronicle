@@ -85,6 +85,7 @@ func decodesFindResponse() throws {
         """
         {"items":[
           {"id":"d2ebedc1-c6b2-40f4-a789-8e48064252a1","content":"alpha capture",
+           "snippet":"…matched evidence…",
            "createdAt":"2026-06-06T16:33:27+09:00","modality":"text","score":0.87,"lexical":true}
         ],"degraded":true}
         """.utf8)
@@ -96,6 +97,7 @@ func decodesFindResponse() throws {
     let item = try #require(decoded.items.first)
     #expect(item.id == "d2ebedc1-c6b2-40f4-a789-8e48064252a1")
     #expect(item.content == "alpha capture")
+    #expect(item.snippet == "…matched evidence…")
     #expect(item.score == 0.87)
     #expect(item.lexical == true)
 }
