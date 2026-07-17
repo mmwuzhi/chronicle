@@ -1,4 +1,4 @@
-import { test as setup } from "@playwright/test";
+import { test as setup, type Page } from "@playwright/test";
 import path from "path";
 import { fileURLToPath } from "url";
 
@@ -6,7 +6,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const authFile = path.join(__dirname, ".auth.json");
 const apiBase = process.env.E2E_API_URL ?? "http://localhost:8080";
 
-async function seedData(page: Parameters<Parameters<typeof setup>[1]>[0]) {
+async function seedData(page: Page) {
   const token = await page.evaluate(() => localStorage.getItem("access_token"));
   if (!token) throw new Error("No access token found after login");
 
@@ -14,96 +14,38 @@ async function seedData(page: Parameters<Parameters<typeof setup>[1]>[0]) {
     Authorization: `Bearer ${token}`,
   };
 
-  const tasksRes = await page.request.get(`${apiBase}/tasks`, { headers });
-  if (!tasksRes.ok()) {
-    throw new Error(`Failed to list tasks: ${tasksRes.status()}`);
-  }
-  const tasks = (await tasksRes.json()) as { id: string; title: string }[];
-  let task = tasks.find((item) => item.title.includes("E2E seeded alpha task"));
-  if (!task) {
-    const startAt = new Date("2026-06-03T08:30:00.000Z").toISOString();
-    const dueAt = new Date("2026-06-06T08:30:00.000Z").toISOString();
-    const taskRes = await page.request.post(`${apiBase}/tasks`, {
-      headers,
-      data: {
-        title: "E2E seeded alpha task with a very long searchable title",
-        type: "task",
-        startAt,
-        dueAt,
-      },
+  let cursor: string | null = null;
+  let seededCaptureExists: boolean;
+  do {
+    const params = new URLSearchParams({
+      limit: "100",
+      includeReminded: "true",
     });
-    if (!taskRes.ok()) {
-      throw new Error(`Failed to create task: ${taskRes.status()}`);
+    if (cursor) params.set("cursor", cursor);
+    const capturesRes = await page.request.get(
+      `${apiBase}/captures/page?${params}`,
+      { headers },
+    );
+    if (!capturesRes.ok()) {
+      throw new Error(`Failed to list captures: ${capturesRes.status()}`);
     }
-    task = (await taskRes.json()) as { id: string; title: string };
-  }
-
-  const entriesRes = await page.request.get(
-    `${apiBase}/log-entries?taskId=${task.id}`,
-    { headers },
-  );
-  if (!entriesRes.ok()) {
-    throw new Error(`Failed to list log entries: ${entriesRes.status()}`);
-  }
-  const entries = (await entriesRes.json()) as {
-    body: string;
-    time?: { durationSec: number };
-  }[];
-  if (!entries.some((entry) => entry.body.includes("E2E seeded alpha note"))) {
-    const logRes = await page.request.post(`${apiBase}/log-entries`, {
-      headers,
-      data: {
-        taskId: task.id,
-        body: "E2E seeded alpha note for task detail coverage.",
-      },
-    });
-    if (!logRes.ok()) {
-      throw new Error(`Failed to create log entry: ${logRes.status()}`);
-    }
-  }
-
-  if (!entries.some((entry) => entry.time?.durationSec === 2700)) {
-    const timedLogRes = await page.request.post(`${apiBase}/log-entries`, {
-      headers,
-      data: {
-        taskId: task.id,
-        body: "E2E seeded timed log entry.",
-        time: {
-          inputMode: "range",
-          startedAt: "2026-06-03T08:30:00.000Z",
-          endedAt: "2026-06-03T09:15:00.000Z",
-          durationSec: 2700,
-        },
-      },
-    });
-    if (!timedLogRes.ok()) {
-      throw new Error(
-        `Failed to create timed log entry: ${timedLogRes.status()}`,
-      );
-    }
-  }
-
-  const capturesRes = await page.request.get(`${apiBase}/captures`, {
-    headers,
-  });
-  if (!capturesRes.ok()) {
-    throw new Error(`Failed to list captures: ${capturesRes.status()}`);
-  }
-  const captures = (await capturesRes.json()) as {
-    rawText: string | null;
-  }[];
-  if (
-    !captures.some((capture) =>
+    const capturePage = (await capturesRes.json()) as {
+      items: { rawText: string | null }[] | null;
+      nextCursor: string | null;
+    };
+    seededCaptureExists = (capturePage.items ?? []).some((capture) =>
       capture.rawText?.includes("E2E seeded alpha capture"),
-    )
-  ) {
+    );
+    cursor = capturePage.nextCursor;
+  } while (!seededCaptureExists && cursor);
+
+  if (!seededCaptureExists) {
     const captureRes = await page.request.post(`${apiBase}/captures`, {
       headers,
       data: {
         rawText:
-          "**E2E seeded alpha capture** with searchable markdown content.",
+          "**E2E seeded alpha capture** with searchable markdown content. #todo",
         mediaType: "text",
-        classifiedAs: "unclassified",
       },
     });
     if (!captureRes.ok()) {
