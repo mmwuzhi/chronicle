@@ -15,6 +15,15 @@ import { MutationToast } from "../components/mutation-toast";
 import { Nav } from "../components/nav";
 import { useConfirm } from "../hooks/use-confirm";
 import { useMutationToast } from "../hooks/use-mutation-toast";
+import {
+  EmptyState,
+  Meta,
+  PageError,
+  PageHeader,
+  PageShell,
+  PageSubtitle,
+  PageTitle,
+} from "../components/ui/page";
 
 export const Route = createFileRoute("/review")({ component: Review });
 
@@ -88,35 +97,39 @@ function Review() {
       void navigate({ to: "/login" });
       return null;
     }
-    return <div className="ch-page-error">{t("failedToLoad")}</div>;
+    return <PageError>{t("failedToLoad")}</PageError>;
   }
 
   const empty = !reviewQuery.isLoading && all.length === 0;
 
   const sectionHead = (label: string, count: number) => (
-    <div className="ch-section">
-      <span className="bar" />
-      <span className="ch-sectlabel">{label}</span>
-      <span className="ch-sectcount">{count}</span>
-      <span className="rule" />
+    <div className="my-3 flex items-center gap-2.5 first:mt-[26px]">
+      <span className="h-[15px] w-px shrink-0 rounded-full bg-accent" />
+      <span className="whitespace-nowrap font-app-display text-small font-bold uppercase tracking-[0.08em] text-ink">
+        {label}
+      </span>
+      <span className="rounded-full bg-tint px-[7px] py-0.5 font-code text-[11px] font-semibold text-faint">
+        {count}
+      </span>
+      <span className="h-px flex-1 bg-hairline" />
     </div>
   );
 
   return (
     <>
       <Nav />
-      <main className="ch-page-shell">
-        <header className="ch-page-head">
-          <h1 className="ch-title">{t("review.title")}</h1>
-          <p className="ch-page-subtitle">{t("review.subtitle")}</p>
-        </header>
+      <PageShell>
+        <PageHeader>
+          <PageTitle>{t("review.title")}</PageTitle>
+          <PageSubtitle>{t("review.subtitle")}</PageSubtitle>
+        </PageHeader>
 
-        {reviewQuery.isLoading && <p className="ch-meta">{tc("loading")}</p>}
+        {reviewQuery.isLoading && <Meta>{tc("loading")}</Meta>}
 
         {empty && (
-          <div className="ch-empty">
+          <EmptyState>
             <p>{t("review.empty")}</p>
-          </div>
+          </EmptyState>
         )}
 
         {onThisDay.length > 0 && (
@@ -146,7 +159,7 @@ function Review() {
             />
           </section>
         )}
-      </main>
+      </PageShell>
       <MutationToast message={mutationToast.message} />
     </>
   );

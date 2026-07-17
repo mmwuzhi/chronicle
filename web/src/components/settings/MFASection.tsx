@@ -4,6 +4,9 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useGetMe } from "../../api";
 import { MFASetupModal } from "./MFASetupModal";
 import { MFADisableModal } from "./MFADisableModal";
+import { Badge } from "../ui/badge";
+import { Button } from "../ui/button";
+import { SettingsLabel, SettingsRow } from "../ui/settings-row";
 
 export function MFASection() {
   const { t } = useTranslation("settings");
@@ -23,25 +26,24 @@ export function MFASection() {
   };
 
   return (
-    <div className="ch-setrow">
-      <div className="lbl">
+    <SettingsRow>
+      <SettingsLabel>
         <b>{t("security.mfa.title")}</b>
         <span>{t("security.mfa.description")}</span>
-      </div>
+      </SettingsLabel>
       {totpEnabled ? (
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <span className="ch-pill st-done">{t("security.mfa.enabled")}</span>
-          <button
-            onClick={() => setDisableOpen(true)}
-            className="ch-btn ch-btn-sm"
-          >
+        <div className="flex items-center gap-2.5">
+          <Badge className="bg-faint/15 text-faint">
+            {t("security.mfa.enabled")}
+          </Badge>
+          <Button size="sm" onClick={() => setDisableOpen(true)}>
             {t("security.mfa.disable")}
-          </button>
+          </Button>
         </div>
       ) : (
-        <button onClick={() => setSetupOpen(true)} className="ch-btn ch-btn-sm">
+        <Button size="sm" onClick={() => setSetupOpen(true)}>
           {t("security.mfa.enable")}
-        </button>
+        </Button>
       )}
 
       <MFASetupModal
@@ -54,6 +56,6 @@ export function MFASection() {
         onOpenChange={setDisableOpen}
         onDisabled={() => setTotpEnabled(false)}
       />
-    </div>
+    </SettingsRow>
   );
 }

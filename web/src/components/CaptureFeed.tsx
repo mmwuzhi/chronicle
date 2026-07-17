@@ -1,6 +1,8 @@
 import { useTranslation } from "react-i18next";
 import type { CaptureBody } from "../api";
 import { CaptureCard } from "./CaptureCard";
+import { Button } from "./ui/button";
+import { EmptyState, Meta } from "./ui/page";
 
 interface CaptureFeedProps {
   captures: CaptureBody[];
@@ -28,31 +30,27 @@ export function CaptureFeed({
   const { t } = useTranslation("captures");
   const { t: tc } = useTranslation("common");
 
-  if (loading) return <p className="ch-meta">{tc("loading")}</p>;
+  if (loading) return <Meta>{tc("loading")}</Meta>;
   if (captures.length === 0) {
     return (
-      <div className="ch-empty">
+      <EmptyState>
         <p>{t("nothingHere")}</p>
-      </div>
+      </EmptyState>
     );
   }
 
   return (
     <>
-      <div className="ch-list">
+      <div className="flex flex-col gap-3">
         {captures.map((capture) => (
           <CaptureCard key={capture.id} c={capture} {...cardActions} />
         ))}
       </div>
       {hasMore && (
-        <div className="ch-load-more">
-          <button
-            className="ch-btn"
-            onClick={onLoadMore}
-            disabled={loadingMore}
-          >
+        <div className="flex justify-center pb-2 pt-[18px]">
+          <Button onClick={onLoadMore} disabled={loadingMore}>
             {loadingMore ? tc("loading") : t("loadMore")}
-          </button>
+          </Button>
         </div>
       )}
     </>

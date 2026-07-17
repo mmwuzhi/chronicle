@@ -9,6 +9,10 @@ import {
   useUpdateWebhook,
   type WebhookBody,
 } from "../../api";
+import { Button } from "../ui/button";
+import { Card } from "../ui/card";
+import { Input, Textarea } from "../ui/field";
+import { Meta } from "../ui/page";
 
 // Manage capture webhooks: a capture matching a rule (keyword OR semantic) fires
 // a templated POST to an external URL. Matching/delivery run in the ragsvc
@@ -75,93 +79,83 @@ export function WebhooksSection(): React.JSX.Element {
     });
 
   return (
-    <section
-      className="ch-card"
-      style={{ display: "flex", flexDirection: "column", gap: 16 }}
-    >
-      <div>
-        <h2 className="ch-section-title">{t("integrations.webhooks.title")}</h2>
-        <p className="ch-meta">{t("integrations.webhooks.description")}</p>
-      </div>
+    <Card asChild className="flex flex-col gap-4 p-4">
+      <section>
+        <div>
+          <h2 className="font-app-display text-body font-semibold text-ink">
+            {t("integrations.webhooks.title")}
+          </h2>
+          <Meta>{t("integrations.webhooks.description")}</Meta>
+        </div>
 
-      {isLoading ? (
-        <p className="ch-meta">{tc("loading")}</p>
-      ) : (webhooks ?? []).length === 0 ? (
-        <p className="ch-meta">{t("integrations.webhooks.empty")}</p>
-      ) : (
-        <ul
-          className="ch-list"
-          style={{ display: "flex", flexDirection: "column", gap: 8 }}
-        >
-          {(webhooks ?? []).map((w) => (
-            <li
-              key={w.id}
-              className="ch-row"
-              style={{ display: "flex", alignItems: "center", gap: 8 }}
-            >
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontWeight: 600 }}>{w.name}</div>
-                <div className="ch-meta" style={{ wordBreak: "break-all" }}>
-                  {w.targetUrl}
-                </div>
-              </div>
-              <button className="ch-btn ch-btn-sm" onClick={() => toggle(w)}>
-                {w.enabled
-                  ? t("integrations.webhooks.disable")
-                  : t("integrations.webhooks.enable")}
-              </button>
-              <button
-                className="ch-btn ch-btn-ghost ch-btn-sm"
-                onClick={() => remove.mutate({ id: w.id })}
-              >
-                {tc("actions.delete")}
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
+        {isLoading ? (
+          <Meta>{tc("loading")}</Meta>
+        ) : (webhooks ?? []).length === 0 ? (
+          <Meta>{t("integrations.webhooks.empty")}</Meta>
+        ) : (
+          <ul className="m-0 flex list-none flex-col gap-2 p-0">
+            {(webhooks ?? []).map((w) => (
+              <Card asChild key={w.id} className="flex items-center gap-2 p-4">
+                <li>
+                  <div className="min-w-0 flex-1">
+                    <div className="font-semibold text-ink">{w.name}</div>
+                    <Meta className="block break-all">{w.targetUrl}</Meta>
+                  </div>
+                  <Button size="sm" onClick={() => toggle(w)}>
+                    {w.enabled
+                      ? t("integrations.webhooks.disable")
+                      : t("integrations.webhooks.enable")}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => remove.mutate({ id: w.id })}
+                  >
+                    {tc("actions.delete")}
+                  </Button>
+                </li>
+              </Card>
+            ))}
+          </ul>
+        )}
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        <h3 className="ch-meta">{t("integrations.webhooks.addTitle")}</h3>
-        <input
-          className="ch-input"
-          placeholder={t("integrations.webhooks.name")}
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-        />
-        <input
-          className="ch-input"
-          placeholder={t("integrations.webhooks.targetUrl")}
-          value={targetUrl}
-          onChange={(e) => setTargetUrl(e.target.value)}
-        />
-        <input
-          className="ch-input"
-          placeholder={t("integrations.webhooks.keywords")}
-          value={keywords}
-          onChange={(e) => setKeywords(e.target.value)}
-        />
-        <input
-          className="ch-input"
-          placeholder={t("integrations.webhooks.semanticQuery")}
-          value={semanticQuery}
-          onChange={(e) => setSemanticQuery(e.target.value)}
-        />
-        <textarea
-          className="ch-textarea"
-          placeholder={t("integrations.webhooks.payloadTemplate")}
-          value={payloadTemplate}
-          onChange={(e) => setPayloadTemplate(e.target.value)}
-          rows={3}
-        />
-        <button
-          className="ch-btn ch-btn-primary"
-          onClick={submit}
-          disabled={create.isPending}
-        >
-          {t("integrations.webhooks.add")}
-        </button>
-      </div>
-    </section>
+        <div className="flex flex-col gap-2">
+          <Meta>{t("integrations.webhooks.addTitle")}</Meta>
+          <Input
+            placeholder={t("integrations.webhooks.name")}
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+          />
+          <Input
+            placeholder={t("integrations.webhooks.targetUrl")}
+            value={targetUrl}
+            onChange={(e) => setTargetUrl(e.target.value)}
+          />
+          <Input
+            placeholder={t("integrations.webhooks.keywords")}
+            value={keywords}
+            onChange={(e) => setKeywords(e.target.value)}
+          />
+          <Input
+            placeholder={t("integrations.webhooks.semanticQuery")}
+            value={semanticQuery}
+            onChange={(e) => setSemanticQuery(e.target.value)}
+          />
+          <Textarea
+            placeholder={t("integrations.webhooks.payloadTemplate")}
+            value={payloadTemplate}
+            onChange={(e) => setPayloadTemplate(e.target.value)}
+            rows={3}
+          />
+          <Button
+            variant="primary"
+            onClick={submit}
+            disabled={create.isPending}
+          >
+            {t("integrations.webhooks.add")}
+          </Button>
+        </div>
+      </section>
+    </Card>
   );
 }

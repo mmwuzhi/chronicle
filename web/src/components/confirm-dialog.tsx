@@ -1,11 +1,17 @@
 import { useCallback, useRef, useState, type ReactNode } from "react";
-import * as Dialog from "@radix-ui/react-dialog";
 import { useTranslation } from "react-i18next";
 import {
   ConfirmContext,
   type ConfirmFn,
   type ConfirmOptions,
 } from "../hooks/use-confirm";
+import { Button } from "./ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+} from "./ui/dialog";
 
 export function ConfirmProvider({ children }: { children: ReactNode }) {
   const { t } = useTranslation();
@@ -32,90 +38,33 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
   return (
     <ConfirmContext.Provider value={confirm}>
       {children}
-      <Dialog.Root
+      <Dialog
         open={options !== null}
         onOpenChange={(open) => {
           if (!open) handleClose(false);
         }}
       >
-        <Dialog.Portal>
-          <Dialog.Overlay
-            style={{
-              position: "fixed",
-              inset: 0,
-              background: "color-mix(in srgb, var(--text) 22%, transparent)",
-              backdropFilter: "blur(2px)",
-            }}
-          />
-          <Dialog.Content
-            className="ch-card"
-            style={{
-              position: "fixed",
-              top: "50%",
-              left: "50%",
-              transform: "translate(-50%, -50%)",
-              width: "calc(100% - 32px)",
-              maxWidth: 360,
-              padding: 24,
-              display: "flex",
-              flexDirection: "column",
-              gap: 16,
-            }}
-          >
-            <Dialog.Title
-              style={{
-                margin: 0,
-                fontFamily: "var(--font-display)",
-                fontSize: 17,
-                fontWeight: 700,
-                color: "var(--text)",
-              }}
+        <DialogContent className="max-w-[360px]">
+          <DialogTitle>{options?.title}</DialogTitle>
+          <DialogDescription>{options?.description}</DialogDescription>
+          <div className="mt-1 flex justify-end gap-2">
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => handleClose(false)}
             >
-              {options?.title}
-            </Dialog.Title>
-            <Dialog.Description
-              style={{
-                margin: 0,
-                fontSize: "var(--fs-sm)",
-                color: "var(--text-muted)",
-                lineHeight: 1.5,
-              }}
+              {options?.cancelLabel ?? t("actions.cancel")}
+            </Button>
+            <Button
+              size="sm"
+              variant={isDanger ? "danger" : "primary"}
+              onClick={() => handleClose(true)}
             >
-              {options?.description}
-            </Dialog.Description>
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "flex-end",
-                gap: 8,
-                marginTop: 4,
-              }}
-            >
-              <button
-                className="ch-btn ch-btn-ghost ch-btn-sm"
-                onClick={() => handleClose(false)}
-              >
-                {options?.cancelLabel ?? t("actions.cancel")}
-              </button>
-              <button
-                className={`ch-btn ch-btn-sm ${isDanger ? "" : "ch-btn-primary"}`}
-                style={
-                  isDanger
-                    ? {
-                        background: "#dc2626",
-                        borderColor: "#dc2626",
-                        color: "#fff",
-                      }
-                    : undefined
-                }
-                onClick={() => handleClose(true)}
-              >
-                {options?.confirmLabel ?? t("actions.confirm")}
-              </button>
-            </div>
-          </Dialog.Content>
-        </Dialog.Portal>
-      </Dialog.Root>
+              {options?.confirmLabel ?? t("actions.confirm")}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </ConfirmContext.Provider>
   );
 }

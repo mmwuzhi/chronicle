@@ -100,19 +100,24 @@ export function Nav() {
 
   return (
     <>
-      <nav className="ch-topbar">
-        <Link to="/" className="ch-brand">
-          <span className="glyph">C</span>
+      <nav className="sticky top-0 z-30 flex h-[54px] items-center gap-3.5 border-b border-hairline bg-surface/95 px-[18px] md:h-14 md:px-6">
+        <Link
+          to="/"
+          className="flex shrink-0 items-center gap-2 font-app-display text-[17px] font-bold tracking-[-0.01em] text-ink no-underline"
+        >
+          <span className="grid size-[22px] shrink-0 place-items-center rounded-md bg-accent text-[13px] font-extrabold text-accent-text">
+            C
+          </span>
           <span className="hidden md:inline">Chronicle</span>
         </Link>
 
         {/* Desktop centered nav links */}
-        <div className="ch-navlinks">
+        <div className="mx-auto hidden items-center gap-1 md:flex">
           {tabs.map((tab) => (
             <Link
               key={tab.to}
               to={tab.to}
-              className="ch-navlink"
+              className="inline-flex cursor-pointer items-center whitespace-nowrap rounded-full border-0 bg-transparent px-[13px] py-[7px] text-small font-medium text-muted no-underline transition-colors hover:bg-tint hover:text-ink aria-[current=page]:bg-accent-weak aria-[current=page]:font-semibold aria-[current=page]:text-accent-strong"
               activeOptions={tab.exact ? { exact: true } : undefined}
             >
               {t(tab.labelKey)}
@@ -120,24 +125,24 @@ export function Nav() {
           ))}
         </div>
 
-        <div className="ch-topbar-right">
+        <div className="ml-auto flex items-center gap-1.5">
           {/* Desktop search trigger */}
           <button
-            className="ch-searchtrigger"
+            className="hidden min-w-50 cursor-pointer items-center gap-[9px] rounded-full border border-hairline bg-tint px-3 py-2 font-app text-small text-faint transition-colors hover:border-strong hover:bg-surface md:flex [&_svg]:size-[15px] [&_svg]:shrink-0"
             onClick={() => setSearchOpen(true)}
           >
             <SearchIcon />
-            <span
-              style={{ color: "var(--text-faint)", fontSize: "var(--fs-sm)" }}
-            >
+            <span className="flex-1 text-left text-small text-faint">
               {t("search.placeholder")}
             </span>
-            <kbd>⌘K</kbd>
+            <kbd className="rounded-[5px] border border-hairline bg-surface px-1.5 py-0.5 font-code text-[10.5px] font-semibold text-faint">
+              ⌘K
+            </kbd>
           </button>
 
           {/* Mobile search icon */}
           <button
-            className="ch-iconbtn ch-search-mobile"
+            className="grid size-[38px] cursor-pointer place-items-center rounded-full border border-transparent bg-transparent text-muted transition-colors hover:bg-tint hover:text-ink md:hidden [&_svg]:size-[19px]"
             onClick={() => setSearchOpen(true)}
             aria-label={t("search.placeholder")}
           >
@@ -148,7 +153,7 @@ export function Nav() {
           <Link
             to="/settings"
             search={{}}
-            className="ch-settings-icon"
+            className="grid size-[34px] place-items-center rounded-control text-muted no-underline transition-colors hover:bg-tint hover:text-ink md:hidden"
             aria-label={t("nav.settings")}
           >
             <SettingsIcon />
@@ -156,7 +161,7 @@ export function Nav() {
           <Link
             to="/settings"
             search={{}}
-            className="ch-navlink ch-settings-text"
+            className="hidden cursor-pointer items-center whitespace-nowrap rounded-full border-0 bg-transparent px-[13px] py-[7px] text-small font-medium text-muted no-underline transition-colors hover:bg-tint hover:text-ink aria-[current=page]:bg-accent-weak aria-[current=page]:font-semibold aria-[current=page]:text-accent-strong md:inline-flex"
           >
             {t("nav.settings")}
           </Link>
@@ -164,15 +169,17 @@ export function Nav() {
       </nav>
 
       {/* Mobile bottom tab bar */}
-      <div className="ch-tabbar">
+      <div className="fixed inset-x-0 bottom-0 z-40 flex items-stretch justify-around gap-0.5 border-t border-hairline bg-surface/95 px-1.5 pb-[26px] pt-2 md:hidden">
         {tabs.map((tab) => (
           <Link
             key={tab.to}
             to={tab.to}
-            className="ch-tab"
+            className="group flex flex-1 cursor-pointer flex-col items-center gap-1 border-0 bg-transparent py-1.5 font-app text-[10px] font-semibold tracking-[0.01em] text-faint no-underline transition-colors aria-[current=page]:text-accent-strong [&_svg]:size-[22px]"
             activeOptions={tab.exact ? { exact: true } : undefined}
           >
-            <span className="ch-tab-ico">{tab.icon}</span>
+            <span className="grid h-7 w-11 place-items-center rounded-full group-aria-[current=page]:bg-accent-weak">
+              {tab.icon}
+            </span>
             <span>{t(tab.labelKey)}</span>
           </Link>
         ))}

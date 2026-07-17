@@ -5,6 +5,9 @@ import { setTodoEnabled, useTodoEnabled } from "../../hooks/use-todo-enabled";
 import { apiFetch } from "../../lib/apiFetch";
 import { PasswordModal } from "./PasswordModal";
 import { LinkedAccountsSection } from "./LinkedAccountsSection";
+import { Button } from "../ui/button";
+import { Meta } from "../ui/page";
+import { SettingsLabel, SettingsRow } from "../ui/settings-row";
 
 const LANGS = [
   { code: "en", label: "English" },
@@ -21,29 +24,17 @@ export function AccountSection() {
   >("idle");
   const { data: me, isLoading } = useGetMe();
 
-  if (isLoading) return <p className="ch-meta">{tc("loading")}</p>;
+  if (isLoading) return <Meta>{tc("loading")}</Meta>;
   if (!me) return null;
 
   return (
     <>
       {!me.emailVerified && (
-        <div
-          style={{
-            borderRadius: "var(--radius-sm)",
-            background: "#fffbeb",
-            border: "1px solid #fcd34d",
-            padding: "12px 16px",
-            fontSize: "var(--fs-sm)",
-            color: "#92400e",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            gap: 12,
-            marginBottom: 8,
-          }}
-        >
+        <div className="mb-2 flex items-center justify-between gap-3 rounded-control border border-amber-300 bg-amber-50 px-4 py-3 text-small text-amber-900">
           <span>{t("profile.verifyHint")}</span>
-          <button
+          <Button
+            size="sm"
+            className="shrink-0"
             disabled={resendState !== "idle"}
             onClick={async () => {
               setResendState("loading");
@@ -57,8 +48,6 @@ export function AccountSection() {
               }
               setTimeout(() => setResendState("idle"), 4000);
             }}
-            className="ch-btn ch-btn-sm"
-            style={{ flexShrink: 0 }}
           >
             {resendState === "loading"
               ? t("profile.verifySending")
@@ -67,32 +56,27 @@ export function AccountSection() {
                 : resendState === "error"
                   ? t("profile.verifyFailed")
                   : t("profile.verifyResend")}
-          </button>
+          </Button>
         </div>
       )}
 
-      <div className="ch-divide">
-        <div className="ch-setrow">
-          <div className="lbl">
+      <div className="divide-y divide-hairline">
+        <SettingsRow>
+          <SettingsLabel>
             <span>{t("profile.email")}</span>
-          </div>
-          <span style={{ fontSize: "var(--fs-sm)", color: "var(--text)" }}>
-            {me.email}
-          </span>
-        </div>
-        <div className="ch-setrow">
-          <div className="lbl">
+          </SettingsLabel>
+          <span className="text-small text-ink">{me.email}</span>
+        </SettingsRow>
+        <SettingsRow>
+          <SettingsLabel>
             <span>{t("password.label")}</span>
-          </div>
-          <button
-            className="ch-btn ch-btn-sm"
-            onClick={() => setPwModalOpen(true)}
-          >
+          </SettingsLabel>
+          <Button size="sm" onClick={() => setPwModalOpen(true)}>
             {me.hasPassword
               ? t("password.changePassword")
               : t("password.setPassword")}
-          </button>
-        </div>
+          </Button>
+        </SettingsRow>
         <LanguageRow />
         <TodoFeatureRow />
       </div>
@@ -111,17 +95,16 @@ export function AccountSection() {
 function LanguageRow() {
   const { t, i18n } = useTranslation("settings");
   return (
-    <div className="ch-setrow">
-      <div className="lbl">
+    <SettingsRow>
+      <SettingsLabel>
         <span>{t("language.title")}</span>
-      </div>
+      </SettingsLabel>
       <select
         value={
           LANGS.find((l) => i18n.language.startsWith(l.code))?.code ?? "en"
         }
         onChange={(e) => i18n.changeLanguage(e.target.value)}
-        className="ch-input"
-        style={{ width: "auto", padding: "6px 10px", fontSize: "var(--fs-sm)" }}
+        className="w-auto rounded-control border border-line bg-surface px-2.5 py-1.5 font-app text-small text-ink outline-none focus:border-accent focus:shadow-focus"
       >
         {LANGS.map((lang) => (
           <option key={lang.code} value={lang.code}>
@@ -129,7 +112,7 @@ function LanguageRow() {
           </option>
         ))}
       </select>
-    </div>
+    </SettingsRow>
   );
 }
 
@@ -137,17 +120,17 @@ function TodoFeatureRow() {
   const { t } = useTranslation("settings");
   const enabled = useTodoEnabled();
   return (
-    <div className="ch-setrow">
-      <div className="lbl">
+    <SettingsRow>
+      <SettingsLabel>
         <span>{t("todoFeature.title")}</span>
-        <span className="ch-meta">{t("todoFeature.hint")}</span>
-      </div>
+        <Meta>{t("todoFeature.hint")}</Meta>
+      </SettingsLabel>
       <input
         type="checkbox"
         checked={enabled}
         onChange={(e) => setTodoEnabled(e.target.checked)}
-        style={{ width: 16, height: 16, cursor: "pointer" }}
+        className="size-4 cursor-pointer accent-accent"
       />
-    </div>
+    </SettingsRow>
   );
 }

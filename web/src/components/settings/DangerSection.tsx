@@ -2,6 +2,8 @@ import { useTranslation } from "react-i18next";
 import { useNavigate } from "@tanstack/react-router";
 import { useDeleteAccount } from "../../api";
 import { useConfirm } from "../../hooks/use-confirm";
+import { Button } from "../ui/button";
+import { FieldError } from "../ui/field";
 
 export function DangerSection() {
   const { t } = useTranslation("settings");
@@ -29,27 +31,33 @@ export function DangerSection() {
 
   return (
     <>
-      <h2 className="text-lg font-semibold">{t("danger.title")}</h2>
+      <h2 className="font-app-display text-[17px] font-semibold text-ink">
+        {t("danger.title")}
+      </h2>
 
-      <div className="divide-y divide-gray-100">
+      <div className="divide-y divide-hairline">
         <div className="flex items-center justify-between py-4">
           <div>
-            <p className="text-sm">{t("danger.deleteDescription")}</p>
+            <p className="text-small text-ink">
+              {t("danger.deleteDescription")}
+            </p>
           </div>
-          <button
+          <Button
+            variant="ghost"
+            size="sm"
             onClick={handleDelete}
             disabled={deleteMutation.isPending}
-            className="text-sm px-3 py-1.5 rounded-md border border-gray-300 hover:bg-gray-50 transition-colors shrink-0 ml-8"
+            className="ml-8 shrink-0 text-danger hover:bg-danger-weak hover:text-danger-strong"
           >
             {deleteMutation.isPending
               ? t("danger.deleting")
               : t("danger.deleteAccount")}
-          </button>
+          </Button>
         </div>
         {deleteMutation.isError && (
-          <p className="py-4 text-sm text-red-500">
+          <FieldError className="py-4 text-small">
             {t("danger.deleteFailed")}
-          </p>
+          </FieldError>
         )}
       </div>
     </>

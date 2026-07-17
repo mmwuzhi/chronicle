@@ -6,27 +6,41 @@ import type { AskSource } from "../api";
 import { Nav } from "../components/nav";
 import { Markdown } from "../components/Markdown";
 import { fmtDate } from "../utils/format";
+import { Button } from "../components/ui/button";
+import { Card } from "../components/ui/card";
+import { Textarea } from "../components/ui/field";
+import { Meta, PageHeader, PageShell, PageTitle } from "../components/ui/page";
 
 export const Route = createFileRoute("/ask")({ component: Ask });
 
 function SourceCard({ source }: { source: AskSource }): React.JSX.Element {
   const navigate = useNavigate();
   return (
-    <button
-      className="ch-card ch-ask-source"
-      onClick={() =>
-        void navigate({
-          to: "/captures/context",
-          search: { anchorId: source.id },
-        })
-      }
+    <Card
+      asChild
+      className="flex w-full cursor-pointer gap-2.5 p-2.5 text-left hover:border-strong"
     >
-      <span className="ch-ask-source-number">[{source.n}]</span>
-      <span className="ch-ask-source-body">
-        <span className="ch-ask-source-content">{source.content}</span>
-        <span className="ch-ask-source-date">{fmtDate(source.createdAt)}</span>
-      </span>
-    </button>
+      <button
+        onClick={() =>
+          void navigate({
+            to: "/captures/context",
+            search: { anchorId: source.id },
+          })
+        }
+      >
+        <span className="shrink-0 font-code text-caption font-bold text-accent">
+          [{source.n}]
+        </span>
+        <span className="flex min-w-0 flex-col gap-0.5">
+          <span className="line-clamp-2 overflow-hidden text-small text-ink">
+            {source.content}
+          </span>
+          <span className="text-caption text-faint">
+            {fmtDate(source.createdAt)}
+          </span>
+        </span>
+      </button>
+    </Card>
   );
 }
 
@@ -45,15 +59,15 @@ function Ask(): React.JSX.Element {
   return (
     <>
       <Nav />
-      <div className="ch-ask-page">
-        <div className="ch-page-head">
-          <h1 className="ch-title">{t("ask.title")}</h1>
-          <p className="ch-meta">{t("ask.subtitle")}</p>
-        </div>
+      <PageShell className="pb-0">
+        <PageHeader>
+          <PageTitle>{t("ask.title")}</PageTitle>
+          <Meta>{t("ask.subtitle")}</Meta>
+        </PageHeader>
 
-        <div className="ch-ask-form">
-          <textarea
-            className="ch-textarea"
+        <div className="flex flex-col gap-2">
+          <Textarea
+            className="resize-y"
             value={question}
             onChange={(e) => setQuestion(e.target.value)}
             onKeyDown={(e) => {
@@ -65,33 +79,36 @@ function Ask(): React.JSX.Element {
             placeholder={t("ask.placeholder")}
             rows={3}
           />
-          <div className="ch-ask-submit">
-            <button
-              className="ch-btn ch-btn-primary ch-btn-sm"
+          <div className="flex justify-end">
+            <Button
+              variant="primary"
+              size="sm"
               onClick={submit}
               disabled={askMutation.isPending || question.trim().length === 0}
             >
               {askMutation.isPending ? t("ask.thinking") : t("ask.button")}
-            </button>
+            </Button>
           </div>
         </div>
 
         {askMutation.isError && (
-          <p className="ch-ask-error">{t("ask.unavailable")}</p>
+          <p className="mt-4 text-small text-danger">{t("ask.unavailable")}</p>
         )}
 
         {result &&
           !askMutation.isPending &&
           (result.answer.trim() === "" && sources.length === 0 ? (
-            <p className="ch-meta ch-ask-empty">{t("ask.noData")}</p>
+            <Meta className="mt-5 block">{t("ask.noData")}</Meta>
           ) : (
-            <div className="ch-ask-result">
-              <div className="ch-card ch-ask-answer">
+            <div className="mt-5 flex flex-col gap-4">
+              <Card className="p-4">
                 <Markdown>{result.answer}</Markdown>
-              </div>
+              </Card>
               {sources.length > 0 && (
-                <div className="ch-ask-sources">
-                  <div className="ch-sgroup">{t("ask.sources")}</div>
+                <div className="flex flex-col gap-2">
+                  <div className="px-[11px] pb-[5px] pt-2.5 text-caption font-bold uppercase tracking-[0.08em] text-faint">
+                    {t("ask.sources")}
+                  </div>
                   {sources.map((s) => (
                     <SourceCard key={s.id} source={s} />
                   ))}
@@ -99,7 +116,7 @@ function Ask(): React.JSX.Element {
               )}
             </div>
           ))}
-      </div>
+      </PageShell>
     </>
   );
 }

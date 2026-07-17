@@ -6,6 +6,18 @@ import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { api } from "../lib/axios";
 import { useTranslation } from "react-i18next";
+import {
+  AuthPanel,
+  AuthShell,
+  authPanelClassName,
+} from "../components/ui/auth-shell";
+import { Button } from "../components/ui/button";
+import {
+  FieldError,
+  FieldGroup,
+  FieldLabel,
+  Input,
+} from "../components/ui/field";
 
 export const Route = createFileRoute("/forgot-password")({
   component: ForgotPassword,
@@ -38,55 +50,49 @@ function ForgotPassword() {
 
   if (submitted) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="w-full max-w-sm flex flex-col gap-4 p-8 bg-white rounded-xl border border-gray-200 shadow-sm text-center">
-          <h1 className="text-xl font-semibold">
+      <AuthShell>
+        <AuthPanel className="text-center">
+          <h1 className="font-app-display text-title font-semibold text-ink">
             {t("forgotPassword.checkInbox")}
           </h1>
-          <p className="text-sm text-gray-600">
+          <p className="text-small text-muted">
             {t("forgotPassword.sentDescription")}
           </p>
-        </div>
-      </div>
+        </AuthPanel>
+      </AuthShell>
     );
   }
 
   return (
-    <div className="flex items-center justify-center min-h-screen">
+    <AuthShell>
       <form
         onSubmit={handleSubmit((data) => mutation.mutate(data.email))}
-        className="w-full max-w-sm flex flex-col gap-4 p-8 bg-white rounded-xl border border-gray-200 shadow-sm"
+        className={authPanelClassName}
       >
-        <h1 className="text-xl font-semibold">{t("forgotPassword.title")}</h1>
-        <p className="text-sm text-gray-500">
+        <h1 className="font-app-display text-title font-semibold text-ink">
+          {t("forgotPassword.title")}
+        </h1>
+        <p className="text-small text-muted">
           {t("forgotPassword.description")}
         </p>
 
-        <div className="flex flex-col gap-1">
-          <label className="text-sm font-medium">
-            {t("forgotPassword.email")}
-          </label>
-          <input
-            type="email"
-            autoComplete="email"
-            {...register("email")}
-            className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
-          />
-          {errors.email && (
-            <p className="text-red-500 text-xs">{errors.email.message}</p>
-          )}
-        </div>
+        <FieldGroup>
+          <FieldLabel>{t("forgotPassword.email")}</FieldLabel>
+          <Input type="email" autoComplete="email" {...register("email")} />
+          {errors.email && <FieldError>{errors.email.message}</FieldError>}
+        </FieldGroup>
 
-        <button
+        <Button
           type="submit"
           disabled={mutation.isPending}
-          className="bg-gray-900 text-white rounded-md py-2 text-sm font-medium hover:bg-gray-700 transition-colors disabled:opacity-50"
+          variant="strong"
+          className="w-full"
         >
           {mutation.isPending
             ? t("forgotPassword.sending")
             : t("forgotPassword.submit")}
-        </button>
+        </Button>
       </form>
-    </div>
+    </AuthShell>
   );
 }

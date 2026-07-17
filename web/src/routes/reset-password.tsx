@@ -5,6 +5,18 @@ import { z } from "zod/v3";
 import { useMutation } from "@tanstack/react-query";
 import { api } from "../lib/axios";
 import { useTranslation } from "react-i18next";
+import {
+  AuthPanel,
+  AuthShell,
+  authPanelClassName,
+} from "../components/ui/auth-shell";
+import { Button } from "../components/ui/button";
+import {
+  FieldError,
+  FieldGroup,
+  FieldLabel,
+  Input,
+} from "../components/ui/field";
 
 export const Route = createFileRoute("/reset-password")({
   validateSearch: z.object({ token: z.string().default("") }),
@@ -49,81 +61,76 @@ function ResetPassword() {
 
   if (!token) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="w-full max-w-sm flex flex-col gap-4 p-8 bg-white rounded-xl border border-gray-200 shadow-sm text-center">
-          <h1 className="text-xl font-semibold">
+      <AuthShell>
+        <AuthPanel className="text-center">
+          <h1 className="font-app-display text-title font-semibold text-ink">
             {t("resetPassword.invalidLink")}
           </h1>
-          <p className="text-sm text-gray-600">
+          <p className="text-small text-muted">
             {t("resetPassword.useResetLink")}
           </p>
           <Link
             to="/forgot-password"
-            className="mt-2 text-sm text-gray-900 font-medium hover:underline"
+            className="mt-2 text-small font-medium text-ink hover:underline"
           >
             {t("resetPassword.requestNewLink")}
           </Link>
-        </div>
-      </div>
+        </AuthPanel>
+      </AuthShell>
     );
   }
 
   return (
-    <div className="flex items-center justify-center min-h-screen">
+    <AuthShell>
       <form
         onSubmit={handleSubmit((data) => mutation.mutate(data.password))}
-        className="w-full max-w-sm flex flex-col gap-4 p-8 bg-white rounded-xl border border-gray-200 shadow-sm"
+        className={authPanelClassName}
       >
-        <h1 className="text-xl font-semibold">{t("resetPassword.title")}</h1>
+        <h1 className="font-app-display text-title font-semibold text-ink">
+          {t("resetPassword.title")}
+        </h1>
 
-        <div className="flex flex-col gap-1">
-          <label className="text-sm font-medium">
-            {t("resetPassword.newPassword")}
-          </label>
-          <input
+        <FieldGroup>
+          <FieldLabel>{t("resetPassword.newPassword")}</FieldLabel>
+          <Input
             type="password"
             autoComplete="new-password"
             {...register("password")}
-            className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
           />
           {errors.password && (
-            <p className="text-red-500 text-xs">{errors.password.message}</p>
+            <FieldError>{errors.password.message}</FieldError>
           )}
-        </div>
+        </FieldGroup>
 
-        <div className="flex flex-col gap-1">
-          <label className="text-sm font-medium">
-            {t("resetPassword.confirmNewPassword")}
-          </label>
-          <input
+        <FieldGroup>
+          <FieldLabel>{t("resetPassword.confirmNewPassword")}</FieldLabel>
+          <Input
             type="password"
             autoComplete="new-password"
             {...register("confirmPassword")}
-            className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
           />
           {errors.confirmPassword && (
-            <p className="text-red-500 text-xs">
-              {errors.confirmPassword.message}
-            </p>
+            <FieldError>{errors.confirmPassword.message}</FieldError>
           )}
-        </div>
+        </FieldGroup>
 
         {mutation.isError && (
-          <p className="text-red-500 text-sm">
+          <FieldError className="text-small">
             {t("resetPassword.linkExpired")}
-          </p>
+          </FieldError>
         )}
 
-        <button
+        <Button
           type="submit"
           disabled={mutation.isPending}
-          className="bg-gray-900 text-white rounded-md py-2 text-sm font-medium hover:bg-gray-700 transition-colors disabled:opacity-50"
+          variant="strong"
+          className="w-full"
         >
           {mutation.isPending
             ? t("resetPassword.saving")
             : t("resetPassword.submit")}
-        </button>
+        </Button>
       </form>
-    </div>
+    </AuthShell>
   );
 }

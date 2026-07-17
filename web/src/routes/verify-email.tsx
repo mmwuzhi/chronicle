@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { z } from "zod/v3";
 import { api } from "../lib/axios";
 import { useTranslation } from "react-i18next";
+import { AuthPanel, AuthShell } from "../components/ui/auth-shell";
 
 export const Route = createFileRoute("/verify-email")({
   validateSearch: z.object({ token: z.string().default("") }),
@@ -23,22 +24,22 @@ function VerifyEmail() {
   }, [token]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <div className="flex items-center justify-center min-h-screen">
-      <div className="w-full max-w-sm flex flex-col gap-4 p-8 bg-white rounded-xl border border-gray-200 shadow-sm text-center">
+    <AuthShell>
+      <AuthPanel className="text-center">
         {mutation.isPending && (
-          <p className="text-sm text-gray-500">{t("verifyEmail.verifying")}</p>
+          <p className="text-small text-muted">{t("verifyEmail.verifying")}</p>
         )}
         {mutation.isSuccess && (
           <>
-            <h1 className="text-xl font-semibold">
+            <h1 className="font-app-display text-title font-semibold text-ink">
               {t("verifyEmail.verified")}
             </h1>
-            <p className="text-sm text-gray-600">
+            <p className="text-small text-muted">
               {t("verifyEmail.verifiedDescription")}
             </p>
             <Link
               to="/login"
-              className="mt-2 text-sm text-gray-900 font-medium hover:underline"
+              className="mt-2 text-small font-medium text-ink hover:underline"
             >
               {t("login.submit")}
             </Link>
@@ -46,15 +47,15 @@ function VerifyEmail() {
         )}
         {mutation.isError && (
           <>
-            <h1 className="text-xl font-semibold">
+            <h1 className="font-app-display text-title font-semibold text-ink">
               {t("verifyEmail.linkInvalid")}
             </h1>
-            <p className="text-sm text-gray-600">
+            <p className="text-small text-muted">
               {t("verifyEmail.linkExpiredOrUsed")}
             </p>
             <Link
               to="/login"
-              className="mt-2 text-sm text-gray-900 font-medium hover:underline"
+              className="mt-2 text-small font-medium text-ink hover:underline"
             >
               {t("verifyEmail.backToSignIn")}
             </Link>
@@ -62,15 +63,15 @@ function VerifyEmail() {
         )}
         {!token && (
           <>
-            <h1 className="text-xl font-semibold">
+            <h1 className="font-app-display text-title font-semibold text-ink">
               {t("verifyEmail.missingToken")}
             </h1>
-            <p className="text-sm text-gray-600">
+            <p className="text-small text-muted">
               {t("verifyEmail.useVerificationLink")}
             </p>
           </>
         )}
-      </div>
-    </div>
+      </AuthPanel>
+    </AuthShell>
   );
 }

@@ -4,6 +4,9 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useGetMe } from "../../api";
 import { useConfirm } from "../../hooks/use-confirm";
 import { apiFetch } from "../../lib/apiFetch";
+import { Badge } from "../ui/badge";
+import { Button } from "../ui/button";
+import { SettingsLabel, SettingsRow } from "../ui/settings-row";
 
 const OAUTH_PROVIDERS = ["google", "github"] as const;
 
@@ -71,46 +74,36 @@ export function LinkedAccountsSection() {
 
   return (
     <>
-      <h3
-        style={{
-          margin: "16px 0 0",
-          fontSize: "var(--fs-sm)",
-          fontWeight: 700,
-          color: "var(--text)",
-        }}
-      >
+      <h3 className="mb-0 mt-4 text-small font-bold text-ink">
         {t("account.linkedAccounts")}
       </h3>
-      <div className="ch-divide">
+      <div className="divide-y divide-hairline">
         {OAUTH_PROVIDERS.map((provider) => {
           const account = linked.find((a) => a.provider === provider);
           return (
-            <div key={provider} className="ch-setrow">
-              <div className="lbl">
+            <SettingsRow key={provider}>
+              <SettingsLabel>
                 <b>{capitalize(provider)}</b>
-              </div>
+              </SettingsLabel>
               {account ? (
-                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <span className="ch-pill st-done">
+                <div className="flex items-center gap-2.5">
+                  <Badge className="bg-faint/15 text-faint">
                     {t("account.connected")}
-                  </span>
-                  <button
+                  </Badge>
+                  <Button
+                    size="sm"
                     onClick={() => handleDisconnect(account)}
                     disabled={unlinking === account.id}
-                    className="ch-btn ch-btn-sm"
                   >
                     {t("account.disconnect")}
-                  </button>
+                  </Button>
                 </div>
               ) : (
-                <button
-                  onClick={() => handleConnect(provider)}
-                  className="ch-btn ch-btn-sm"
-                >
+                <Button size="sm" onClick={() => handleConnect(provider)}>
                   {t("account.connect")}
-                </button>
+                </Button>
               )}
-            </div>
+            </SettingsRow>
           );
         })}
       </div>

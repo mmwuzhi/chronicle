@@ -5,6 +5,15 @@ import type { CaptureBody } from "../api";
 
 import { Nav } from "../components/nav";
 import { timeAgo } from "../utils/format";
+import { buttonClassName } from "../components/ui/button";
+import { Card } from "../components/ui/card";
+import {
+  EmptyState,
+  Meta,
+  PageHeader,
+  PageShell,
+  PageTitle,
+} from "../components/ui/page";
 
 export const Route = createFileRoute("/")({ component: Index });
 
@@ -35,69 +44,64 @@ function Dashboard() {
   return (
     <>
       <Nav />
-      <div style={{ maxWidth: 768, margin: "0 auto", padding: "0 18px" }}>
-        <div className="ch-page-head">
-          <p className="ch-eyebrow">{dateEyebrow}</p>
-          <h1 className="ch-title">
+      <PageShell className="pb-0">
+        <PageHeader>
+          <p className="text-caption font-semibold uppercase tracking-[0.13em] text-faint">
+            {dateEyebrow}
+          </p>
+          <PageTitle>
             {t(greetingKey)} {name}
-          </h1>
-        </div>
+          </PageTitle>
+        </PageHeader>
 
-        <div className="ch-section">
-          <span className="bar" />
-          <span className="ch-sectlabel">{t("recentCaptures")}</span>
-          <span className="ch-sectcount">{recentCaptures.length}</span>
-          <span className="rule" />
-          <Link to="/captures" className="ch-sectall">
+        <div className="mb-3 mt-[26px] flex items-center gap-2.5">
+          <span className="h-[15px] w-px shrink-0 rounded-full bg-accent" />
+          <span className="whitespace-nowrap font-app-display text-small font-bold uppercase tracking-[0.08em] text-ink">
+            {t("recentCaptures")}
+          </span>
+          <span className="rounded-full bg-tint px-[7px] py-0.5 font-code text-[11px] font-semibold text-faint">
+            {recentCaptures.length}
+          </span>
+          <span className="h-px flex-1 bg-hairline" />
+          <Link
+            to="/captures"
+            className="whitespace-nowrap text-caption font-semibold text-muted no-underline hover:text-accent-strong"
+          >
             {t("viewAll")} →
           </Link>
         </div>
         {recentCaptures.length === 0 ? (
-          <div className="ch-empty">
+          <EmptyState>
             <p>{t("noCaptures")}</p>
-          </div>
+          </EmptyState>
         ) : (
-          <div className="ch-list">
+          <div className="flex flex-col gap-3">
             {recentCaptures.map((c: CaptureBody) => (
-              <Link
+              <Card
+                asChild
                 key={c.id}
-                to="/captures"
-                className="ch-row clickable"
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: 8,
-                  textDecoration: "none",
-                }}
+                className="hover:border-strong hover:shadow-overlay"
               >
-                <p
-                  style={
-                    {
-                      fontSize: "var(--fs-sm)",
-                      margin: 0,
-                      color: "var(--text)",
-                      lineHeight: 1.55,
-                      display: "-webkit-box",
-                      WebkitLineClamp: 2,
-                      WebkitBoxOrient: "vertical",
-                      overflow: "hidden",
-                    } as React.CSSProperties
-                  }
+                <Link
+                  to="/captures"
+                  className="flex cursor-pointer flex-col gap-2 p-4 no-underline transition-[border-color,box-shadow]"
                 >
-                  {c.rawText ?? c.transcript ?? "—"}
-                </p>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  {c.createdAt && (
-                    <span className="ch-meta" style={{ marginLeft: "auto" }}>
-                      {timeAgo(c.createdAt, i18n.language)}
-                    </span>
-                  )}
-                </div>
-              </Link>
+                  <p className="m-0 line-clamp-2 overflow-hidden text-small leading-[1.55] text-ink">
+                    {c.rawText ?? c.transcript ?? "—"}
+                  </p>
+                  <div className="flex items-center gap-2">
+                    {c.createdAt && (
+                      <Meta className="ml-auto">
+                        {timeAgo(c.createdAt, i18n.language)}
+                      </Meta>
+                    )}
+                  </div>
+                </Link>
+              </Card>
             ))}
           </div>
         )}
-      </div>
+      </PageShell>
     </>
   );
 }
@@ -105,44 +109,21 @@ function Dashboard() {
 function Landing() {
   const { t } = useTranslation();
   return (
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "center",
-        minHeight: "100vh",
-        gap: 16,
-      }}
-    >
-      <div
-        style={{
-          width: 48,
-          height: 48,
-          borderRadius: 12,
-          background: "var(--accent)",
-          color: "#fff",
-          display: "grid",
-          placeItems: "center",
-          fontSize: 24,
-          fontWeight: 800,
-        }}
-      >
+    <main className="flex min-h-screen flex-col items-center justify-center gap-4 px-4">
+      <div className="grid size-12 place-items-center rounded-card bg-accent text-2xl font-extrabold text-surface">
         C
       </div>
-      <h1 className="ch-title">{t("brand")}</h1>
-      <p style={{ color: "var(--text-muted)", fontSize: "var(--fs-sm)" }}>
-        {t("tagline")}
-      </p>
-      <div style={{ display: "flex", gap: 10, marginTop: 8 }}>
-        <Link to="/login" className="ch-btn ch-btn-primary">
+      <PageTitle>{t("brand")}</PageTitle>
+      <p className="text-small text-muted">{t("tagline")}</p>
+      <div className="mt-2 flex gap-2.5">
+        <Link to="/login" className={buttonClassName({ variant: "primary" })}>
           {t("signIn")}
         </Link>
-        <Link to="/register" className="ch-btn">
+        <Link to="/register" className={buttonClassName()}>
           {t("createAccount")}
         </Link>
       </div>
-    </div>
+    </main>
   );
 }
 

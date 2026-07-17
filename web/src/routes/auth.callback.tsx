@@ -2,6 +2,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { z } from "zod/v3";
 import { useTranslation } from "react-i18next";
+import { AuthShell } from "../components/ui/auth-shell";
 
 export const Route = createFileRoute("/auth/callback")({
   validateSearch: z.object({ access_token: z.string().default("") }),
@@ -21,8 +22,8 @@ function OAuthCallback() {
   }, [access_token, navigate]);
 
   return (
-    <div className="flex items-center justify-center min-h-screen">
-      <p className="text-sm text-gray-500">{t("callback.signingIn")}</p>
-    </div>
+    <AuthShell>
+      <p className="text-small text-muted">{t("callback.signingIn")}</p>
+    </AuthShell>
   );
 }

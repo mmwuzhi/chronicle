@@ -1,4 +1,4 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useCallback, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
@@ -20,6 +20,10 @@ import {
   removeCaptureFromPages,
 } from "../utils/capture-cache";
 import { CaptureComposer } from "../components/CaptureComposer";
+import {
+  CaptureFilterBar,
+  type CaptureTab,
+} from "../components/CaptureFilterBar";
 import { CaptureFeed } from "../components/CaptureFeed";
 import { MutationToast } from "../components/mutation-toast";
 import { Nav } from "../components/nav";
@@ -27,10 +31,15 @@ import { useConfirm } from "../hooks/use-confirm";
 import { useMutationToast } from "../hooks/use-mutation-toast";
 import { useTodoEnabled } from "../hooks/use-todo-enabled";
 import type { CloudAttachmentDraft } from "../lib/cloudDrive";
+import {
+  PageError,
+  PageHeader,
+  PageShell,
+  PageSubtitle,
+  PageTitle,
+} from "../components/ui/page";
 
 export const Route = createFileRoute("/captures")({ component: Captures });
-
-type Tab = "all" | "todo";
 
 function Captures() {
   const { t } = useTranslation("captures");
@@ -41,11 +50,11 @@ function Captures() {
   const { message: mutationMessage, show: showMutationToast } =
     useMutationToast();
   const todosEnabled = useTodoEnabled();
-  const [tab, setTab] = useState<Tab>("all");
+  const [tab, setTab] = useState<CaptureTab>("all");
   // Captures with a future reminder are filtered out of the list until they come
   // due; this opt-in surfaces them so the reminder can be edited or cleared.
   const [showScheduled, setShowScheduled] = useState(false);
-  const tabs: Tab[] = todosEnabled ? ["all", "todo"] : ["all"];
+  const tabs: CaptureTab[] = todosEnabled ? ["all", "todo"] : ["all"];
   const params = {
     limit: 30,
     // The todo tab lists open todos; completed ones stay in "all" with a
@@ -168,17 +177,17 @@ function Captures() {
       void navigate({ to: "/login" });
       return null;
     }
-    return <div className="ch-page-error">{t("failedToLoad")}</div>;
+    return <PageError>{t("failedToLoad")}</PageError>;
   }
 
   return (
     <>
       <Nav />
-      <main className="ch-page-shell">
-        <header className="ch-page-head">
-          <h1 className="ch-title">{t("title")}</h1>
-          <p className="ch-page-subtitle">{t("subtitle")}</p>
-        </header>
+      <PageShell>
+        <PageHeader>
+          <PageTitle>{t("title")}</PageTitle>
+          <PageSubtitle>{t("subtitle")}</PageSubtitle>
+        </PageHeader>
         <CaptureComposer
           creating={create.isPending}
           onCreate={(rawText, onSuccess) =>
@@ -204,27 +213,13 @@ function Captures() {
           }}
           onUploaded={invalidateCaptures}
         />
-        <div className="ch-filter-tabs">
-          {tabs.map((id) => (
-            <button
-              key={id}
-              className={`ch-navlink${tab === id ? " active" : ""}`}
-              onClick={() => setTab(id)}
-            >
-              {t(`tabs.${id}`)}
-            </button>
-          ))}
-          <button
-            className={`ch-navlink${showScheduled ? " active" : ""}`}
-            onClick={() => setShowScheduled((v) => !v)}
-            title={t("scheduledHint")}
-          >
-            {t("showScheduled")}
-          </button>
-          <Link to="/trash" className="ch-navlink">
-            {t("trash.link")}
-          </Link>
-        </div>
+        <CaptureFilterBar
+          tabs={tabs}
+          activeTab={tab}
+          showScheduled={showScheduled}
+          onTabChange={setTab}
+          onToggleScheduled={() => setShowScheduled((value) => !value)}
+        />
         <CaptureFeed
           captures={captures}
           loading={captureQuery.isLoading}
@@ -239,7 +234,7 @@ function Captures() {
           onSetRemind={onSetRemind}
           onMutationError={onMutationError}
         />
-      </main>
+      </PageShell>
       <MutationToast message={mutationMessage} />
     </>
   );

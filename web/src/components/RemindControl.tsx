@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { fmtPreciseDateTime } from "../utils/format";
+import { Button } from "./ui/button";
+import { Input } from "./ui/field";
 
 function BellIcon(): React.JSX.Element {
   return (
@@ -40,11 +42,11 @@ export function RemindControl({
 
   if (editing) {
     return (
-      <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-        <input
+      <span className="inline-flex flex-wrap items-center gap-1.5">
+        <Input
           type="datetime-local"
           autoFocus
-          className="ch-input ch-input-sm"
+          className="min-h-8 w-auto px-2.5 py-1.5 text-small"
           onChange={(e) => {
             const v = e.target.value;
             if (!v) return;
@@ -53,8 +55,7 @@ export function RemindControl({
           }}
         />
         <label
-          className="ch-meta"
-          style={{ display: "inline-flex", alignItems: "center", gap: 4 }}
+          className="inline-flex items-center gap-1 font-code text-caption text-faint"
           title={t("remind.keepVisibleHint")}
         >
           <input
@@ -64,12 +65,9 @@ export function RemindControl({
           />
           {t("remind.keepVisible")}
         </label>
-        <button
-          className="ch-btn ch-btn-ghost ch-btn-sm"
-          onClick={() => setEditing(false)}
-        >
+        <Button variant="ghost" size="sm" onClick={() => setEditing(false)}>
           {t("remind.cancel")}
-        </button>
+        </Button>
       </span>
     );
   }
@@ -77,26 +75,28 @@ export function RemindControl({
   if (remindAt) {
     const due = new Date(remindAt);
     return (
-      <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-        <span className="ch-time-chip" title={due.toLocaleString()}>
+      <span className="inline-flex items-center gap-1.5">
+        <span
+          className="inline-flex items-center gap-1.5 font-code text-caption font-semibold text-accent-strong [&_svg]:size-[13px] [&_svg]:shrink-0"
+          title={due.toLocaleString()}
+        >
           <BellIcon />
           {t("remind.at", {
             time: fmtPreciseDateTime(remindAt, i18n.language),
           })}
         </span>
-        <button
-          className="ch-btn ch-btn-ghost ch-btn-sm"
-          onClick={() => onSet(null, true)}
-        >
+        <Button variant="ghost" size="sm" onClick={() => onSet(null, true)}>
           {t("remind.clear")}
-        </button>
+        </Button>
       </span>
     );
   }
 
   return (
-    <button
-      className="ch-btn ch-btn-ghost ch-btn-sm ch-remind-flag"
+    <Button
+      variant="ghost"
+      size="sm"
+      className="opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100 focus-visible:opacity-100"
       onClick={() => {
         // Re-derive from the capture's current state each time, so the checkbox
         // isn't stale after a prior set→clear on this same card.
@@ -106,6 +106,6 @@ export function RemindControl({
     >
       <BellIcon />
       {t("remind.set")}
-    </button>
+    </Button>
   );
 }

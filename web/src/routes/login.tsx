@@ -7,6 +7,14 @@ import { useLogin } from "../api";
 import { useTranslation } from "react-i18next";
 import { LoginMfaStep } from "../components/LoginMfaStep";
 import { LoginProviders } from "../components/LoginProviders";
+import { AuthShell, authPanelClassName } from "../components/ui/auth-shell";
+import { Button } from "../components/ui/button";
+import {
+  FieldError,
+  FieldGroup,
+  FieldLabel,
+  Input,
+} from "../components/ui/field";
 
 export const Route = createFileRoute("/login")({
   component: Login,
@@ -58,74 +66,66 @@ function Login() {
   }
 
   return (
-    <div className="flex items-center justify-center min-h-screen">
+    <AuthShell>
       <form
         onSubmit={handleSubmit((data) => login.mutate({ data }))}
-        className="w-full max-w-sm flex flex-col gap-4 p-8 bg-white rounded-xl border border-gray-200 shadow-sm"
+        className={authPanelClassName}
       >
-        <h1 className="text-xl font-semibold">{t("login.title")}</h1>
+        <h1 className="font-app-display text-title font-semibold text-ink">
+          {t("login.title")}
+        </h1>
 
-        <div className="flex flex-col gap-1">
-          <label className="text-sm font-medium">{t("login.email")}</label>
-          <input
-            type="email"
-            autoComplete="email"
-            {...register("email")}
-            className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
-          />
-          {errors.email && (
-            <p className="text-red-500 text-xs">{errors.email.message}</p>
-          )}
-        </div>
+        <FieldGroup>
+          <FieldLabel>{t("login.email")}</FieldLabel>
+          <Input type="email" autoComplete="email" {...register("email")} />
+          {errors.email && <FieldError>{errors.email.message}</FieldError>}
+        </FieldGroup>
 
-        <div className="flex flex-col gap-1">
-          <label className="text-sm font-medium">{t("login.password")}</label>
-          <input
+        <FieldGroup>
+          <FieldLabel>{t("login.password")}</FieldLabel>
+          <Input
             type="password"
             autoComplete="current-password"
             {...register("password")}
-            className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
           />
           {errors.password && (
-            <p className="text-red-500 text-xs">{errors.password.message}</p>
+            <FieldError>{errors.password.message}</FieldError>
           )}
-        </div>
+        </FieldGroup>
 
         <div className="flex justify-end">
           <Link
             to="/forgot-password"
-            className="text-xs text-gray-500 hover:text-gray-900 hover:underline"
+            className="text-caption text-muted hover:text-ink hover:underline"
           >
             {t("login.forgotPassword")}
           </Link>
         </div>
 
         {login.error && (
-          <p className="text-red-500 text-sm">
+          <FieldError className="text-small">
             {t("login.invalidCredentials")}
-          </p>
+          </FieldError>
         )}
 
-        <button
+        <Button
           type="submit"
           disabled={login.isPending}
-          className="bg-gray-900 text-white rounded-md py-2 text-sm font-medium hover:bg-gray-700 transition-colors disabled:opacity-50"
+          variant="strong"
+          className="w-full"
         >
           {login.isPending ? t("login.signingIn") : t("login.submit")}
-        </button>
+        </Button>
 
         <LoginProviders />
 
-        <p className="text-center text-sm text-gray-500">
+        <p className="text-center text-small text-muted">
           {t("login.noAccount")}{" "}
-          <Link
-            to="/register"
-            className="text-gray-900 font-medium hover:underline"
-          >
+          <Link to="/register" className="font-medium text-ink hover:underline">
             {t("login.signUp")}
           </Link>
         </p>
       </form>
-    </div>
+    </AuthShell>
   );
 }

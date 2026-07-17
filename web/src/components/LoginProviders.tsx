@@ -1,6 +1,8 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Button, buttonClassName } from "./ui/button";
+import { FieldError } from "./ui/field";
 
 function GoogleIcon() {
   return (
@@ -83,14 +85,14 @@ export function LoginProviders() {
   return (
     <>
       <div className="relative flex items-center gap-3">
-        <div className="flex-1 h-px bg-gray-200" />
-        <span className="text-xs text-gray-400">{t("common:or")}</span>
-        <div className="flex-1 h-px bg-gray-200" />
+        <div className="h-px flex-1 bg-line" />
+        <span className="text-caption text-faint">{t("common:or")}</span>
+        <div className="h-px flex-1 bg-line" />
       </div>
 
       <a
         href={`${apiBase}/auth/google`}
-        className="flex items-center justify-center gap-2 border border-gray-300 rounded-md py-2 text-sm font-medium hover:bg-gray-50 transition-colors"
+        className={buttonClassName({ className: "w-full" })}
       >
         <GoogleIcon />
         {t("login.continueGoogle")}
@@ -98,17 +100,13 @@ export function LoginProviders() {
 
       <a
         href={`${apiBase}/auth/github`}
-        className="flex items-center justify-center gap-2 border border-gray-300 rounded-md py-2 text-sm font-medium hover:bg-gray-50 transition-colors"
+        className={buttonClassName({ className: "w-full" })}
       >
         <GitHubIcon />
         {t("login.continueGithub")}
       </a>
 
-      <button
-        type="button"
-        onClick={handlePasskeyLogin}
-        className="flex items-center justify-center gap-2 border border-gray-300 rounded-md py-2 text-sm font-medium hover:bg-gray-50 transition-colors"
-      >
+      <Button type="button" onClick={handlePasskeyLogin} className="w-full">
         <svg
           width="16"
           height="16"
@@ -124,10 +122,12 @@ export function LoginProviders() {
           <circle cx="16.5" cy="7.5" r=".5" fill="currentColor" />
         </svg>
         {t("login.passkey")}
-      </button>
+      </Button>
 
       {passkeyError && (
-        <p className="text-red-500 text-sm">{t("login.passkeyFailed")}</p>
+        <FieldError className="text-small">
+          {t("login.passkeyFailed")}
+        </FieldError>
       )}
     </>
   );

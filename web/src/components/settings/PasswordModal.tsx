@@ -1,7 +1,15 @@
 import { useState } from "react";
-import * as Dialog from "@radix-ui/react-dialog";
 import { useChangePassword } from "../../api";
 import { useTranslation } from "react-i18next";
+import { Button } from "../ui/button";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+} from "../ui/dialog";
+import { FieldError, FieldGroup, FieldLabel, Input } from "../ui/field";
 
 export function PasswordModal({
   open,
@@ -37,7 +45,7 @@ export function PasswordModal({
   };
 
   return (
-    <Dialog.Root
+    <Dialog
       open={open}
       onOpenChange={(v) => {
         if (!v) {
@@ -47,78 +55,65 @@ export function PasswordModal({
         onOpenChange(v);
       }}
     >
-      <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 bg-black/40" />
-        <Dialog.Content className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-white rounded-xl shadow-lg p-6 w-full max-w-sm flex flex-col gap-4">
-          <Dialog.Title className="text-lg font-semibold">
-            {hasPassword
-              ? t("password.changePassword")
-              : t("password.setPassword")}
-          </Dialog.Title>
+      <DialogContent>
+        <DialogTitle>
+          {hasPassword
+            ? t("password.changePassword")
+            : t("password.setPassword")}
+        </DialogTitle>
 
-          {!hasPassword && (
-            <p className="text-sm text-gray-500">
-              {t("password.oauthSetHint")}
-            </p>
-          )}
+        <DialogDescription>
+          {hasPassword ? t("password.placeholder") : t("password.oauthSetHint")}
+        </DialogDescription>
 
-          {hasPassword && (
-            <div className="flex flex-col gap-1">
-              <label className="text-sm text-gray-500">
-                {t("password.currentPassword")}
-              </label>
-              <input
-                type="password"
-                value={currentPassword}
-                onChange={(e) => setCurrentPassword(e.target.value)}
-                className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
-              />
-            </div>
-          )}
-
-          <div className="flex flex-col gap-1">
-            <label className="text-sm text-gray-500">
-              {t("password.newPassword")}
-            </label>
-            <input
+        {hasPassword && (
+          <FieldGroup>
+            <FieldLabel>{t("password.currentPassword")}</FieldLabel>
+            <Input
               type="password"
-              value={newPassword}
-              onChange={(e) => setNewPassword(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") handleSubmit();
-              }}
-              placeholder={t("password.placeholder")}
-              className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
+              value={currentPassword}
+              onChange={(e) => setCurrentPassword(e.target.value)}
             />
-          </div>
+          </FieldGroup>
+        )}
 
-          {changePassword.isError && (
-            <p className="text-sm text-red-500">
-              {(changePassword.error as { detail?: string })?.detail ??
-                t("password.error")}
-            </p>
-          )}
+        <FieldGroup>
+          <FieldLabel>{t("password.newPassword")}</FieldLabel>
+          <Input
+            type="password"
+            value={newPassword}
+            onChange={(e) => setNewPassword(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") handleSubmit();
+            }}
+            placeholder={t("password.placeholder")}
+          />
+        </FieldGroup>
 
-          <div className="flex justify-end gap-3 mt-2">
-            <Dialog.Close asChild>
-              <button className="text-sm px-4 py-2 rounded-md border border-gray-300 hover:bg-gray-50 transition-colors">
-                {t("password.cancel")}
-              </button>
-            </Dialog.Close>
-            <button
-              onClick={handleSubmit}
-              disabled={changePassword.isPending || newPassword.length < 8}
-              className="text-sm px-4 py-2 rounded-md bg-gray-900 text-white hover:bg-gray-700 transition-colors disabled:opacity-50"
-            >
-              {changePassword.isPending
-                ? t("password.saving")
-                : hasPassword
-                  ? t("password.changePassword")
-                  : t("password.setPassword")}
-            </button>
-          </div>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+        {changePassword.isError && (
+          <FieldError className="text-small">
+            {(changePassword.error as { detail?: string })?.detail ??
+              t("password.error")}
+          </FieldError>
+        )}
+
+        <div className="mt-2 flex justify-end gap-3">
+          <DialogClose asChild>
+            <Button>{t("password.cancel")}</Button>
+          </DialogClose>
+          <Button
+            variant="strong"
+            onClick={handleSubmit}
+            disabled={changePassword.isPending || newPassword.length < 8}
+          >
+            {changePassword.isPending
+              ? t("password.saving")
+              : hasPassword
+                ? t("password.changePassword")
+                : t("password.setPassword")}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }

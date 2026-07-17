@@ -15,6 +15,8 @@ import { MFASection } from "../components/settings/MFASection";
 import { DangerSection } from "../components/settings/DangerSection";
 import { WebhooksSection } from "../components/settings/WebhooksSection";
 import { QuickCaptureTokenSection } from "../components/settings/QuickCaptureTokenSection";
+import { PageHeader, PageShell, PageTitle } from "../components/ui/page";
+import { sectionTabClassName } from "../components/ui/tab";
 
 export const Route = createFileRoute("/settings")({
   component: Settings,
@@ -34,34 +36,19 @@ function SecuritySection() {
   const { t } = useTranslation("settings");
   return (
     <>
-      <div className="ch-divide">
-        <div style={{ padding: "16px 0" }}>
+      <div className="divide-y divide-hairline">
+        <div className="py-4">
           <PasskeysSection />
         </div>
-        <div style={{ padding: "16px 0" }}>
+        <div className="py-4">
           <MFASection />
         </div>
       </div>
 
       {/* Danger zone inside security */}
-      <div style={{ marginTop: 32 }}>
-        <div
-          style={{
-            border: "1px solid #fca5a5",
-            borderRadius: "var(--radius)",
-            padding: "var(--pad)",
-          }}
-        >
-          <p
-            style={{
-              margin: "0 0 12px",
-              fontSize: "var(--fs-xs)",
-              fontWeight: 700,
-              letterSpacing: "0.08em",
-              textTransform: "uppercase",
-              color: "#c2410c",
-            }}
-          >
+      <div className="mt-8">
+        <div className="rounded-card border border-danger/35 p-4">
+          <p className="mb-3 text-caption font-bold uppercase tracking-[0.08em] text-danger">
             {t("danger.title")}
           </p>
           <DangerSection />
@@ -123,35 +110,21 @@ function Settings() {
       <Nav />
 
       {toast && (
-        <div
-          style={{
-            position: "fixed",
-            top: 66,
-            left: "50%",
-            transform: "translateX(-50%)",
-            zIndex: 50,
-            background: "var(--text)",
-            color: "#fff",
-            fontSize: "var(--fs-sm)",
-            padding: "8px 16px",
-            borderRadius: "var(--radius-pill)",
-            boxShadow: "var(--shadow-lg)",
-          }}
-        >
+        <div className="fixed left-1/2 top-[66px] z-50 -translate-x-1/2 rounded-full bg-ink px-4 py-2 text-small text-surface shadow-overlay">
           {toast}
         </div>
       )}
 
-      <div style={{ maxWidth: 640, margin: "0 auto", padding: "0 18px 40px" }}>
-        <div className="ch-page-head">
-          <h1 className="ch-title">{t("title")}</h1>
-        </div>
+      <PageShell className="max-w-2xl">
+        <PageHeader>
+          <PageTitle>{t("title")}</PageTitle>
+        </PageHeader>
 
-        <div className="ch-tabs">
+        <div className="mx-0 mb-1 mt-2 flex gap-[22px] border-b border-hairline">
           {tabs.map((tab) => (
             <button
               key={tab.id}
-              className={`ch-tabbtn${section === tab.id ? " active" : ""}`}
+              className={sectionTabClassName(section === tab.id)}
               onClick={() => setSection(tab.id)}
             >
               {tab.label}
@@ -159,17 +132,17 @@ function Settings() {
           ))}
         </div>
 
-        <div style={{ marginTop: 20 }}>
+        <div className="mt-5">
           {section === "account" && <AccountSection />}
           {section === "security" && <SecuritySection />}
           {section === "integrations" && (
-            <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+            <div className="flex flex-col gap-5">
               <QuickCaptureTokenSection />
               <WebhooksSection />
             </div>
           )}
         </div>
-      </div>
+      </PageShell>
     </>
   );
 }

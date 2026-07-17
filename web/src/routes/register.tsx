@@ -8,6 +8,18 @@ import { Turnstile } from "@marsidev/react-turnstile";
 import type { TurnstileInstance } from "@marsidev/react-turnstile";
 import { api } from "../lib/axios";
 import { useTranslation, Trans } from "react-i18next";
+import {
+  AuthPanel,
+  AuthShell,
+  authPanelClassName,
+} from "../components/ui/auth-shell";
+import { Button, buttonClassName } from "../components/ui/button";
+import {
+  FieldError,
+  FieldGroup,
+  FieldLabel,
+  Input,
+} from "../components/ui/field";
 
 const TURNSTILE_SITE_KEY = import.meta.env.VITE_TURNSTILE_SITE_KEY as
   | string
@@ -100,32 +112,34 @@ function Register() {
 
   if (sentEmail) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="w-full max-w-sm flex flex-col gap-4 p-8 bg-white rounded-xl border border-gray-200 shadow-sm text-center">
-          <h1 className="text-xl font-semibold">{t("register.checkInbox")}</h1>
-          <p className="text-sm text-gray-600">
+      <AuthShell>
+        <AuthPanel className="text-center">
+          <h1 className="font-app-display text-title font-semibold text-ink">
+            {t("register.checkInbox")}
+          </h1>
+          <p className="text-small text-muted">
             <Trans
               i18nKey="register.verificationSent"
               ns="auth"
               values={{ email: sentEmail }}
               components={{
-                strong: <span className="font-medium text-gray-900" />,
+                strong: <span className="font-medium text-ink" />,
               }}
             />
           </p>
           <Link
             to="/login"
-            className="mt-2 text-sm text-gray-900 font-medium hover:underline"
+            className="mt-2 text-small font-medium text-ink hover:underline"
           >
             {t("login.submit")}
           </Link>
-        </div>
-      </div>
+        </AuthPanel>
+      </AuthShell>
     );
   }
 
   return (
-    <div className="flex items-center justify-center min-h-screen">
+    <AuthShell>
       <form
         onSubmit={handleSubmit((data) =>
           registerMutation.mutate({
@@ -133,54 +147,41 @@ function Register() {
             password: data.password,
           }),
         )}
-        className="w-full max-w-sm flex flex-col gap-4 p-8 bg-white rounded-xl border border-gray-200 shadow-sm"
+        className={authPanelClassName}
       >
-        <h1 className="text-xl font-semibold">{t("register.title")}</h1>
+        <h1 className="font-app-display text-title font-semibold text-ink">
+          {t("register.title")}
+        </h1>
 
-        <div className="flex flex-col gap-1">
-          <label className="text-sm font-medium">{t("register.email")}</label>
-          <input
-            type="email"
-            autoComplete="email"
-            {...register("email")}
-            className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
-          />
-          {errors.email && (
-            <p className="text-red-500 text-xs">{errors.email.message}</p>
-          )}
-        </div>
+        <FieldGroup>
+          <FieldLabel>{t("register.email")}</FieldLabel>
+          <Input type="email" autoComplete="email" {...register("email")} />
+          {errors.email && <FieldError>{errors.email.message}</FieldError>}
+        </FieldGroup>
 
-        <div className="flex flex-col gap-1">
-          <label className="text-sm font-medium">
-            {t("register.password")}
-          </label>
-          <input
+        <FieldGroup>
+          <FieldLabel>{t("register.password")}</FieldLabel>
+          <Input
             type="password"
             autoComplete="new-password"
             {...register("password")}
-            className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
           />
           {errors.password && (
-            <p className="text-red-500 text-xs">{errors.password.message}</p>
+            <FieldError>{errors.password.message}</FieldError>
           )}
-        </div>
+        </FieldGroup>
 
-        <div className="flex flex-col gap-1">
-          <label className="text-sm font-medium">
-            {t("register.confirmPassword")}
-          </label>
-          <input
+        <FieldGroup>
+          <FieldLabel>{t("register.confirmPassword")}</FieldLabel>
+          <Input
             type="password"
             autoComplete="new-password"
             {...register("confirmPassword")}
-            className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
           />
           {errors.confirmPassword && (
-            <p className="text-red-500 text-xs">
-              {errors.confirmPassword.message}
-            </p>
+            <FieldError>{errors.confirmPassword.message}</FieldError>
           )}
-        </div>
+        </FieldGroup>
 
         {TURNSTILE_SITE_KEY && (
           <Turnstile
@@ -192,33 +193,34 @@ function Register() {
         )}
 
         {registerMutation.error && (
-          <p className="text-red-500 text-sm">
+          <FieldError className="text-small">
             {t("register.registrationFailed")}
-          </p>
+          </FieldError>
         )}
 
-        <button
+        <Button
           type="submit"
           disabled={
             registerMutation.isPending ||
             (!!TURNSTILE_SITE_KEY && !turnstileToken)
           }
-          className="bg-gray-900 text-white rounded-md py-2 text-sm font-medium hover:bg-gray-700 transition-colors disabled:opacity-50"
+          variant="strong"
+          className="w-full"
         >
           {registerMutation.isPending
             ? t("register.creatingAccount")
             : t("register.submit")}
-        </button>
+        </Button>
 
         <div className="relative flex items-center gap-3">
-          <div className="flex-1 h-px bg-gray-200" />
-          <span className="text-xs text-gray-400">{t("common:or")}</span>
-          <div className="flex-1 h-px bg-gray-200" />
+          <div className="h-px flex-1 bg-line" />
+          <span className="text-caption text-faint">{t("common:or")}</span>
+          <div className="h-px flex-1 bg-line" />
         </div>
 
         <a
           href={`${import.meta.env.VITE_API_URL ?? "/api"}/auth/google`}
-          className="flex items-center justify-center gap-2 border border-gray-300 rounded-md py-2 text-sm font-medium hover:bg-gray-50 transition-colors"
+          className={buttonClassName({ className: "w-full" })}
         >
           <GoogleIcon />
           {t("register.continueGoogle")}
@@ -226,22 +228,19 @@ function Register() {
 
         <a
           href={`${import.meta.env.VITE_API_URL ?? "/api"}/auth/github`}
-          className="flex items-center justify-center gap-2 border border-gray-300 rounded-md py-2 text-sm font-medium hover:bg-gray-50 transition-colors"
+          className={buttonClassName({ className: "w-full" })}
         >
           <GitHubIcon />
           {t("register.continueGithub")}
         </a>
 
-        <p className="text-center text-sm text-gray-500">
+        <p className="text-center text-small text-muted">
           {t("register.alreadyHaveAccount")}{" "}
-          <Link
-            to="/login"
-            className="text-gray-900 font-medium hover:underline"
-          >
+          <Link to="/login" className="font-medium text-ink hover:underline">
             {t("login.submit")}
           </Link>
         </p>
       </form>
-    </div>
+    </AuthShell>
   );
 }

@@ -242,7 +242,7 @@ export function CaptureComposer({
         <input
           ref={attachInputRef}
           type="file"
-          className="ch-hidden-input"
+          className="hidden"
           onChange={handleAttachPick}
         />
       }

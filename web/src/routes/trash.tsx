@@ -13,6 +13,15 @@ import {
 import { useConfirm } from "../hooks/use-confirm";
 import { Nav } from "../components/nav";
 import { TrashList } from "../components/TrashList";
+import { Button, buttonClassName } from "../components/ui/button";
+import {
+  Meta,
+  PageError,
+  PageHeader,
+  PageShell,
+  PageSubtitle,
+  PageTitle,
+} from "../components/ui/page";
 
 export const Route = createFileRoute("/trash")({ component: Trash });
 
@@ -62,7 +71,7 @@ function Trash() {
       void navigate({ to: "/login" });
       return null;
     }
-    return <div className="ch-page-error">{t("trash.failedToLoad")}</div>;
+    return <PageError>{t("trash.failedToLoad")}</PageError>;
   }
 
   const captures = query.data ?? [];
@@ -70,16 +79,21 @@ function Trash() {
   return (
     <>
       <Nav />
-      <main className="ch-page-shell">
-        <header className="ch-page-head">
-          <Link to="/captures" className="ch-btn ch-btn-ghost ch-btn-sm">
+      <PageShell>
+        <PageHeader>
+          <Link
+            to="/captures"
+            className={buttonClassName({ variant: "ghost", size: "sm" })}
+          >
             ← {t("title")}
           </Link>
-          <h1 className="ch-title">{t("trash.title")}</h1>
-          <p className="ch-page-subtitle">{t("trash.subtitle")}</p>
+          <PageTitle>{t("trash.title")}</PageTitle>
+          <PageSubtitle>{t("trash.subtitle")}</PageSubtitle>
           {captures.length > 0 && (
-            <button
-              className="ch-btn ch-btn-ghost ch-btn-sm ch-btn-danger"
+            <Button
+              variant="ghost"
+              size="sm"
+              className="self-start text-danger hover:bg-danger-weak hover:text-danger-strong"
               onClick={async () => {
                 const ok = await confirm({
                   title: t("trash.emptyAll"),
@@ -91,12 +105,12 @@ function Trash() {
               }}
             >
               {t("trash.emptyAll")}
-            </button>
+            </Button>
           )}
-        </header>
-        {query.isLoading && <p className="ch-meta">{tc("loading")}</p>}
+        </PageHeader>
+        {query.isLoading && <Meta>{tc("loading")}</Meta>}
         {!query.isLoading && captures.length === 0 && (
-          <p className="ch-meta">{t("trash.empty")}</p>
+          <Meta>{t("trash.empty")}</Meta>
         )}
         {captures.length > 0 && (
           <TrashList
@@ -117,7 +131,7 @@ function Trash() {
             }}
           />
         )}
-      </main>
+      </PageShell>
     </>
   );
 }

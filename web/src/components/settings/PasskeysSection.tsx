@@ -2,6 +2,9 @@ import { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { useConfirm } from "../../hooks/use-confirm";
 import { apiFetch } from "../../lib/apiFetch";
+import { Button } from "../ui/button";
+import { Meta } from "../ui/page";
+import { SettingsLabel, SettingsRow } from "../ui/settings-row";
 
 export function PasskeysSection() {
   const { t } = useTranslation("settings");
@@ -70,39 +73,35 @@ export function PasskeysSection() {
 
   return (
     <div>
-      <div className="ch-setrow">
-        <div className="lbl">
+      <SettingsRow>
+        <SettingsLabel>
           <b>{t("security.passkeys.title")}</b>
           <span>{t("security.passkeys.description")}</span>
-        </div>
-        <button
-          onClick={handleAdd}
-          disabled={adding}
-          className="ch-btn ch-btn-sm"
-        >
+        </SettingsLabel>
+        <Button size="sm" onClick={handleAdd} disabled={adding}>
           {t("security.passkeys.add")}
-        </button>
-      </div>
+        </Button>
+      </SettingsRow>
 
       {loading ? null : passkeys.length === 0 ? (
-        <p className="ch-meta" style={{ margin: "0 0 12px" }}>
-          {t("security.passkeys.empty")}
-        </p>
+        <Meta className="mb-3 block">{t("security.passkeys.empty")}</Meta>
       ) : (
-        <div className="ch-divide">
+        <div className="divide-y divide-hairline">
           {passkeys.map((pk) => (
-            <div key={pk.id} className="ch-setrow">
-              <div className="lbl">
+            <SettingsRow key={pk.id}>
+              <SettingsLabel>
                 <b>{pk.name}</b>
                 <span>{new Date(pk.createdAt).toLocaleDateString()}</span>
-              </div>
-              <button
+              </SettingsLabel>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-danger hover:bg-danger-weak hover:text-danger-strong"
                 onClick={() => handleDelete(pk)}
-                className="ch-btn ch-btn-danger ch-btn-sm"
               >
                 {t("security.passkeys.delete")}
-              </button>
-            </div>
+              </Button>
+            </SettingsRow>
           ))}
         </div>
       )}

@@ -13,6 +13,8 @@ import {
 import { fmtListTime, fmtPreciseDateTime } from "../utils/format";
 import { todoProgress } from "../utils/todo";
 import { useTodoEnabled } from "../hooks/use-todo-enabled";
+import { Button } from "./ui/button";
+import { Meta } from "./ui/page";
 
 const RELATED_LIMIT = 10;
 const SNIPPET_MAX = 140;
@@ -102,14 +104,16 @@ export function CaptureRelated({
   const progress = todoProgress(linked);
 
   return (
-    <section className="ch-related">
-      <h2 className="ch-related-title">{t("related.title")}</h2>
+    <section className="mt-2 border-t border-hairline pt-5">
+      <h2 className="mb-3 text-body font-semibold text-ink">
+        {t("related.title")}
+      </h2>
 
-      <div className="ch-related-group">
-        <h3 className="ch-related-subtitle">
+      <div className="mb-[18px]">
+        <h3 className="mb-2 text-[10px] font-bold uppercase tracking-[0.04em] text-faint">
           {t("related.linked")}
           {todosEnabled && progress.total > 0 && (
-            <span className="ch-related-progress">
+            <span className="ml-2 text-caption font-normal text-muted">
               {t("related.todoProgress", {
                 done: progress.done,
                 total: progress.total,
@@ -118,28 +122,32 @@ export function CaptureRelated({
           )}
         </h3>
         {linked.length === 0 ? (
-          <p className="ch-meta">{t("related.none")}</p>
+          <Meta>{t("related.none")}</Meta>
         ) : (
-          <ul className="ch-related-list">
+          <ul className="m-0 flex list-none flex-col gap-1.5 p-0">
             {linked.map((capture) => (
-              <li key={capture.id} className="ch-related-item">
+              <li
+                key={capture.id}
+                className="flex items-center gap-2 rounded-control border border-line bg-surface px-2.5 py-2"
+              >
                 <Link
                   to="/captures/context"
                   search={{ anchorId: capture.id }}
-                  className="ch-related-link"
+                  className="flex min-w-0 flex-1 items-baseline gap-2.5 text-inherit no-underline hover:text-accent-strong"
                 >
                   <span
-                    className="ch-related-time"
+                    className="shrink-0 font-code text-[10px] text-faint"
                     title={fmtPreciseDateTime(capture.createdAt, i18n.language)}
                   >
                     {fmtListTime(capture.createdAt, i18n.language)}
                   </span>
-                  <span className="ch-related-snippet">
+                  <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-small">
                     {snippet(captureText(capture))}
                   </span>
                 </Link>
-                <button
-                  className="ch-btn ch-btn-ghost ch-btn-sm"
+                <Button
+                  variant="ghost"
+                  size="sm"
                   onClick={() =>
                     removeLink.mutate({ id: anchorId, targetId: capture.id })
                   }
@@ -148,40 +156,46 @@ export function CaptureRelated({
                   title={t("related.unlink")}
                 >
                   <XIcon />
-                </button>
+                </Button>
               </li>
             ))}
           </ul>
         )}
       </div>
 
-      <div className="ch-related-group">
-        <h3 className="ch-related-subtitle">{t("related.suggestions")}</h3>
+      <div className="mb-[18px]">
+        <h3 className="mb-2 text-[10px] font-bold uppercase tracking-[0.04em] text-faint">
+          {t("related.suggestions")}
+        </h3>
         {relatedQuery.isLoading ? (
-          <p className="ch-meta">{tc("loading")}</p>
+          <Meta>{tc("loading")}</Meta>
         ) : suggestions.length === 0 ? (
-          <p className="ch-meta">{t("related.noSuggestions")}</p>
+          <Meta>{t("related.noSuggestions")}</Meta>
         ) : (
-          <ul className="ch-related-list">
+          <ul className="m-0 flex list-none flex-col gap-1.5 p-0">
             {suggestions.map((capture) => (
-              <li key={capture.id} className="ch-related-item">
+              <li
+                key={capture.id}
+                className="flex items-center gap-2 rounded-control border border-line bg-surface px-2.5 py-2"
+              >
                 <Link
                   to="/captures/context"
                   search={{ anchorId: capture.id }}
-                  className="ch-related-link"
+                  className="flex min-w-0 flex-1 items-baseline gap-2.5 text-inherit no-underline hover:text-accent-strong"
                 >
                   <span
-                    className="ch-related-time"
+                    className="shrink-0 font-code text-[10px] text-faint"
                     title={fmtPreciseDateTime(capture.createdAt, i18n.language)}
                   >
                     {fmtListTime(capture.createdAt, i18n.language)}
                   </span>
-                  <span className="ch-related-snippet">
+                  <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-small">
                     {snippet(capture.content)}
                   </span>
                 </Link>
-                <button
-                  className="ch-btn ch-btn-ghost ch-btn-sm"
+                <Button
+                  variant="ghost"
+                  size="sm"
                   onClick={() =>
                     addLink.mutate({
                       id: anchorId,
@@ -192,7 +206,7 @@ export function CaptureRelated({
                 >
                   <PlusIcon />
                   {t("related.link")}
-                </button>
+                </Button>
               </li>
             ))}
           </ul>

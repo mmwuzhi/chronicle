@@ -2,6 +2,9 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { z } from "zod/v3";
 import { useTranslation } from "react-i18next";
+import { AuthPanel, AuthShell } from "../components/ui/auth-shell";
+import { Button } from "../components/ui/button";
+import { FieldError, Input } from "../components/ui/field";
 
 export const Route = createFileRoute("/auth/mfa")({
   validateSearch: z.object({ mfa_token: z.string().default("") }),
@@ -18,17 +21,20 @@ function MFAVerify() {
 
   if (!mfa_token) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="w-full max-w-sm p-8 bg-white rounded-xl border border-gray-200 shadow-sm text-center">
-          <p className="text-sm text-red-500">{t("mfa.tokenExpired")}</p>
-          <button
+      <AuthShell>
+        <AuthPanel className="text-center">
+          <FieldError className="text-small">
+            {t("mfa.tokenExpired")}
+          </FieldError>
+          <Button
+            variant="ghost"
             onClick={() => navigate({ to: "/login" })}
-            className="mt-4 text-sm text-gray-900 font-medium hover:underline"
+            className="mt-4"
           >
             {t("login.submit")}
-          </button>
-        </div>
-      </div>
+          </Button>
+        </AuthPanel>
+      </AuthShell>
     );
   }
 
@@ -66,12 +72,14 @@ function MFAVerify() {
   };
 
   return (
-    <div className="flex items-center justify-center min-h-screen">
-      <div className="w-full max-w-sm flex flex-col gap-4 p-8 bg-white rounded-xl border border-gray-200 shadow-sm">
-        <h1 className="text-xl font-semibold">{t("mfa.title")}</h1>
-        <p className="text-sm text-gray-500">{t("mfa.enterCode")}</p>
+    <AuthShell>
+      <AuthPanel>
+        <h1 className="font-app-display text-title font-semibold text-ink">
+          {t("mfa.title")}
+        </h1>
+        <p className="text-small text-muted">{t("mfa.enterCode")}</p>
 
-        <input
+        <Input
           type="text"
           autoComplete="one-time-code"
           maxLength={8}
@@ -81,20 +89,21 @@ function MFAVerify() {
             if (e.key === "Enter") handleVerify();
           }}
           placeholder={t("mfa.placeholder")}
-          className="border border-gray-300 rounded-md px-3 py-2 text-sm text-center tracking-widest focus:outline-none focus:ring-2 focus:ring-gray-900"
+          className="text-center tracking-widest"
           autoFocus
         />
 
-        {error && <p className="text-red-500 text-sm">{error}</p>}
+        {error && <FieldError className="text-small">{error}</FieldError>}
 
-        <button
+        <Button
+          variant="strong"
+          className="w-full"
           onClick={handleVerify}
           disabled={verifying || !code.trim()}
-          className="bg-gray-900 text-white rounded-md py-2 text-sm font-medium hover:bg-gray-700 transition-colors disabled:opacity-50"
         >
           {verifying ? t("mfa.verifying") : t("mfa.verify")}
-        </button>
-      </div>
-    </div>
+        </Button>
+      </AuthPanel>
+    </AuthShell>
   );
 }

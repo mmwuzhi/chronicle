@@ -3,6 +3,12 @@ import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { trailingTagToken } from "../utils/todo";
 import { AutoTextarea } from "./CaptureCard";
+import { cn } from "../lib/cn";
+import { TodoChip } from "./ui/badge";
+import { Button } from "./ui/button";
+import { Card } from "./ui/card";
+import { FieldError } from "./ui/field";
+import { Meta } from "./ui/page";
 
 const AttachIcon = () => (
   <svg
@@ -12,7 +18,7 @@ const AttachIcon = () => (
     stroke="currentColor"
     strokeWidth={1.75}
     viewBox="0 0 24 24"
-    className="ch-icon-noshrink"
+    className="shrink-0"
   >
     <path
       strokeLinecap="round"
@@ -30,7 +36,7 @@ const MicIcon = () => (
     stroke="currentColor"
     strokeWidth={1.75}
     viewBox="0 0 24 24"
-    className="ch-icon-noshrink"
+    className="shrink-0"
   >
     <path
       strokeLinecap="round"
@@ -131,7 +137,7 @@ export function Composer({
   };
 
   return (
-    <div className="ch-card ch-composer">
+    <Card className="mb-4 p-4">
       <AutoTextarea
         value={value}
         onChange={(next) => {
@@ -154,83 +160,83 @@ export function Composer({
           }
         }}
         placeholder={placeholder}
-        className="ch-textarea ch-composer-textarea"
+        className="mb-2.5 min-h-24 w-full resize-none border-0 bg-transparent p-0 font-app text-body leading-normal text-ink outline-none placeholder:text-faint focus:shadow-none"
         style={{
           minHeight: minRows ? `${minRows * 24}px` : undefined,
         }}
       />
       {tagMatches.length > 0 && (
-        <div className="ch-tag-suggest">
+        <div className="mb-2.5 flex items-center gap-2 rounded-control border border-line bg-tint px-2 py-1.5">
           {tagMatches.map((s) => (
             <button
               key={s.tag}
               type="button"
-              className="ch-tag-suggest-item"
+              className="inline-flex cursor-pointer items-center gap-2 rounded-control border-0 bg-transparent px-1 py-0.5 [font:inherit] hover:bg-accent-weak/40"
               // onMouseDown so the click completes before the textarea loses focus.
               onMouseDown={(e) => {
                 e.preventDefault();
                 completeTag(s.tag);
               }}
             >
-              <span className="ch-todo-chip">{s.tag}</span>
-              <span className="ch-meta">{s.hint}</span>
+              <TodoChip>{s.tag}</TodoChip>
+              <Meta>{s.hint}</Meta>
             </button>
           ))}
-          <span className="ch-meta ch-tag-suggest-hint">Tab</span>
+          <Meta className="ml-auto">Tab</Meta>
         </div>
       )}
       {extraControls}
 
       {suggestion !== null && (
-        <div className="ch-polish-preview">
-          <div className="ch-polish-preview-label">
+        <div className="mb-2.5 rounded-control border border-accent-weak bg-accent-weak/45 p-2.5">
+          <div className="mb-1.5 text-caption font-bold text-accent-strong">
             {tc("actions.polishResult")}
           </div>
-          <div className="ch-polish-preview-text">{suggestion}</div>
-          <div className="ch-polish-preview-actions">
-            <button
-              className="ch-btn ch-btn-ai ch-btn-sm"
+          <div className="text-small text-ink">{suggestion}</div>
+          <div className="mt-2.5 flex justify-end gap-2">
+            <Button
+              variant="ai"
+              size="sm"
               onClick={() => {
                 onChange(suggestion);
                 setSuggestion(null);
               }}
             >
               {tc("actions.accept")}
-            </button>
-            <button
-              className="ch-btn ch-btn-sm"
-              onClick={() => setSuggestion(null)}
-            >
+            </Button>
+            <Button size="sm" onClick={() => setSuggestion(null)}>
               {tc("actions.dismiss")}
-            </button>
+            </Button>
           </div>
         </div>
       )}
 
-      <div className="ch-composer-actions">
+      <div className="flex items-center gap-2">
         {onAttach && (
-          <button
-            className="ch-btn ch-btn-sm"
+          <Button
+            size="sm"
             onClick={onAttach}
             disabled={busy || recording}
             data-inline-icon
           >
             <AttachIcon /> {attachLabel}
-          </button>
+          </Button>
         )}
         {onRecord && (
-          <button
-            className={`ch-btn ch-btn-sm${recording ? " recording" : ""}`}
+          <Button
+            size="sm"
+            className={cn(recording && "border-danger text-danger")}
             onClick={onRecord}
             disabled={busy && !recording}
             data-inline-icon
           >
             {recording ? "■" : <MicIcon />} {recordLabel}
-          </button>
+          </Button>
         )}
         {onPolish && (
-          <button
-            className="ch-btn ch-btn-ai ch-btn-sm"
+          <Button
+            variant="ai"
+            size="sm"
             onClick={handlePolish}
             disabled={
               polishing || !trimmed || suggestion !== null || polishDisabled
@@ -238,22 +244,23 @@ export function Composer({
             data-inline-icon
           >
             {polishing ? "..." : "*"} {tc("actions.polish")}
-          </button>
+          </Button>
         )}
-        <div className="ch-flex-spacer" />
-        {shownError && <span className="ch-inline-error">{shownError}</span>}
-        {busy && busyLabel && <span className="ch-meta">{busyLabel}</span>}
-        <button
-          className="ch-btn ch-btn-primary ch-btn-sm"
+        <div className="flex-1" />
+        {shownError && <FieldError>{shownError}</FieldError>}
+        {busy && busyLabel && <Meta>{busyLabel}</Meta>}
+        <Button
+          variant="primary"
+          size="sm"
           onClick={() => {
             if (canSubmit) onSubmit(trimmed);
           }}
           disabled={submitDisabled || !canSubmit}
         >
           {submitLabel}
-        </button>
+        </Button>
       </div>
       {attachmentInput}
-    </div>
+    </Card>
   );
 }

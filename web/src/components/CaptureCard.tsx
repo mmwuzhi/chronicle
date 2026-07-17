@@ -12,6 +12,10 @@ import { patchCaptureInPages } from "../utils/capture-cache";
 import { useTranscriptionPoll } from "../hooks/use-transcription-poll";
 import { Markdown } from "./Markdown";
 import { RemindControl } from "./RemindControl";
+import { cn } from "../lib/cn";
+import { Button, buttonClassName } from "./ui/button";
+import { Card } from "./ui/card";
+import { Meta } from "./ui/page";
 
 export function AutoTextarea({
   value,
@@ -58,8 +62,8 @@ export function AutoTextarea({
       onBlur={onBlur}
       placeholder={placeholder}
       rows={1}
-      className={className}
-      style={{ overflow: "hidden", ...style }}
+      className={cn("overflow-hidden", className)}
+      style={style}
     />
   );
 }
@@ -134,229 +138,204 @@ export const CaptureCard = memo(function CaptureCard({
   };
 
   return (
-    <li
-      className="ch-row"
-      style={{ display: "flex", flexDirection: "column", gap: 12 }}
-    >
-      {c.mediaType === "image" && c.mediaUrl && (
-        <img
-          src={c.mediaUrl}
-          alt=""
-          style={{
-            borderRadius: "var(--radius-sm)",
-            maxHeight: 160,
-            objectFit: "contain",
-            width: "100%",
-          }}
-        />
-      )}
-      {c.mediaType === "audio" && c.mediaUrl && (
-        <audio
-          controls
-          src={c.mediaUrl}
-          style={{ width: "100%", height: 32 }}
-        />
-      )}
-      {transcribable &&
-        ["pending", "processing"].includes(c.transcriptionStatus) && (
-          <div className="ch-transcript-status">
-            {t("transcript.processing")}
+    <Card asChild>
+      <li className="group flex flex-col gap-3 p-4 transition-[border-color,box-shadow]">
+        {c.mediaType === "image" && c.mediaUrl && (
+          <img
+            src={c.mediaUrl}
+            alt=""
+            className="max-h-40 w-full rounded-control object-contain"
+          />
+        )}
+        {c.mediaType === "audio" && c.mediaUrl && (
+          <audio controls src={c.mediaUrl} className="h-8 w-full" />
+        )}
+        {transcribable &&
+          ["pending", "processing"].includes(c.transcriptionStatus) && (
+            <div className="flex items-center gap-2 text-caption text-muted">
+              {t("transcript.processing")}
+            </div>
+          )}
+        {transcribable && c.transcriptionStatus === "failed" && (
+          <div className="flex items-center gap-2 text-caption text-danger">
+            <span>{t("transcript.failed")}</span>
+            <Button size="sm" onClick={() => onRetryTranscription(c.id)}>
+              {t("transcript.retry")}
+            </Button>
           </div>
         )}
-      {transcribable && c.transcriptionStatus === "failed" && (
-        <div className="ch-transcript-status error">
-          <span>{t("transcript.failed")}</span>
-          <button
-            className="ch-btn ch-btn-sm"
-            onClick={() => onRetryTranscription(c.id)}
-          >
-            {t("transcript.retry")}
-          </button>
-        </div>
-      )}
-      {editing ? (
-        <AutoTextarea
-          autoFocus
-          value={draft}
-          onChange={setDraft}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-              e.preventDefault();
-              commitEdit();
-            }
-            if (e.key === "Escape") {
+        {editing ? (
+          <AutoTextarea
+            autoFocus
+            value={draft}
+            onChange={setDraft}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                e.preventDefault();
+                commitEdit();
+              }
+              if (e.key === "Escape") {
+                setDraft(c.rawText ?? "");
+                setEditing(false);
+              }
+            }}
+            onBlur={commitEdit}
+            className="w-full resize-none border-0 bg-transparent p-0 text-small text-ink outline-none"
+          />
+        ) : (
+          <div
+            className="cursor-text"
+            onClick={() => {
               setDraft(c.rawText ?? "");
-              setEditing(false);
-            }
-          }}
-          onBlur={commitEdit}
-          style={{
-            border: "none",
-            outline: "none",
-            padding: 0,
-            background: "transparent",
-            resize: "none",
-            fontSize: "var(--fs-sm)",
-            width: "100%",
-            color: "var(--text)",
-          }}
-        />
-      ) : (
-        <div
-          style={{ cursor: "text" }}
-          onClick={() => {
-            setDraft(c.rawText ?? "");
-            setEditing(true);
-          }}
-        >
-          <Markdown>{c.rawText ?? ""}</Markdown>
-        </div>
-      )}
-      {transcribable && c.transcript && (
-        <div className="ch-transcript">
-          <div className="ch-transcript-head">
-            <span>{t("transcript.label")}</span>
-            {!editingTranscript && (
-              <button
-                className="ch-btn ch-btn-ghost ch-btn-sm"
-                onClick={() => {
-                  setTranscriptDraft(c.transcript ?? "");
-                  setEditingTranscript(true);
-                }}
-              >
-                {tc("actions.edit")}
-              </button>
+              setEditing(true);
+            }}
+          >
+            <Markdown>{c.rawText ?? ""}</Markdown>
+          </div>
+        )}
+        {transcribable && c.transcript && (
+          <div className="rounded-control border border-accent-weak bg-accent-weak/30 p-3">
+            <div className="mb-2 flex items-center justify-between gap-2 text-caption font-bold uppercase text-accent-strong">
+              <span>{t("transcript.label")}</span>
+              {!editingTranscript && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setTranscriptDraft(c.transcript ?? "");
+                    setEditingTranscript(true);
+                  }}
+                >
+                  {tc("actions.edit")}
+                </Button>
+              )}
+            </div>
+            {editingTranscript ? (
+              <>
+                <AutoTextarea
+                  autoFocus
+                  value={transcriptDraft}
+                  onChange={setTranscriptDraft}
+                  onKeyDown={(event) => {
+                    if (event.key === "Escape") setEditingTranscript(false);
+                  }}
+                  className="min-h-24 w-full resize-none rounded-control border border-line bg-surface px-[13px] py-[11px] font-app text-body leading-normal text-ink outline-none focus:border-accent focus:shadow-focus"
+                />
+                <div className="mt-2.5 flex justify-end gap-2">
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={commitTranscript}
+                  >
+                    {tc("actions.save")}
+                  </Button>
+                  <Button size="sm" onClick={() => setEditingTranscript(false)}>
+                    {tc("actions.cancel")}
+                  </Button>
+                </div>
+              </>
+            ) : (
+              <>
+                <Markdown>{c.transcript}</Markdown>
+                <div className="mt-2.5 flex justify-end gap-2">
+                  {c.rawText && (
+                    <Button
+                      size="sm"
+                      onClick={() => onUseTranscript(c, "append")}
+                    >
+                      {t("transcript.append")}
+                    </Button>
+                  )}
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={() => onUseTranscript(c, "replace")}
+                  >
+                    {c.rawText
+                      ? t("transcript.replace")
+                      : t("transcript.useAsText")}
+                  </Button>
+                </div>
+              </>
             )}
           </div>
-          {editingTranscript ? (
+        )}
+        {attachments.length > 0 && (
+          <CaptureAttachments
+            attachments={attachments}
+            deleting={deleteAttachment.isPending}
+            onDelete={(attachmentId) =>
+              deleteAttachment.mutate({ id: c.id, attachmentId })
+            }
+          />
+        )}
+        <div className="flex items-center gap-2">
+          <span className="flex-1" />
+          {editing ? (
             <>
-              <AutoTextarea
-                autoFocus
-                value={transcriptDraft}
-                onChange={setTranscriptDraft}
-                onKeyDown={(event) => {
-                  if (event.key === "Escape") setEditingTranscript(false);
+              <Button size="sm" onClick={commitEdit}>
+                {tc("actions.save")}
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setDraft(c.rawText ?? "");
+                  setEditing(false);
                 }}
-                className="ch-textarea"
-              />
-              <div className="ch-transcript-actions">
-                <button
-                  className="ch-btn ch-btn-primary ch-btn-sm"
-                  onClick={commitTranscript}
-                >
-                  {tc("actions.save")}
-                </button>
-                <button
-                  className="ch-btn ch-btn-sm"
-                  onClick={() => setEditingTranscript(false)}
-                >
-                  {tc("actions.cancel")}
-                </button>
-              </div>
+              >
+                {tc("actions.cancel")}
+              </Button>
             </>
           ) : (
             <>
-              <Markdown>{c.transcript}</Markdown>
-              <div className="ch-transcript-actions">
-                {c.rawText && (
+              <RemindControl
+                remindAt={c.remindAt}
+                remindHide={c.remindHide}
+                onSet={(at, hide) => onSetRemind(c.id, at, hide)}
+              />
+              {c.createdAt && (
+                <Meta title={fmtPreciseDateTime(c.createdAt, i18n.language)}>
+                  {fmtListTime(c.createdAt, i18n.language)}
+                </Meta>
+              )}
+              <DropdownMenu.Root>
+                <DropdownMenu.Trigger asChild>
                   <button
-                    className="ch-btn ch-btn-sm"
-                    onClick={() => onUseTranscript(c, "append")}
+                    className="grid size-7 cursor-pointer place-items-center rounded-full border border-transparent bg-transparent text-muted transition-colors hover:bg-tint hover:text-ink [&_svg]:size-[19px]"
+                    aria-label="More options"
                   >
-                    {t("transcript.append")}
+                    <svg
+                      viewBox="0 0 24 24"
+                      fill="currentColor"
+                      aria-hidden="true"
+                    >
+                      <circle cx="5" cy="12" r="1.9" />
+                      <circle cx="12" cy="12" r="1.9" />
+                      <circle cx="19" cy="12" r="1.9" />
+                    </svg>
                   </button>
-                )}
-                <button
-                  className="ch-btn ch-btn-primary ch-btn-sm"
-                  onClick={() => onUseTranscript(c, "replace")}
-                >
-                  {c.rawText
-                    ? t("transcript.replace")
-                    : t("transcript.useAsText")}
-                </button>
-              </div>
+                </DropdownMenu.Trigger>
+                <DropdownMenu.Portal>
+                  <DropdownMenu.Content
+                    className="z-100 min-w-35 rounded-control border border-line bg-surface p-1 shadow-overlay"
+                    align="end"
+                    sideOffset={4}
+                  >
+                    <DropdownMenu.Item
+                      className="flex cursor-pointer select-none items-center rounded-md px-3 py-2 text-small text-danger outline-none hover:bg-danger-weak data-[highlighted]:bg-danger-weak"
+                      onSelect={() => onDelete(c.id)}
+                    >
+                      {tc("actions.delete")}
+                    </DropdownMenu.Item>
+                  </DropdownMenu.Content>
+                </DropdownMenu.Portal>
+              </DropdownMenu.Root>
             </>
           )}
         </div>
-      )}
-      {attachments.length > 0 && (
-        <CaptureAttachments
-          attachments={attachments}
-          deleting={deleteAttachment.isPending}
-          onDelete={(attachmentId) =>
-            deleteAttachment.mutate({ id: c.id, attachmentId })
-          }
-        />
-      )}
-      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-        <span style={{ flex: 1 }} />
-        {editing ? (
-          <>
-            <button className="ch-btn ch-btn-sm" onClick={commitEdit}>
-              {tc("actions.save")}
-            </button>
-            <button
-              className="ch-btn ch-btn-ghost ch-btn-sm"
-              onClick={() => {
-                setDraft(c.rawText ?? "");
-                setEditing(false);
-              }}
-            >
-              {tc("actions.cancel")}
-            </button>
-          </>
-        ) : (
-          <>
-            <RemindControl
-              remindAt={c.remindAt}
-              remindHide={c.remindHide}
-              onSet={(at, hide) => onSetRemind(c.id, at, hide)}
-            />
-            {c.createdAt && (
-              <span
-                className="ch-meta"
-                title={fmtPreciseDateTime(c.createdAt, i18n.language)}
-              >
-                {fmtListTime(c.createdAt, i18n.language)}
-              </span>
-            )}
-            <DropdownMenu.Root>
-              <DropdownMenu.Trigger asChild>
-                <button
-                  className="ch-iconbtn"
-                  style={{ width: 28, height: 28 }}
-                  aria-label="More options"
-                >
-                  <svg
-                    viewBox="0 0 24 24"
-                    fill="currentColor"
-                    aria-hidden="true"
-                  >
-                    <circle cx="5" cy="12" r="1.9" />
-                    <circle cx="12" cy="12" r="1.9" />
-                    <circle cx="19" cy="12" r="1.9" />
-                  </svg>
-                </button>
-              </DropdownMenu.Trigger>
-              <DropdownMenu.Portal>
-                <DropdownMenu.Content
-                  className="ch-dropdown"
-                  align="end"
-                  sideOffset={4}
-                >
-                  <DropdownMenu.Item
-                    className="ch-dropdown-item danger"
-                    onSelect={() => onDelete(c.id)}
-                  >
-                    {tc("actions.delete")}
-                  </DropdownMenu.Item>
-                </DropdownMenu.Content>
-              </DropdownMenu.Portal>
-            </DropdownMenu.Root>
-          </>
-        )}
-      </div>
-    </li>
+      </li>
+    </Card>
   );
 });
 
@@ -372,44 +351,54 @@ function CaptureAttachments({
   const { t } = useTranslation("captures");
 
   return (
-    <div className="ch-attachments">
-      <div className="ch-attachments-title">{t("attachments.title")}</div>
+    <div className="flex flex-col gap-2 rounded-control border border-line bg-surface-2 p-2.5">
+      <div className="text-caption font-bold text-muted">
+        {t("attachments.title")}
+      </div>
       {attachments.map((attachment) => (
-        <div className="ch-attachment-row" key={attachment.id}>
-          <div className="ch-attachment-file-icon" aria-hidden="true">
+        <div
+          className="flex min-w-0 items-center gap-2.5 max-[520px]:flex-wrap max-[520px]:items-start"
+          key={attachment.id}
+        >
+          <div
+            className="grid size-7 shrink-0 place-items-center rounded-[7px] bg-accent-weak text-caption font-extrabold text-accent-strong"
+            aria-hidden="true"
+          >
             {providerInitial(attachment.provider)}
           </div>
-          <div className="ch-attachment-main">
+          <div className="flex min-w-0 flex-1 flex-col gap-0.5 max-[520px]:min-w-[calc(100%-38px)]">
             <a
-              className="ch-attachment-name"
+              className="overflow-hidden text-ellipsis whitespace-nowrap text-small font-semibold text-ink"
               href={attachment.webUrl}
               target="_blank"
               rel="noreferrer"
             >
               {attachment.name}
             </a>
-            <span className="ch-meta">
+            <Meta>
               {providerLabel(attachment.provider)}
               {attachment.sizeBytes != null
                 ? ` · ${fmtFileSize(attachment.sizeBytes)}`
                 : ""}
-            </span>
+            </Meta>
           </div>
           <a
-            className="ch-btn ch-btn-ghost ch-btn-sm"
+            className={buttonClassName({ variant: "ghost", size: "sm" })}
             href={attachment.webUrl}
             target="_blank"
             rel="noreferrer"
           >
             {t("attachments.open")}
           </a>
-          <button
-            className="ch-btn ch-btn-danger ch-btn-sm"
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-danger hover:bg-danger-weak hover:text-danger-strong"
             disabled={deleting}
             onClick={() => onDelete(attachment.id)}
           >
             {t("attachments.removeReference")}
-          </button>
+          </Button>
         </div>
       ))}
     </div>

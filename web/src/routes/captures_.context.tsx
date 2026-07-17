@@ -5,6 +5,15 @@ import { useGetCaptureContext } from "../api";
 import { CaptureContextTimeline } from "../components/CaptureContextTimeline";
 import { CaptureRelated } from "../components/CaptureRelated";
 import { Nav } from "../components/nav";
+import { buttonClassName } from "../components/ui/button";
+import {
+  Meta,
+  PageError,
+  PageHeader,
+  PageShell,
+  PageSubtitle,
+  PageTitle,
+} from "../components/ui/page";
 
 export const Route = createFileRoute("/captures_/context")({
   validateSearch: (search: Record<string, unknown>) => ({
@@ -30,18 +39,19 @@ function CaptureContext() {
   return (
     <>
       <Nav />
-      <main className="ch-page-shell ch-context-page">
-        <header className="ch-page-head">
-          <Link to="/captures" className="ch-btn ch-btn-ghost ch-btn-sm">
+      <PageShell className="max-w-[860px]">
+        <PageHeader>
+          <Link
+            to="/captures"
+            className={buttonClassName({ variant: "ghost", size: "sm" })}
+          >
             ← {t("title")}
           </Link>
-          <h1 className="ch-title">{t("context.title")}</h1>
-          <p className="ch-page-subtitle">{t("context.subtitle")}</p>
-        </header>
-        {query.isLoading && <p className="ch-meta">{tc("loading")}</p>}
-        {query.error && (
-          <div className="ch-page-error">{t("context.failedToLoad")}</div>
-        )}
+          <PageTitle>{t("context.title")}</PageTitle>
+          <PageSubtitle>{t("context.subtitle")}</PageSubtitle>
+        </PageHeader>
+        {query.isLoading && <Meta>{tc("loading")}</Meta>}
+        {query.error && <PageError>{t("context.failedToLoad")}</PageError>}
         {query.data && (
           <CaptureContextTimeline
             items={query.data.items ?? []}
@@ -51,7 +61,7 @@ function CaptureContext() {
           />
         )}
         {anchorId && <CaptureRelated anchorId={anchorId} />}
-      </main>
+      </PageShell>
     </>
   );
 }
