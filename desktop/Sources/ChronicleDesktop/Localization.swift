@@ -167,7 +167,7 @@ final class DesktopLocalization: ObservableObject {
         "%d capture waiting to sync.": "有 %d 条捕获等待同步。",
         "%d captures waiting to sync.": "有 %d 条捕获等待同步。",
         "Retry Now": "立即重试",
-        "Captures made offline (or before signing in) sync here once you're online.": "离线或登录前创建的捕获会在联网后从这里同步。",
+        "Offline captures and edits sync here once you're online.": "离线捕获和编辑会在联网后从这里同步。",
         "Sign in to Chronicle": "登录 Chronicle",
         "Use the same account you use on the web.": "使用与网页端相同的账户。",
         "or use email": "或使用邮箱",
@@ -190,6 +190,9 @@ final class DesktopLocalization: ObservableObject {
         "Signed in.": "已登录。",
         "Signed out.": "已退出登录。",
         "Synced %d; %d still waiting.": "已同步 %d 条；仍有 %d 条等待。",
+        "Sync is already in progress.": "同步已在进行中。",
+        "Sync couldn't finish. Try again.": "同步未能完成，请重试。",
+        "Couldn't read the sync queue.": "无法读取同步队列。",
 
         "Webhooks": "Webhook",
         "POST a templated payload to an external service when a capture matches.": "捕获匹配时向外部服务 POST 模板化数据。",

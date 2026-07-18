@@ -15,7 +15,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var hotKeyController: HotKeyController?
     private let settings = SettingsStore()
     private let localStore = LocalCaptureStore(fileURL: ChronicleDesktopPaths.defaultLocalDatabaseURL())
-    private let captureSyncGate = CaptureSyncGate()
+    private lazy var captureSyncCoordinator = CaptureSyncCoordinator(store: localStore)
     // Offline semantic search over the local cache via a local Ollama. Lazy so it
     // can reference localStore; degrades to keyword search when Ollama is absent.
     private lazy var localSemantic = LocalSemanticSearch(store: localStore, embedder: LocalEmbedder())
@@ -53,7 +53,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             clients: clients,
             onSaveShortcut: { [weak self] _ in self?.installHotKey() },
             onSignInChanged: { [weak self] in self?.handleSignInChanged() },
-            retry: { [weak self] in await self?.retrySummary() ?? (0, 0) },
+            retry: { [weak self] in
+                await self?.retrySummary() ?? CaptureSyncSummary(status: .failed)
+            },
         )
         mainWindowController = MainWindowController(clients: clients, settingsModel: settingsModel)
 
@@ -142,7 +144,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func currentSessionStatus() -> SessionStatus {
         SessionStatus(
             signedOut: sessionMonitor.health == .expired,
-            pending: (try? localStore.pendingSync(limit: 1000).count) ?? 0,
+            pending: (try? localStore.syncBacklog().total) ?? 0,
         )
     }
 
@@ -216,7 +218,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             },
             syncEdits: { [weak self] in
                 guard let self, let client = self.makeClient() else { return }
-                await self.pushPendingUpdates(using: client)
+                await self.pushPendingCaptureUpdates(using: client)
             },
         )
     }
@@ -371,13 +373,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func retrySummary() async -> (sent: Int, remaining: Int) {
+    private func retrySummary() async -> CaptureSyncSummary {
         guard let client = makeClient() else {
-            let remaining = (try? localStore.pendingSync(limit: 1000).count) ?? 0
-            return (0, remaining)
+            do {
+                let backlog = try localStore.syncBacklog()
+                return CaptureSyncSummary(
+                    pendingCreates: backlog.pendingCreates,
+                    pendingUpdates: backlog.pendingUpdates
+                )
+            } catch {
+                return CaptureSyncSummary(status: .failed)
+            }
         }
-        let result = await syncPendingCaptures(using: client)
-        return (result.sent, result.remaining)
+        return await syncPendingCaptures(using: client)
     }
 
     private func saveCapture(_ text: String, remindAt: Date?, keepVisible: Bool) {
@@ -416,69 +424,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    struct SyncSummary {
-        var sent: Int
-        var remaining: Int
-    }
-
     func persistCapture(_ payload: CapturePayload) throws -> LocalCaptureRecord {
         let record = try localStore.create(payload)
         CaptureEvents.postChanged()
         return record
     }
 
-    func syncPendingCaptures(using client: CaptureAPIClient) async -> SyncSummary {
-        let pending: [LocalCaptureRecord]
-        do {
-            pending = try localStore.pendingSync()
-        } catch {
-            return SyncSummary(sent: 0, remaining: 0)
+    func syncPendingCaptures(using client: CaptureAPIClient) async -> CaptureSyncSummary {
+        let summary = await captureSyncCoordinator.syncPending(using: client)
+        if summary.changed {
+            CaptureEvents.postChanged()
         }
-
-        var sent = 0
-        for record in pending {
-            if await sync(record, using: client, notifySuccess: false) {
-                sent += 1
-            }
-        }
-        // Replay offline/optimistic edits to already-synced captures (PATCH), so a
-        // typo fixed while signed out lands on the server on the next sign-in.
-        await pushPendingUpdates(using: client)
-        let remaining = (try? localStore.pendingSync().count) ?? 0
-        return SyncSummary(sent: sent, remaining: remaining)
+        return summary
     }
 
-    // Drain the "edited since last sync" queue: server-backed rows whose text was
-    // changed offline. On success advance synced_at to the pushed updated_at
-    // (markUpdatePushed) so the row clears; on failure leave it dirty for the next
-    // drain — offline-first, never an error dialog.
-    private func pushPendingUpdates(using client: CaptureAPIClient) async {
-        let dirty = (try? localStore.pendingUpdates(limit: 1000)) ?? []
-        for record in dirty {
-            guard let serverId = record.serverId else { continue }
-            do {
-                try await client.update(serverId: serverId, rawText: record.payload.rawText)
-                try localStore.markUpdatePushed(localId: record.id, syncedAt: record.updatedAt)
-                CaptureEvents.postChanged()
-            } catch {
-                try? localStore.markFailed(localId: record.id, error: error)
-            }
+    private func pushPendingCaptureUpdates(using client: CaptureAPIClient) async {
+        let summary = await captureSyncCoordinator.pushPendingUpdates(using: client)
+        if summary.changed {
+            CaptureEvents.postChanged()
         }
     }
 
     @discardableResult
     func sync(_ record: LocalCaptureRecord, using client: CaptureAPIClient, notifySuccess: Bool) async -> Bool {
-        guard captureSyncGate.begin(record.id) else { return false }
-        defer { captureSyncGate.end(record.id) }
-
-        do {
-            let serverId = try await client.send(record.payload)
-            // sentText = the snapshot we just POSTed; if the user edited this row
-            // while the create was in flight, markCreateSynced keeps it dirty so the
-            // trailing pushPendingUpdates drain PATCHes the new text (never lost to
-            // the stale create payload).
-            try localStore.markCreateSynced(
-                localId: record.id, serverId: serverId, sentText: record.payload.rawText)
+        let outcome = await captureSyncCoordinator.sync(record, using: client)
+        switch outcome {
+        case .synced:
             CaptureEvents.postChanged()
             if notifySuccess {
                 await MainActor.run {
@@ -486,13 +457,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
             return true
-        } catch {
-            try? localStore.markFailed(localId: record.id, error: error)
+        case .failed:
             if notifySuccess {
                 await MainActor.run {
                     self.showNotification(title: L("Capture saved locally"), body: L("Sync will retry later."))
                 }
             }
+            return false
+        case .alreadyInFlight:
             return false
         }
     }

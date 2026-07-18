@@ -94,7 +94,7 @@ struct MainWindowNavigationTests {
             clients: clients,
             onSaveShortcut: { _ in },
             onSignInChanged: {},
-            retry: { (0, 0) },
+            retry: { CaptureSyncSummary() },
         )
         let host = NSHostingView(
             rootView: MainView(clients: clients, navigation: navigation, settingsModel: settingsModel),
@@ -172,7 +172,7 @@ struct MainWindowNavigationTests {
             clients: clients,
             onSaveShortcut: { _ in },
             onSignInChanged: {},
-            retry: { (0, 0) },
+            retry: { CaptureSyncSummary() },
         )
         let navigation = MainWindowNavigation(defaults: UserDefaults(suiteName: UUID().uuidString)!)
         navigation.mode = .settings
@@ -208,7 +208,7 @@ struct MainWindowNavigationTests {
             clients: clients,
             onSaveShortcut: { _ in },
             onSignInChanged: {},
-            retry: { (0, 0) },
+            retry: { CaptureSyncSummary() },
         )
         let navigation = MainWindowNavigation(defaults: UserDefaults(suiteName: UUID().uuidString)!)
         navigation.mode = .ask

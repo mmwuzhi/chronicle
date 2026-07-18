@@ -27,7 +27,7 @@ final class SettingsModel: ObservableObject {
     private let localStore: LocalCaptureStore
     private let onSaveShortcut: (ShortcutSpec) -> Void
     private let onSignInChanged: () -> Void
-    private let retry: () async -> (sent: Int, remaining: Int)
+    private let retry: () async -> CaptureSyncSummary
     private var webAuthenticationSession: ASWebAuthenticationSession?
     private var authenticationTask: Task<Void, Never>?
     private var authenticationGate = AuthenticationAttemptGate()
@@ -39,7 +39,7 @@ final class SettingsModel: ObservableObject {
         clients: CaptureClients,
         onSaveShortcut: @escaping (ShortcutSpec) -> Void,
         onSignInChanged: @escaping () -> Void,
-        retry: @escaping () async -> (sent: Int, remaining: Int)
+        retry: @escaping () async -> CaptureSyncSummary
     ) {
         self.settings = settings
         self.localStore = localStore
@@ -285,15 +285,27 @@ final class SettingsModel: ObservableObject {
     }
 
     func refreshPending() {
-        pendingCount = (try? localStore.pendingSync(limit: 1000).count) ?? 0
+        do {
+            pendingCount = try localStore.syncBacklog().total
+        } catch {
+            pendingCount = 0
+            status = L("Couldn't read the sync queue.")
+        }
     }
 
     func retryNow() {
         Task { @MainActor in
             let result = await retry()
-            status = DesktopLocalization.shared.format(
-                "Synced %d; %d still waiting.", result.sent, result.remaining
-            )
+            switch result.status {
+            case .completed:
+                status = DesktopLocalization.shared.format(
+                    "Synced %d; %d still waiting.", result.syncedCount, result.remaining
+                )
+            case .inProgress:
+                status = L("Sync is already in progress.")
+            case .failed:
+                status = L("Sync couldn't finish. Try again.")
+            }
             refreshPending()
         }
     }
@@ -511,7 +523,7 @@ struct SettingsView: View {
                 Spacer()
                 Button(L("Retry Now")) { model.retryNow() }.disabled(model.pendingCount == 0)
             }
-            Text(L("Captures made offline (or before signing in) sync here once you're online."))
+            Text(L("Offline captures and edits sync here once you're online."))
                 .font(.caption).foregroundStyle(.secondary)
         }
     }

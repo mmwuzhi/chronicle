@@ -27,6 +27,15 @@ public enum LocalCaptureStoreError: Error, Equatable {
     case stepFailed(String)
 }
 
+public struct LocalCaptureSyncBacklog: Equatable, Sendable {
+    public let pendingCreates: Int
+    public let pendingUpdates: Int
+
+    public var total: Int {
+        pendingCreates + pendingUpdates
+    }
+}
+
 public final class LocalCaptureStore: @unchecked Sendable {
     private let fileURL: URL
     private let lock = NSLock()
@@ -228,6 +237,16 @@ public final class LocalCaptureStore: @unchecked Sendable {
         }
     }
 
+    /// One definition of "waiting to sync" for status UI and sync summaries.
+    /// Creates and edits use separate queries because they have different remote
+    /// operations, but both are user work that has not reached the server yet.
+    public func syncBacklog(limit: Int = 1000) throws -> LocalCaptureSyncBacklog {
+        LocalCaptureSyncBacklog(
+            pendingCreates: try pendingSync(limit: limit).count,
+            pendingUpdates: try pendingUpdates(limit: limit).count
+        )
+    }
+
     public func upcomingReminders(now: Date = Date()) throws -> [LocalCaptureRecord] {
         try query(
             """
@@ -272,14 +291,58 @@ public final class LocalCaptureStore: @unchecked Sendable {
     @discardableResult
     public func markCreateSynced(
         localId: String, serverId: String, sentText: String,
-        syncedAt: Date = Date(), reeditStamp: Date = Date()
+        syncedAt: Date = Date(), reeditStamp: Date? = nil
     ) throws -> Bool {
-        try markSynced(localId: localId, serverId: serverId, syncedAt: syncedAt)
-        guard let row = try find(localId: localId), row.payload.rawText != sentText else {
-            return false
+        // DateCodec persists fractional seconds at millisecond precision. Two
+        // back-to-back Date() values can therefore round to the same stored value,
+        // making updated_at == synced_at and incorrectly clearing the dirty row.
+        // Keep the test override, but make the production fallback strictly later.
+        let dirtyStamp = reeditStamp ?? syncedAt.addingTimeInterval(0.001)
+        return try withDatabase { db in
+            // Keep the create completion and re-edit detection under the store
+            // lock. Most importantly, never write raw_text here: an edit arriving
+            // during the POST already owns that column and must not be overwritten
+            // by the older payload snapshot.
+            try executeStatement(
+                db, "DELETE FROM local_captures WHERE server_id = ? AND id <> ?"
+            ) { stmt in
+                bindText(stmt, 1, serverId)
+                bindText(stmt, 2, localId)
+            }
+            let sql = """
+                UPDATE local_captures
+                SET server_id = ?, synced_at = ?,
+                    updated_at = CASE
+                        WHEN raw_text = ? THEN ?
+                        WHEN updated_at > ? THEN updated_at
+                        ELSE ?
+                    END,
+                    last_error = NULL
+                WHERE id = ?
+                """
+            try executeStatement(db, sql) { stmt in
+                bindText(stmt, 1, serverId)
+                bindDate(stmt, 2, syncedAt)
+                bindText(stmt, 3, sentText)
+                bindDate(stmt, 4, syncedAt)
+                bindDate(stmt, 5, syncedAt)
+                bindDate(stmt, 6, dirtyStamp)
+                bindText(stmt, 7, localId)
+            }
+
+            var stmt: OpaquePointer?
+            guard sqlite3_prepare_v2(
+                db, "SELECT raw_text FROM local_captures WHERE id = ?", -1, &stmt, nil
+            ) == SQLITE_OK else {
+                throw LocalCaptureStoreError.prepareFailed(lastError(db))
+            }
+            defer { sqlite3_finalize(stmt) }
+            bindText(stmt, 1, localId)
+            guard sqlite3_step(stmt) == SQLITE_ROW else {
+                throw LocalCaptureStoreError.stepFailed(lastError(db))
+            }
+            return columnText(stmt, 0) != sentText
         }
-        try setText(id: localId, rawText: row.payload.rawText, now: reeditStamp)
-        return true
     }
 
     // Mark a server-backed row's edit as pushed by advancing synced_at to the

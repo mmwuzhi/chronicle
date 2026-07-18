@@ -9,7 +9,8 @@ target split, the invariants, and the gotchas.
 - `Sources/ChronicleDesktopCore/` — platform-free logic, unit-tested by
   `Tests/ChronicleDesktopCoreTests/`. Capture payload + API client
   (`Capture.swift`), auth + token refresh (`Auth.swift`,
-  `AuthedTransport.swift`), offline queue (`CaptureQueue.swift`), local
+  `AuthedTransport.swift`), offline sync orchestration
+  (`CaptureSyncCoordinator.swift`), legacy queue (`CaptureQueue.swift`), local
   SQLite store (`LocalCaptureStore.swift`), on-device semantic search
   (`LocalEmbedder.swift`, `LocalSemanticSearch.swift` — local Ollama
   `bge-m3`), server recall client (`Recall.swift` — `/find` + `/ask`),
@@ -53,9 +54,12 @@ only when the cache schema next changes for another reason (`TODO.md`).
 - **Offline-first error handling:** a server or auth error must never blank
   already-shown local results; save failures fall back to the queue, not to
   an error dialog.
-- **One create POST per local capture at a time.** Immediate save, session
-  refresh, and manual retry may drain the same pending row concurrently; route
-  every create sync through `CaptureSyncGate` and release it on every outcome.
+- **Serialize remote writes per local capture.** Immediate save, session
+  refresh, manual retry, and optimistic edits may request the same remote write
+  concurrently. Route every create/update drain through
+  `CaptureSyncCoordinator`: it deduplicates create POSTs, coalesces update-drain
+  requests, and re-reads a dirty row after each PATCH so an in-flight re-edit is
+  sent as the next revision.
 - **Bearer credentials require a secure API endpoint.** Remote API URLs must
   use HTTPS; plain HTTP is allowed only for loopback development hosts. Keep
   validation centralized in `ChronicleAPIEndpoint` so settings, environment

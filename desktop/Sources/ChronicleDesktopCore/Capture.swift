@@ -60,7 +60,14 @@ public protocol CaptureSending {
     func send(_ payload: CapturePayload) async throws -> String
 }
 
-public final class CaptureAPIClient: CaptureSending, @unchecked Sendable {
+/// The two remote operations needed to drain the offline capture store.
+/// Keeping this protocol smaller than the full API client makes sync orchestration
+/// independently testable without constructing URL sessions or HTTP responses.
+public protocol CaptureSyncTransport: CaptureSending, Sendable {
+    func update(serverId: String, rawText: String) async throws
+}
+
+public final class CaptureAPIClient: CaptureSyncTransport, @unchecked Sendable {
     private let config: ChronicleConfig
     private let session: URLSession
     private let refresher: AuthRefresher?
