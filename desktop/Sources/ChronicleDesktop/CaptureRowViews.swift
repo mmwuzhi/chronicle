@@ -44,6 +44,7 @@ private struct RowActionButtonStyle: ButtonStyle {
 /// mutating per-row state as content moves under the pointer during scrolling.
 struct CaptureRowActions: View {
     var onDelete: (() -> Void)?
+    var onEdit: (() -> Void)?
     var onOpen: (() -> Void)?
     var onUnlink: (() -> Void)?
     var onPin: (() -> Void)?
@@ -53,6 +54,7 @@ struct CaptureRowActions: View {
         if hasActions {
             RowActionMenu(
                 onOpen: onOpen,
+                onEdit: onEdit,
                 onPin: onPin,
                 onUnlink: onUnlink,
                 onDelete: onDelete,
@@ -63,7 +65,7 @@ struct CaptureRowActions: View {
     }
 
     private var hasActions: Bool {
-        onOpen != nil || onPin != nil || onUnlink != nil || onDelete != nil
+        onOpen != nil || onEdit != nil || onPin != nil || onUnlink != nil || onDelete != nil
     }
 }
 
@@ -75,6 +77,7 @@ struct CaptureRowActions: View {
 private struct RowActionMenu: View {
     @ObservedObject private var localization = DesktopLocalization.shared
     var onOpen: (() -> Void)?
+    var onEdit: (() -> Void)?
     var onPin: (() -> Void)?
     var onUnlink: (() -> Void)?
     var onDelete: (() -> Void)?
@@ -84,6 +87,7 @@ private struct RowActionMenu: View {
         RowActionButton(systemImage: "ellipsis", help: L("More")) {
             CaptureRowOverflowMenu.present(
                 onOpen: onOpen,
+                onEdit: onEdit,
                 onPin: onPin,
                 onUnlink: onUnlink,
                 onDelete: onDelete,
@@ -97,6 +101,7 @@ enum CaptureRowOverflowMenu {
     @MainActor
     static func make(
         onOpen: (() -> Void)?,
+        onEdit: (() -> Void)? = nil,
         onPin: (() -> Void)?,
         onUnlink: (() -> Void)?,
         onDelete: (() -> Void)?,
@@ -108,6 +113,13 @@ enum CaptureRowOverflowMenu {
                 title: L("Open"),
                 systemImage: "arrow.up.forward.square",
                 action: onOpen,
+            ))
+        }
+        if let onEdit {
+            menu.addItem(ClosureMenuItem(
+                title: L("Edit"),
+                systemImage: "pencil",
+                action: onEdit,
             ))
         }
         if let onPin {
@@ -131,6 +143,7 @@ enum CaptureRowOverflowMenu {
             menu.addItem(ClosureMenuItem(
                 title: L("Delete"),
                 systemImage: "trash",
+                destructive: true,
                 action: onDelete,
             ))
         }
@@ -140,6 +153,7 @@ enum CaptureRowOverflowMenu {
     @MainActor
     static func present(
         onOpen: (() -> Void)?,
+        onEdit: (() -> Void)? = nil,
         onPin: (() -> Void)?,
         onUnlink: (() -> Void)?,
         onDelete: (() -> Void)?,
@@ -147,6 +161,7 @@ enum CaptureRowOverflowMenu {
     ) {
         make(
             onOpen: onOpen,
+            onEdit: onEdit,
             onPin: onPin,
             onUnlink: onUnlink,
             onDelete: onDelete,
@@ -158,9 +173,20 @@ enum CaptureRowOverflowMenu {
     private final class ClosureMenuItem: NSMenuItem {
         private let handler: () -> Void
 
-        init(title: String, systemImage: String, action: @escaping () -> Void) {
+        init(
+            title: String,
+            systemImage: String,
+            destructive: Bool = false,
+            action: @escaping () -> Void
+        ) {
             self.handler = action
             super.init(title: title, action: #selector(invoke), keyEquivalent: "")
+            if destructive {
+                attributedTitle = NSAttributedString(
+                    string: title,
+                    attributes: [.foregroundColor: NSColor.systemRed]
+                )
+            }
             image = NSImage(systemSymbolName: systemImage, accessibilityDescription: title)
             target = self
         }
@@ -220,14 +246,16 @@ struct CaptureRowMetadata: View {
     @ObservedObject private var localization = DesktopLocalization.shared
     let todoState: CaptureTodoState?
     let createdAt: String
+    @State private var hovering = false
 
     var body: some View {
         HStack(spacing: 4) {
             if let todoState {
                 TodoFacetChip(state: todoState)
             }
-            Text(CaptureTime.display(createdAt))
+            Text(hovering ? CaptureTime.precise(createdAt) : CaptureTime.display(createdAt))
                 .accessibilityLabel(CaptureTime.precise(createdAt))
+                .onHover { hovering = $0 }
         }
         .foregroundStyle(.tertiary)
     }
@@ -329,8 +357,8 @@ struct SelectableRowText: NSViewRepresentable {
 // MARK: - Capture row
 
 /// One capture/hit row: content, timestamp, stable shared actions, and
-/// double-click-to-edit (when `onEdit` is provided). Matches rag's row geometry:
-/// fixed right-hand action slot so long content never collides with the icons.
+/// double-click-to-edit (when an edit path is provided). Content owns the full
+/// row width; metadata and overflow actions share the quiet footer line.
 struct CaptureRow: View {
     @ObservedObject private var localization = DesktopLocalization.shared
     let item: RowItem
@@ -400,6 +428,21 @@ struct CaptureRow: View {
                     }
                     VStack(alignment: .leading, spacing: 3) {
                         restingContent
+                        HStack(alignment: .center, spacing: 6) {
+                            CaptureRowMetadata(
+                                todoState: item.todoState,
+                                createdAt: item.createdAt,
+                            )
+                            Spacer(minLength: 8)
+                            CaptureRowActions(
+                                onDelete: onDelete,
+                                onEdit: beginEditAction,
+                                onOpen: onOpen,
+                                onUnlink: onUnlink,
+                                onPin: onPin,
+                                isPinned: isPinned,
+                            )
+                        }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .contentShape(Rectangle())
@@ -408,13 +451,6 @@ struct CaptureRow: View {
                     // a platform NSTextView while scrolling.
                     .simultaneousGesture(TapGesture(count: 2).onEnded { beginEditingFromContent() })
 
-                    CaptureRowActions(
-                        onDelete: onDelete,
-                        onOpen: onOpen,
-                        onUnlink: onUnlink,
-                        onPin: onPin,
-                        isPinned: isPinned,
-                    )
                 }
             }
         }
@@ -438,12 +474,19 @@ struct CaptureRow: View {
             Text(item.displayText)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
-        // Resting metadata stays tertiary. The todo marker mirrors the web card's
-        // footer vocabulary (Todo/Done).
-        CaptureRowMetadata(
-            todoState: item.todoState,
-            createdAt: item.createdAt,
+    }
+
+    private var canBeginEditing: Bool {
+        captureRowCanBeginEditing(
+            item,
+            hasInlineEdit: onEdit != nil,
+            hasExternalBegin: onBeginEdit != nil
         )
+    }
+
+    private var beginEditAction: (() -> Void)? {
+        guard canBeginEditing else { return nil }
+        return { beginEditingFromContent() }
     }
 
     private var editContainer: some View {

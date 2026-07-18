@@ -15,6 +15,9 @@ final class CaptureClients {
     let openSignIn: () -> Void
     // Open the single-capture detail window focused on the given row.
     let openDetail: (RowItem) -> Void
+    // Open the detail window and immediately enter its editor. Search/review
+    // projections hydrate their full capture there before the draft appears.
+    let openDetailForEditing: (RowItem) -> Void
     // Pin / unpin a capture as a desktop sticky, and read whether one is pinned.
     let togglePin: (RowItem) -> Void
     let isPinned: (String) -> Bool
@@ -41,6 +44,7 @@ final class CaptureClients {
         webhook: @escaping () -> WebhookAPIClient?,
         openSignIn: @escaping () -> Void,
         openDetail: @escaping (RowItem) -> Void = { _ in },
+        openDetailForEditing: ((RowItem) -> Void)? = nil,
         togglePin: @escaping (RowItem) -> Void = { _ in },
         isPinned: @escaping (String) -> Bool = { _ in false },
         localSearch: @escaping (String) -> [RowItem],
@@ -54,6 +58,7 @@ final class CaptureClients {
         self.webhook = webhook
         self.openSignIn = openSignIn
         self.openDetail = openDetail
+        self.openDetailForEditing = openDetailForEditing ?? openDetail
         self.togglePin = togglePin
         self.isPinned = isPinned
         self.localSearch = localSearch
@@ -131,7 +136,7 @@ struct RowItem: Identifiable, Equatable {
         id = capture.id
         content = capture.content
         snippet = nil
-        editableRawText = capture.rawText ?? ""
+        editableRawText = capture.rawText
         createdAt = capture.createdAt
         createdDate = CaptureTime.parse(capture.createdAt)
         modality = capture.mediaType
@@ -211,6 +216,48 @@ struct RowItem: Identifiable, Equatable {
             return
         }
         snippet = evidence
+    }
+
+    func replacingRawText(_ rawText: String) -> RowItem {
+        RowItem(
+            id: id,
+            content: content == editableRawText ? rawText : content,
+            snippet: snippet,
+            editableRawText: rawText,
+            createdAt: createdAt,
+            createdDate: createdDate,
+            modality: modality,
+            synced: synced,
+            dirty: synced,
+            mediaUrl: mediaUrl,
+            todoState: CaptureTodoTag.state(in: rawText)
+        )
+    }
+
+    private init(
+        id: String,
+        content: String,
+        snippet: String?,
+        editableRawText: String?,
+        createdAt: String,
+        createdDate: Date?,
+        modality: String,
+        synced: Bool,
+        dirty: Bool,
+        mediaUrl: String?,
+        todoState: CaptureTodoState?
+    ) {
+        self.id = id
+        self.content = content
+        self.snippet = snippet
+        self.editableRawText = editableRawText
+        self.createdAt = createdAt
+        self.createdDate = createdDate
+        self.modality = modality
+        self.synced = synced
+        self.dirty = dirty
+        self.mediaUrl = mediaUrl
+        self.todoState = todoState
     }
 }
 

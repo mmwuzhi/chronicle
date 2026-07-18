@@ -6,8 +6,8 @@ import ChronicleDesktopCore
 // has made (GET /captures/{id}/links — add/remove right here), and the semantic
 // "Related" suggestions (GET /captures/{id}/related). Tapping a linked or related
 // row navigates to it in place (with a Back stack), so the window doubles as a
-// lightweight way to walk a chain of related memories. Editing and deleting still
-// live in the main window and the web app; explicit linking is editable here.
+// lightweight way to walk a chain of related memories. Editing and explicit
+// linking are both available in place.
 @MainActor
 final class CaptureDetailModel: ObservableObject {
     @Published var capture: RowItem
@@ -16,10 +16,13 @@ final class CaptureDetailModel: ObservableObject {
     @Published var loading = false
     @Published var error = ""
     @Published private(set) var canGoBack = false
+    @Published var editDraft: CaptureEditDraft?
+    @Published var loadingEdit = false
 
     private var history: [RowItem] = []
     private let clients: CaptureClients
     private var loadTask: Task<Void, Never>?
+    private var editTask: Task<Void, Never>?
 
     init(capture: RowItem, clients: CaptureClients) {
         self.capture = capture
@@ -31,9 +34,97 @@ final class CaptureDetailModel: ObservableObject {
     var isPinned: Bool { clients.isPinned(capture.id) }
     func togglePin() { clients.togglePin(capture) }
 
+    func beginEditing() {
+        guard editDraft == nil, !loadingEdit else { return }
+        if let draft = CaptureEditDraft(item: capture) {
+            editDraft = draft
+            error = ""
+            return
+        }
+        guard capture.synced, let client = clients.recall() else {
+            error = L("This Capture has no editable text.")
+            return
+        }
+
+        let id = capture.id
+        loadingEdit = true
+        editTask?.cancel()
+        editTask = Task { @MainActor in
+            defer { loadingEdit = false }
+            do {
+                let fullCapture = try await client.capture(id: id)
+                guard !Task.isCancelled, capture.id == id else { return }
+                let fullRow = RowItem(fullCapture)
+                capture = fullRow
+                guard let draft = CaptureEditDraft(item: fullRow) else {
+                    error = L("This Capture has no editable text.")
+                    return
+                }
+                editDraft = draft
+                error = ""
+            } catch let editError {
+                guard !Task.isCancelled, capture.id == id else { return }
+                error = describeCaptureError(editError)
+            }
+        }
+    }
+
+    func updateEditDraft(_ text: String) {
+        editDraft?.text = text
+    }
+
+    func cancelEditing() {
+        editTask?.cancel()
+        editTask = nil
+        loadingEdit = false
+        editDraft = nil
+    }
+
+    func commitEditing() {
+        guard !loadingEdit, let draft = editDraft else { return }
+        let next = draft.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !next.isEmpty else { return }
+        if next == draft.originalText {
+            editDraft = nil
+            return
+        }
+
+        let id = draft.id
+        if clients.localSetText(id, next) {
+            capture = capture.replacingRawText(next)
+            editDraft = nil
+            error = ""
+            CaptureEvents.postChanged()
+            Task { await clients.syncEdits() }
+            return
+        }
+        guard let client = clients.recall() else {
+            error = L("Not signed in — sign in from Settings to edit.")
+            return
+        }
+
+        loadingEdit = true
+        editTask?.cancel()
+        editTask = Task { @MainActor in
+            defer { loadingEdit = false }
+            do {
+                let updated = try await client.update(id: id, rawText: next)
+                guard !Task.isCancelled, capture.id == id else { return }
+                capture = RowItem(updated)
+                editDraft = nil
+                error = ""
+                CaptureEvents.postChanged()
+            } catch let editError {
+                guard !Task.isCancelled, capture.id == id else { return }
+                error = describeCaptureError(editError)
+            }
+        }
+    }
+
     // Navigate to a related capture, remembering where we came from.
     func open(_ row: RowItem) {
         guard row.id != capture.id else { return }
+        cancelEditing()
         history.append(capture)
         canGoBack = true
         capture = row
@@ -42,6 +133,7 @@ final class CaptureDetailModel: ObservableObject {
 
     func goBack() {
         guard let previous = history.popLast() else { return }
+        cancelEditing()
         canGoBack = !history.isEmpty
         capture = previous
         reload()
@@ -164,7 +256,7 @@ struct CaptureDetailView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 8) {
-                if model.canGoBack {
+                if model.canGoBack, model.editDraft == nil {
                     Button(action: model.goBack) {
                         Image(systemName: "chevron.left")
                     }
@@ -172,6 +264,9 @@ struct CaptureDetailView: View {
                 }
                 Text(L("Capture")).font(.headline)
                 Spacer()
+                if model.loadingEdit {
+                    ProgressView().controlSize(.small)
+                }
                 Button { model.togglePin() } label: {
                     Label(model.isPinned ? L("Pinned") : L("Pin"),
                           systemImage: model.isPinned ? "pin.fill" : "pin")
@@ -187,39 +282,44 @@ struct CaptureDetailView: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(model.capture.content.isEmpty ? L("(media capture)") : model.capture.content)
-                            .textSelection(.enabled)
-                            .foregroundStyle(model.capture.content.isEmpty ? .secondary : .primary)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                        Text(CaptureTime.precise(model.capture.createdAt))
-                            .font(.caption2).foregroundStyle(.secondary)
-                    }
+                    CaptureRow(
+                        item: model.capture,
+                        onEdit: { _ in },
+                        isEditing: model.editDraft != nil,
+                        draftText: model.editDraft?.text ?? "",
+                        onBeginEdit: model.beginEditing,
+                        onDraftChange: model.updateEditDraft,
+                        onCommitEdit: model.commitEditing,
+                        onCancelEdit: model.cancelEditing
+                    )
+                    .textSelection(.enabled)
 
                     if !model.error.isEmpty {
                         Text(model.error).foregroundStyle(.red).font(.caption)
                     }
 
-                    Divider()
-
-                    if model.loading {
-                        ProgressView().controlSize(.small)
-                            .frame(maxWidth: .infinity).padding(.vertical, 8)
-                    } else {
-                        linkedHeader
-                        if showPicker {
-                            LinkPickerView(
-                                suggestions: model.related,
-                                search: { await model.linkCandidates(matching: $0) },
-                                onPick: { row in model.addLink(row.id); showPicker = false },
-                            )
-                        }
-                        linkedSection
-
+                    if model.editDraft == nil {
                         Divider()
 
-                        Text(L("Related")).font(.caption).foregroundStyle(.secondary)
-                        relatedSection
+                        if model.loading {
+                            ProgressView().controlSize(.small)
+                                .frame(maxWidth: .infinity).padding(.vertical, 8)
+                        } else {
+                            linkedHeader
+                            if showPicker {
+                                LinkPickerView(
+                                    suggestions: model.related,
+                                    search: { await model.linkCandidates(matching: $0) },
+                                    onPick: { row in model.addLink(row.id); showPicker = false },
+                                )
+                            }
+                            linkedSection
+
+                            Divider()
+
+                            Text(L("Related")).font(.caption).foregroundStyle(.secondary)
+                            relatedSection
+                        }
                     }
                 }
                 .padding(.trailing, 8)
@@ -260,6 +360,10 @@ struct CaptureDetailView: View {
                     item: row,
                     onOpen: { model.open(row) },
                     onUnlink: { model.removeLink(row.id) },
+                    onBeginEdit: {
+                        model.open(row)
+                        model.beginEditing()
+                    }
                 )
             }
         }
@@ -274,6 +378,10 @@ struct CaptureDetailView: View {
                 CaptureRow(
                     item: row,
                     onOpen: { model.open(row) },
+                    onBeginEdit: {
+                        model.open(row)
+                        model.beginEditing()
+                    }
                 )
             }
         }
@@ -301,8 +409,9 @@ final class CaptureDetailWindowController: NSObject, NSWindowDelegate {
         super.init()
     }
 
-    func open(_ row: RowItem) {
+    func open(_ row: RowItem, beginEditing: Bool = false) {
         if let existing = entries.first(where: { $0.model.capture.id == row.id }) {
+            if beginEditing { existing.model.beginEditing() }
             existing.window.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
             return
@@ -316,6 +425,7 @@ final class CaptureDetailWindowController: NSObject, NSWindowDelegate {
         entries.append(Entry(window: w, model: model))
         w.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+        if beginEditing { model.beginEditing() }
     }
 
     func windowWillClose(_ notification: Notification) {

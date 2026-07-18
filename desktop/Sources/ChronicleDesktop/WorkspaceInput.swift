@@ -96,12 +96,13 @@ struct ModeTextEditor: NSViewRepresentable {
         tv.textContainer?.widthTracksTextView = false
         tv.textContainer?.containerSize = NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude)
 
-        let scroll = NSScrollView()
+        let scroll = ModeTextScrollView()
         scroll.documentView = tv
         scroll.drawsBackground = false
         scroll.hasVerticalScroller = true
         scroll.scrollerStyle = .overlay
         scroll.autohidesScrollers = true
+        scroll.editorCoordinator = context.coordinator
         context.coordinator.textView = tv
         DispatchQueue.main.async { context.coordinator.reportHeight() }
         return scroll
@@ -120,12 +121,7 @@ struct ModeTextEditor: NSViewRepresentable {
             tv.placeholderString = placeholder
             tv.needsDisplay = true
         }
-        let cw = scroll.frame.width - 16
-        if cw > 0, let tc = tv.textContainer, abs(tc.size.width - cw) > 0.5 {
-            tc.containerSize = NSSize(width: cw, height: CGFloat.greatestFiniteMagnitude)
-            tv.frame.size.width = cw
-            context.coordinator.reportHeight()
-        }
+        context.coordinator.updateContainerWidth(scroll.frame.width - 16)
         if focused, let win = tv.window, win.firstResponder !== tv {
             win.makeFirstResponder(tv)
         }
@@ -149,6 +145,18 @@ struct ModeTextEditor: NSViewRepresentable {
         func textDidBeginEditing(_ notification: Notification) { parent.focused = true }
         func textDidEndEditing(_ notification: Notification) { parent.focused = false }
 
+        func updateContainerWidth(_ width: CGFloat) {
+            guard width > 0, let tv = textView, let tc = tv.textContainer,
+                  abs(tc.size.width - width) > 0.5
+            else { return }
+            tc.containerSize = NSSize(
+                width: width,
+                height: CGFloat.greatestFiniteMagnitude
+            )
+            tv.frame.size.width = width
+            reportHeight()
+        }
+
         func reportHeight() {
             guard let tv = textView, let lm = tv.layoutManager, let tc = tv.textContainer
             else { return }
@@ -158,6 +166,18 @@ struct ModeTextEditor: NSViewRepresentable {
             lastHeight = h
             parent.onHeight(h)
         }
+    }
+}
+
+/// SwiftUI can create and update the representable before AppKit gives the
+/// scroll view a width. Keep the text container synced from the native layout
+/// lifecycle so an existing draft never remains laid out in a zero-width box.
+final class ModeTextScrollView: NSScrollView {
+    weak var editorCoordinator: ModeTextEditor.Coordinator?
+
+    override func layout() {
+        super.layout()
+        editorCoordinator?.updateContainerWidth(frame.width - 16)
     }
 }
 

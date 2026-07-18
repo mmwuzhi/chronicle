@@ -201,6 +201,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             },
             openSignIn: { [weak self] in self?.showSignIn() },
             openDetail: { [weak self] row in self?.detailWindowController?.open(row) },
+            openDetailForEditing: { [weak self] row in
+                self?.detailWindowController?.open(row, beginEditing: true)
+            },
             togglePin: { [weak self] row in self?.pinnedStickyController?.toggle(row) },
             isPinned: { [weak self] id in self?.pinnedStickyController?.isPinned(id) ?? false },
             localSearch: { [localStore] q in

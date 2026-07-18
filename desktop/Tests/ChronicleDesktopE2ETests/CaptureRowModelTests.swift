@@ -28,6 +28,26 @@ struct CaptureRowModelTests {
         #expect(draft.originalText == "Customer meeting")
     }
 
+    @Test("transcript-only Capture does not create a blank edit draft")
+    func transcriptOnlyCaptureIsNotBlankEditableText() {
+        let capture = Capture(
+            id: "transcript-only",
+            rawText: nil,
+            transcript: "Recorded meeting transcript",
+            mediaType: "audio",
+            mediaUrl: nil,
+            source: "desktop",
+            remindAt: nil,
+            createdAt: "2026-07-16T09:00:00Z"
+        )
+
+        let row = RowItem(capture)
+
+        #expect(row.displayText == "Recorded meeting transcript")
+        #expect(row.editableRawText == nil)
+        #expect(CaptureEditDraft(item: row) == nil)
+    }
+
     @Test("search projection cannot become an edit draft")
     func searchProjectionRequiresFullCapture() {
         let hit = RecallItem(
@@ -99,5 +119,38 @@ struct CaptureRowModelTests {
 
         #expect(row.displayText == "matching evidence from the fetched page")
         #expect(row.editableRawText == "Research link")
+    }
+
+    @Test("detail editor saves a local Capture in place")
+    func detailEditorSavesLocalCapture() throws {
+        var saved: (String, String)?
+        let clients = CaptureClients(
+            recall: { nil },
+            webhook: { nil },
+            openSignIn: {},
+            localSearch: { _ in [] },
+            localRecent: { _ in [] },
+            localDelete: { _ in },
+            localSetText: { id, text in
+                saved = (id, text)
+                return true
+            }
+        )
+        let storeURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("chronicle-detail-edit-\(UUID().uuidString).sqlite")
+        let record = try LocalCaptureStore(fileURL: storeURL)
+            .create(CapturePayload(rawText: "Before"))
+        let row = RowItem(record)
+        let model = CaptureDetailModel(capture: row, clients: clients)
+
+        model.beginEditing()
+        model.updateEditDraft("After")
+        model.commitEditing()
+
+        #expect(saved?.0 == row.id)
+        #expect(saved?.1 == "After")
+        #expect(model.capture.editableRawText == "After")
+        #expect(model.capture.displayText == "After")
+        #expect(model.editDraft == nil)
     }
 }

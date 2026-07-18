@@ -244,6 +244,7 @@ struct PanelContentView: View {
                 pinTick &+= 1
             },
             isPinned: isPinned,
+            onBeginEdit: { clients.openDetailForEditing(row) },
         )
     }
 

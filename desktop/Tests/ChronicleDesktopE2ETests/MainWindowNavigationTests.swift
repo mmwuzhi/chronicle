@@ -234,6 +234,22 @@ struct MainWindowNavigationTests {
         let viewport = scrollView.convert(scrollView.bounds, to: host)
 
         #expect(host.bounds.contains(viewport))
+
+        let languageControl: NSSegmentedControl? = host.firstDescendant(
+            ofType: NSSegmentedControl.self
+        )
+        let switches: [NSSwitch] = host.descendants(ofType: NSSwitch.self)
+        let languageTrailing = languageControl.map {
+            $0.convert($0.bounds, to: host).maxX
+        }
+        #expect(languageTrailing != nil)
+        #expect(switches.count >= 2)
+        if let languageTrailing {
+            for control in switches.prefix(2) {
+                let trailing = control.convert(control.bounds, to: host).maxX
+                #expect(abs(trailing - languageTrailing) <= 2)
+            }
+        }
     }
 
     @Test("ask workspace uses a multiline composer instead of a header field")
@@ -292,15 +308,23 @@ struct MainWindowNavigationTests {
 
         let menu = CaptureRowOverflowMenu.make(
             onOpen: {},
+            onEdit: {},
             onPin: {},
             onUnlink: {},
             onDelete: {},
             isPinned: false,
         )
         #expect(menu.items.filter { !$0.isSeparatorItem }.map(\.title) == [
-            "Open", "Pin to desktop", "Remove link", "Delete",
+            "Open", "Edit", "Pin to desktop", "Remove link", "Delete",
         ])
         #expect(menu.items.dropLast().last?.isSeparatorItem == true)
+        let deleteItem = menu.items.first { $0.title == "Delete" }
+        let deleteColor = deleteItem?.attributedTitle?.attribute(
+            .foregroundColor,
+            at: 0,
+            effectiveRange: nil
+        ) as? NSColor
+        #expect(deleteColor == .systemRed)
     }
 
     @Test("capture metadata keeps the compact timestamp in the row")
@@ -330,6 +354,27 @@ struct MainWindowNavigationTests {
 
         let textView: NSTextView? = host.firstDescendant(ofType: NSTextView.self)
         #expect(textView == nil)
+    }
+
+    @Test("capture edit bubble renders its existing draft")
+    func captureEditBubbleRendersDraft() async throws {
+        let record = try tempStore().create(CapturePayload(rawText: "ヤニネコ"))
+        let row = RowItem(record)
+        let host = NSHostingView(rootView: CaptureRow(
+            item: row,
+            onEdit: { _ in },
+            isEditing: true,
+            draftText: record.payload.rawText
+        ))
+        host.frame = NSRect(x: 0, y: 0, width: 640, height: 180)
+        host.layoutSubtreeIfNeeded()
+        await Task.yield()
+        host.layoutSubtreeIfNeeded()
+
+        let textView: SubmitTextView = try #require(host.firstDescendant(ofType: SubmitTextView.self))
+        #expect(textView.string == "ヤニネコ")
+        #expect(textView.frame.height > 0)
+        #expect((textView.textContainer?.size.width ?? 0) > 0)
     }
 
     @Test("delete planning sends unsynced search rows to local delete")

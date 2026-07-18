@@ -150,7 +150,7 @@ struct MainReviewPane: View {
                 onOpen: { clients.openDetail(row) },
                 onPin: { clients.togglePin(row) },
                 isPinned: clients.isPinned(row.id),
-                onBeginEdit: { clients.openDetail(row) },
+                onBeginEdit: { clients.openDetailForEditing(row) },
             )
             .id("\(row.id)-\(pinTick)")
         }

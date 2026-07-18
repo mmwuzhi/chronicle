@@ -445,27 +445,36 @@ struct SettingsView: View {
     private var generalSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(L("General")).font(.headline)
-            Picker(L("Language"), selection: Binding(
-                get: { localization.language },
-                set: { localization.set($0) }
-            )) {
-                Text(L("System")).tag(InterfaceLanguage.system)
-                Text("English").tag(InterfaceLanguage.english)
-                Text("简体中文").tag(InterfaceLanguage.chinese)
+            HStack(spacing: 16) {
+                Text(L("Language"))
+                Spacer(minLength: 16)
+                Picker("", selection: Binding(
+                    get: { localization.language },
+                    set: { localization.set($0) }
+                )) {
+                    Text(L("System")).tag(InterfaceLanguage.system)
+                    Text("English").tag(InterfaceLanguage.english)
+                    Text("简体中文").tag(InterfaceLanguage.chinese)
+                }
+                .labelsHidden()
+                .pickerStyle(.segmented)
+                .frame(idealWidth: 456, maxWidth: 456, alignment: .trailing)
             }
-            .pickerStyle(.segmented)
 
-            Toggle(isOn: Binding(
-                get: { launchAtLogin },
-                set: { enabled in updateLaunchAtLogin(enabled) }
-            )) {
+            HStack(alignment: .center, spacing: 16) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(L("Launch at Login"))
                     Text(L("Open Chronicle automatically when you sign in to your Mac."))
                         .font(.caption).foregroundStyle(.secondary)
                 }
+                Spacer(minLength: 16)
+                Toggle("", isOn: Binding(
+                    get: { launchAtLogin },
+                    set: { enabled in updateLaunchAtLogin(enabled) }
+                ))
+                .labelsHidden()
+                .toggleStyle(.switch)
             }
-            .toggleStyle(.switch)
 
             if let launchAtLoginError {
                 Text(launchAtLoginError)
@@ -560,14 +569,17 @@ struct SettingsView: View {
     private var remindersSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(L("Reminders")).font(.headline)
-            Toggle(isOn: $notifyOnDue) {
+            HStack(alignment: .center, spacing: 16) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(L("Show a system notification when a reminder is due"))
                     Text(L("Reminders are scheduled locally and fire even when the app is closed."))
                         .font(.caption).foregroundStyle(.secondary)
                 }
+                Spacer(minLength: 16)
+                Toggle("", isOn: $notifyOnDue)
+                    .labelsHidden()
+                    .toggleStyle(.switch)
             }
-            .toggleStyle(.switch)
         }
     }
 

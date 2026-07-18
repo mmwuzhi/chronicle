@@ -500,7 +500,10 @@ struct MainView: View {
                 let capture = try await client.capture(id: row.id)
                 guard loadingEditID == row.id else { return }
                 loadingEditID = nil
-                guard let draft = CaptureEditDraft(item: RowItem(capture)) else { return }
+                guard let draft = CaptureEditDraft(item: RowItem(capture)) else {
+                    error = L("This Capture has no editable text.")
+                    return
+                }
                 editDraft = draft
             } catch let err {
                 guard loadingEditID == row.id else { return }
