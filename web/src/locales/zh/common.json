@@ -3,19 +3,19 @@
   "tagline": "随手记下，以后找得到。",
   "nav": {
     "home": "首页",
-    "captures": "捕获",
+    "captures": "Capture",
     "ask": "提问",
     "settings": "设置",
     "review": "回顾"
   },
   "ask": {
     "title": "提问",
-    "subtitle": "用自然语言问你记下的东西，答案只依据你的捕获。",
+    "subtitle": "用自然语言问你记下的东西，答案只依据你的 Capture。",
     "placeholder": "比如：这周吃饭花了多少？最近为什么这么累？",
     "button": "提问",
     "thinking": "思考中…",
-    "sources": "依据的捕获",
-    "noData": "还没有可供分析的捕获，先记几条吧。",
+    "sources": "依据的 Capture",
+    "noData": "还没有可供分析的 Capture，先记几条吧。",
     "unavailable": "提问服务暂不可用，请稍后再试。"
   },
   "actions": {
@@ -43,8 +43,8 @@
   "createAccount": "注册",
   "search": {
     "placeholder": "搜索…",
-    "captures": "捕获",
-    "recentCaptures": "最近捕获",
+    "captures": "Capture",
+    "recentCaptures": "最近的 Capture",
     "noResults": "无结果",
     "typeToSearch": "输入搜索内容…",
     "matchedTranscript": "命中转写",
@@ -53,6 +53,6 @@
   },
   "confirm": {
     "cannotUndo": "此操作无法撤销。",
-    "deleteCapture": "删除捕获？"
+    "deleteCapture": "删除 Capture？"
   }
 }

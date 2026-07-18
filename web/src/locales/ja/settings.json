@@ -70,7 +70,7 @@
     "title": "連携",
     "webhooks": {
       "title": "Webhook",
-      "description": "キャプチャがルール（キーワードまたは意味）に一致したら、外部URLにテンプレート化したPOSTを送信します。",
+      "description": "Captureがルール（キーワードまたは意味）に一致したら、外部URLにテンプレート化したPOSTを送信します。",
       "empty": "Webhookはまだありません。",
       "addTitle": "新しいWebhook",
       "name": "名前",
@@ -83,8 +83,8 @@
       "disable": "無効化"
     },
     "captureTokens": {
-      "title": "クイックキャプチャトークン",
-      "description": "iOS のアクションボタンショートカットなど、ヘッドレスなクイックキャプチャ用の長期トークンです。各トークンはキャプチャの作成のみ可能で、読み取り・編集・削除はできません。",
+      "title": "Quick Capture トークン",
+      "description": "iOS のアクションボタンショートカットなど、ヘッドレスな Quick Capture 用の長期トークンです。各トークンは Capture の作成のみ可能で、読み取り・編集・削除はできません。",
       "empty": "トークンはまだありません。",
       "addTitle": "新しいトークン",
       "namePlaceholder": "名前（例：iPhone アクションボタン）",

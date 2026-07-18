@@ -4,12 +4,12 @@
   "goodEvening": "晚上好，",
   "thisWeek": "本周",
   "tasksDoneLabel": "任务完成",
-  "capturesLabel": "捕获",
+  "capturesLabel": "Capture",
   "logsLabel": "日志",
   "trackedLabel": "已追踪",
-  "recentCaptures": "最近捕获",
+  "recentCaptures": "最近的 Capture",
   "activeTasks": "进行中的任务",
   "viewAll": "全部",
-  "noCaptures": "暂无捕获",
+  "noCaptures": "暂无 Capture",
   "noTasks": "没有进行中的任务"
 }

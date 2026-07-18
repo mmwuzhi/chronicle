@@ -70,7 +70,7 @@
     "title": "集成",
     "webhooks": {
       "title": "Webhook",
-      "description": "当捕获命中规则（关键词或语义）时，向外部地址发送一条带模板的 POST。",
+      "description": "当 Capture 命中规则（关键词或语义）时，向外部地址发送一条带模板的 POST。",
       "empty": "还没有 Webhook。",
       "addTitle": "新建 Webhook",
       "name": "名称",
@@ -83,8 +83,8 @@
       "disable": "停用"
     },
     "captureTokens": {
-      "title": "快速捕获令牌",
-      "description": "用于无界面快速捕获的长效令牌，例如 iOS Action Button 快捷指令。每个令牌只能创建捕获，不能读取、修改或删除任何数据。",
+      "title": "Quick Capture 令牌",
+      "description": "用于无界面 Quick Capture 的长效令牌，例如 iOS Action Button 快捷指令。每个令牌只能创建 Capture，不能读取、修改或删除任何数据。",
       "empty": "还没有令牌。",
       "addTitle": "新建令牌",
       "namePlaceholder": "名称，例如 iPhone Action Button",

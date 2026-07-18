@@ -1,5 +1,5 @@
 {
-  "title": "捕获",
+  "title": "Capture",
   "subtitle": "想到就记，回头再找。",
   "placeholder": "在想什么？",
   "tabs": {
@@ -7,7 +7,7 @@
     "todo": "待办"
   },
   "nothingHere": "这里还没有内容。",
-  "failedToLoad": "加载捕获失败",
+  "failedToLoad": "加载 Capture 失败",
   "attach": "附件",
   "record": "录音",
   "recording": "录音中…",
@@ -27,23 +27,23 @@
   },
   "loadMore": "加载更多",
   "showScheduled": "显示已安排提醒",
-  "scheduledHint": "设有未来提醒的捕获在到期前会被隐藏。显示它们以编辑或清除提醒。",
+  "scheduledHint": "设有未来提醒的 Capture 在到期前会被隐藏。显示它们以编辑或清除提醒。",
   "context": {
-    "title": "捕获上下文",
+    "title": "Capture 上下文",
     "subtitle": "查看这条记忆前后紧邻发生的记录。",
     "match": "搜索命中",
-    "earlier": "更早的捕获未加载",
-    "later": "更晚的捕获未加载",
-    "failedToLoad": "加载捕获上下文失败"
+    "earlier": "更早的 Capture 未加载",
+    "later": "更晚的 Capture 未加载",
+    "failedToLoad": "加载 Capture 上下文失败"
   },
   "transcript": {
     "label": "AI 转写",
     "processing": "正在后台转写…",
     "failed": "转写失败。",
     "retry": "重试",
-    "append": "追加到捕获内容",
-    "replace": "替换捕获内容",
-    "useAsText": "用作捕获内容"
+    "append": "追加到 Capture 内容",
+    "replace": "替换 Capture 内容",
+    "useAsText": "用作 Capture 内容"
   },
   "remind": {
     "set": "提醒",
@@ -66,13 +66,13 @@
   "trash": {
     "link": "回收站",
     "title": "回收站",
-    "subtitle": "已删除的捕获。需要的话可以恢复。",
+    "subtitle": "已删除的 Capture。需要的话可以恢复。",
     "empty": "回收站是空的。",
     "restore": "恢复",
     "deletePermanently": "彻底删除",
-    "deletePermanentlyConfirm": "彻底删除这条捕获？此操作无法撤销。",
+    "deletePermanentlyConfirm": "彻底删除这条 Capture？此操作无法撤销。",
     "emptyAll": "清空回收站",
-    "emptyConfirm": "彻底删除回收站中的所有捕获？此操作无法撤销。",
+    "emptyConfirm": "彻底删除回收站中的所有 Capture？此操作无法撤销。",
     "deletedAt": "删除于 {{time}}",
     "failedToLoad": "加载回收站失败"
   },
@@ -81,9 +81,9 @@
   },
   "review": {
     "title": "回顾",
-    "subtitle": "重温你之前捕获的内容。",
+    "subtitle": "重温你之前记下的内容。",
     "onThisDay": "历史上的今天",
     "rediscover": "重新发现",
-    "empty": "还没有可回顾的内容——随着时间推移,较早的捕获会出现在这里。"
+    "empty": "还没有可回顾的内容，随着时间推移，较早的 Capture 会出现在这里。"
   }
 }

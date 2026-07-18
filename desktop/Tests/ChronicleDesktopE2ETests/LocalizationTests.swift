@@ -29,6 +29,7 @@ final class LocalizationTests: XCTestCase {
         )
 
         XCTAssertEqual(localization["Settings"], "设置")
+        XCTAssertEqual(localization["Capture"], "Capture")
         localization.set(.english)
         XCTAssertEqual(localization["Settings"], "Settings")
         XCTAssertEqual(defaults.string(forKey: InterfaceLanguage.storageKey), "english")

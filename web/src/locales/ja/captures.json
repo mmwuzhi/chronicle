@@ -1,5 +1,5 @@
 {
-  "title": "キャプチャ",
+  "title": "Capture",
   "subtitle": "思いついたら記録、あとで見つける。",
   "placeholder": "何を考えていますか？",
   "tabs": {
@@ -7,7 +7,7 @@
     "todo": "TODO"
   },
   "nothingHere": "まだ何もありません。",
-  "failedToLoad": "キャプチャの読み込みに失敗しました",
+  "failedToLoad": "Captureの読み込みに失敗しました",
   "attach": "添付",
   "record": "録音",
   "recording": "録音中…",
@@ -27,23 +27,23 @@
   },
   "loadMore": "さらに読み込む",
   "showScheduled": "予約済みを表示",
-  "scheduledHint": "将来のリマインダーがあるキャプチャは期限まで非表示です。表示してリマインダーを編集・解除できます。",
+  "scheduledHint": "将来のリマインダーがあるCaptureは期限まで非表示です。表示してリマインダーを編集・解除できます。",
   "context": {
-    "title": "キャプチャの文脈",
-    "subtitle": "この記憶の直前と直後のキャプチャを表示します。",
+    "title": "Captureの文脈",
+    "subtitle": "この記憶の直前と直後のCaptureを表示します。",
     "match": "検索結果",
-    "earlier": "これより前のキャプチャは未読み込みです",
-    "later": "これより後のキャプチャは未読み込みです",
-    "failedToLoad": "キャプチャの文脈を読み込めませんでした"
+    "earlier": "これより前のCaptureは未読み込みです",
+    "later": "これより後のCaptureは未読み込みです",
+    "failedToLoad": "Captureの文脈を読み込めませんでした"
   },
   "transcript": {
     "label": "AI文字起こし",
     "processing": "バックグラウンドで文字起こし中…",
     "failed": "文字起こしに失敗しました。",
     "retry": "再試行",
-    "append": "キャプチャに追記",
-    "replace": "キャプチャ本文を置換",
-    "useAsText": "キャプチャ本文にする"
+    "append": "Captureに追記",
+    "replace": "Capture本文を置換",
+    "useAsText": "Capture本文にする"
   },
   "remind": {
     "set": "リマインド",
@@ -66,13 +66,13 @@
   "trash": {
     "link": "ゴミ箱",
     "title": "ゴミ箱",
-    "subtitle": "削除したキャプチャ。必要なものは復元できます。",
+    "subtitle": "削除したCapture。必要なものは復元できます。",
     "empty": "ゴミ箱は空です。",
     "restore": "復元",
     "deletePermanently": "完全に削除",
-    "deletePermanentlyConfirm": "このキャプチャを完全に削除しますか？この操作は取り消せません。",
+    "deletePermanentlyConfirm": "このCaptureを完全に削除しますか？この操作は取り消せません。",
     "emptyAll": "ゴミ箱を空にする",
-    "emptyConfirm": "ゴミ箱内のすべてのキャプチャを完全に削除しますか？この操作は取り消せません。",
+    "emptyConfirm": "ゴミ箱内のすべてのCaptureを完全に削除しますか？この操作は取り消せません。",
     "deletedAt": "{{time}} に削除",
     "failedToLoad": "ゴミ箱の読み込みに失敗しました"
   },
@@ -81,9 +81,9 @@
   },
   "review": {
     "title": "振り返り",
-    "subtitle": "以前キャプチャした内容を見返しましょう。",
+    "subtitle": "以前記録した内容を見返しましょう。",
     "onThisDay": "この日の記録",
     "rediscover": "再発見",
-    "empty": "まだ見返すものはありません。時間が経つと過去のキャプチャがここに現れます。"
+    "empty": "まだ見返すものはありません。時間が経つと過去のCaptureがここに現れます。"
   }
 }
