@@ -9,41 +9,54 @@ struct SignInSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             VStack(alignment: .leading, spacing: 4) {
-                Text(L("Sign in to Chronicle"))
+                Text(model.needsMFA ? L("Verify your identity") : L("Sign in to Chronicle"))
                     .font(.title2.weight(.semibold))
-                Text(L("Use the same account you use on the web."))
+                Text(model.needsMFA
+                     ? L("Enter the code from your authenticator app, or use a recovery code.")
+                     : L("Use the same account you use on the web."))
                     .font(.callout).foregroundStyle(.secondary)
             }
 
-            providerButton(.google, icon: "g.circle.fill")
-            providerButton(
-                .github,
-                icon: "chevron.left.forwardslash.chevron.right"
-            )
-
-            HStack(spacing: 10) {
-                Divider()
-                Text(L("or use email"))
-                    .font(.caption).foregroundStyle(.tertiary)
-                    .fixedSize()
-                Divider()
-            }
-
-            VStack(alignment: .leading, spacing: 10) {
-                Text(L("Email")).font(.caption).foregroundStyle(.secondary)
+            if model.needsMFA {
+                Text(L("Authenticator or recovery code"))
+                    .font(.caption).foregroundStyle(.secondary)
                 WorkspaceField(
-                    prompt: "you@example.com",
-                    text: $model.email,
-                    compact: true
-                )
-                Text(L("Password")).font(.caption).foregroundStyle(.secondary)
-                WorkspaceField(
-                    prompt: L("Password"),
-                    text: $model.password,
-                    secure: true,
+                    prompt: "123456",
+                    text: $model.mfaCode,
                     compact: true,
-                    onSubmit: { model.signIn() },
+                    onSubmit: { model.verifyMFA() },
                 )
+            } else {
+                providerButton(.google, icon: "g.circle.fill")
+                providerButton(
+                    .github,
+                    icon: "chevron.left.forwardslash.chevron.right"
+                )
+
+                HStack(spacing: 10) {
+                    Divider()
+                    Text(L("or use email"))
+                        .font(.caption).foregroundStyle(.tertiary)
+                        .fixedSize()
+                    Divider()
+                }
+
+                VStack(alignment: .leading, spacing: 10) {
+                    Text(L("Email")).font(.caption).foregroundStyle(.secondary)
+                    WorkspaceField(
+                        prompt: "you@example.com",
+                        text: $model.email,
+                        compact: true
+                    )
+                    Text(L("Password")).font(.caption).foregroundStyle(.secondary)
+                    WorkspaceField(
+                        prompt: L("Password"),
+                        text: $model.password,
+                        secure: true,
+                        compact: true,
+                        onSubmit: { model.signIn() },
+                    )
+                }
             }
 
             if let error = model.authError {
@@ -63,9 +76,17 @@ struct SignInSheet: View {
                     dismiss()
                 }
                 .keyboardShortcut(.cancelAction)
-                Button(L("Sign In")) { model.signIn() }
-                    .keyboardShortcut(.defaultAction)
-                    .disabled(model.isAuthenticating)
+                if model.needsMFA {
+                    Button(L("Back")) { model.backFromMFA() }
+                        .disabled(model.isAuthenticating)
+                    Button(L("Verify")) { model.verifyMFA() }
+                        .keyboardShortcut(.defaultAction)
+                        .disabled(model.isAuthenticating || model.mfaCode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                } else {
+                    Button(L("Sign In")) { model.signIn() }
+                        .keyboardShortcut(.defaultAction)
+                        .disabled(model.isAuthenticating)
+                }
             }
         }
         .padding(24)

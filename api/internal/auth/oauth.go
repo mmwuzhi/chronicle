@@ -311,21 +311,6 @@ func (h *handler) finishOAuth(w http.ResponseWriter, r *http.Request, ctx contex
 		}
 	}
 
-	if user.TotpEnabled {
-		if stateData.Client == desktopOAuthClient {
-			http.Redirect(w, r, desktopOAuthCallbackURL(url.Values{"error": {"mfa_required"}}), http.StatusFound)
-			return
-		}
-		mfaToken, err := NewMFAToken(user.ID.String(), h.secret)
-		if err != nil {
-			slog.ErrorContext(ctx, "mfa token generation failed", "traceId", traceID, "err", err)
-			http.Error(w, "internal error", http.StatusInternalServerError)
-			return
-		}
-		http.Redirect(w, r, frontendURL+"/auth/mfa?mfa_token="+mfaToken, http.StatusFound)
-		return
-	}
-
 	if stateData.Client == desktopOAuthClient {
 		if h.rdb == nil {
 			slog.ErrorContext(ctx, "desktop oauth handoff unavailable", "traceId", traceID)
@@ -353,6 +338,17 @@ func (h *handler) finishOAuth(w http.ResponseWriter, r *http.Request, ctx contex
 			return
 		}
 		http.Redirect(w, r, desktopOAuthCallbackURL(url.Values{"code": {code}}), http.StatusFound)
+		return
+	}
+
+	if user.TotpEnabled {
+		mfaToken, err := NewMFAToken(user.ID.String(), h.secret)
+		if err != nil {
+			slog.ErrorContext(ctx, "mfa token generation failed", "traceId", traceID, "err", err)
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+		http.Redirect(w, r, frontendURL+"/auth/mfa?mfa_token="+mfaToken, http.StatusFound)
 		return
 	}
 
@@ -411,7 +407,9 @@ type DesktopOAuthExchangeInput struct {
 
 type DesktopOAuthExchangeOutput struct {
 	Body struct {
-		AccessToken string `json:"accessToken"`
+		AccessToken string `json:"accessToken,omitempty"`
+		MFARequired bool   `json:"mfaRequired,omitempty"`
+		MFAToken    string `json:"mfaToken,omitempty"`
 	}
 }
 
@@ -453,6 +451,26 @@ func (h *handler) desktopOAuthExchange(ctx context.Context, input *DesktopOAuthE
 	if err != nil {
 		slog.ErrorContext(ctx, "desktop oauth handoff contained invalid user", "traceId", middleware.GetTraceID(ctx), "err", err)
 		return nil, huma.Error500InternalServerError("internal error")
+	}
+	// The handoff can live for two minutes. Re-read MFA state at exchange time
+	// so enabling TOTP after the provider callback cannot mint a session without
+	// the newly required second factor (and disabling it does not strand a valid
+	// OAuth login behind a stale challenge).
+	user, err := h.q.GetUserByID(ctx, userID)
+	if err != nil {
+		slog.ErrorContext(ctx, "desktop oauth handoff user lookup failed", "traceId", middleware.GetTraceID(ctx), "err", err)
+		return nil, huma.Error401Unauthorized("invalid oauth user")
+	}
+	if user.TotpEnabled {
+		mfaToken, err := NewMFAToken(userID.String(), h.secret)
+		if err != nil {
+			slog.ErrorContext(ctx, "mfa token generation failed", "traceId", middleware.GetTraceID(ctx), "err", err)
+			return nil, huma.Error500InternalServerError("internal error")
+		}
+		out := &DesktopOAuthExchangeOutput{}
+		out.Body.MFARequired = true
+		out.Body.MFAToken = mfaToken
+		return out, nil
 	}
 
 	accessToken, err := NewAccessToken(userID.String(), h.secret)

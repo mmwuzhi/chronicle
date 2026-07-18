@@ -91,4 +91,6 @@ only when the cache schema next changes for another reason (`TODO.md`).
   sizing options let a SwiftUI ideal size — e.g. an NSTextView body's
   unwrapped single-line width — resize the window, and `windowDidResize`
   then persists the blown-out frame.
-- MFA login is not implemented in the desktop app.
+- Desktop password and OAuth sign-in both support the server's TOTP/recovery-code
+  second step. OAuth keeps the MFA token behind the existing PKCE-protected
+  one-time exchange; never place it directly in the custom callback URL.

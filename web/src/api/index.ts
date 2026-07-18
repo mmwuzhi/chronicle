@@ -276,7 +276,9 @@ export interface DesktopOAuthExchangeInputBody {
 export interface DesktopOAuthExchangeOutputBody {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
-  accessToken: string;
+  accessToken?: string;
+  mfaRequired?: boolean;
+  mfaToken?: string;
 }
 
 export interface EmptyTrashOutputBody {

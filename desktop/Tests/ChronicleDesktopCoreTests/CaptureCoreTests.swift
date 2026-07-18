@@ -116,6 +116,25 @@ func authClientBuildsDesktopOAuthFlowRequests() throws {
 }
 
 @Test
+func authClientBuildsMFAVerificationRequest() throws {
+    let client = AuthAPIClient(apiURL: URL(string: "https://api.example.com/v1")!)
+
+    let request = try client.makeMFAVerifyRequest(
+        mfaToken: "short-lived-mfa-token",
+        code: "123456",
+    )
+
+    #expect(request.url?.absoluteString == "https://api.example.com/v1/auth/mfa/verify")
+    #expect(request.httpMethod == "POST")
+    #expect(request.httpShouldHandleCookies)
+    #expect(request.value(forHTTPHeaderField: "Content-Type") == "application/json")
+    let body = try #require(request.httpBody)
+    let decoded = try JSONDecoder().decode(MFAVerifyRequest.self, from: body)
+    #expect(decoded.mfaToken == "short-lived-mfa-token")
+    #expect(decoded.code == "123456")
+}
+
+@Test
 func hotKeyParserParsesDefaultShortcut() throws {
     let spec = try #require(HotKeyParser.parse("control+option+space"))
 

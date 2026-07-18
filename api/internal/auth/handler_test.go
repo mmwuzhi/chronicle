@@ -16,8 +16,10 @@ import (
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 
+	db "github.com/sikaoshenmi/chronicle/db/sqlc"
 	"github.com/sikaoshenmi/chronicle/internal/auth"
 	"github.com/sikaoshenmi/chronicle/testutil"
 )
@@ -39,7 +41,7 @@ func newServer(t *testing.T) *httptest.Server {
 	return srv
 }
 
-func newServerWithRedis(t *testing.T) (*httptest.Server, *redis.Client) {
+func newServerWithRedis(t *testing.T) (*httptest.Server, *redis.Client, *pgxpool.Pool) {
 	t.Helper()
 	redisURL := os.Getenv("REDIS_URL")
 	if redisURL == "" {
@@ -63,7 +65,7 @@ func newServerWithRedis(t *testing.T) (*httptest.Server, *redis.Client) {
 	auth.Register(api, r, pool, rdb, auth.Options{JWTSecret: testSecret})
 	srv := httptest.NewServer(r)
 	t.Cleanup(srv.Close)
-	return srv, rdb
+	return srv, rdb, pool
 }
 
 func post(t *testing.T, srv *httptest.Server, path string, body any) *http.Response {
@@ -214,7 +216,7 @@ func TestLogin_UnknownEmail(t *testing.T) {
 }
 
 func TestDesktopOAuthExchange_IsOneTimeAndSetsRefreshCookie(t *testing.T) {
-	srv, rdb := newServerWithRedis(t)
+	srv, rdb, _ := newServerWithRedis(t)
 	registerResp := post(t, srv, "/auth/register", map[string]string{
 		"email": "oauth-desktop@example.com", "password": "password123",
 	})
@@ -279,6 +281,73 @@ func TestDesktopOAuthExchange_IsOneTimeAndSetsRefreshCookie(t *testing.T) {
 	defer replay.Body.Close()
 	if replay.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("expected one-time code replay to return 401, got %d", replay.StatusCode)
+	}
+}
+
+func TestDesktopOAuthExchange_MFARequiresSecondStep(t *testing.T) {
+	srv, rdb, pool := newServerWithRedis(t)
+	registerResp := post(t, srv, "/auth/register", map[string]string{
+		"email": "oauth-desktop-mfa@example.com", "password": "password123",
+	})
+	var registered struct {
+		UserID string `json:"userId"`
+	}
+	decodeBody(t, registerResp, &registered)
+
+	code := uuid.NewString()
+	key := "oauth:desktop:" + code
+	verifier := "0123456789012345678901234567890123456789012"
+	handoff, err := json.Marshal(map[string]string{
+		"userId":        registered.UserID,
+		"codeChallenge": testPKCEChallenge(verifier),
+	})
+	if err != nil {
+		t.Fatalf("encode desktop OAuth MFA handoff: %v", err)
+	}
+	if err := rdb.Set(context.Background(), key, handoff, time.Minute).Err(); err != nil {
+		t.Fatalf("seed desktop OAuth MFA handoff: %v", err)
+	}
+	t.Cleanup(func() { _ = rdb.Del(context.Background(), key).Err() })
+
+	// The handoff was created while MFA was disabled. Enabling it before the
+	// exchange must still require the second factor; a cached boolean would let
+	// this request mint access and refresh tokens directly.
+	userID, err := uuid.Parse(registered.UserID)
+	if err != nil {
+		t.Fatalf("parse registered user id: %v", err)
+	}
+	if err := db.New(pool).EnableTOTP(context.Background(), userID); err != nil {
+		t.Fatalf("enable TOTP after desktop OAuth handoff: %v", err)
+	}
+
+	resp := post(t, srv, "/auth/oauth/desktop/exchange", map[string]string{
+		"code": code, "codeVerifier": verifier,
+	})
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+	var body struct {
+		AccessToken string `json:"accessToken"`
+		MFARequired bool   `json:"mfaRequired"`
+		MFAToken    string `json:"mfaToken"`
+	}
+	decodeBody(t, resp, &body)
+	if body.AccessToken != "" || !body.MFARequired || body.MFAToken == "" {
+		t.Fatalf("expected only an MFA challenge, got %+v", body)
+	}
+	if userID, err := auth.ParseMFAToken(body.MFAToken, testSecret); err != nil || userID != registered.UserID {
+		t.Fatalf("MFA token user: got %q err=%v", userID, err)
+	}
+	if len(resp.Cookies()) != 0 {
+		t.Fatal("MFA challenge must not create a refresh session")
+	}
+
+	replay := post(t, srv, "/auth/oauth/desktop/exchange", map[string]string{
+		"code": code, "codeVerifier": verifier,
+	})
+	defer replay.Body.Close()
+	if replay.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("expected one-time MFA code replay to return 401, got %d", replay.StatusCode)
 	}
 }
 

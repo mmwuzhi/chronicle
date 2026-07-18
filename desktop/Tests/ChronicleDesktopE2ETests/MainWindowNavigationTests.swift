@@ -155,6 +155,42 @@ struct MainWindowNavigationTests {
         #expect(!staleFinishAccepted)
     }
 
+    @Test("MFA challenge advances and can return to primary sign-in")
+    func mfaChallengeControlsSignInStep() {
+        let defaults = UserDefaults(suiteName: UUID().uuidString)!
+        let clients = CaptureClients(
+            recall: { nil },
+            webhook: { nil },
+            openSignIn: {},
+            localSearch: { _ in [] },
+            localRecent: { _ in [] },
+            localDelete: { _ in },
+        )
+        let settingsModel = SettingsModel(
+            settings: SettingsStore(defaults: defaults),
+            localStore: tempStore(),
+            clients: clients,
+            onSaveShortcut: { _ in },
+            onSignInChanged: {},
+            retry: { CaptureSyncSummary() },
+        )
+        settingsModel.password = "password123"
+
+        settingsModel.prepareMFA(
+            LoginResponse(mfaRequired: true, mfaToken: "short-lived-mfa-token"),
+            apiURL: URL(string: "https://api.example.com")!,
+        )
+
+        #expect(settingsModel.needsMFA)
+        #expect(settingsModel.password.isEmpty)
+
+        settingsModel.mfaCode = "123456"
+        settingsModel.backFromMFA()
+
+        #expect(!settingsModel.needsMFA)
+        #expect(settingsModel.mfaCode.isEmpty)
+    }
+
     @Test("settings scroll viewport stays inside the minimum main window")
     func settingsScrollViewportFitsMinimumWindow() async {
         let clients = CaptureClients(

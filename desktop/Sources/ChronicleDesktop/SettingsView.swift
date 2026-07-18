@@ -15,12 +15,20 @@ final class SettingsModel: ObservableObject {
     @Published var apiURLString: String
     @Published var email = ""
     @Published var password = ""
+    @Published var mfaCode = ""
     @Published var isSignedIn: Bool
     @Published var status: String?
     @Published var authError: String?
     @Published var isAuthenticating = false
     @Published var isSignInPresented = false
     @Published var pendingCount = 0
+
+    private struct PendingMFA {
+        let token: String
+        let apiURL: URL
+    }
+
+    @Published private var pendingMFA: PendingMFA?
 
     let clients: CaptureClients
     private let settings: SettingsStore
@@ -54,6 +62,7 @@ final class SettingsModel: ObservableObject {
     }
 
     var currentShortcut: ShortcutSpec { settings.loadShortcut() }
+    var needsMFA: Bool { pendingMFA != nil }
 
     private var currentURL: URL? { ChronicleAPIEndpoint.validated(apiURLString) }
 
@@ -105,7 +114,7 @@ final class SettingsModel: ObservableObject {
                 let response = try await client.login(email: email, password: pw)
                 guard !Task.isCancelled, self.authenticationGate.accepts(attemptID) else { return }
                 if response.mfaRequired == true {
-                    self.authError = L("MFA accounts can't sign in from the desktop yet.")
+                    self.prepareMFA(response, apiURL: url)
                     return
                 }
                 guard let token = response.accessToken, !token.isEmpty else {
@@ -165,7 +174,7 @@ final class SettingsModel: ObservableObject {
                     return
                 }
                 if components.queryItems?.first(where: { $0.name == "error" })?.value == "mfa_required" {
-                    self.authError = L("MFA accounts can't sign in from the desktop yet.")
+                    self.authError = L("MFA sign-in requires a newer Chronicle server.")
                     self.finishAuthentication(attemptID)
                     return
                 }
@@ -213,8 +222,47 @@ final class SettingsModel: ObservableObject {
         webAuthenticationSession?.cancel()
         webAuthenticationSession = nil
         isAuthenticating = false
+        pendingMFA = nil
+        mfaCode = ""
         authError = nil
         isSignInPresented = false
+    }
+
+    func backFromMFA() {
+        guard !isAuthenticating else { return }
+        pendingMFA = nil
+        mfaCode = ""
+        authError = nil
+    }
+
+    func verifyMFA() {
+        guard !isAuthenticating, let pendingMFA else { return }
+        let code = mfaCode.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !code.isEmpty else {
+            authError = L("Enter your authenticator code or a recovery code.")
+            return
+        }
+        let client = AuthAPIClient(apiURL: pendingMFA.apiURL)
+        guard let attemptID = beginAuthentication() else { return }
+        authError = nil
+        authenticationTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer { self.finishAuthentication(attemptID) }
+            do {
+                let token = try await client.verifyMFA(
+                    mfaToken: pendingMFA.token,
+                    code: code,
+                )
+                guard !Task.isCancelled, self.authenticationGate.accepts(attemptID) else { return }
+                self.completeSignIn(token: token, apiURL: pendingMFA.apiURL)
+            } catch AuthAPIError.httpStatus(429) {
+                guard !Task.isCancelled, self.authenticationGate.accepts(attemptID) else { return }
+                self.authError = L("Too many attempts. Try again later.")
+            } catch {
+                guard !Task.isCancelled, self.authenticationGate.accepts(attemptID) else { return }
+                self.authError = L("Invalid or expired code. Try again.")
+            }
+        }
     }
 
     private func exchangeOAuthCode(
@@ -229,11 +277,19 @@ final class SettingsModel: ObservableObject {
             guard let self else { return }
             defer { self.finishAuthentication(attemptID) }
             do {
-                let token = try await client.exchangeDesktopOAuthCode(
+                let response = try await client.exchangeDesktopOAuthCode(
                     code,
                     codeVerifier: codeVerifier,
                 )
                 guard !Task.isCancelled, self.authenticationGate.accepts(attemptID) else { return }
+                if response.mfaRequired == true {
+                    self.prepareMFA(response, apiURL: apiURL)
+                    return
+                }
+                guard let token = response.accessToken, !token.isEmpty else {
+                    self.authError = L("Sign in failed: no token returned.")
+                    return
+                }
                 self.completeSignIn(token: token, apiURL: apiURL)
             } catch {
                 guard !Task.isCancelled, self.authenticationGate.accepts(attemptID) else { return }
@@ -256,10 +312,23 @@ final class SettingsModel: ObservableObject {
         isAuthenticating = false
     }
 
+    func prepareMFA(_ response: LoginResponse, apiURL: URL) {
+        guard let token = response.mfaToken, !token.isEmpty else {
+            authError = L("Sign in failed: no MFA token returned.")
+            return
+        }
+        pendingMFA = PendingMFA(token: token, apiURL: apiURL)
+        password = ""
+        mfaCode = ""
+        authError = nil
+    }
+
     private func completeSignIn(token: String, apiURL: URL) {
         settings.save(ChronicleConfig(apiURL: apiURL, token: token))
         isSignedIn = true
         password = ""
+        pendingMFA = nil
+        mfaCode = ""
         authError = nil
         isSignInPresented = false
         status = L("Signed in.")

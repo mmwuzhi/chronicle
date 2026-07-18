@@ -23,6 +23,16 @@ public struct LoginResponse: Codable, Equatable {
     }
 }
 
+public struct MFAVerifyRequest: Codable, Equatable {
+    public var mfaToken: String
+    public var code: String
+
+    public init(mfaToken: String, code: String) {
+        self.mfaToken = mfaToken
+        self.code = code
+    }
+}
+
 public struct RefreshResponse: Codable, Equatable {
     public var accessToken: String?
 
@@ -123,8 +133,34 @@ public final class AuthAPIClient {
         return request
     }
 
-    public func exchangeDesktopOAuthCode(_ code: String, codeVerifier: String) async throws -> String {
+    public func exchangeDesktopOAuthCode(
+        _ code: String,
+        codeVerifier: String
+    ) async throws -> LoginResponse {
         let request = try makeDesktopOAuthExchangeRequest(code: code, codeVerifier: codeVerifier)
+        let (data, response) = try await session.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw AuthAPIError.invalidResponse
+        }
+        guard (200..<300).contains(httpResponse.statusCode) else {
+            throw AuthAPIError.httpStatus(httpResponse.statusCode)
+        }
+        return try JSONDecoder().decode(LoginResponse.self, from: data)
+    }
+
+    public func makeMFAVerifyRequest(mfaToken: String, code: String) throws -> URLRequest {
+        var request = URLRequest(url: apiURL.appending(path: "auth/mfa/verify"))
+        request.httpMethod = "POST"
+        request.httpShouldHandleCookies = true
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONEncoder().encode(
+            MFAVerifyRequest(mfaToken: mfaToken, code: code),
+        )
+        return request
+    }
+
+    public func verifyMFA(mfaToken: String, code: String) async throws -> String {
+        let request = try makeMFAVerifyRequest(mfaToken: mfaToken, code: code)
         let (data, response) = try await session.data(for: request)
         guard let httpResponse = response as? HTTPURLResponse else {
             throw AuthAPIError.invalidResponse
@@ -204,5 +240,4 @@ public enum AuthAPIError: Error, Equatable {
     case invalidResponse
     case httpStatus(Int)
     case missingAccessToken
-    case mfaRequired
 }
