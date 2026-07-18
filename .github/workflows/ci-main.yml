@@ -60,7 +60,7 @@ jobs:
   # ── API: build Docker image and push to GHCR ────────────────────────────────
   api-build:
     name: Build & push API image
-    needs: api-check
+    needs: [api-check, web-e2e]
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main'
 
@@ -184,6 +184,108 @@ jobs:
           path: web/dist
           retention-days: 1
 
+  # ── Frontend: browser E2E against a real API + data layer ──────────────────
+  web-e2e:
+    name: Frontend Playwright E2E
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: chronicle_e2e
+          POSTGRES_USER: chronicle
+          POSTGRES_PASSWORD: chronicle
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgres://chronicle:chronicle@localhost:5432/chronicle_e2e?sslmode=disable
+      REDIS_URL: redis://localhost:6379
+      JWT_SECRET: chronicle-e2e-only-secret
+      API_BASE_URL: http://localhost:8080
+      FRONTEND_URL: http://localhost:5173
+      E2E_API_URL: http://localhost:8080
+      E2E_EMAIL: chronicle-e2e-${{ github.run_id }}-${{ github.run_attempt }}@example.com
+      E2E_PASSWORD: chronicle-e2e-password
+      ENV: test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+          cache-dependency-path: api/go.sum
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+
+      - name: Install frontend dependencies
+        working-directory: web
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Chromium
+        working-directory: web
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Install goose
+        run: go install github.com/pressly/goose/v3/cmd/goose@v3.27.1
+
+      - name: Migrate E2E database
+        working-directory: api
+        run: goose -dir db/migrations postgres "$DATABASE_URL" up
+
+      - name: Start API
+        working-directory: api
+        run: |
+          go run ./cmd/server > e2e-api.log 2>&1 &
+          for attempt in {1..30}; do
+            if curl --fail --silent http://localhost:8080/health; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat e2e-api.log
+          exit 1
+
+      - name: Run Playwright
+        working-directory: web
+        run: pnpm e2e
+
+      - name: Upload Playwright diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-diagnostics-${{ github.run_attempt }}
+          path: |
+            web/playwright-report
+            web/test-results
+            api/e2e-api.log
+          if-no-files-found: ignore
+          retention-days: 7
+
   # ── Desktop: Swift tests + app smoke E2E ───────────────────────────────────
   desktop-check:
     name: Desktop test & E2E
@@ -229,7 +331,7 @@ jobs:
   # ── Frontend: deploy to Cloudflare Pages ────────────────────────────────────
   web-deploy:
     name: Deploy frontend
-    needs: web-check
+    needs: [web-check, web-e2e]
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main'
 

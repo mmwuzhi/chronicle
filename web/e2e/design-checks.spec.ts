@@ -272,12 +272,8 @@ test("search: long result titles truncate with ellipsis", async ({ page }) => {
   await page.getByPlaceholder(/^search/i).fill("searchable");
   const title = page.getByText(longTitle, { exact: true });
   await expect(title).toBeVisible();
-  expect(
-    await title.evaluate((element) => getComputedStyle(element).overflow),
-  ).toBe("hidden");
-  expect(
-    await title.evaluate((element) => getComputedStyle(element).textOverflow),
-  ).toBe("ellipsis");
+  await expect(title).toHaveCSS("overflow", "hidden");
+  await expect(title).toHaveCSS("text-overflow", "ellipsis");
 });
 
 test("search: escape closes the modal", async ({ page }) => {
