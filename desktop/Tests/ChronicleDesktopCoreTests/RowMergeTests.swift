@@ -7,6 +7,7 @@ private struct Row: Equatable {
     let id: String
     let source: String
     let date: Date?
+    var evidence: [String] = []
 }
 
 private func row(_ id: String, _ source: String, minutesAgo: Int? = nil) -> Row {
@@ -57,5 +58,23 @@ private func row(_ id: String, _ source: String, minutesAgo: Int? = nil) -> Row 
             date: \.date,
         )
         #expect(merged.isEmpty)
+    }
+
+    @Test func preservingOrderAppendsNewRowsAndEnrichesDuplicates() {
+        let merged = RowMerge.preservingOrder(
+            existing: [row("local", "substring"), row("shared", "local")],
+            incoming: [
+                Row(id: "shared", source: "server", date: nil, evidence: ["matched transcript"]),
+                row("semantic", "server"),
+            ],
+            id: \.id,
+            mergeDuplicate: { current, incoming in
+                current.evidence.append(contentsOf: incoming.evidence)
+            },
+        )
+
+        #expect(merged.map(\.id) == ["local", "shared", "semantic"])
+        #expect(merged[1].source == "local")
+        #expect(merged[1].evidence == ["matched transcript"])
     }
 }

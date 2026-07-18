@@ -12,6 +12,7 @@
     "test": "vitest run src",
     "orval": "orval --config orval.config.ts",
     "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "e2e": "playwright test"
   },
   "dependencies": {

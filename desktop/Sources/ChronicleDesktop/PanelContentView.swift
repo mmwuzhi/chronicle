@@ -346,17 +346,12 @@ struct PanelContentView: View {
     // Append hits not already shown, keyed by id, preserving the order each source
     // returned them in (local substring, then local semantic, then server).
     private func mergeHits(_ more: [RowItem]) {
-        var positions: [String: Int] = [:]
-        for index in hits.indices where positions[hits[index].id] == nil {
-            positions[hits[index].id] = index
-        }
-        for item in more {
-            if let index = positions[item.id] {
-                hits[index].mergeDisplayEvidence(from: item)
-                continue
-            }
-            positions[item.id] = hits.endIndex
-            hits.append(item)
+        hits = RowMerge.preservingOrder(
+            existing: hits,
+            incoming: more,
+            id: \.id,
+        ) { current, incoming in
+            current.mergeDisplayEvidence(from: incoming)
         }
     }
 

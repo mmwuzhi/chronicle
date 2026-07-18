@@ -5,9 +5,6 @@
     "home": "Home",
     "captures": "Captures",
     "ask": "Ask",
-    "tasks": "Tasks",
-    "projects": "Projects",
-    "reports": "Reports",
     "settings": "Settings",
     "review": "Review"
   },
@@ -21,21 +18,12 @@
     "noData": "No captures to analyze yet. Save a few first.",
     "unavailable": "Ask is unavailable right now. Please try again later."
   },
-  "status": {
-    "all": "All",
-    "active": "Active",
-    "todo": "To Do",
-    "in_progress": "In Progress",
-    "done": "Done",
-    "archived": "Archived"
-  },
   "actions": {
     "save": "Save",
     "cancel": "Cancel",
     "confirm": "Confirm",
     "delete": "Delete",
     "edit": "Edit",
-    "archive": "Archive",
     "add": "Add",
     "clear": "Clear",
     "polish": "Polish",
@@ -51,27 +39,20 @@
   "loading": "Loading…",
   "error": "Something went wrong",
   "or": "or",
-  "noProject": "No project",
   "signIn": "Sign in",
   "createAccount": "Create account",
   "search": {
     "placeholder": "Search…",
     "captures": "Captures",
-    "tasks": "Tasks",
-    "logEntries": "Log entries",
-    "recentTasks": "Recent tasks",
     "recentCaptures": "Recent captures",
     "noResults": "No results",
     "typeToSearch": "Type to search…",
     "matchedTranscript": "Matched transcript",
     "openInContext": "Open in context",
-    "openTask": "Open task",
     "keywordFallback": "Semantic search unavailable. Using keyword search."
   },
   "confirm": {
     "cannotUndo": "This cannot be undone.",
-    "deleteTask": "Delete task?",
-    "deleteCapture": "Delete capture?",
-    "deleteLogEntry": "Delete log entry?"
+    "deleteCapture": "Delete capture?"
   }
 }

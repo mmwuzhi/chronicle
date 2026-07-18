@@ -53,12 +53,6 @@
     "keepVisible": "Keep visible",
     "keepVisibleHint": "Notify only — stays in browse instead of hiding until due"
   },
-  "promoteToTask": "Turn into task",
-  "promoteDialog": {
-    "title": "Promote to Task",
-    "project": "Project (optional)",
-    "confirm": "Promote"
-  },
   "related": {
     "title": "Related",
     "linked": "Linked",

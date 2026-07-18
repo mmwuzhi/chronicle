@@ -7,11 +7,9 @@ import (
 	"testing"
 )
 
-// The #todo grammar is defined twice — todoTagRe here and TODO_TAG_RE in
-// web/src/utils/todo.ts — and the root CLAUDE.md requires them to change
-// together. This test drives the Go parser against the shared golden fixture;
-// web/src/utils/todo.parity.test.ts drives the web regex against the same file.
-// Drift on either side turns one of the two red.
+// The #todo grammar is defined in Go, web, and desktop, and the root CLAUDE.md
+// requires all three to change together. This test drives the Go parser against
+// the same golden fixture consumed by the web and desktop parity tests.
 
 type todoParityFixture struct {
 	Cases []struct {

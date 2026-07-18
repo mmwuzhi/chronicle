@@ -1,5 +1,5 @@
 {
-  "_comment": "Shared golden fixture for the #todo tag grammar. Asserted by BOTH api/internal/capture/todotag_parity_test.go (present/done/doneDate) and web/src/utils/todo.parity.test.ts (present/done only — the web regex deliberately does not capture the date, since done_at derivation is server-side). The grammar is defined twice — todoTagRe in api/internal/capture/todotag.go and TODO_TAG_RE in web/src/utils/todo.ts — and must change together; any drift breaks one of these two tests. See the root CLAUDE.md 'tag grammar is defined twice' note.",
+  "_comment": "Shared golden fixture for the #todo tag grammar. Asserted by Go (present/done/doneDate), web (present/done), and desktop (present/done). The grammar is defined in api/internal/capture/todotag.go, web/src/utils/todo.ts, and desktop/Sources/ChronicleDesktopCore/TodoTag.swift; all three must change together, and drift breaks the corresponding parity test.",
   "cases": [
     { "desc": "bare tag at start of text", "text": "#todo", "present": true, "done": false, "doneDate": "" },
     { "desc": "bare tag then trailing prose", "text": "#todo buy milk", "present": true, "done": false, "doneDate": "" },

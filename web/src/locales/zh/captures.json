@@ -53,12 +53,6 @@
     "keepVisible": "保持可见",
     "keepVisibleHint": "仅通知——保持在浏览列表中，不到点前隐藏"
   },
-  "promoteToTask": "转为任务",
-  "promoteDialog": {
-    "title": "转换为任务",
-    "project": "所属项目（可选）",
-    "confirm": "确认转换"
-  },
   "related": {
     "title": "相关",
     "linked": "已关联",

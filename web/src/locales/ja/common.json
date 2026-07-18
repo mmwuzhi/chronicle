@@ -5,9 +5,6 @@
     "home": "ホーム",
     "captures": "キャプチャ",
     "ask": "質問",
-    "tasks": "タスク",
-    "projects": "プロジェクト",
-    "reports": "レポート",
     "settings": "設定",
     "review": "振り返り"
   },
@@ -21,21 +18,12 @@
     "noData": "分析できるキャプチャがまだありません。まず記録してみましょう。",
     "unavailable": "現在質問機能を利用できません。しばらくしてから再試行してください。"
   },
-  "status": {
-    "all": "すべて",
-    "active": "進行中",
-    "todo": "未着手",
-    "in_progress": "進行中",
-    "done": "完了",
-    "archived": "アーカイブ"
-  },
   "actions": {
     "save": "保存",
     "cancel": "キャンセル",
     "confirm": "確認",
     "delete": "削除",
     "edit": "編集",
-    "archive": "アーカイブ",
     "add": "追加",
     "clear": "クリア",
     "polish": "推敲",
@@ -51,27 +39,20 @@
   "loading": "読み込み中…",
   "error": "エラーが発生しました",
   "or": "または",
-  "noProject": "プロジェクトなし",
   "signIn": "ログイン",
   "createAccount": "アカウント作成",
   "search": {
     "placeholder": "検索…",
     "captures": "キャプチャ",
-    "tasks": "タスク",
-    "logEntries": "ログエントリ",
-    "recentTasks": "最近のタスク",
     "recentCaptures": "最近のキャプチャ",
     "noResults": "結果なし",
     "typeToSearch": "検索キーワードを入力…",
     "matchedTranscript": "文字起こしに一致",
     "openInContext": "文脈で開く",
-    "openTask": "タスクを開く",
     "keywordFallback": "セマンティック検索が利用できないため、キーワード検索を使用しています"
   },
   "confirm": {
     "cannotUndo": "この操作は取り消せません。",
-    "deleteTask": "タスクを削除しますか？",
-    "deleteCapture": "キャプチャを削除しますか？",
-    "deleteLogEntry": "ログを削除しますか？"
+    "deleteCapture": "キャプチャを削除しますか？"
   }
 }

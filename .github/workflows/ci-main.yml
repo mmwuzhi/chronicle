@@ -36,6 +36,10 @@ jobs:
           go-version: "1.26"
           cache-dependency-path: api/go.sum
 
+      - name: Format
+        working-directory: api
+        run: test -z "$(gofmt -l .)"
+
       - name: Install staticcheck
         run: go install honnef.co/go/tools/cmd/staticcheck@latest
 
@@ -150,6 +154,10 @@ jobs:
       - name: Install
         working-directory: web
         run: pnpm install --frozen-lockfile
+
+      - name: Format
+        working-directory: web
+        run: pnpm format:check
 
       - name: Lint
         working-directory: web

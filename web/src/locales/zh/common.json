@@ -5,9 +5,6 @@
     "home": "首页",
     "captures": "捕获",
     "ask": "提问",
-    "tasks": "任务",
-    "projects": "项目",
-    "reports": "周报",
     "settings": "设置",
     "review": "回顾"
   },
@@ -21,21 +18,12 @@
     "noData": "还没有可供分析的捕获，先记几条吧。",
     "unavailable": "提问服务暂不可用，请稍后再试。"
   },
-  "status": {
-    "all": "全部",
-    "active": "进行中",
-    "todo": "待办",
-    "in_progress": "进行中",
-    "done": "已完成",
-    "archived": "已归档"
-  },
   "actions": {
     "save": "保存",
     "cancel": "取消",
     "confirm": "确认",
     "delete": "删除",
     "edit": "编辑",
-    "archive": "归档",
     "add": "添加",
     "clear": "清空",
     "polish": "润色",
@@ -51,27 +39,20 @@
   "loading": "加载中…",
   "error": "出错了",
   "or": "或",
-  "noProject": "无项目",
   "signIn": "登录",
   "createAccount": "注册",
   "search": {
     "placeholder": "搜索…",
     "captures": "捕获",
-    "tasks": "任务",
-    "logEntries": "日志",
-    "recentTasks": "最近任务",
     "recentCaptures": "最近捕获",
     "noResults": "无结果",
     "typeToSearch": "输入搜索内容…",
     "matchedTranscript": "命中转写",
     "openInContext": "在上下文中打开",
-    "openTask": "打开任务",
     "keywordFallback": "语义检索暂不可用，已用关键词搜索"
   },
   "confirm": {
     "cannotUndo": "此操作无法撤销。",
-    "deleteTask": "删除任务？",
-    "deleteCapture": "删除捕获？",
-    "deleteLogEntry": "删除笔记？"
+    "deleteCapture": "删除捕获？"
   }
 }

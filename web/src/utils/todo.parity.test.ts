@@ -9,13 +9,10 @@ import { describe, expect, it } from "vitest";
 
 import { parseTodoTag } from "@/utils/todo";
 
-// The #todo grammar is defined twice — TODO_TAG_RE here and todoTagRe in
-// api/internal/capture/todotag.go — and the root CLAUDE.md requires them to
-// change together. This drives the web regex against the shared golden fixture;
-// api/internal/capture/todotag_parity_test.go drives the Go parser against the
-// same file. The web side asserts present/done only: the web regex deliberately
-// does not capture the done date (completion timestamps are derived server-side),
-// so the fixture's doneDate field is verified on the Go side.
+// The #todo grammar is defined in Go, web, and desktop, and the root CLAUDE.md
+// requires all three to change together. All three parity tests consume this
+// fixture. The web side asserts present/done only: completion timestamps are
+// derived server-side, so the fixture's doneDate field is verified by Go.
 
 type ParityCase = {
   desc: string;

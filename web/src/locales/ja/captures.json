@@ -53,12 +53,6 @@
     "keepVisible": "表示したまま",
     "keepVisibleHint": "通知のみ — 期限まで隠さずブラウズに表示し続けます"
   },
-  "promoteToTask": "タスクに変換",
-  "promoteDialog": {
-    "title": "タスクに変換",
-    "project": "プロジェクト（任意）",
-    "confirm": "変換する"
-  },
   "related": {
     "title": "関連",
     "linked": "リンク済み",
