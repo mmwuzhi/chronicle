@@ -191,6 +191,14 @@ struct MainWindowNavigationTests {
         #expect(settingsModel.mfaCode.isEmpty)
     }
 
+    @Test("review is a first-class workspace between browse and ask")
+    func reviewWorkspaceNavigationOrder() {
+        #expect(MainView.Mode.allCases == [
+            .browse, .review, .ask, .trash, .settings,
+        ])
+        #expect(MainView.Mode.review.icon == "clock.arrow.circlepath")
+    }
+
     @Test("settings scroll viewport stays inside the minimum main window")
     func settingsScrollViewportFitsMinimumWindow() async {
         let clients = CaptureClients(

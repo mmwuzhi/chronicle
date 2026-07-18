@@ -42,6 +42,46 @@ func askRequestBuildsPOSTWithBearerAndBody() throws {
 }
 
 @Test
+func reviewTodayRequestBuildsGETWithBearerAndTimezone() throws {
+    let client = RecallAPIClient(config: testConfig)
+
+    let request = client.makeReviewTodayRequest(timezoneOffsetMinutes: -540)
+
+    let url = try #require(request.url)
+    let components = try #require(URLComponents(url: url, resolvingAgainstBaseURL: false))
+    #expect(components.path == "/review/today")
+    #expect(request.httpMethod == "GET")
+    #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer test-token")
+    #expect(components.queryItems == [
+        URLQueryItem(name: "timezoneOffsetMinutes", value: "-540"),
+    ])
+}
+
+@Test
+func decodesReviewTodayBuckets() throws {
+    let json = Data(
+        """
+        {
+          "onThisDay":[
+            {"id":"11111111-1111-1111-1111-111111111111","rawText":"same day",
+             "transcript":null,"mediaType":"text","mediaUrl":null,"source":"web",
+             "remindAt":null,"createdAt":"2024-07-19T09:00:00+09:00"}
+          ],
+          "rediscover":[
+            {"id":"22222222-2222-2222-2222-222222222222","rawText":"older memory",
+             "transcript":null,"mediaType":"text","mediaUrl":null,"source":"desktop",
+             "remindAt":null,"createdAt":"2025-04-03T17:30:00+09:00"}
+          ]
+        }
+        """.utf8)
+
+    let decoded = try JSONDecoder().decode(ReviewTodayResponse.self, from: json)
+
+    #expect(decoded.onThisDay.map(\.content) == ["same day"])
+    #expect(decoded.rediscover.map(\.content) == ["older memory"])
+}
+
+@Test
 func relatedRequestBuildsGETWithBearerAndLimit() throws {
     let client = RecallAPIClient(config: testConfig)
 

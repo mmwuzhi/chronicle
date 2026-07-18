@@ -522,7 +522,11 @@ struct CaptureRow: View {
     }
 
     private func beginEditingFromContent() {
-        guard onEdit != nil, !rowIsEditing, !item.displayText.isEmpty else { return }
+        guard captureRowCanBeginEditing(
+            item,
+            hasInlineEdit: onEdit != nil,
+            hasExternalBegin: onBeginEdit != nil
+        ), !rowIsEditing else { return }
         if let onBeginEdit {
             onBeginEdit()
             return
@@ -539,6 +543,19 @@ struct CaptureRow: View {
         }
         fallbackEditing = false
     }
+}
+
+/// An external editor may hydrate a search/review projection before editing,
+/// while the row's inline fallback requires raw text it already owns. Keeping
+/// this distinction explicit prevents external edit callbacks from being gated
+/// by the inline editor's stricter requirement.
+func captureRowCanBeginEditing(
+    _ item: RowItem,
+    hasInlineEdit: Bool,
+    hasExternalBegin: Bool
+) -> Bool {
+    guard !item.displayText.isEmpty else { return false }
+    return hasExternalBegin || (hasInlineEdit && item.editableRawText != nil)
 }
 
 private struct CaptureDraftButtonLabel: View {

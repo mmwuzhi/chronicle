@@ -48,6 +48,30 @@ struct CaptureRowModelTests {
         #expect(CaptureEditDraft(item: row) == nil)
     }
 
+    @Test("external edit can hydrate a projection before editing")
+    func externalEditDoesNotRequireInlineRawText() {
+        let row = RowItem(RecallItem(
+            id: "search-result",
+            content: "Result projection",
+            snippet: nil,
+            createdAt: "2026-07-19T00:00:00Z",
+            modality: "text",
+            score: 0.8,
+            lexical: true
+        ))
+
+        #expect(captureRowCanBeginEditing(
+            row,
+            hasInlineEdit: false,
+            hasExternalBegin: true
+        ))
+        #expect(!captureRowCanBeginEditing(
+            row,
+            hasInlineEdit: true,
+            hasExternalBegin: false
+        ))
+    }
+
     @Test("server evidence enriches a local row without replacing editable text")
     func localRowsKeepEditOwnershipWhenEvidenceArrives() {
         let capture = Capture(

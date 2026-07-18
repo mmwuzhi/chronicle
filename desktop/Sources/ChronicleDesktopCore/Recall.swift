@@ -130,6 +130,16 @@ public struct CapturePage: Codable, Equatable, Sendable {
     }
 }
 
+public struct ReviewTodayResponse: Codable, Equatable, Sendable {
+    public let onThisDay: [Capture]
+    public let rediscover: [Capture]
+
+    public init(onThisDay: [Capture], rediscover: [Capture]) {
+        self.onThisDay = onThisDay
+        self.rediscover = rediscover
+    }
+}
+
 public struct AskSource: Codable, Equatable, Identifiable, Sendable {
     public let n: Int
     public let id: String
@@ -236,6 +246,31 @@ public final class RecallAPIClient: @unchecked Sendable {
             request, session: session, refresher: refresher)
         try Self.validate(response)
         return try JSONDecoder().decode(CapturePage.self, from: data)
+    }
+
+    public func makeReviewTodayRequest(timezoneOffsetMinutes: Int) -> URLRequest {
+        var components = URLComponents(
+            url: config.apiURL.appending(path: "review/today"),
+            resolvingAgainstBaseURL: false,
+        )!
+        components.queryItems = [
+            URLQueryItem(
+                name: "timezoneOffsetMinutes",
+                value: String(timezoneOffsetMinutes),
+            ),
+        ]
+        var request = URLRequest(url: components.url!)
+        request.httpMethod = "GET"
+        request.setValue("Bearer \(config.token)", forHTTPHeaderField: "Authorization")
+        return request
+    }
+
+    public func reviewToday(timezoneOffsetMinutes: Int) async throws -> ReviewTodayResponse {
+        let request = makeReviewTodayRequest(timezoneOffsetMinutes: timezoneOffsetMinutes)
+        let (data, response) = try await AuthedTransport.send(
+            request, session: session, refresher: refresher)
+        try Self.validate(response)
+        return try JSONDecoder().decode(ReviewTodayResponse.self, from: data)
     }
 
     // Fetch a single capture by id (GET /captures/{id}). Used to refresh a pinned

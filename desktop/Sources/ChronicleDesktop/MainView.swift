@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 import ChronicleDesktopCore
 
-// The resizable main window (ported from rag3's MainView): two modes.
+// The resizable main window (ported from rag3's MainView): capture workspaces.
 // Browse — empty query shows everything (newest first, paged); typing searches.
 // Ask — query-time analysis with cited sources. Rows are editable (double-click)
 // and editable or deletable through their row overflow, wired to the capture API.
@@ -17,7 +17,11 @@ struct MainView: View {
     @ObservedObject private var localization = DesktopLocalization.shared
 
     enum Mode: String, CaseIterable, Identifiable {
-        case browse = "Browse", ask = "Ask", trash = "Trash", settings = "Settings"
+        case browse = "Browse"
+        case review = "Review"
+        case ask = "Ask"
+        case trash = "Trash"
+        case settings = "Settings"
         var id: String { rawValue }
 
         @MainActor
@@ -26,6 +30,7 @@ struct MainView: View {
         var icon: String {
             switch self {
             case .browse: "tray.full"
+            case .review: "clock.arrow.circlepath"
             case .ask: "sparkles"
             case .trash: "trash"
             case .settings: "gearshape"
@@ -220,6 +225,11 @@ struct MainView: View {
                 }
             }
             .padding(16)
+        case .review:
+            MainReviewPane(
+                clients: clients,
+                sessionAvailable: settingsModel.isSignedIn,
+            )
         case .ask:
             MainAskWorkspace(
                 signedIn: signedIn,
@@ -309,7 +319,7 @@ struct MainView: View {
             // Returning from the trash: a restore/permanent-delete may have changed
             // the live set, so re-sync browse (unless a search is showing).
             if !searched { Task { await loadBrowse(reset: true) } }
-        case .ask:
+        case .review, .ask:
             break
         }
     }
@@ -322,7 +332,7 @@ struct MainView: View {
             } else {
                 Task { await loadBrowse(reset: true) }
             }
-        case .trash, .ask, .settings:
+        case .review, .trash, .ask, .settings:
             // Trash observes capture changes itself while mounted.
             break
         }
