@@ -250,6 +250,41 @@ func localCaptureStoreMarksCaptureSynced() throws {
 }
 
 @Test
+func localCaptureStoreSyncBacklogCountsEveryPendingRecordExactly() throws {
+    let store = LocalCaptureStore(fileURL: temporaryDatabaseURL())
+
+    // The old implementation decoded a page capped at 1,000 records, so a
+    // larger offline queue silently under-reported the user-visible backlog.
+    for index in 0..<1_001 {
+        _ = try store.create(CapturePayload(rawText: "pending-\(index)"))
+    }
+
+    let dirty = try store.create(CapturePayload(rawText: "dirty"))
+    try store.markSynced(
+        localId: dirty.id,
+        serverId: "server-dirty",
+        syncedAt: Date(timeIntervalSince1970: 1_000)
+    )
+    try store.setText(
+        id: "server-dirty",
+        rawText: "dirty edit",
+        now: Date(timeIntervalSince1970: 2_000)
+    )
+
+    let clean = try store.create(CapturePayload(rawText: "clean"))
+    try store.markSynced(
+        localId: clean.id,
+        serverId: "server-clean",
+        syncedAt: Date(timeIntervalSince1970: 3_000)
+    )
+
+    #expect(
+        try store.syncBacklog()
+            == LocalCaptureSyncBacklog(pendingCreates: 1_001, pendingUpdates: 1)
+    )
+}
+
+@Test
 func localCaptureStoreFindsByLocalIdBeforeAndAfterSync() throws {
     // The local id is what a reminder notification's userInfo carries; it must
     // resolve the same row both while the capture is still local-only and after

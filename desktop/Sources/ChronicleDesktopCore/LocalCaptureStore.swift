@@ -237,14 +237,41 @@ public final class LocalCaptureStore: @unchecked Sendable {
         }
     }
 
-    /// One definition of "waiting to sync" for status UI and sync summaries.
-    /// Creates and edits use separate queries because they have different remote
-    /// operations, but both are user work that has not reached the server yet.
-    public func syncBacklog(limit: Int = 1000) throws -> LocalCaptureSyncBacklog {
-        LocalCaptureSyncBacklog(
-            pendingCreates: try pendingSync(limit: limit).count,
-            pendingUpdates: try pendingUpdates(limit: limit).count
-        )
+    /// One exact definition of "waiting to sync" for status UI and sync summaries.
+    /// Count both kinds in SQLite instead of loading and decoding bounded record
+    /// lists: the user-visible backlog must not silently stop at a page limit.
+    public func syncBacklog() throws -> LocalCaptureSyncBacklog {
+        try withDatabase { db in
+            let sql = """
+                SELECT
+                    COALESCE(SUM(CASE WHEN server_id IS NULL THEN 1 ELSE 0 END), 0),
+                    COALESCE(SUM(CASE
+                        WHEN server_id IS NOT NULL
+                         AND (synced_at IS NULL OR updated_at > synced_at)
+                        THEN 1 ELSE 0
+                    END), 0)
+                FROM local_captures
+                """
+            var stmt: OpaquePointer?
+            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+                throw LocalCaptureStoreError.prepareFailed(lastError(db))
+            }
+            defer { sqlite3_finalize(stmt) }
+            guard sqlite3_step(stmt) == SQLITE_ROW else {
+                throw LocalCaptureStoreError.stepFailed(lastError(db))
+            }
+            return LocalCaptureSyncBacklog(
+                pendingCreates: Int(sqlite3_column_int64(stmt, 0)),
+                pendingUpdates: Int(sqlite3_column_int64(stmt, 1))
+            )
+        }
+    }
+
+    /// Compatibility overload for callers compiled against the former bounded API.
+    /// The limit is intentionally ignored because backlog counts must be exact.
+    @available(*, deprecated, message: "The limit is ignored; use syncBacklog() instead")
+    public func syncBacklog(limit _: Int) throws -> LocalCaptureSyncBacklog {
+        try syncBacklog()
     }
 
     public func upcomingReminders(now: Date = Date()) throws -> [LocalCaptureRecord] {
