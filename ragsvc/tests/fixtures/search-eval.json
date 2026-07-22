@@ -29,6 +29,24 @@
       "content": "晚上看了一部老电影",
       "created_at": "2026-07-14T20:00:00+09:00",
       "modality": "text"
+    },
+    {
+      "id": "function-words-newer",
+      "content": "我说今天再确认",
+      "created_at": "2026-07-15T08:00:00+09:00",
+      "modality": "text"
+    },
+    {
+      "id": "blue-book",
+      "content": "京都の古書店で青い装丁の本を見つけた",
+      "created_at": "2026-07-16T14:00:00+09:00",
+      "modality": "text"
+    },
+    {
+      "id": "spice-rack",
+      "content": "周末整理了厨房的调料架",
+      "created_at": "2026-07-17T10:00:00+09:00",
+      "modality": "text"
     }
   ],
   "cases": [
@@ -36,6 +54,8 @@
       "name": "cjk literal plus bm25",
       "query": "拉面 1200",
       "relevant": ["ramen"],
+      "expected_prefix": ["ramen"],
+      "excluded": ["noise"],
       "vector_scores": {"ramen": 0.74, "noise": 0.33},
       "rerank_scores": {"ramen": 0.96, "noise": 0.02}
     },
@@ -43,6 +63,8 @@
       "name": "cross-language semantic paraphrase",
       "query": "when is the revised quote due",
       "relevant": ["quote"],
+      "expected_prefix": ["quote"],
+      "excluded": ["noise"],
       "vector_scores": {"quote": 0.82, "noise": 0.35},
       "rerank_scores": {"quote": 0.93, "noise": 0.01}
     },
@@ -50,15 +72,66 @@
       "name": "japanese literal survives rerank",
       "query": "設計会議",
       "relevant": ["design"],
+      "expected_prefix": ["design"],
       "vector_scores": {"design": 0.68, "quote": 0.34},
       "rerank_scores": {"design": 0.01, "quote": 0.0}
     },
     {
       "name": "information-poor query stays literal",
       "query": "我说",
-      "relevant": ["function-words"],
-      "vector_scores": {"function-words": 0.62, "noise": 0.8},
-      "rerank_scores": {"function-words": 0.2, "noise": 0.99}
+      "relevant": ["function-words-newer", "function-words"],
+      "expected_prefix": ["function-words-newer", "function-words"],
+      "excluded": ["noise"],
+      "vector_scores": {"function-words": 0.62, "function-words-newer": 0.31, "noise": 0.8},
+      "rerank_scores": {"function-words": 0.2, "function-words-newer": 0.1, "noise": 0.99}
+    },
+    {
+      "name": "strong vector tail survives rerank miss",
+      "query": "blue-bound book in Kyoto",
+      "relevant": ["blue-book"],
+      "expected_prefix": ["blue-book"],
+      "excluded": ["noise"],
+      "vector_scores": {"blue-book": 0.71, "noise": 0.34},
+      "rerank_scores": {"blue-book": 0.01, "noise": 0.0}
+    },
+    {
+      "name": "weak semantic false positive is filtered",
+      "query": "周末计划",
+      "relevant": [],
+      "expected_prefix": [],
+      "expected_empty": true,
+      "excluded": ["spice-rack", "noise"],
+      "vector_scores": {"spice-rack": 0.4, "noise": 0.32},
+      "rerank_scores": {"spice-rack": 0.05, "noise": 0.01}
+    },
+    {
+      "name": "bm25 recalls split query terms without vector help",
+      "query": "客户 报价",
+      "relevant": ["quote"],
+      "expected_prefix": ["quote"],
+      "excluded": ["noise"],
+      "vector_scores": {},
+      "rerank_scores": {"quote": 0.92}
+    },
+    {
+      "name": "reranker outage falls back to vector order",
+      "query": "revised proposal deadline",
+      "relevant": ["quote"],
+      "expected_prefix": ["quote", "noise"],
+      "limit": 2,
+      "rerank_unavailable": true,
+      "vector_scores": {"quote": 0.82, "noise": 0.61},
+      "rerank_scores": {}
+    },
+    {
+      "name": "numeric date routes without retrieval scoring",
+      "query": "2026/7/11",
+      "normalized_date": "2026-07-11",
+      "date_results": ["quote"],
+      "relevant": ["quote"],
+      "expected_prefix": ["quote"],
+      "vector_scores": {},
+      "rerank_scores": {}
     }
   ]
 }
