@@ -28,6 +28,7 @@ import (
 
 type handler struct {
 	q      *db.Queries
+	pool   *pgxpool.Pool
 	rag    *ragclient.Client
 	store  objectDeleter
 	bucket string
@@ -67,6 +68,7 @@ func Register(api huma.API, pool *pgxpool.Pool, rag *ragclient.Client, store obj
 	}
 	h := &handler{
 		q:                 db.New(pool),
+		pool:              pool,
 		rag:               rag,
 		store:             store,
 		bucket:            bucket,
@@ -91,6 +93,7 @@ func Register(api huma.API, pool *pgxpool.Pool, rag *ragclient.Client, store obj
 	createOp := op("create-capture", http.MethodPost, "/captures", "Create a capture")
 	createOp.Middlewares = huma.Middlewares{createMW}
 	huma.Register(api, createOp, h.create)
+	huma.Register(api, op("create-capture-with-attachment", http.MethodPost, "/captures/with-attachment", "Atomically create a capture and external file reference"), h.createWithAttachment)
 	huma.Register(api, op("get-capture", http.MethodGet, "/captures/{id}", "Get a single capture"), h.get)
 	huma.Register(api, op("update-capture", http.MethodPatch, "/captures/{id}", "Update a capture"), h.update)
 	huma.Register(api, op("retry-capture-transcription", http.MethodPost, "/captures/{id}/transcription/retry", "Retry audio or image transcription"), h.retryTranscription)

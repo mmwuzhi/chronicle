@@ -14,6 +14,86 @@ struct MainWindowNavigationTests {
         #expect(MainTabRail.itemSpacing == 0)
     }
 
+    @Test("new Capture sheet accepts either text or a file")
+    func newCaptureSheetSaveEligibility() throws {
+        let model = MainCaptureSheetModel()
+        #expect(!model.canSave)
+
+        model.text = "  remember this  "
+        #expect(model.canSave)
+
+        model.text = " \n "
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("chronicle-sheet-test-\(UUID().uuidString).txt")
+        try Data("attachment".utf8).write(to: url)
+        defer { try? FileManager.default.removeItem(at: url) }
+        model.selectFile(url)
+        #expect(model.canSave)
+        #expect(model.file?.kind == .cloudAttachment)
+    }
+
+    @Test("small images upload directly while generic files use cloud attachments")
+    func newCaptureSheetRoutesFilesByType() throws {
+        let directory = FileManager.default.temporaryDirectory
+        let nonce = UUID().uuidString
+        let imageURL = directory.appendingPathComponent("chronicle-sheet-test-\(nonce).png")
+        let disguisedImageURL = directory.appendingPathComponent("chronicle-sheet-test-\(nonce).txt")
+        let fakeImageURL = directory.appendingPathComponent("chronicle-sheet-test-fake-\(nonce).png")
+        let fileURL = directory.appendingPathComponent("chronicle-sheet-test-\(nonce).pdf")
+        let onePixelPNG = try #require(
+            Data(
+                base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9ZRM8AAAAASUVORK5CYII="
+            )
+        )
+        try onePixelPNG.write(to: imageURL)
+        try onePixelPNG.write(to: disguisedImageURL)
+        try Data("not an image".utf8).write(to: fakeImageURL)
+        try Data("document".utf8).write(to: fileURL)
+        defer {
+            try? FileManager.default.removeItem(at: imageURL)
+            try? FileManager.default.removeItem(at: disguisedImageURL)
+            try? FileManager.default.removeItem(at: fakeImageURL)
+            try? FileManager.default.removeItem(at: fileURL)
+        }
+
+        #expect(try captureDraftFile(at: imageURL).kind == .directMedia)
+        #expect(try captureDraftFile(at: disguisedImageURL).kind == .directMedia)
+        #expect(try captureDraftFile(at: fakeImageURL).kind == .cloudAttachment)
+        #expect(try captureDraftFile(at: fileURL).kind == .cloudAttachment)
+    }
+
+    @Test("new Capture sheet uses a multiline body-font editor")
+    func newCaptureSheetUsesNativeEditor() async throws {
+        let model = MainCaptureSheetModel()
+        let host = NSHostingView(
+            rootView: MainCaptureSheet(
+                model: model,
+                clients: CaptureClients(
+                    recall: { nil },
+                    webhook: { nil },
+                    openSignIn: {},
+                    localSearch: { _ in [] },
+                    localRecent: { _ in [] },
+                    localDelete: { _ in }
+                ),
+                signedIn: false,
+                onSaved: { _ in },
+                onRequestSignIn: {},
+            )
+        )
+        host.frame = NSRect(x: 0, y: 0, width: 560, height: 360)
+        host.layoutSubtreeIfNeeded()
+        await Task.yield()
+        host.layoutSubtreeIfNeeded()
+
+        let textView: SubmitTextView = try #require(
+            host.firstDescendant(ofType: SubmitTextView.self)
+        )
+        #expect(textView.font?.pointSize == NSFont.preferredFont(forTextStyle: .body).pointSize)
+        #expect(textView.submitsOnEnter == false)
+        #expect(textView.isVerticallyResizable)
+    }
+
     @Test("capture row actions stay outside the overlay scrollbar")
     func captureActionsReserveScrollbarGutter() {
         let overlayWidth = NSScroller.scrollerWidth(

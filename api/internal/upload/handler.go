@@ -4,11 +4,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"mime"
 	"net/http"
-	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -17,6 +18,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -111,6 +113,25 @@ func (h *handler) upload(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusServiceUnavailable, "file upload not configured")
 		return
 	}
+	captureID := uuid.New()
+	if rawKey := strings.TrimSpace(r.Header.Get("Idempotency-Key")); rawKey != "" {
+		captureID, err = uuid.Parse(rawKey)
+		if err != nil {
+			writeErr(w, http.StatusUnprocessableEntity, "Idempotency-Key must be a UUID")
+			return
+		}
+		if existing, getErr := h.q.GetCaptureAnyState(r.Context(), db.GetCaptureAnyStateParams{ID: captureID, UserID: uid}); getErr == nil {
+			if existing.DeletedAt.Valid || !existing.MediaKey.Valid || !existing.MediaUrl.Valid {
+				writeErr(w, http.StatusConflict, "Idempotency-Key already belongs to another capture")
+				return
+			}
+			writeJSON(w, http.StatusOK, uploadedCaptureResponse(existing))
+			return
+		} else if !errors.Is(getErr, pgx.ErrNoRows) {
+			writeErr(w, http.StatusInternalServerError, "could not check upload operation")
+			return
+		}
+	}
 
 	r.Body = http.MaxBytesReader(w, r.Body, maxUploadSize+1024)
 	if err := r.ParseMultipartForm(maxUploadSize); err != nil {
@@ -131,13 +152,13 @@ func (h *handler) upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	contentType := fh.Header.Get("Content-Type")
-	if contentType == "" {
-		contentType = http.DetectContentType(data)
-	}
-	mediaType := classifyMediaType(contentType)
+	contentType, mediaType := detectUploadedMedia(data)
 	if mediaType == "" {
 		writeErr(w, http.StatusUnprocessableEntity, "unsupported file type (image or audio only)")
+		return
+	}
+	if declared := classifyMediaType(fh.Header.Get("Content-Type")); declared != "" && declared != mediaType {
+		writeErr(w, http.StatusUnprocessableEntity, "file content does not match Content-Type")
 		return
 	}
 
@@ -159,9 +180,34 @@ func (h *handler) upload(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	var remindAt pgtype.Timestamptz
+	if rawRemindAt := strings.TrimSpace(r.FormValue("remindAt")); rawRemindAt != "" {
+		parsed, parseErr := time.Parse(time.RFC3339, rawRemindAt)
+		if parseErr != nil {
+			writeErr(w, http.StatusUnprocessableEntity, "remindAt must be RFC3339")
+			return
+		}
+		remindAt = pgtype.Timestamptz{Time: parsed, Valid: true}
+	}
+	remindHide := true
+	if rawRemindHide := strings.TrimSpace(r.FormValue("remindHide")); rawRemindHide != "" {
+		remindHide, err = strconv.ParseBool(rawRemindHide)
+		if err != nil {
+			writeErr(w, http.StatusUnprocessableEntity, "remindHide must be a boolean")
+			return
+		}
+	}
+	source := strings.TrimSpace(r.FormValue("source"))
+	if source == "" {
+		source = "web"
+	}
+	if source != "web" && source != "desktop_quick_capture" {
+		writeErr(w, http.StatusUnprocessableEntity, "invalid capture source")
+		return
+	}
 
-	ext := extensionFor(fh.Filename, contentType)
-	key := fmt.Sprintf("captures/%s/%s%s", userID, uuid.New().String(), ext)
+	ext := extensionFor(contentType)
+	key := fmt.Sprintf("captures/%s/%s%s", userID, captureID.String(), ext)
 	publicURL := fmt.Sprintf("https://%s.%s.r2.cloudflarestorage.com/%s",
 		h.cfg.R2BucketName, h.cfg.R2AccountID, key)
 
@@ -189,17 +235,24 @@ func (h *handler) upload(w http.ResponseWriter, r *http.Request) {
 	rawText := strings.TrimSpace(r.FormValue("text"))
 	todoAt, doneAt := capture.DeriveTodoStamps(rawText, time.Now())
 	c, err := h.q.CreateUploadedCapture(r.Context(), db.CreateUploadedCaptureParams{
+		ID:                   captureID,
 		UserID:               uid,
-		MediaUrl:             pgtype.Text{String: publicURL, Valid: true},
+		MediaUrl:             publicURL,
 		MediaType:            db.CaptureMediaType(mediaType),
-		MediaKey:             pgtype.Text{String: key, Valid: true},
+		Source:               source,
+		MediaKey:             key,
 		AudioDurationSec:     nullableInt4(duration),
 		RawText:              nullableText(rawText),
 		TodoAt:               todoAt,
 		DoneAt:               doneAt,
+		RemindAt:             remindAt,
+		RemindHide:           remindHide,
 		TranscriptionEnabled: h.cfg.OpenAIKey != "",
 		VisionEnabled:        h.cfg.OpenAIKey != "" && h.cfg.VisionEnabled,
 	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		c, err = h.q.GetCapture(r.Context(), db.GetCaptureParams{ID: captureID, UserID: uid})
+	}
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "could not create capture")
 		return
@@ -207,10 +260,14 @@ func (h *handler) upload(w http.ResponseWriter, r *http.Request) {
 	if c.TranscriptionStatus == db.TranscriptionStatusPending {
 		h.kick()
 	}
+	writeJSON(w, http.StatusOK, uploadedCaptureResponse(c))
+}
+
+func uploadedCaptureResponse(c db.Capture) uploadResponse {
 	resp := uploadResponse{
 		ID:                  c.ID.String(),
-		MediaUrl:            publicURL,
-		MediaType:           mediaType,
+		MediaUrl:            c.MediaUrl.String,
+		MediaType:           string(c.MediaType),
 		Source:              c.Source,
 		TranscriptionStatus: string(c.TranscriptionStatus),
 		CreatedAt:           c.CreatedAt.Time.UTC().Format(time.RFC3339),
@@ -218,7 +275,51 @@ func (h *handler) upload(w http.ResponseWriter, r *http.Request) {
 	if c.AudioDurationSec.Valid {
 		resp.AudioDurationSec = &c.AudioDurationSec.Int32
 	}
-	writeJSON(w, http.StatusOK, resp)
+	return resp
+}
+
+func detectUploadedMedia(data []byte) (string, string) {
+	detected := http.DetectContentType(data)
+	if kind := classifyMediaType(detected); kind != "" {
+		return detected, kind
+	}
+	if len(data) >= 12 {
+		prefix4 := string(data[:4])
+		kind4 := string(data[8:12])
+		switch {
+		case prefix4 == "RIFF" && kind4 == "WEBP":
+			return "image/webp", "image"
+		case prefix4 == "RIFF" && kind4 == "WAVE":
+			return "audio/wav", "audio"
+		case prefix4 == "FORM" && (kind4 == "AIFF" || kind4 == "AIFC"):
+			return "audio/aiff", "audio"
+		case string(data[4:8]) == "ftyp":
+			brand := string(data[8:12])
+			if slices.Contains([]string{"heic", "heix", "hevc", "hevx", "mif1", "msf1", "avif"}, brand) {
+				if brand == "avif" {
+					return "image/avif", "image"
+				}
+				return "image/heic", "image"
+			}
+			if slices.Contains([]string{"M4A ", "M4B ", "mp41", "mp42", "isom"}, brand) {
+				return "audio/mp4", "audio"
+			}
+		}
+	}
+	if len(data) >= 4 {
+		switch {
+		case string(data[:4]) == "fLaC":
+			return "audio/flac", "audio"
+		case string(data[:4]) == "OggS":
+			return "audio/ogg", "audio"
+		case bytes.Equal(data[:4], []byte{0x1A, 0x45, 0xDF, 0xA3}):
+			return "video/webm", "audio"
+		}
+	}
+	if len(data) >= 3 && string(data[:3]) == "ID3" || len(data) >= 2 && data[0] == 0xFF && data[1]&0xE0 == 0xE0 {
+		return "audio/mpeg", "audio"
+	}
+	return "", ""
 }
 
 func classifyMediaType(ct string) string {
@@ -232,10 +333,7 @@ func classifyMediaType(ct string) string {
 	return ""
 }
 
-func extensionFor(filename, contentType string) string {
-	if ext := filepath.Ext(filename); ext != "" {
-		return ext
-	}
+func extensionFor(contentType string) string {
 	mt, _, _ := mime.ParseMediaType(contentType)
 	exts, _ := mime.ExtensionsByType(mt)
 	if len(exts) > 0 {

@@ -45,6 +45,40 @@ public enum CaptureTodoState: Equatable, Sendable {
     case open, done
 }
 
+public struct CaptureAttachment: Codable, Equatable, Identifiable, Sendable {
+    public let id: String
+    public let captureId: String
+    public let provider: String
+    public let providerFileId: String
+    public let name: String
+    public let mimeType: String?
+    public let sizeBytes: Int?
+    public let webUrl: String
+    public let createdAt: String
+
+    public init(
+        id: String,
+        captureId: String,
+        provider: String,
+        providerFileId: String,
+        name: String,
+        mimeType: String?,
+        sizeBytes: Int?,
+        webUrl: String,
+        createdAt: String
+    ) {
+        self.id = id
+        self.captureId = captureId
+        self.provider = provider
+        self.providerFileId = providerFileId
+        self.name = name
+        self.mimeType = mimeType
+        self.sizeBytes = sizeBytes
+        self.webUrl = webUrl
+        self.createdAt = createdAt
+    }
+}
+
 // A capture as the browse/manage surfaces see it (subset of the API's CaptureBody;
 // unknown JSON keys are ignored). `content` is what the row renders.
 public struct Capture: Codable, Equatable, Identifiable, Sendable {
@@ -66,13 +100,18 @@ public struct Capture: Codable, Equatable, Identifiable, Sendable {
     // hits, related) simply leave them nil.
     public let todoAt: String?
     public let doneAt: String?
+    // Page listings and attachment-create responses carry this array. Other
+    // projections may omit it, which decodes as nil rather than pretending the
+    // capture has no files.
+    public let attachments: [CaptureAttachment]?
 
     public init(
         id: String, rawText: String?, transcript: String?, mediaType: String,
         mediaUrl: String?, source: String,
         remindAt: String?, createdAt: String,
         remindHide: Bool? = nil, deletedAt: String? = nil,
-        todoAt: String? = nil, doneAt: String? = nil
+        todoAt: String? = nil, doneAt: String? = nil,
+        attachments: [CaptureAttachment]? = nil
     ) {
         self.id = id
         self.rawText = rawText
@@ -86,6 +125,7 @@ public struct Capture: Codable, Equatable, Identifiable, Sendable {
         self.createdAt = createdAt
         self.todoAt = todoAt
         self.doneAt = doneAt
+        self.attachments = attachments
     }
 
     // Transcript wins (audio/image), else raw text, else empty (media-only).
@@ -299,6 +339,23 @@ public final class RecallAPIClient: @unchecked Sendable {
         return try JSONDecoder().decode(Capture.self, from: data)
     }
 
+    public func setReminder(id: String, at: Date, hide: Bool) async throws -> Capture {
+        var request = URLRequest(url: captureURL(id).appending(path: "remind"))
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(config.token)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        request.httpBody = try JSONSerialization.data(withJSONObject: [
+            "at": formatter.string(from: at),
+            "hide": hide,
+        ])
+        let (data, response) = try await AuthedTransport.send(
+            request, session: session, refresher: refresher)
+        try Self.validate(response)
+        return try JSONDecoder().decode(Capture.self, from: data)
+    }
+
     // Soft delete (DELETE /captures/{id}); the server sets deleted_at, never removes.
     public func delete(id: String) async throws {
         var request = URLRequest(url: captureURL(id))
@@ -383,6 +440,16 @@ public final class RecallAPIClient: @unchecked Sendable {
             request, session: session, refresher: refresher)
         try Self.validate(response)
         return try JSONDecoder().decode([RelatedCapture].self, from: data)
+    }
+
+    public func attachments(id: String) async throws -> [CaptureAttachment] {
+        var request = URLRequest(url: captureURL(id).appending(path: "attachments"))
+        request.httpMethod = "GET"
+        request.setValue("Bearer \(config.token)", forHTTPHeaderField: "Authorization")
+        let (data, response) = try await AuthedTransport.send(
+            request, session: session, refresher: refresher)
+        try Self.validate(response)
+        return try JSONDecoder().decode([CaptureAttachment].self, from: data)
     }
 
     // MARK: - Explicit links (durable user-made relations)

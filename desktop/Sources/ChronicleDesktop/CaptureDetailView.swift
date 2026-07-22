@@ -162,6 +162,16 @@ final class CaptureDetailModel: ObservableObject {
     private func loadLinksAndRelated(for id: String) async {
         guard let client = clients.recall() else { return }
         do {
+            let attachments = try await client.attachments(id: id)
+            guard !Task.isCancelled, id == capture.id else { return }
+            capture = capture.replacingAttachments(attachments)
+        } catch {
+            guard !Task.isCancelled, id == capture.id else { return }
+            if case CaptureAPIError.httpStatus(401) = error {
+                self.error = L("Session expired — sign in again from Settings.")
+            }
+        }
+        do {
             let items = try await client.links(id: id)
             guard !Task.isCancelled, id == capture.id else { return }
             linked = items.map(RowItem.init)
@@ -294,6 +304,10 @@ struct CaptureDetailView: View {
                     )
                     .textSelection(.enabled)
 
+                    if model.editDraft == nil, !model.capture.attachments.isEmpty {
+                        attachmentSection
+                    }
+
                     if !model.error.isEmpty {
                         Text(model.error).foregroundStyle(.red).font(.caption)
                     }
@@ -330,6 +344,48 @@ struct CaptureDetailView: View {
         .onAppear { model.reload() }
         .onReceive(NotificationCenter.default.publisher(for: .chroniclePinsChanged)) { _ in
             pinTick &+= 1
+        }
+    }
+
+    private var attachmentSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(L("Attachments"))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            ForEach(model.capture.attachments) { attachment in
+                Button {
+                    guard let url = URL(string: attachment.webUrl) else { return }
+                    NSWorkspace.shared.open(url)
+                } label: {
+                    HStack(spacing: 9) {
+                        Image(systemName: "paperclip")
+                            .frame(width: 18)
+                            .foregroundStyle(.secondary)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(attachment.name)
+                                .lineLimit(1)
+                            if let size = attachment.sizeBytes {
+                                Text(ByteCountFormatter.string(
+                                    fromByteCount: Int64(size),
+                                    countStyle: .file
+                                ))
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                            }
+                        }
+                        Spacer()
+                        Image(systemName: "arrow.up.right")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 8)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 8))
+                .help(L("Open attachment"))
+            }
         }
     }
 

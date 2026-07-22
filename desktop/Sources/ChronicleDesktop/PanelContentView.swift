@@ -481,6 +481,8 @@ extension Notification.Name {
     static let chroniclePanelShown = Notification.Name("chroniclePanelShown")
     /// Posted each time the main window is shown (MainView refreshes its browse list).
     static let chronicleMainShown = Notification.Name("chronicleMainShown")
+    /// Standard New command switches Browse to its Capture composer.
+    static let chronicleFocusMainCapture = Notification.Name("chronicleFocusMainCapture")
     /// Posted after captures are created, synced, edited, deleted, or restored so
     /// already-open browse/search surfaces can invalidate their lists.
     static let chronicleCapturesChanged = Notification.Name("chronicleCapturesChanged")

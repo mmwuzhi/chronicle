@@ -20,6 +20,10 @@
     <string>1</string>
     <key>LSMinimumSystemVersion</key>
     <string>13.0</string>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>Chronicle records audio when you add a voice Capture.</string>
+    <key>ChronicleGoogleDriveClientID</key>
+    <string></string>
     <key>LSUIElement</key>
     <true/>
     <key>NSPrincipalClass</key>

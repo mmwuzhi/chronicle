@@ -1,4 +1,5 @@
 import AppKit
+import ChronicleDesktopCore
 import SwiftUI
 
 // Text inputs shared by the desktop surfaces: the bordered workspace field and
@@ -69,6 +70,8 @@ struct ModeTextEditor: NSViewRepresentable {
     var fontSize: CGFloat = 16
     var hasCompletion = false
     var onComplete: (() -> Void)?
+    var onPasteAttachment: ((URL, Bool) -> Void)?
+    var onPasteAttachmentError: (() -> Void)?
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -78,6 +81,8 @@ struct ModeTextEditor: NSViewRepresentable {
         tv.onSubmit = onSubmit
         tv.onCancel = onCancel
         tv.onComplete = onComplete
+        tv.onPasteAttachment = onPasteAttachment
+        tv.onPasteAttachmentError = onPasteAttachmentError
         tv.submitsOnEnter = submitsOnEnter
         tv.hasCompletion = hasCompletion
         tv.string = text
@@ -114,6 +119,8 @@ struct ModeTextEditor: NSViewRepresentable {
         tv.onSubmit = onSubmit
         tv.onCancel = onCancel
         tv.onComplete = onComplete
+        tv.onPasteAttachment = onPasteAttachment
+        tv.onPasteAttachmentError = onPasteAttachmentError
         tv.submitsOnEnter = submitsOnEnter
         tv.hasCompletion = hasCompletion
         let desiredFont = NSFont.systemFont(ofSize: fontSize)
@@ -189,6 +196,8 @@ final class SubmitTextView: NSTextView {
     var onSubmit: (() -> Void)?
     var onCancel: (() -> Void)?
     var onComplete: (() -> Void)?
+    var onPasteAttachment: ((URL, Bool) -> Void)?
+    var onPasteAttachmentError: (() -> Void)?
     var submitsOnEnter = true
     var hasCompletion = false
     var placeholderString = ""
@@ -215,6 +224,49 @@ final class SubmitTextView: NSTextView {
             onComplete?()
         } else {
             super.insertTab(sender)
+        }
+    }
+
+    override func paste(_ sender: Any?) {
+        guard let onPasteAttachment else {
+            super.paste(sender)
+            return
+        }
+        let pasteboard = NSPasteboard.general
+        if let url = (pasteboard.readObjects(
+            forClasses: [NSURL.self],
+            options: [.urlReadingFileURLsOnly: true]
+        ) as? [URL])?.first {
+            onPasteAttachment(url, false)
+            return
+        }
+        let imageData: Data?
+        let fileExtension: String
+        if let png = pasteboard.data(forType: .png) {
+            imageData = png
+            fileExtension = "png"
+        } else if let tiff = pasteboard.data(forType: .tiff) {
+            imageData = tiff
+            fileExtension = "tiff"
+        } else {
+            imageData = nil
+            fileExtension = ""
+        }
+        guard let imageData else {
+            super.paste(sender)
+            return
+        }
+        guard imageData.count <= directCaptureUploadMaxBytes else {
+            onPasteAttachmentError?()
+            return
+        }
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("chronicle-paste-\(UUID().uuidString).\(fileExtension)")
+        do {
+            try imageData.write(to: url, options: .atomic)
+            onPasteAttachment(url, true)
+        } catch {
+            super.paste(sender)
         }
     }
 

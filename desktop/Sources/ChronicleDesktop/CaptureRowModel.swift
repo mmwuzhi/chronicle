@@ -13,6 +13,11 @@ final class CaptureClients {
     let recall: () -> RecallAPIClient?
     let webhook: () -> WebhookAPIClient?
     let openSignIn: () -> Void
+    // Persist a new capture locally and schedule any available background sync.
+    // Throws only when the local write fails; signed-out/offline creation succeeds.
+    let createCapture: (CapturePayload) throws -> RowItem
+    let uploadMedia: (CaptureMediaUpload) async throws -> RowItem
+    let attachFile: (CloudCaptureFileUpload, String, Date?, Bool?) async throws -> RowItem
     // Open the single-capture detail window focused on the given row.
     let openDetail: (RowItem) -> Void
     // Open the detail window and immediately enter its editor. Search/review
@@ -43,6 +48,15 @@ final class CaptureClients {
         recall: @escaping () -> RecallAPIClient?,
         webhook: @escaping () -> WebhookAPIClient?,
         openSignIn: @escaping () -> Void,
+        createCapture: @escaping (CapturePayload) throws -> RowItem = { _ in
+            throw CaptureClientError.creationUnavailable
+        },
+        uploadMedia: @escaping (CaptureMediaUpload) async throws -> RowItem = { _ in
+            throw CaptureClientError.creationUnavailable
+        },
+        attachFile: @escaping (CloudCaptureFileUpload, String, Date?, Bool?) async throws -> RowItem = { _, _, _, _ in
+            throw CaptureClientError.creationUnavailable
+        },
         openDetail: @escaping (RowItem) -> Void = { _ in },
         openDetailForEditing: ((RowItem) -> Void)? = nil,
         togglePin: @escaping (RowItem) -> Void = { _ in },
@@ -57,6 +71,9 @@ final class CaptureClients {
         self.recall = recall
         self.webhook = webhook
         self.openSignIn = openSignIn
+        self.createCapture = createCapture
+        self.uploadMedia = uploadMedia
+        self.attachFile = attachFile
         self.openDetail = openDetail
         self.openDetailForEditing = openDetailForEditing ?? openDetail
         self.togglePin = togglePin
@@ -68,6 +85,11 @@ final class CaptureClients {
         self.localSetText = localSetText
         self.syncEdits = syncEdits
     }
+}
+
+enum CaptureClientError: Error {
+    case creationUnavailable
+    case requiresSignIn
 }
 
 /// What the menu-bar tooltip needs to render: whether the server session is
@@ -134,6 +156,9 @@ struct RowItem: Identifiable, Equatable {
     // stay nil — the same asymmetry as the web, whose search modal shows no todo
     // state either. nil renders as a plain capture, not as "not a todo".
     let todoState: CaptureTodoState?
+    // External cloud-drive references are present on full browse/detail captures.
+    // Projection-only rows keep an empty array until a full capture is loaded.
+    let attachments: [CaptureAttachment]
 
     init(_ hit: RecallItem) {
         id = hit.id
@@ -147,6 +172,7 @@ struct RowItem: Identifiable, Equatable {
         dirty = false
         mediaUrl = nil
         todoState = nil
+        attachments = []
     }
 
     init(_ capture: Capture) {
@@ -161,6 +187,7 @@ struct RowItem: Identifiable, Equatable {
         dirty = false
         mediaUrl = capture.mediaUrl
         todoState = capture.todoState
+        attachments = capture.attachments ?? []
     }
 
     init(_ related: RelatedCapture) {
@@ -175,6 +202,7 @@ struct RowItem: Identifiable, Equatable {
         dirty = false
         mediaUrl = nil
         todoState = nil
+        attachments = []
     }
 
     // Build a row from a pinned sticky's cached fields, so double-clicking a sticky
@@ -191,6 +219,7 @@ struct RowItem: Identifiable, Equatable {
         self.dirty = false
         self.mediaUrl = mediaUrl
         self.todoState = CaptureTodoTag.state(in: content)
+        self.attachments = []
     }
 
     // From a local record. A synced record keys on its server id so it dedupes
@@ -211,6 +240,7 @@ struct RowItem: Identifiable, Equatable {
         dirty = record.serverId != nil && (record.syncedAt.map { record.updatedAt > $0 } ?? true)
         mediaUrl = nil
         todoState = CaptureTodoTag.state(in: record.payload.rawText)
+        attachments = []
     }
 
     nonisolated(unsafe) private static let iso: ISO8601DateFormatter = {
@@ -247,7 +277,25 @@ struct RowItem: Identifiable, Equatable {
             synced: synced,
             dirty: synced,
             mediaUrl: mediaUrl,
-            todoState: CaptureTodoTag.state(in: rawText)
+            todoState: CaptureTodoTag.state(in: rawText),
+            attachments: attachments
+        )
+    }
+
+    func replacingAttachments(_ attachments: [CaptureAttachment]) -> RowItem {
+        RowItem(
+            id: id,
+            content: content,
+            snippet: snippet,
+            editableRawText: editableRawText,
+            createdAt: createdAt,
+            createdDate: createdDate,
+            modality: modality,
+            synced: synced,
+            dirty: dirty,
+            mediaUrl: mediaUrl,
+            todoState: todoState,
+            attachments: attachments
         )
     }
 
@@ -262,7 +310,8 @@ struct RowItem: Identifiable, Equatable {
         synced: Bool,
         dirty: Bool,
         mediaUrl: String?,
-        todoState: CaptureTodoState?
+        todoState: CaptureTodoState?,
+        attachments: [CaptureAttachment]
     ) {
         self.id = id
         self.content = content
@@ -275,6 +324,7 @@ struct RowItem: Identifiable, Equatable {
         self.dirty = dirty
         self.mediaUrl = mediaUrl
         self.todoState = todoState
+        self.attachments = attachments
     }
 }
 

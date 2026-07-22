@@ -12,14 +12,20 @@ let package = Package(
     targets: [
         .target(
             name: "ChronicleDesktopCore",
-            linkerSettings: [.linkedLibrary("sqlite3")],
+            linkerSettings: [
+                .linkedLibrary("sqlite3"),
+            ],
         ),
         .executableTarget(
             name: "ChronicleDesktop",
             dependencies: ["ChronicleDesktopCore"],
             linkerSettings: [
                 .linkedFramework("AppKit"),
+                .linkedFramework("AVFoundation"),
                 .linkedFramework("Carbon"),
+                .linkedFramework("ImageIO"),
+                .linkedFramework("Network"),
+                .linkedFramework("QuickLookUI"),
                 .linkedFramework("ServiceManagement"),
                 .linkedFramework("UserNotifications"),
             ],

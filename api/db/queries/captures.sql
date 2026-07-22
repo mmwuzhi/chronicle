@@ -27,6 +27,13 @@ LIMIT sqlc.arg('page_size');
 SELECT * FROM captures
 WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL;
 
+-- name: GetCaptureAnyState :one
+-- Idempotent remote-create paths must reserve an operation UUID even after the
+-- resulting capture is moved to Trash, otherwise a retry could overwrite its
+-- media object and attempt to recreate the same id.
+SELECT * FROM captures
+WHERE id = $1 AND user_id = $2;
+
 -- name: ListCaptureContextBefore :many
 SELECT * FROM captures
 WHERE user_id = sqlc.arg('user_id')
@@ -56,12 +63,30 @@ INSERT INTO captures (user_id, raw_text, media_url, media_type, source, todo_at,
 VALUES ($1, $2, $3, $4, $5, sqlc.narg('todo_at')::timestamptz, sqlc.narg('done_at')::timestamptz)
 RETURNING *;
 
+-- name: CreateCaptureWithID :one
+-- A client-generated UUID is the stable operation identity for multi-service
+-- attachment creation. Retrying the same operation returns the original row
+-- instead of creating a duplicate Capture.
+INSERT INTO captures (id, user_id, raw_text, media_type, source, todo_at, done_at)
+VALUES (
+  sqlc.arg('id')::uuid,
+  sqlc.arg('user_id')::uuid,
+  sqlc.arg('raw_text')::text,
+  'text',
+  sqlc.arg('source')::text,
+  sqlc.narg('todo_at')::timestamptz,
+  sqlc.narg('done_at')::timestamptz
+)
+ON CONFLICT (id) DO NOTHING
+RETURNING *;
+
 -- name: CreateUploadedCapture :one
 -- raw_text is the composer draft sent along with the upload; like
 -- CreateCapture, todo_at/done_at are derived from it by the handler (the
 -- #todo tag is the todo facet's only entry point; see
 -- internal/capture/todotag.go).
 INSERT INTO captures (
+  id,
   user_id,
   media_url,
   media_type,
@@ -71,46 +96,52 @@ INSERT INTO captures (
   raw_text,
   todo_at,
   done_at,
+  remind_at,
+  remind_hide,
   transcription_status,
   next_transcription_at
 )
 VALUES (
-  $1,
-  $2,
-  $3,
-  'web',
-  $4,
-  $5,
+  sqlc.arg('id')::uuid,
+  sqlc.arg('user_id')::uuid,
+  sqlc.arg('media_url')::text,
+  sqlc.arg('media_type')::capture_media_type,
+  sqlc.arg('source')::text,
+  sqlc.arg('media_key')::text,
+  sqlc.narg('audio_duration_sec')::integer,
   sqlc.narg('raw_text')::text,
   sqlc.narg('todo_at')::timestamptz,
   sqlc.narg('done_at')::timestamptz,
+  sqlc.narg('remind_at')::timestamptz,
+  sqlc.arg('remind_hide')::boolean,
   CASE
-    WHEN $3::capture_media_type = 'audio'
-      AND $5::integer IS NOT NULL
-      AND $5::integer <= 300
+    WHEN sqlc.arg('media_type')::capture_media_type = 'audio'
+      AND sqlc.narg('audio_duration_sec')::integer IS NOT NULL
+      AND sqlc.narg('audio_duration_sec')::integer <= 300
       AND sqlc.arg('transcription_enabled')::boolean
     THEN 'pending'::transcription_status
-    WHEN $3::capture_media_type = 'audio'
+    WHEN sqlc.arg('media_type')::capture_media_type = 'audio'
     THEN 'skipped'::transcription_status
-    WHEN $3::capture_media_type = 'image'
+    WHEN sqlc.arg('media_type')::capture_media_type = 'image'
       AND sqlc.arg('vision_enabled')::boolean
     THEN 'pending'::transcription_status
-    WHEN $3::capture_media_type = 'image'
+    WHEN sqlc.arg('media_type')::capture_media_type = 'image'
     THEN 'skipped'::transcription_status
     ELSE 'none'::transcription_status
   END,
   CASE
-    WHEN $3::capture_media_type = 'audio'
-      AND $5::integer IS NOT NULL
-      AND $5::integer <= 300
+    WHEN sqlc.arg('media_type')::capture_media_type = 'audio'
+      AND sqlc.narg('audio_duration_sec')::integer IS NOT NULL
+      AND sqlc.narg('audio_duration_sec')::integer <= 300
       AND sqlc.arg('transcription_enabled')::boolean
     THEN now()
-    WHEN $3::capture_media_type = 'image'
+    WHEN sqlc.arg('media_type')::capture_media_type = 'image'
       AND sqlc.arg('vision_enabled')::boolean
     THEN now()
     ELSE NULL
   END
 )
+ON CONFLICT (id) DO NOTHING
 RETURNING *;
 
 -- name: UpdateCapture :one

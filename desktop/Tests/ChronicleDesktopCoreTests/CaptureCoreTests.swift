@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import Testing
 
@@ -71,6 +72,233 @@ func apiClientBuildsCaptureRequest() throws {
     let decoded = try JSONDecoder().decode(CapturePayload.self, from: body)
     #expect(decoded.rawText == "Quick note")
     #expect(decoded.source == desktopQuickCaptureSource)
+}
+
+@Test
+func mediaUploadClientBuildsCaptureMultipartRequest() throws {
+    let config = ChronicleConfig(apiURL: URL(string: "https://api.example.com/v1")!, token: "test-token")
+    let client = CaptureMediaUploadClient(config: config)
+    let request = try client.makeRequest(
+        for: CaptureMediaUpload(
+            operationId: "e71dc14c-90c1-4d04-b9ee-4fd209da7916",
+            data: Data("audio-bytes".utf8),
+            filename: "memo\r\nX-Injected: yes.m4a",
+            mimeType: "audio/mp4",
+            text: "remember this #todo",
+            durationSeconds: 12,
+            remindAt: Date(timeIntervalSince1970: 1_700_000_000),
+            remindHide: false
+        ),
+        boundary: "test-boundary"
+    )
+
+    #expect(request.url?.absoluteString == "https://api.example.com/v1/captures/upload")
+    #expect(request.httpMethod == "POST")
+    #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer test-token")
+    #expect(request.value(forHTTPHeaderField: "Idempotency-Key") == "e71dc14c-90c1-4d04-b9ee-4fd209da7916")
+    #expect(request.value(forHTTPHeaderField: "Content-Type") == "multipart/form-data; boundary=test-boundary")
+    let body = try #require(request.httpBody.flatMap { String(data: $0, encoding: .utf8) })
+    #expect(body.contains("name=\"file\"; filename=\"memo__X-Injected: yes.m4a\""))
+    #expect(!body.contains("\r\nX-Injected: yes"))
+    #expect(body.contains("name=\"createCapture\"\r\n\r\ntrue"))
+    #expect(body.contains("name=\"source\"\r\n\r\ndesktop_quick_capture"))
+    #expect(body.contains("name=\"text\"\r\n\r\nremember this #todo"))
+    #expect(body.contains("name=\"durationSec\"\r\n\r\n12"))
+    #expect(body.contains("name=\"remindHide\"\r\n\r\nfalse"))
+}
+
+@Test
+func mediaUploadClientRejectsOversizedFilesBeforeSending() {
+    let config = ChronicleConfig(apiURL: URL(string: "https://api.example.com")!, token: "test-token")
+    let client = CaptureMediaUploadClient(config: config)
+    let upload = CaptureMediaUpload(
+        data: Data(repeating: 0, count: directCaptureUploadMaxBytes + 1),
+        filename: "large.png",
+        mimeType: "image/png"
+    )
+
+    #expect(throws: CaptureMediaUploadError.fileTooLarge) {
+        try client.makeRequest(for: upload)
+    }
+}
+
+@Test
+func attachmentClientBuildsCloudReferenceRequest() throws {
+    let config = ChronicleConfig(apiURL: URL(string: "https://api.example.com")!, token: "test-token")
+    let client = CaptureAttachmentAPIClient(config: config)
+    let attachment = CloudAttachmentDraft(
+        provider: "google_drive",
+        providerFileId: "drive-file-1",
+        name: "reference.pdf",
+        mimeType: "application/pdf",
+        sizeBytes: 42,
+        webUrl: "https://drive.google.com/file/d/drive-file-1/view"
+    )
+
+    let request = try client.makeAddRequest(captureId: "capture-1", attachment: attachment)
+
+    #expect(request.url?.absoluteString == "https://api.example.com/captures/capture-1/attachments")
+    #expect(request.httpMethod == "POST")
+    #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer test-token")
+    #expect(try JSONDecoder().decode(CloudAttachmentDraft.self, from: #require(request.httpBody)) == attachment)
+}
+
+@Test
+func googleDriveOAuthUsesDriveFileScopeAndPKCE() throws {
+    let url = try GoogleDriveOAuth.authorizationURL(
+        clientID: "desktop-client",
+        redirectURI: "http://127.0.0.1:49152/oauth/callback",
+        state: "state-1",
+        codeChallenge: "challenge-1"
+    )
+    let components = try #require(URLComponents(url: url, resolvingAgainstBaseURL: false))
+    let items: [String: String] = Dictionary(
+        uniqueKeysWithValues: (components.queryItems ?? []).map { ($0.name, $0.value ?? "") }
+    )
+
+    #expect(items["scope"] == googleDriveFileScope)
+    #expect(items["state"] == "state-1")
+    #expect(items["code_challenge"] == "challenge-1")
+    #expect(items["code_challenge_method"] == "S256")
+
+    let tokenRequest = GoogleDriveOAuth.tokenRequest(
+        clientID: "desktop-client",
+        redirectURI: "http://127.0.0.1:49152/oauth/callback",
+        code: "code-1",
+        codeVerifier: "verifier-1"
+    )
+    let tokenBody = try #require(tokenRequest.httpBody.flatMap { String(data: $0, encoding: .utf8) })
+    #expect(tokenRequest.url?.absoluteString == "https://oauth2.googleapis.com/token")
+    #expect(tokenBody.contains("code_verifier=verifier-1"))
+    #expect(tokenBody.contains("grant_type=authorization_code"))
+}
+
+@Test
+func googleDriveOAuthCallbackWaitsForCompleteValidatedRequest() {
+    let partial = Data("GET /oauth/callback?code=ok&state=expected HTTP/1.1\r\nHost: localhost\r\n".utf8)
+    #expect(
+        GoogleDriveOAuthCallback.parse(
+            partial,
+            expectedPath: "/oauth/callback",
+            expectedState: "expected"
+        ) == .incomplete
+    )
+
+    func parse(_ target: String) -> GoogleDriveOAuthCallbackResult {
+        GoogleDriveOAuthCallback.parse(
+            Data("GET \(target) HTTP/1.1\r\nHost: localhost\r\n\r\n".utf8),
+            expectedPath: "/oauth/callback",
+            expectedState: "expected"
+        )
+    }
+
+    #expect(parse("/favicon.ico") == .ignored)
+    #expect(parse("/oauth/callback?code=ok&state=wrong") == .ignored)
+    #expect(parse("/oauth/callback?code=one&code=two&state=expected") == .ignored)
+    #expect(parse("/oauth/callback?error=access_denied&state=expected") == .denied)
+    #expect(parse("/oauth/callback?code=authorization-code&state=expected") == .accepted("authorization-code"))
+}
+
+@Test
+func secureCaptureFileRejectsSpecialPathsAndStagesStableSnapshot() throws {
+    let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+
+    #expect(throws: SecureCaptureFileError.notRegularFile) {
+        try inspectCaptureFile(at: URL(fileURLWithPath: "/dev/zero"), maxBytes: 1024)
+    }
+
+    let regular = directory.appending(path: "capture.png")
+    let bytes = Data([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 1, 2, 3])
+    try bytes.write(to: regular)
+    let link = directory.appending(path: "capture-link.png")
+    try FileManager.default.createSymbolicLink(at: link, withDestinationURL: regular)
+    #expect(throws: SecureCaptureFileError.notRegularFile) {
+        try inspectCaptureFile(at: link, maxBytes: 1024)
+    }
+
+    let fifo = directory.appending(path: "capture.pipe")
+    #expect(mkfifo(fifo.path, S_IRUSR | S_IWUSR) == 0)
+    #expect(throws: SecureCaptureFileError.notRegularFile) {
+        try inspectCaptureFile(at: fifo, maxBytes: 1024)
+    }
+
+    let snapshot = try inspectCaptureFile(at: regular, maxBytes: 1024)
+    #expect(snapshot.mediaMimeType == "image/png")
+    let staged = try stageCaptureFile(at: regular, expected: snapshot.identity, maxBytes: 1024)
+    defer { removeStagedCaptureFile(staged) }
+    #expect(try Data(contentsOf: staged) == bytes)
+
+    let wrongIdentity = CaptureFileIdentity(
+        device: snapshot.identity.device,
+        inode: snapshot.identity.inode &+ 1,
+        sizeBytes: snapshot.identity.sizeBytes
+    )
+    #expect(throws: SecureCaptureFileError.fileChanged) {
+        try stageCaptureFile(at: regular, expected: wrongIdentity, maxBytes: 1024)
+    }
+}
+
+@Test
+func captureWithAttachmentRequestCarriesStableOperationAndReminder() throws {
+    let config = ChronicleConfig(apiURL: URL(string: "https://api.example.com")!, token: "token")
+    let client = CaptureWithAttachmentAPIClient(config: config)
+    let attachment = CloudAttachmentDraft(
+        provider: "google_drive",
+        providerFileId: "file-1",
+        name: "archive.zip",
+        mimeType: "application/zip",
+        sizeBytes: 123,
+        webUrl: "https://drive.google.com/file/d/file-1/view"
+    )
+    let request = try client.makeRequest(
+        operationId: "88aadf7b-355e-41e9-a992-b99188dd5f89",
+        text: "Reference",
+        remindAt: Date(timeIntervalSince1970: 1_700_000_000),
+        remindHide: false,
+        attachment: attachment
+    )
+    let body = try #require(request.httpBody)
+    let json = try #require(JSONSerialization.jsonObject(with: body) as? [String: Any])
+    #expect(request.url?.path == "/captures/with-attachment")
+    #expect(json["operationId"] as? String == "88aadf7b-355e-41e9-a992-b99188dd5f89")
+    #expect(json["source"] as? String == desktopQuickCaptureSource)
+    #expect(json["remindHide"] as? Bool == false)
+    #expect((json["attachment"] as? [String: Any])?["providerFileId"] as? String == "file-1")
+}
+
+@Test
+func captureDecodesEmbeddedAttachments() throws {
+    let capture = try JSONDecoder().decode(
+        Capture.self,
+        from: Data(
+            """
+            {"id":"capture-1","rawText":"Reference","transcript":null,"mediaType":"text",\
+             "mediaUrl":null,"source":"desktop_quick_capture","remindAt":null,"remindHide":false,\
+             "deletedAt":null,"createdAt":"2026-07-23T00:00:00Z","todoAt":null,"doneAt":null,\
+             "attachments":[{"id":"attachment-1","captureId":"capture-1","provider":"google_drive",\
+             "providerFileId":"file-1","name":"reference.pdf","mimeType":"application/pdf",\
+             "sizeBytes":42,"webUrl":"https://drive.google.com/file/d/file-1/view",\
+             "createdAt":"2026-07-23T00:00:01Z"}]}
+            """.utf8
+        )
+    )
+    #expect(capture.attachments?.count == 1)
+    #expect(capture.attachments?.first?.name == "reference.pdf")
+}
+
+@Test
+func serverCreatedCaptureCacheNeverEntersPendingSync() throws {
+    let store = LocalCaptureStore(fileURL: temporaryDatabaseURL())
+    let payload = CapturePayload(rawText: "uploaded image", mediaType: "image")
+
+    let record = try store.cacheServerCapture(serverId: "server-media-1", payload: payload)
+
+    #expect(record.serverId == "server-media-1")
+    #expect(record.isSynced)
+    #expect(try store.pendingSync().isEmpty)
+    #expect(try store.syncBacklog().total == 0)
 }
 
 @Test

@@ -97,21 +97,21 @@ export interface CaptureAttachmentBody {
   webUrl: string;
 }
 
-export type CaptureAttachmentCreateInputBodyProvider = typeof CaptureAttachmentCreateInputBodyProvider[keyof typeof CaptureAttachmentCreateInputBodyProvider];
+export type CaptureAttachmentDraftInputProvider = typeof CaptureAttachmentDraftInputProvider[keyof typeof CaptureAttachmentDraftInputProvider];
 
 
-export const CaptureAttachmentCreateInputBodyProvider = {
+export const CaptureAttachmentDraftInputProvider = {
   google_drive: 'google_drive',
   onedrive: 'onedrive',
   dropbox: 'dropbox',
 } as const;
 
-export interface CaptureAttachmentCreateInputBody {
+export interface CaptureAttachmentDraftInput {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
   mimeType?: string;
   name: string;
-  provider: CaptureAttachmentCreateInputBodyProvider;
+  provider: CaptureAttachmentDraftInputProvider;
   providerFileId: string;
   sizeBytes?: number;
   webUrl: string;
@@ -259,6 +259,17 @@ export interface CaptureUpdateInputBody {
   readonly $schema?: string;
   rawText?: string;
   transcript?: string;
+}
+
+export interface CaptureWithAttachmentCreateInputBody {
+  /** A URL to the JSON Schema for this object. */
+  readonly $schema?: string;
+  attachment: CaptureAttachmentDraftInput;
+  operationId: string;
+  rawText: string;
+  remindAt?: string;
+  remindHide?: boolean;
+  source?: string;
 }
 
 export interface DesktopOAuthExchangeInputBody {
@@ -2758,6 +2769,70 @@ export function useListTrashedCaptures<TData = Awaited<ReturnType<typeof listTra
 
 
 /**
+ * @summary Atomically create a capture and external file reference
+ */
+export const createCaptureWithAttachment = (
+    captureWithAttachmentCreateInputBody: NonReadonly<CaptureWithAttachmentCreateInputBody>,
+ signal?: AbortSignal
+) => {
+
+
+      return api<CaptureBody>(
+      {url: `/captures/with-attachment`, method: 'POST',
+      headers: {'Content-Type': 'application/json', },
+      data: captureWithAttachmentCreateInputBody, signal
+    },
+      );
+    }
+
+
+
+export const getCreateCaptureWithAttachmentMutationOptions = <TError = ErrorModel,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createCaptureWithAttachment>>, TError,{data: NonReadonly<CaptureWithAttachmentCreateInputBody>}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof createCaptureWithAttachment>>, TError,{data: NonReadonly<CaptureWithAttachmentCreateInputBody>}, TContext> => {
+
+const mutationKey = ['createCaptureWithAttachment'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createCaptureWithAttachment>>, {data: NonReadonly<CaptureWithAttachmentCreateInputBody>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createCaptureWithAttachment(data,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateCaptureWithAttachmentMutationResult = NonNullable<Awaited<ReturnType<typeof createCaptureWithAttachment>>>
+    export type CreateCaptureWithAttachmentMutationBody = NonReadonly<CaptureWithAttachmentCreateInputBody>
+    export type CreateCaptureWithAttachmentMutationError = ErrorModel
+
+    /**
+ * @summary Atomically create a capture and external file reference
+ */
+export const useCreateCaptureWithAttachment = <TError = ErrorModel,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createCaptureWithAttachment>>, TError,{data: NonReadonly<CaptureWithAttachmentCreateInputBody>}, TContext>, }
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof createCaptureWithAttachment>>,
+        TError,
+        {data: NonReadonly<CaptureWithAttachmentCreateInputBody>},
+        TContext
+      > => {
+      return useMutation(getCreateCaptureWithAttachmentMutationOptions(options), queryClient);
+    }
+
+/**
  * @summary Delete a capture
  */
 export const deleteCapture = (
@@ -3075,7 +3150,7 @@ export function useListCaptureAttachments<TData = Awaited<ReturnType<typeof list
  */
 export const addCaptureAttachment = (
     id: string,
-    captureAttachmentCreateInputBody: NonReadonly<CaptureAttachmentCreateInputBody>,
+    captureAttachmentDraftInput: NonReadonly<CaptureAttachmentDraftInput>,
  signal?: AbortSignal
 ) => {
 
@@ -3083,7 +3158,7 @@ export const addCaptureAttachment = (
       return api<CaptureAttachmentBody>(
       {url: `/captures/${id}/attachments`, method: 'POST',
       headers: {'Content-Type': 'application/json', },
-      data: captureAttachmentCreateInputBody, signal
+      data: captureAttachmentDraftInput, signal
     },
       );
     }
@@ -3091,8 +3166,8 @@ export const addCaptureAttachment = (
 
 
 export const getAddCaptureAttachmentMutationOptions = <TError = ErrorModel,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof addCaptureAttachment>>, TError,{id: string;data: NonReadonly<CaptureAttachmentCreateInputBody>}, TContext>, }
-): UseMutationOptions<Awaited<ReturnType<typeof addCaptureAttachment>>, TError,{id: string;data: NonReadonly<CaptureAttachmentCreateInputBody>}, TContext> => {
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof addCaptureAttachment>>, TError,{id: string;data: NonReadonly<CaptureAttachmentDraftInput>}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof addCaptureAttachment>>, TError,{id: string;data: NonReadonly<CaptureAttachmentDraftInput>}, TContext> => {
 
 const mutationKey = ['addCaptureAttachment'];
 const {mutation: mutationOptions} = options ?
@@ -3104,7 +3179,7 @@ const {mutation: mutationOptions} = options ?
 
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof addCaptureAttachment>>, {id: string;data: NonReadonly<CaptureAttachmentCreateInputBody>}> = (props) => {
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof addCaptureAttachment>>, {id: string;data: NonReadonly<CaptureAttachmentDraftInput>}> = (props) => {
           const {id,data} = props ?? {};
 
           return  addCaptureAttachment(id,data,)
@@ -3118,18 +3193,18 @@ const {mutation: mutationOptions} = options ?
   return  { mutationFn, ...mutationOptions }}
 
     export type AddCaptureAttachmentMutationResult = NonNullable<Awaited<ReturnType<typeof addCaptureAttachment>>>
-    export type AddCaptureAttachmentMutationBody = NonReadonly<CaptureAttachmentCreateInputBody>
+    export type AddCaptureAttachmentMutationBody = NonReadonly<CaptureAttachmentDraftInput>
     export type AddCaptureAttachmentMutationError = ErrorModel
 
     /**
  * @summary Attach an external file reference
  */
 export const useAddCaptureAttachment = <TError = ErrorModel,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof addCaptureAttachment>>, TError,{id: string;data: NonReadonly<CaptureAttachmentCreateInputBody>}, TContext>, }
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof addCaptureAttachment>>, TError,{id: string;data: NonReadonly<CaptureAttachmentDraftInput>}, TContext>, }
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof addCaptureAttachment>>,
         TError,
-        {id: string;data: NonReadonly<CaptureAttachmentCreateInputBody>},
+        {id: string;data: NonReadonly<CaptureAttachmentDraftInput>},
         TContext
       > => {
       return useMutation(getAddCaptureAttachmentMutationOptions(options), queryClient);

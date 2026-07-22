@@ -158,10 +158,12 @@ func TestProcessAvailableSkipsImageWhenVisionDisabled(t *testing.T) {
 	// An image sitting at 'pending' (created when vision was on, or moved back by
 	// retry) — the exact state the bypass exploited.
 	capture, err := q.CreateUploadedCapture(ctx, db.CreateUploadedCaptureParams{
+		ID:            uuid.New(),
 		UserID:        userID,
-		MediaUrl:      pgtype.Text{String: "https://r2.example/x.jpg", Valid: true},
+		MediaUrl:      "https://r2.example/x.jpg",
 		MediaType:     db.CaptureMediaTypeImage,
-		MediaKey:      pgtype.Text{String: "captures/x.jpg", Valid: true},
+		Source:        "desktop",
+		MediaKey:      "captures/x.jpg",
 		VisionEnabled: true, // create as pending
 	})
 	if err != nil {
@@ -222,10 +224,12 @@ func TestProcessAvailableReportsScheduledRetryAcrossDrains(t *testing.T) {
 
 	q := db.New(pool)
 	if _, err := q.CreateUploadedCapture(ctx, db.CreateUploadedCaptureParams{
+		ID:                   uuid.New(),
 		UserID:               userID,
-		MediaUrl:             pgtype.Text{String: "https://r2.example/a.webm", Valid: true},
+		MediaUrl:             "https://r2.example/a.webm",
 		MediaType:            db.CaptureMediaTypeAudio,
-		MediaKey:             pgtype.Text{String: "captures/a.webm", Valid: true},
+		Source:               "desktop",
+		MediaKey:             "captures/a.webm",
 		AudioDurationSec:     pgtype.Int4{Int32: 60, Valid: true},
 		TranscriptionEnabled: true,
 	}); err != nil {

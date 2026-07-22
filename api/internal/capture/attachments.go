@@ -91,20 +91,145 @@ func (h *handler) listAttachments(ctx context.Context, input *CaptureAttachmentL
 	return out, nil
 }
 
+type CaptureAttachmentDraftInput struct {
+	Provider       string  `json:"provider" enum:"google_drive,onedrive,dropbox"`
+	ProviderFileID string  `json:"providerFileId"`
+	Name           string  `json:"name"`
+	MimeType       *string `json:"mimeType,omitempty"`
+	SizeBytes      *int64  `json:"sizeBytes,omitempty"`
+	WebURL         string  `json:"webUrl"`
+}
+
 type CaptureAttachmentCreateInput struct {
 	ID   string `path:"id" format:"uuid"`
-	Body struct {
-		Provider       string  `json:"provider" enum:"google_drive,onedrive,dropbox"`
-		ProviderFileID string  `json:"providerFileId"`
-		Name           string  `json:"name"`
-		MimeType       *string `json:"mimeType,omitempty"`
-		SizeBytes      *int64  `json:"sizeBytes,omitempty"`
-		WebURL         string  `json:"webUrl"`
-	}
+	Body CaptureAttachmentDraftInput
 }
 
 type CaptureAttachmentCreateOutput struct {
 	Body CaptureAttachmentBody
+}
+
+type CaptureWithAttachmentCreateInput struct {
+	Body struct {
+		OperationID string                      `json:"operationId" format:"uuid"`
+		RawText     string                      `json:"rawText"`
+		Source      string                      `json:"source,omitempty" default:"desktop_quick_capture"`
+		RemindAt    *string                     `json:"remindAt,omitempty"`
+		RemindHide  *bool                       `json:"remindHide,omitempty"`
+		Attachment  CaptureAttachmentDraftInput `json:"attachment"`
+	}
+}
+
+type CaptureWithAttachmentCreateOutput struct {
+	Body CaptureBody
+}
+
+func (h *handler) createWithAttachment(ctx context.Context, input *CaptureWithAttachmentCreateInput) (*CaptureWithAttachmentCreateOutput, error) {
+	uid, err := userID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	operationID, err := uuid.Parse(input.Body.OperationID)
+	if err != nil {
+		return nil, huma.Error422UnprocessableEntity("operationId must be a UUID")
+	}
+	rawText := strings.TrimSpace(input.Body.RawText)
+	if rawText == "" {
+		return nil, huma.Error422UnprocessableEntity("rawText is required")
+	}
+	source, err := normalizeSource(input.Body.Source)
+	if err != nil {
+		return nil, err
+	}
+	remindAt, err := parseRemindAt(input.Body.RemindAt)
+	if err != nil {
+		return nil, err
+	}
+	todoAt, doneAt := createTodoStamps(parseTodoTag(rawText), time.Now())
+	params, err := attachmentParams(uid, operationID, input.Body.Attachment)
+	if err != nil {
+		return nil, err
+	}
+
+	var created db.Capture
+	var attachment db.CaptureAttachment
+	err = pgx.BeginFunc(ctx, h.pool, func(tx pgx.Tx) error {
+		q := h.q.WithTx(tx)
+		wasCreated := true
+		created, err = q.CreateCaptureWithID(ctx, db.CreateCaptureWithIDParams{
+			ID:      operationID,
+			UserID:  uid,
+			RawText: rawText,
+			Source:  source,
+			TodoAt:  todoAt,
+			DoneAt:  doneAt,
+		})
+		if errors.Is(err, pgx.ErrNoRows) {
+			wasCreated = false
+			created, err = q.GetCapture(ctx, db.GetCaptureParams{ID: operationID, UserID: uid})
+		}
+		if err != nil {
+			return err
+		}
+		if !created.RawText.Valid || created.RawText.String != rawText || created.Source != source {
+			return huma.Error409Conflict("operationId already belongs to another capture")
+		}
+		if !wasCreated {
+			if created.RemindAt.Valid != remindAt.Valid ||
+				(remindAt.Valid && (!created.RemindAt.Time.Equal(remindAt.Time) ||
+					created.RemindHide != remindHideDefault(input.Body.RemindHide))) {
+				return huma.Error409Conflict("operationId was already used with another reminder")
+			}
+			existing, listErr := q.ListCaptureAttachments(ctx, db.ListCaptureAttachmentsParams{
+				UserID: uid, CaptureID: operationID,
+			})
+			if listErr != nil {
+				return listErr
+			}
+			if len(existing) != 1 || existing[0].Provider != params.Provider ||
+				existing[0].ProviderFileID != params.ProviderFileID {
+				return huma.Error409Conflict("operationId was already used with another attachment")
+			}
+		} else if remindAt.Valid {
+			created, err = q.SetCaptureRemind(ctx, db.SetCaptureRemindParams{
+				ID:         operationID,
+				UserID:     uid,
+				RemindAt:   remindAt,
+				RemindHide: remindHideDefault(input.Body.RemindHide),
+			})
+			if err != nil {
+				return err
+			}
+		}
+		attachment, err = q.UpsertCaptureAttachment(
+			ctx,
+			db.UpsertCaptureAttachmentParams(params),
+		)
+		return err
+	})
+	if err != nil {
+		var statusErr huma.StatusError
+		if errors.As(err, &statusErr) {
+			return nil, statusErr
+		}
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, huma.Error409Conflict("operationId already belongs to another account")
+		}
+		return nil, huma.Error500InternalServerError("internal error")
+	}
+
+	indexed := h.reconcileLinkFetch(ctx, created)
+	if indexed {
+		created, err = h.q.GetCapture(ctx, db.GetCaptureParams{ID: created.ID, UserID: uid})
+		if err != nil {
+			return nil, huma.Error500InternalServerError("internal error")
+		}
+	} else {
+		h.rag.Index(uid.String(), created.ID.String())
+	}
+	body := toBody(created)
+	body.Attachments = []CaptureAttachmentBody{attachmentToBody(attachment)}
+	return &CaptureWithAttachmentCreateOutput{Body: body}, nil
 }
 
 func (h *handler) addAttachment(ctx context.Context, input *CaptureAttachmentCreateInput) (*CaptureAttachmentCreateOutput, error) {
@@ -116,7 +241,7 @@ func (h *handler) addAttachment(ctx context.Context, input *CaptureAttachmentCre
 	if err != nil {
 		return nil, huma.Error422UnprocessableEntity("invalid id")
 	}
-	params, err := attachmentParams(uid, id, input)
+	params, err := attachmentParams(uid, id, input.Body)
 	if err != nil {
 		return nil, err
 	}
@@ -134,32 +259,32 @@ func (h *handler) addAttachment(ctx context.Context, input *CaptureAttachmentCre
 	return &CaptureAttachmentCreateOutput{Body: attachmentToBody(a)}, nil
 }
 
-func attachmentParams(uid, captureID uuid.UUID, input *CaptureAttachmentCreateInput) (db.CreateCaptureAttachmentParams, error) {
-	provider, err := parseCloudDriveProvider(input.Body.Provider)
+func attachmentParams(uid, captureID uuid.UUID, input CaptureAttachmentDraftInput) (db.CreateCaptureAttachmentParams, error) {
+	provider, err := parseCloudDriveProvider(input.Provider)
 	if err != nil {
 		return db.CreateCaptureAttachmentParams{}, err
 	}
-	providerFileID := strings.TrimSpace(input.Body.ProviderFileID)
+	providerFileID := strings.TrimSpace(input.ProviderFileID)
 	if providerFileID == "" {
 		return db.CreateCaptureAttachmentParams{}, huma.Error422UnprocessableEntity("providerFileId is required")
 	}
-	name := strings.TrimSpace(input.Body.Name)
+	name := strings.TrimSpace(input.Name)
 	if name == "" {
 		return db.CreateCaptureAttachmentParams{}, huma.Error422UnprocessableEntity("name is required")
 	}
 	if len(name) > maxAttachmentNameLen {
 		return db.CreateCaptureAttachmentParams{}, huma.Error422UnprocessableEntity("name is too long")
 	}
-	webURL, err := normalizeAttachmentURL(input.Body.WebURL)
+	webURL, err := normalizeAttachmentURL(input.WebURL)
 	if err != nil {
 		return db.CreateCaptureAttachmentParams{}, err
 	}
 	size := pgtype.Int8{}
-	if input.Body.SizeBytes != nil {
-		if *input.Body.SizeBytes < 0 {
+	if input.SizeBytes != nil {
+		if *input.SizeBytes < 0 {
 			return db.CreateCaptureAttachmentParams{}, huma.Error422UnprocessableEntity("sizeBytes must be non-negative")
 		}
-		size = pgtype.Int8{Int64: *input.Body.SizeBytes, Valid: true}
+		size = pgtype.Int8{Int64: *input.SizeBytes, Valid: true}
 	}
 	return db.CreateCaptureAttachmentParams{
 		UserID:         uid,
@@ -167,7 +292,7 @@ func attachmentParams(uid, captureID uuid.UUID, input *CaptureAttachmentCreateIn
 		Provider:       provider,
 		ProviderFileID: providerFileID,
 		Name:           name,
-		MimeType:       nullText(input.Body.MimeType),
+		MimeType:       nullText(input.MimeType),
 		SizeBytes:      size,
 		WebUrl:         webURL,
 	}, nil

@@ -23,6 +23,11 @@ changed, use `make desktop-reload` / `just desktop-reload` from the repo root.
 Reminder notifications require the packaged `.app` (`make desktop-app` or
 `desktop-reload`) — a bare `swift run` skips them.
 
+Generic file attachments are stored in the user's Google Drive with the
+`drive.file` scope. For local development, set `CHRONICLE_GOOGLE_DRIVE_CLIENT_ID`
+to a Google OAuth Desktop client ID before launching the app. Packaged builds
+can set the same value in `Info.plist` under `ChronicleGoogleDriveClientID`.
+
 ## Controls
 
 - Double Control (configurable in Settings) or menu bar → Quick Capture

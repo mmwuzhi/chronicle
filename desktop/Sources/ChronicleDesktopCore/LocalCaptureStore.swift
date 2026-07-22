@@ -309,6 +309,52 @@ public final class LocalCaptureStore: @unchecked Sendable {
         }
     }
 
+    /// Cache a capture that was created remotely first, such as a multipart
+    /// media upload or a cloud-drive attachment capture. It is already synced,
+    /// so it must never enter the pending-create queue.
+    @discardableResult
+    public func cacheServerCapture(
+        serverId: String,
+        payload: CapturePayload,
+        createdAt: Date = Date(),
+        syncedAt: Date = Date()
+    ) throws -> LocalCaptureRecord {
+        try withDatabase { db in
+            let sql = """
+                INSERT INTO local_captures (
+                    id, server_id, raw_text, media_type, classified_as, source,
+                    remind_at, created_at, updated_at, synced_at, last_error, notified_at,
+                    remind_hide
+                ) VALUES (?, ?, ?, ?, 'unclassified', ?, ?, ?, ?, ?, NULL, NULL, ?)
+                ON CONFLICT(server_id) DO UPDATE SET
+                    raw_text = excluded.raw_text,
+                    media_type = excluded.media_type,
+                    source = excluded.source,
+                    remind_at = excluded.remind_at,
+                    updated_at = excluded.updated_at,
+                    synced_at = excluded.synced_at,
+                    last_error = NULL,
+                    remind_hide = excluded.remind_hide
+                """
+            try executeStatement(db, sql) { stmt in
+                bindText(stmt, 1, UUID().uuidString)
+                bindText(stmt, 2, serverId)
+                bindText(stmt, 3, payload.rawText)
+                bindText(stmt, 4, payload.mediaType)
+                bindText(stmt, 5, payload.source)
+                bindOptionalDate(stmt, 6, payload.remindAt)
+                bindDate(stmt, 7, createdAt)
+                bindDate(stmt, 8, syncedAt)
+                bindDate(stmt, 9, syncedAt)
+                bindOptionalBool(stmt, 10, payload.remindHide)
+            }
+        }
+        guard let record = try find(serverId: serverId) else {
+            throw LocalCaptureStoreError.stepFailed("cached server capture did not return a row")
+        }
+        return record
+    }
+
     // Complete a create-sync. Marks the row synced (server_id + synced_at), but if
     // its text changed since `sentText` was snapshotted — an edit raced the
     // in-flight create POST, so the server received the stale create payload —

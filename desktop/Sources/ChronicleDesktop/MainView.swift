@@ -50,6 +50,10 @@ struct MainView: View {
     @State private var pendingEditTarget: RowItem?
     @State private var loadingEditID: String?
 
+    @StateObject private var captureDraft = MainCaptureSheetModel()
+    @State private var capturePresented = false
+    @State private var signInAfterCaptureDismissal = false
+
     @State private var askQuery = ""
     @State private var submittedQuestion = ""
     @State private var answer = ""
@@ -156,13 +160,25 @@ struct MainView: View {
             // ⌘Z undoes while the toast is up; the visible button is the primary path.
             Button("") { undoDelete() }
                 .keyboardShortcut("z", modifiers: .command)
-                .opacity(0).frame(width: 0, height: 0)
                 .disabled(pendingDeleteId == nil)
+                .buttonStyle(.plain)
+                .opacity(0)
+                .frame(width: 0, height: 0)
+                .accessibilityHidden(true)
         }
         .animation(.easeInOut(duration: 0.2), value: pendingDeleteId)
         .animation(navigation.tabsExpandedAnimation, value: navigation.tabsExpanded)
         .sheet(isPresented: $settingsModel.isSignInPresented) {
             SignInSheet(model: settingsModel)
+        }
+        .sheet(isPresented: $capturePresented, onDismiss: completeCaptureDismissal) {
+            MainCaptureSheet(
+                model: captureDraft,
+                clients: clients,
+                signedIn: settingsModel.isSignedIn,
+                onSaved: captureSaved,
+                onRequestSignIn: { signInAfterCaptureDismissal = true }
+            )
         }
         .task {
             await loadBrowse(reset: true)
@@ -182,6 +198,9 @@ struct MainView: View {
         .onReceive(NotificationCenter.default.publisher(for: .chronicleMainShown)) { _ in
             if navigation.mode == .browse && !searched { Task { await loadBrowse(reset: true) } }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .chronicleFocusMainCapture)) { _ in
+            focusMainCapture()
+        }
         .onReceive(NotificationCenter.default.publisher(for: .chronicleCapturesChanged)) { note in
             guard (note.object as? NSObject) !== captureEventToken else { return }
             refreshForCaptureChange()
@@ -190,6 +209,12 @@ struct MainView: View {
             pinTick &+= 1
         }
         .onDisappear { flushPendingDelete() }
+    }
+
+    private func completeCaptureDismissal() {
+        guard signInAfterCaptureDismissal else { return }
+        signInAfterCaptureDismissal = false
+        clients.openSignIn()
     }
 
     @ViewBuilder private var tabContent: some View {
@@ -222,9 +247,15 @@ struct MainView: View {
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.trailing, DesktopScrollLayout.trailingActionGutter)
+                    .padding(.bottom, 64)
                 }
             }
             .padding(16)
+            .overlay(alignment: .bottomTrailing) {
+                MainCaptureLaunchButton(action: focusMainCapture)
+                    .padding(.trailing, 20)
+                    .padding(.bottom, 20)
+            }
         case .review:
             MainReviewPane(
                 clients: clients,
@@ -339,6 +370,27 @@ struct MainView: View {
     }
 
     // MARK: - Browse
+
+    private func focusMainCapture() {
+        navigation.mode = .browse
+        DispatchQueue.main.async {
+            capturePresented = true
+        }
+    }
+
+    private func captureSaved(_ created: RowItem) {
+        let recent = clients.localRecent(200)
+        localRows = Array(
+            RowMerge.newestFirst(
+                primary: [created],
+                secondary: recent,
+                id: \.id,
+                date: \.createdDate,
+            ).prefix(200)
+        )
+        rebuildBrowseRows()
+        CaptureEvents.postChanged(from: captureEventToken)
+    }
 
     private func runBrowse() {
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines)

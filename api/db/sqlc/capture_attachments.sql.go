@@ -201,3 +201,79 @@ func (q *Queries) ListCaptureAttachmentsByCaptureIDs(ctx context.Context, arg Li
 	}
 	return items, nil
 }
+
+const upsertCaptureAttachment = `-- name: UpsertCaptureAttachment :one
+INSERT INTO capture_attachments (
+  user_id,
+  capture_id,
+  provider,
+  provider_file_id,
+  name,
+  mime_type,
+  size_bytes,
+  web_url
+)
+SELECT
+  $1::uuid,
+  $2::uuid,
+  $3::cloud_drive_provider,
+  $4::text,
+  $5::text,
+  $6::text,
+  $7::bigint,
+  $8::text
+FROM captures c
+WHERE c.id = $2
+  AND c.user_id = $1
+  AND c.deleted_at IS NULL
+ON CONFLICT (capture_id, provider, provider_file_id)
+WHERE deleted_at IS NULL
+DO UPDATE SET
+  name = EXCLUDED.name,
+  mime_type = EXCLUDED.mime_type,
+  size_bytes = EXCLUDED.size_bytes,
+  web_url = EXCLUDED.web_url
+RETURNING id, user_id, capture_id, provider, provider_file_id, name, mime_type, size_bytes, web_url, created_at, deleted_at
+`
+
+type UpsertCaptureAttachmentParams struct {
+	UserID         uuid.UUID          `json:"user_id"`
+	CaptureID      uuid.UUID          `json:"capture_id"`
+	Provider       CloudDriveProvider `json:"provider"`
+	ProviderFileID string             `json:"provider_file_id"`
+	Name           string             `json:"name"`
+	MimeType       pgtype.Text        `json:"mime_type"`
+	SizeBytes      pgtype.Int8        `json:"size_bytes"`
+	WebUrl         string             `json:"web_url"`
+}
+
+// Used only by the atomic create-with-attachment operation. A lost response can
+// be retried with the same Capture id and provider file id without duplicating
+// either row.
+func (q *Queries) UpsertCaptureAttachment(ctx context.Context, arg UpsertCaptureAttachmentParams) (CaptureAttachment, error) {
+	row := q.db.QueryRow(ctx, upsertCaptureAttachment,
+		arg.UserID,
+		arg.CaptureID,
+		arg.Provider,
+		arg.ProviderFileID,
+		arg.Name,
+		arg.MimeType,
+		arg.SizeBytes,
+		arg.WebUrl,
+	)
+	var i CaptureAttachment
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.CaptureID,
+		&i.Provider,
+		&i.ProviderFileID,
+		&i.Name,
+		&i.MimeType,
+		&i.SizeBytes,
+		&i.WebUrl,
+		&i.CreatedAt,
+		&i.DeletedAt,
+	)
+	return i, err
+}

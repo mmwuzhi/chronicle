@@ -21,6 +21,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // Offline semantic search over the local cache via a local Ollama. Lazy so it
     // can reference localStore; degrades to keyword search when Ollama is absent.
     private lazy var localSemantic = LocalSemanticSearch(store: localStore, embedder: LocalEmbedder())
+    private lazy var googleDriveAuthorizer = GoogleDriveAuthorizer()
+    private let googleDriveClient = GoogleDriveClient()
     private var reminderNotifier: ReminderNotifier?
     // Retained: UNUserNotificationCenter keeps only a weak reference to its delegate.
     private var notificationDelegate: ReminderNotificationDelegate?
@@ -33,6 +35,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
+        cleanupStaleCaptureTemporaryFiles()
         installApplicationMenu()
         drainLegacyQueue()
         // Warm the on-device semantic index in the background (embeds any captures
@@ -225,6 +228,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     ? WebhookAPIClient(config: config, refresher: authRefresher) : nil
             },
             openSignIn: { [weak self] in self?.showSignIn() },
+            createCapture: { [unowned self] payload in
+                RowItem(try self.createCaptureAndScheduleSync(payload, postChange: false))
+            },
+            uploadMedia: { [unowned self] upload in
+                try await self.uploadMediaCapture(upload)
+            },
+            attachFile: { [unowned self] upload, text, remindAt, remindHide in
+                try await self.attachFileCapture(
+                    upload,
+                    text: text,
+                    remindAt: remindAt,
+                    remindHide: remindHide
+                )
+            },
             openDetail: { [weak self] row in self?.detailWindowController?.open(row) },
             openDetailForEditing: { [weak self] row in
                 self?.detailWindowController?.open(row, beginEditing: true)
@@ -338,6 +355,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         appMenuItem.submenu = appMenu
         mainMenu.addItem(appMenuItem)
 
+        let fileMenuItem = NSMenuItem()
+        let fileMenu = NSMenu(title: L("File"))
+        let newCaptureItem = NSMenuItem(
+            title: L("New Capture"),
+            action: #selector(showMainCaptureAction),
+            keyEquivalent: "n"
+        )
+        newCaptureItem.target = self
+        fileMenu.addItem(newCaptureItem)
+        fileMenuItem.submenu = fileMenu
+        mainMenu.addItem(fileMenuItem)
+
         let editMenuItem = NSMenuItem()
         let editMenu = NSMenu(title: L("Edit"))
         editMenu.addItem(NSMenuItem(title: L("Undo"), action: Selector(("undo:")), keyEquivalent: "z"))
@@ -361,6 +390,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func showQuickCaptureAction() { showQuickCapture() }
     @objc private func showMainAction() { mainWindowController.show() }
+    @objc private func showMainCaptureAction() {
+        mainWindowController.show(mode: .browse)
+        NotificationCenter.default.post(name: .chronicleFocusMainCapture, object: nil)
+    }
     @objc private func showSettingsAction() { showSettings() }
     @objc private func quitAction() { NSApp.terminate(nil) }
 
@@ -385,6 +418,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // Re-sync reminders + offline captures after the signed-in state changes.
     private func handleSignInChanged() {
+        // Google Drive authority must never survive a Chronicle account boundary.
+        // This callback runs for sign-in, sign-out, expiry, and API-origin changes.
+        googleDriveAuthorizer.invalidate()
         // Sign-in and sign-out both funnel here (Settings toggles + launch
         // refresh), so the real config decides which: a usable token means live,
         // its absence means the user is signed out. This refreshes the sign-in
@@ -430,28 +466,144 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             payload.remindHide = false
         }
 
+        let hasLiveClient = makeClient() != nil
         do {
-            let record = try persistCapture(payload)
-            reminderNotifier?.schedule(record)
-            // Embed the new capture in the background so it becomes semantically
-            // searchable offline, independent of whether it ever syncs.
-            Task { await localSemantic.ensureIndexed() }
-
-            guard let client = makeClient() else {
+            _ = try createCaptureAndScheduleSync(payload, postChange: true)
+            guard hasLiveClient else {
                 showNotification(title: L("Saved locally — sign in to sync"), body: trimmed)
                 return
             }
 
             showNotification(title: L("Capture saved"), body: trimmed)
-            Task {
-                await sync(record, using: client, notifySuccess: false)
-            }
         } catch {
             showNotification(title: L("Capture failed"), body: error.localizedDescription)
             return
         }
     }
 
+    /// Shared local-first creation path for the quick panel and main-window
+    /// composer. A missing session is a normal success: the record remains in
+    /// the local backlog and sign-in replay handles it later.
+    private func createCaptureAndScheduleSync(
+        _ payload: CapturePayload,
+        postChange: Bool
+    ) throws -> LocalCaptureRecord {
+        let record = try localStore.create(payload)
+        if postChange {
+            CaptureEvents.postChanged()
+        }
+        reminderNotifier?.schedule(record)
+        // Embed independently of server sync so offline recall sees it too.
+        Task { await localSemantic.ensureIndexed() }
+        if let client = makeClient() {
+            Task {
+                await sync(record, using: client, notifySuccess: false)
+            }
+        }
+        return record
+    }
+
+    private func uploadMediaCapture(_ upload: CaptureMediaUpload) async throws -> RowItem {
+        let config = settings.load()
+        guard config.isUsable else { throw CaptureClientError.requiresSignIn }
+        let uploaded = try await CaptureMediaUploadClient(
+            config: config,
+            refresher: authRefresher
+        ).upload(upload)
+        let payload = CapturePayload(
+            rawText: upload.text,
+            mediaType: uploaded.mediaType,
+            remindAt: upload.remindAt,
+            remindHide: upload.remindHide
+        )
+        let createdAt = uploaded.createdAt.flatMap(Self.parseISO) ?? Date()
+        if let record = try? localStore.cacheServerCapture(
+            serverId: uploaded.id,
+            payload: payload,
+            createdAt: createdAt
+        ) {
+            reminderNotifier?.schedule(record)
+            Task { await localSemantic.ensureIndexed() }
+        }
+        return RowItem(
+            id: uploaded.id,
+            content: upload.text,
+            createdAt: uploaded.createdAt ?? ISO8601DateFormatter().string(from: createdAt),
+            modality: uploaded.mediaType,
+            mediaUrl: uploaded.mediaUrl
+        )
+    }
+
+    private func attachFileCapture(
+        _ upload: CloudCaptureFileUpload,
+        text: String,
+        remindAt: Date?,
+        remindHide: Bool?
+    ) async throws -> RowItem {
+        let config = settings.load()
+        guard config.isUsable else { throw CaptureClientError.requiresSignIn }
+        guard let clientID = GoogleDriveConfiguration.clientID() else {
+            throw GoogleDriveError.notConfigured
+        }
+        var accessToken = try await googleDriveAuthorizer.authorize(clientID: clientID)
+        let attachment: CloudAttachmentDraft
+        do {
+            attachment = try await googleDriveClient.upload(
+                fileURL: upload.fileURL,
+                sizeBytes: upload.sizeBytes,
+                filename: upload.filename,
+                mimeType: upload.mimeType,
+                operationId: upload.operationId,
+                accessToken: accessToken
+            )
+        } catch GoogleDriveError.httpStatus(401) {
+            googleDriveAuthorizer.invalidate()
+            accessToken = try await googleDriveAuthorizer.authorize(clientID: clientID)
+            do {
+                attachment = try await googleDriveClient.upload(
+                    fileURL: upload.fileURL,
+                    sizeBytes: upload.sizeBytes,
+                    filename: upload.filename,
+                    mimeType: upload.mimeType,
+                    operationId: upload.operationId,
+                    accessToken: accessToken
+                )
+            } catch GoogleDriveError.httpStatus(401) {
+                // Do not cache a token that the provider has already rejected.
+                // The next user retry must start a fresh authorization flow.
+                googleDriveAuthorizer.invalidate()
+                throw GoogleDriveError.httpStatus(401)
+            }
+        }
+        let payload = CapturePayload(
+            rawText: text.isEmpty ? upload.filename : text,
+            remindAt: remindAt,
+            remindHide: remindHide
+        )
+        let created = try await CaptureWithAttachmentAPIClient(
+            config: config,
+            refresher: authRefresher
+        ).create(
+            operationId: upload.operationId,
+            text: payload.rawText,
+            remindAt: remindAt,
+            remindHide: remindHide,
+            attachment: attachment
+        )
+        // Never compensate an API error by deleting the Drive object. A previous
+        // ambiguous attempt may already have committed a reference to that exact
+        // operation file; automatic deletion would turn a safe retry into data loss.
+        if let record = try? localStore.cacheServerCapture(
+            serverId: created.id,
+            payload: payload
+        ) {
+            reminderNotifier?.schedule(record)
+            Task { await localSemantic.ensureIndexed() }
+        }
+        return RowItem(created)
+    }
+
+    // Kept as the minimal persistence seam used by the executable E2E runner.
     func persistCapture(_ payload: CapturePayload) throws -> LocalCaptureRecord {
         let record = try localStore.create(payload)
         CaptureEvents.postChanged()

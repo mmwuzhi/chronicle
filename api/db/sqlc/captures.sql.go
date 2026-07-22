@@ -278,8 +278,72 @@ func (q *Queries) CreateCapture(ctx context.Context, arg CreateCaptureParams) (C
 	return i, err
 }
 
+const createCaptureWithID = `-- name: CreateCaptureWithID :one
+INSERT INTO captures (id, user_id, raw_text, media_type, source, todo_at, done_at)
+VALUES (
+  $1::uuid,
+  $2::uuid,
+  $3::text,
+  'text',
+  $4::text,
+  $5::timestamptz,
+  $6::timestamptz
+)
+ON CONFLICT (id) DO NOTHING
+RETURNING id, user_id, raw_text, media_url, media_type, created_at, source, transcript, transcription_status, transcription_model, transcription_attempts, transcribed_at, next_transcription_at, audio_duration_sec, media_key, remind_at, deleted_at, remind_hide, todo_at, done_at, link_url
+`
+
+type CreateCaptureWithIDParams struct {
+	ID      uuid.UUID          `json:"id"`
+	UserID  uuid.UUID          `json:"user_id"`
+	RawText string             `json:"raw_text"`
+	Source  string             `json:"source"`
+	TodoAt  pgtype.Timestamptz `json:"todo_at"`
+	DoneAt  pgtype.Timestamptz `json:"done_at"`
+}
+
+// A client-generated UUID is the stable operation identity for multi-service
+// attachment creation. Retrying the same operation returns the original row
+// instead of creating a duplicate Capture.
+func (q *Queries) CreateCaptureWithID(ctx context.Context, arg CreateCaptureWithIDParams) (Capture, error) {
+	row := q.db.QueryRow(ctx, createCaptureWithID,
+		arg.ID,
+		arg.UserID,
+		arg.RawText,
+		arg.Source,
+		arg.TodoAt,
+		arg.DoneAt,
+	)
+	var i Capture
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.RawText,
+		&i.MediaUrl,
+		&i.MediaType,
+		&i.CreatedAt,
+		&i.Source,
+		&i.Transcript,
+		&i.TranscriptionStatus,
+		&i.TranscriptionModel,
+		&i.TranscriptionAttempts,
+		&i.TranscribedAt,
+		&i.NextTranscriptionAt,
+		&i.AudioDurationSec,
+		&i.MediaKey,
+		&i.RemindAt,
+		&i.DeletedAt,
+		&i.RemindHide,
+		&i.TodoAt,
+		&i.DoneAt,
+		&i.LinkUrl,
+	)
+	return i, err
+}
+
 const createUploadedCapture = `-- name: CreateUploadedCapture :one
 INSERT INTO captures (
+  id,
   user_id,
   media_url,
   media_type,
@@ -289,58 +353,68 @@ INSERT INTO captures (
   raw_text,
   todo_at,
   done_at,
+  remind_at,
+  remind_hide,
   transcription_status,
   next_transcription_at
 )
 VALUES (
-  $1,
-  $2,
-  $3,
-  'web',
-  $4,
-  $5,
+  $1::uuid,
+  $2::uuid,
+  $3::text,
+  $4::capture_media_type,
+  $5::text,
   $6::text,
-  $7::timestamptz,
-  $8::timestamptz,
+  $7::integer,
+  $8::text,
+  $9::timestamptz,
+  $10::timestamptz,
+  $11::timestamptz,
+  $12::boolean,
   CASE
-    WHEN $3::capture_media_type = 'audio'
-      AND $5::integer IS NOT NULL
-      AND $5::integer <= 300
-      AND $9::boolean
+    WHEN $4::capture_media_type = 'audio'
+      AND $7::integer IS NOT NULL
+      AND $7::integer <= 300
+      AND $13::boolean
     THEN 'pending'::transcription_status
-    WHEN $3::capture_media_type = 'audio'
+    WHEN $4::capture_media_type = 'audio'
     THEN 'skipped'::transcription_status
-    WHEN $3::capture_media_type = 'image'
-      AND $10::boolean
+    WHEN $4::capture_media_type = 'image'
+      AND $14::boolean
     THEN 'pending'::transcription_status
-    WHEN $3::capture_media_type = 'image'
+    WHEN $4::capture_media_type = 'image'
     THEN 'skipped'::transcription_status
     ELSE 'none'::transcription_status
   END,
   CASE
-    WHEN $3::capture_media_type = 'audio'
-      AND $5::integer IS NOT NULL
-      AND $5::integer <= 300
-      AND $9::boolean
+    WHEN $4::capture_media_type = 'audio'
+      AND $7::integer IS NOT NULL
+      AND $7::integer <= 300
+      AND $13::boolean
     THEN now()
-    WHEN $3::capture_media_type = 'image'
-      AND $10::boolean
+    WHEN $4::capture_media_type = 'image'
+      AND $14::boolean
     THEN now()
     ELSE NULL
   END
 )
+ON CONFLICT (id) DO NOTHING
 RETURNING id, user_id, raw_text, media_url, media_type, created_at, source, transcript, transcription_status, transcription_model, transcription_attempts, transcribed_at, next_transcription_at, audio_duration_sec, media_key, remind_at, deleted_at, remind_hide, todo_at, done_at, link_url
 `
 
 type CreateUploadedCaptureParams struct {
+	ID                   uuid.UUID          `json:"id"`
 	UserID               uuid.UUID          `json:"user_id"`
-	MediaUrl             pgtype.Text        `json:"media_url"`
+	MediaUrl             string             `json:"media_url"`
 	MediaType            CaptureMediaType   `json:"media_type"`
-	MediaKey             pgtype.Text        `json:"media_key"`
+	Source               string             `json:"source"`
+	MediaKey             string             `json:"media_key"`
 	AudioDurationSec     pgtype.Int4        `json:"audio_duration_sec"`
 	RawText              pgtype.Text        `json:"raw_text"`
 	TodoAt               pgtype.Timestamptz `json:"todo_at"`
 	DoneAt               pgtype.Timestamptz `json:"done_at"`
+	RemindAt             pgtype.Timestamptz `json:"remind_at"`
+	RemindHide           bool               `json:"remind_hide"`
 	TranscriptionEnabled bool               `json:"transcription_enabled"`
 	VisionEnabled        bool               `json:"vision_enabled"`
 }
@@ -351,14 +425,18 @@ type CreateUploadedCaptureParams struct {
 // internal/capture/todotag.go).
 func (q *Queries) CreateUploadedCapture(ctx context.Context, arg CreateUploadedCaptureParams) (Capture, error) {
 	row := q.db.QueryRow(ctx, createUploadedCapture,
+		arg.ID,
 		arg.UserID,
 		arg.MediaUrl,
 		arg.MediaType,
+		arg.Source,
 		arg.MediaKey,
 		arg.AudioDurationSec,
 		arg.RawText,
 		arg.TodoAt,
 		arg.DoneAt,
+		arg.RemindAt,
+		arg.RemindHide,
 		arg.TranscriptionEnabled,
 		arg.VisionEnabled,
 	)
@@ -594,6 +672,48 @@ type GetCaptureParams struct {
 
 func (q *Queries) GetCapture(ctx context.Context, arg GetCaptureParams) (Capture, error) {
 	row := q.db.QueryRow(ctx, getCapture, arg.ID, arg.UserID)
+	var i Capture
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.RawText,
+		&i.MediaUrl,
+		&i.MediaType,
+		&i.CreatedAt,
+		&i.Source,
+		&i.Transcript,
+		&i.TranscriptionStatus,
+		&i.TranscriptionModel,
+		&i.TranscriptionAttempts,
+		&i.TranscribedAt,
+		&i.NextTranscriptionAt,
+		&i.AudioDurationSec,
+		&i.MediaKey,
+		&i.RemindAt,
+		&i.DeletedAt,
+		&i.RemindHide,
+		&i.TodoAt,
+		&i.DoneAt,
+		&i.LinkUrl,
+	)
+	return i, err
+}
+
+const getCaptureAnyState = `-- name: GetCaptureAnyState :one
+SELECT id, user_id, raw_text, media_url, media_type, created_at, source, transcript, transcription_status, transcription_model, transcription_attempts, transcribed_at, next_transcription_at, audio_duration_sec, media_key, remind_at, deleted_at, remind_hide, todo_at, done_at, link_url FROM captures
+WHERE id = $1 AND user_id = $2
+`
+
+type GetCaptureAnyStateParams struct {
+	ID     uuid.UUID `json:"id"`
+	UserID uuid.UUID `json:"user_id"`
+}
+
+// Idempotent remote-create paths must reserve an operation UUID even after the
+// resulting capture is moved to Trash, otherwise a retry could overwrite its
+// media object and attempt to recreate the same id.
+func (q *Queries) GetCaptureAnyState(ctx context.Context, arg GetCaptureAnyStateParams) (Capture, error) {
+	row := q.db.QueryRow(ctx, getCaptureAnyState, arg.ID, arg.UserID)
 	var i Capture
 	err := row.Scan(
 		&i.ID,

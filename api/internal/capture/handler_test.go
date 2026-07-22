@@ -389,10 +389,12 @@ func TestUploadedAudioTranscriptionDurationBoundary(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			capture, err := queries.CreateUploadedCapture(context.Background(), db.CreateUploadedCaptureParams{
+				ID:                   uuid.New(),
 				UserID:               uuid.MustParse(userID),
-				MediaUrl:             pgtype.Text{String: "https://example.test/audio.webm", Valid: true},
+				MediaUrl:             "https://example.test/audio.webm",
 				MediaType:            db.CaptureMediaTypeAudio,
-				MediaKey:             pgtype.Text{String: "captures/audio.webm", Valid: true},
+				Source:               "desktop",
+				MediaKey:             "captures/audio.webm",
 				AudioDurationSec:     pgtype.Int4{Int32: test.duration, Valid: true},
 				TranscriptionEnabled: true,
 			})
@@ -421,10 +423,12 @@ func TestUploadedImageVisionTranscription(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			capture, err := queries.CreateUploadedCapture(context.Background(), db.CreateUploadedCaptureParams{
+				ID:            uuid.New(),
 				UserID:        uuid.MustParse(userID),
-				MediaUrl:      pgtype.Text{String: "https://example.test/receipt.jpg", Valid: true},
+				MediaUrl:      "https://example.test/receipt.jpg",
 				MediaType:     db.CaptureMediaTypeImage,
-				MediaKey:      pgtype.Text{String: "captures/receipt.jpg", Valid: true},
+				Source:        "desktop",
+				MediaKey:      "captures/receipt.jpg",
 				VisionEnabled: test.visionEnabled,
 			})
 			if err != nil {
@@ -1057,6 +1061,123 @@ func TestDeleteCapture_HappyPath(t *testing.T) {
 }
 
 // --- external attachments ---
+
+func TestCreateWithAttachmentIsAtomicAndIdempotent(t *testing.T) {
+	srv, pool := newServer(t)
+	_, token := createTestUser(t, pool)
+	operationID := uuid.New()
+	remindAt := time.Now().UTC().Add(time.Hour).Truncate(time.Second)
+	body := map[string]any{
+		"operationId": operationID.String(),
+		"rawText":     "Read this later #todo",
+		"source":      "desktop_quick_capture",
+		"remindAt":    remindAt.Format(time.RFC3339),
+		"remindHide":  false,
+		"attachment": map[string]any{
+			"provider":       "google_drive",
+			"providerFileId": "drive-operation-file",
+			"name":           "reference.pdf",
+			"mimeType":       "application/pdf",
+			"sizeBytes":      2048,
+			"webUrl":         "https://drive.google.com/file/d/drive-operation-file/view",
+		},
+	}
+
+	for attempt := 0; attempt < 2; attempt++ {
+		resp := do(t, srv.Client(), http.MethodPost, srv.URL+"/captures/with-attachment", token, body)
+		if resp.StatusCode != http.StatusOK {
+			contents, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			t.Fatalf("attempt %d: expected 200, got %d: %s", attempt+1, resp.StatusCode, contents)
+		}
+		var result struct {
+			ID          string `json:"id"`
+			RemindHide  bool   `json:"remindHide"`
+			Attachments []struct {
+				ProviderFileID string `json:"providerFileId"`
+			} `json:"attachments"`
+		}
+		decodeBody(t, resp, &result)
+		if result.ID != operationID.String() || result.RemindHide {
+			t.Fatalf("attempt %d: unexpected capture response: %+v", attempt+1, result)
+		}
+		if len(result.Attachments) != 1 || result.Attachments[0].ProviderFileID != "drive-operation-file" {
+			t.Fatalf("attempt %d: unexpected attachments: %+v", attempt+1, result.Attachments)
+		}
+	}
+	changedReminder := map[string]any{
+		"operationId": operationID.String(),
+		"rawText":     "Read this later #todo",
+		"source":      "desktop_quick_capture",
+		"remindAt":    remindAt.Add(time.Hour).Format(time.RFC3339),
+		"remindHide":  false,
+		"attachment":  body["attachment"],
+	}
+	conflict := do(
+		t,
+		srv.Client(),
+		http.MethodPost,
+		srv.URL+"/captures/with-attachment",
+		token,
+		changedReminder,
+	)
+	conflict.Body.Close()
+	if conflict.StatusCode != http.StatusConflict {
+		t.Fatalf("changed reminder: expected 409, got %d", conflict.StatusCode)
+	}
+
+	changedAttachment := map[string]any{
+		"operationId": operationID.String(),
+		"rawText":     "Read this later #todo",
+		"source":      "desktop_quick_capture",
+		"remindAt":    remindAt.Format(time.RFC3339),
+		"remindHide":  false,
+		"attachment": map[string]any{
+			"provider":       "google_drive",
+			"providerFileId": "another-drive-file",
+			"name":           "another.pdf",
+			"webUrl":         "https://drive.google.com/file/d/another-drive-file/view",
+		},
+	}
+	conflict = do(
+		t,
+		srv.Client(),
+		http.MethodPost,
+		srv.URL+"/captures/with-attachment",
+		token,
+		changedAttachment,
+	)
+	conflict.Body.Close()
+	if conflict.StatusCode != http.StatusConflict {
+		t.Fatalf("changed attachment: expected 409, got %d", conflict.StatusCode)
+	}
+
+	var captureCount, attachmentCount int
+	var storedReminder time.Time
+	if err := pool.QueryRow(
+		context.Background(),
+		"SELECT count(*), min(remind_at) FROM captures WHERE id = $1",
+		operationID,
+	).Scan(&captureCount, &storedReminder); err != nil {
+		t.Fatalf("read capture: %v", err)
+	}
+	if err := pool.QueryRow(
+		context.Background(),
+		"SELECT count(*) FROM capture_attachments WHERE capture_id = $1 AND deleted_at IS NULL",
+		operationID,
+	).Scan(&attachmentCount); err != nil {
+		t.Fatalf("read attachments: %v", err)
+	}
+	if captureCount != 1 || attachmentCount != 1 || !storedReminder.Equal(remindAt) {
+		t.Fatalf(
+			"expected one atomic capture/attachment with reminder %s, got captures=%d attachments=%d reminder=%s",
+			remindAt,
+			captureCount,
+			attachmentCount,
+			storedReminder,
+		)
+	}
+}
 
 func TestCaptureAttachments_AddListDelete(t *testing.T) {
 	srv, pool := newServer(t)

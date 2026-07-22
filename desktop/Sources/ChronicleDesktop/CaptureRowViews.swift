@@ -433,6 +433,18 @@ struct CaptureRow: View {
                                 todoState: item.todoState,
                                 createdAt: item.createdAt,
                             )
+                            if !item.attachments.isEmpty {
+                                Label(String(item.attachments.count), systemImage: "paperclip")
+                                    .font(.caption2)
+                                    .foregroundStyle(.tertiary)
+                                    .labelStyle(.titleAndIcon)
+                                    .accessibilityLabel(
+                                        DesktopLocalization.shared.format(
+                                            "%d attachments",
+                                            item.attachments.count
+                                        )
+                                    )
+                            }
                             Spacer(minLength: 8)
                             CaptureRowActions(
                                 onDelete: onDelete,

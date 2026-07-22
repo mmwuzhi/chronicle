@@ -45,6 +45,42 @@ WHERE c.id = sqlc.arg('capture_id')
   AND c.deleted_at IS NULL
 RETURNING *;
 
+-- name: UpsertCaptureAttachment :one
+-- Used only by the atomic create-with-attachment operation. A lost response can
+-- be retried with the same Capture id and provider file id without duplicating
+-- either row.
+INSERT INTO capture_attachments (
+  user_id,
+  capture_id,
+  provider,
+  provider_file_id,
+  name,
+  mime_type,
+  size_bytes,
+  web_url
+)
+SELECT
+  sqlc.arg('user_id')::uuid,
+  sqlc.arg('capture_id')::uuid,
+  sqlc.arg('provider')::cloud_drive_provider,
+  sqlc.arg('provider_file_id')::text,
+  sqlc.arg('name')::text,
+  sqlc.narg('mime_type')::text,
+  sqlc.narg('size_bytes')::bigint,
+  sqlc.arg('web_url')::text
+FROM captures c
+WHERE c.id = sqlc.arg('capture_id')
+  AND c.user_id = sqlc.arg('user_id')
+  AND c.deleted_at IS NULL
+ON CONFLICT (capture_id, provider, provider_file_id)
+WHERE deleted_at IS NULL
+DO UPDATE SET
+  name = EXCLUDED.name,
+  mime_type = EXCLUDED.mime_type,
+  size_bytes = EXCLUDED.size_bytes,
+  web_url = EXCLUDED.web_url
+RETURNING *;
+
 -- name: DeleteCaptureAttachment :one
 UPDATE capture_attachments ca
 SET deleted_at = now()
