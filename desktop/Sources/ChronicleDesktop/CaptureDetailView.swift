@@ -322,7 +322,7 @@ struct CaptureDetailView: View {
                         }
                     }
                 }
-                .padding(.trailing, 8)
+                .padding(.trailing, DesktopScrollLayout.trailingActionGutter)
             }
         }
         .padding(16)

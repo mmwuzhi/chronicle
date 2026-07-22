@@ -116,6 +116,10 @@ struct ModeTextEditor: NSViewRepresentable {
         tv.onComplete = onComplete
         tv.submitsOnEnter = submitsOnEnter
         tv.hasCompletion = hasCompletion
+        let desiredFont = NSFont.systemFont(ofSize: fontSize)
+        if tv.font?.pointSize != desiredFont.pointSize {
+            tv.font = desiredFont
+        }
         if tv.string != text { tv.string = text; tv.needsDisplay = true }
         if tv.placeholderString != placeholder {
             tv.placeholderString = placeholder

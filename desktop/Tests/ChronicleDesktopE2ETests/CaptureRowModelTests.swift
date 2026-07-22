@@ -6,6 +6,32 @@ import ChronicleDesktopCore
 @MainActor
 @Suite("Capture row text ownership")
 struct CaptureRowModelTests {
+    @Test("sign-out keeps the normal Chronicle menu bar glyph")
+    func signedOutSessionKeepsNormalStatusItemGlyph() {
+        let signedIn = SessionStatus(signedOut: false, pending: 0)
+        let signedOut = SessionStatus(signedOut: true, pending: 4)
+
+        #expect(signedIn.statusItemSymbolName == "tray.and.arrow.down.fill")
+        #expect(signedOut.statusItemSymbolName == signedIn.statusItemSymbolName)
+        #expect(signedIn.statusItemTitle.isEmpty)
+        #expect(!signedOut.statusItemTitle.isEmpty)
+    }
+
+    @Test("stale refresh results cannot replace or clear a newer session")
+    func staleRefreshResultIsRejected() {
+        let origin = URL(string: "https://api.example.com")!
+        let old = ChronicleConfig(apiURL: origin, token: "old-token")
+        let freshLogin = ChronicleConfig(apiURL: origin, token: "fresh-token")
+        let differentServer = ChronicleConfig(
+            apiURL: URL(string: "https://other.example.com")!,
+            token: "other-token"
+        )
+
+        #expect(sessionRefreshStillCurrent(startedWith: old, current: old))
+        #expect(!sessionRefreshStillCurrent(startedWith: old, current: freshLogin))
+        #expect(!sessionRefreshStillCurrent(startedWith: old, current: differentServer))
+    }
+
     @Test("full capture displays transcript but edits only raw text")
     func fullCaptureKeepsDisplayAndEditableTextSeparate() throws {
         let capture = Capture(

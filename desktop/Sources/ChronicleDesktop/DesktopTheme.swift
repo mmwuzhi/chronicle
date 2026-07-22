@@ -6,27 +6,38 @@ import SwiftUI
 // hover-only borderless icon buttons, caption/secondary hierarchy. No cards, no
 // decorative shadows — the same quiet treatment across every surface.
 
-// MARK: - Brand
+// MARK: - Palette
 
 extension Color {
-    /// Chronicle's mint accent — the web app's `--accent: #16b982` — fixed
-    /// instead of following the macOS system accent: the two ends should read
-    /// as one product, and a user-chosen system accent (orange, blue, …) was
-    /// the loudest visual split between them. Lightened in dark mode so it
-    /// keeps contrast on dark surfaces.
+    /// Chronicle stays neutral until a deliberate theme system exists.
+    /// Use concrete adaptive colors instead of `Color.primary` as a tint: semantic
+    /// foreground colors can resolve as both a prominent control's fill and label.
     static let chronicleAccent = Color(nsColor: NSColor(name: nil) { appearance in
         appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
-            ? NSColor(srgbRed: 0.36, green: 0.86, blue: 0.71, alpha: 1)
-            : NSColor(srgbRed: 0.086, green: 0.725, blue: 0.510, alpha: 1)
+            ? .white
+            : NSColor(srgbRed: 19 / 255, green: 23 / 255, blue: 32 / 255, alpha: 1)
     })
 
-    /// A quiet, slightly mint-tinted navigation surface. Unlike the old glass
-    /// rail, it stays opaque when the sidebar peeks over text-heavy content.
+    /// Foreground placed on `chronicleAccent` controls.
+    static let chronicleOnAccent = Color(nsColor: NSColor(name: nil) { appearance in
+        appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            ? .black
+            : .white
+    })
+
+    /// A quiet neutral navigation surface. Unlike the old glass rail, it stays
+    /// opaque when the sidebar peeks over text-heavy content.
     static let chronicleSidebar = Color(nsColor: NSColor(name: nil) { appearance in
         appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
-            ? NSColor(srgbRed: 0.105, green: 0.125, blue: 0.116, alpha: 1)
-            : NSColor(srgbRed: 0.953, green: 0.969, blue: 0.961, alpha: 1)
+            ? NSColor(srgbRed: 0.11, green: 0.115, blue: 0.12, alpha: 1)
+            : NSColor(srgbRed: 0.965, green: 0.968, blue: 0.972, alpha: 1)
     })
+}
+
+enum DesktopScrollLayout {
+    // An overlay NSScroller is 17pt wide on macOS. Reserve its gutter so it
+    // never owns a trailing row-action hit target while visible.
+    static let trailingActionGutter: CGFloat = 20
 }
 
 // MARK: - Row hover geometry
@@ -63,7 +74,7 @@ extension View {
 
 // MARK: - Shared mode switcher
 
-/// Accent-pill mode switcher shared by the quick panel and the main window, so
+/// Pill mode switcher shared by the quick panel and the main window, so
 /// both surfaces speak one control language even though their materials differ
 /// (glass overlay vs solid workspace). Stateless: it renders the current
 /// selection and reports taps, leaving each caller's own switch side effects
@@ -86,10 +97,11 @@ struct PillModePicker<ID: Hashable>: View {
                     .padding(.horizontal, 10).padding(.vertical, 4)
                     .foregroundStyle(selected == seg.id ? Color.primary : Color.secondary)
                     .background(
-                        selected == seg.id ? AnyShapeStyle(Color.chronicleAccent.opacity(0.22))
+                        selected == seg.id ? AnyShapeStyle(Color.primary.opacity(0.10))
                                            : AnyShapeStyle(Color.clear),
                         in: Capsule(),
                     )
+                    .contentShape(Capsule())
                 }
                 .buttonStyle(.plain)
             }

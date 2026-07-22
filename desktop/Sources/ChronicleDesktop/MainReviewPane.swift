@@ -124,7 +124,7 @@ struct MainReviewPane: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.trailing, 8)
+            .padding(.trailing, DesktopScrollLayout.trailingActionGutter)
         }
     }
 

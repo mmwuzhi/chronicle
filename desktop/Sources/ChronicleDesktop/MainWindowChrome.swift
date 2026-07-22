@@ -134,6 +134,9 @@ struct MainTabRail: View {
     static let width: CGFloat = 148
     static let edgePeekInset: CGFloat = 2
     static let edgePeekWidth: CGFloat = 5
+    // Adjacent navigation rows must share a boundary. Any positive VStack
+    // spacing creates a strip that belongs to neither button and ignores clicks.
+    static let itemSpacing: CGFloat = 0
     // Roughly three CJK characters at the sidebar's text size. This is a
     // spatial tolerance, not a close delay: once the pointer leaves this
     // region the floating rail still dismisses immediately.
@@ -147,7 +150,7 @@ struct MainTabRail: View {
     let onSelect: (MainView.Mode) -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: Self.itemSpacing) {
             ForEach(modes.filter { $0 != .settings }) { mode in
                 tabButton(mode)
             }
@@ -191,10 +194,13 @@ struct MainTabRail: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .foregroundStyle(isSelected ? Color.primary : Color.secondary)
             .background(
-                isSelected ? AnyShapeStyle(Color.chronicleAccent.opacity(0.14))
+                isSelected ? AnyShapeStyle(Color.primary.opacity(0.08))
                            : AnyShapeStyle(Color.clear),
                 in: RoundedRectangle(cornerRadius: 8),
             )
+            // The visible wash may be rounded, but hit targets must tile the
+            // whole rail with no dead corner or boundary pixels.
+            .contentShape(Rectangle())
         }
         .buttonStyle(SidebarButtonStyle())
         .help(mode.title)

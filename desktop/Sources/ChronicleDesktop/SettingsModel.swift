@@ -346,6 +346,17 @@ final class SettingsModel: ObservableObject {
         }
     }
 
+    /// A refresh 401 proves the stored access token and cookie are no longer a
+    /// usable session. Clear them locally and drive every open surface to its
+    /// existing signed-out state without presenting an alarming status-bar icon.
+    func handleSessionExpired() {
+        guard isSignedIn || settings.load().isUsable else { return }
+        settings.signOut()
+        isSignedIn = false
+        status = L("Session expired — sign in again from Settings.")
+        onSignInChanged()
+    }
+
     func refreshPending() {
         do {
             pendingCount = try localStore.syncBacklog().total

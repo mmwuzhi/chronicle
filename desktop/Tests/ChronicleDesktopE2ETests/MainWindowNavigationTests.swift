@@ -9,6 +9,20 @@ import ChronicleDesktopCore
 @MainActor
 @Suite("Main window navigation")
 struct MainWindowNavigationTests {
+    @Test("sidebar navigation rows have no dead click zone between them")
+    func sidebarNavigationRowsMeetAtTheirBoundaries() {
+        #expect(MainTabRail.itemSpacing == 0)
+    }
+
+    @Test("capture row actions stay outside the overlay scrollbar")
+    func captureActionsReserveScrollbarGutter() {
+        let overlayWidth = NSScroller.scrollerWidth(
+            for: .regular,
+            scrollerStyle: .overlay
+        )
+        #expect(DesktopScrollLayout.trailingActionGutter >= overlayWidth)
+    }
+
     @Test("stored plaintext remote endpoint invalidates its bearer token")
     func unsafeStoredEndpointCannotBeUsedWithCredentials() {
         let defaults = UserDefaults(suiteName: UUID().uuidString)!
@@ -44,6 +58,38 @@ struct MainWindowNavigationTests {
         store.saveAPIURL(URL(string: "https://one.example/v2")!)
 
         #expect(store.load().token == "bearer-secret")
+    }
+
+    @Test("a proven expired session clears credentials and updates open surfaces")
+    func expiredSessionUpdatesSettingsModel() {
+        let defaults = UserDefaults(suiteName: UUID().uuidString)!
+        defaults.set("https://api.example.com", forKey: "apiURL")
+        defaults.set("expired-bearer", forKey: "token")
+        let store = SettingsStore(defaults: defaults)
+        let clients = CaptureClients(
+            recall: { nil },
+            webhook: { nil },
+            openSignIn: {},
+            localSearch: { _ in [] },
+            localRecent: { _ in [] },
+            localDelete: { _ in },
+        )
+        var signInChanges = 0
+        let model = SettingsModel(
+            settings: store,
+            localStore: tempStore(),
+            clients: clients,
+            onSaveShortcut: { _ in },
+            onSignInChanged: { signInChanges += 1 },
+            retry: { CaptureSyncSummary() },
+        )
+
+        #expect(model.isSignedIn)
+        model.handleSessionExpired()
+
+        #expect(!model.isSignedIn)
+        #expect(store.load().token.isEmpty)
+        #expect(signInChanges == 1)
     }
 
     @Test("collapsing from the hovered titlebar button does not reopen on button exit")
@@ -373,8 +419,39 @@ struct MainWindowNavigationTests {
 
         let textView: SubmitTextView = try #require(host.firstDescendant(ofType: SubmitTextView.self))
         #expect(textView.string == "ヤニネコ")
+        #expect(textView.font?.pointSize == NSFont.preferredFont(forTextStyle: .body).pointSize)
         #expect(textView.frame.height > 0)
         #expect((textView.textContainer?.size.width ?? 0) > 0)
+    }
+
+    @Test("mounted editors follow an updated preferred font size")
+    func modeTextEditorUpdatesItsNativeFont() async throws {
+        func editor(fontSize: CGFloat) -> ModeTextEditor {
+            ModeTextEditor(
+                text: .constant("Capture"),
+                focused: .constant(false),
+                placeholder: "",
+                submitsOnEnter: false,
+                onSubmit: {},
+                onCancel: {},
+                onHeight: { _ in },
+                fontSize: fontSize,
+            )
+        }
+
+        let host = NSHostingView(rootView: editor(fontSize: 12))
+        host.frame = NSRect(x: 0, y: 0, width: 320, height: 60)
+        host.layoutSubtreeIfNeeded()
+        await Task.yield()
+
+        host.rootView = editor(fontSize: 16)
+        host.layoutSubtreeIfNeeded()
+        await Task.yield()
+
+        let textView: SubmitTextView = try #require(
+            host.firstDescendant(ofType: SubmitTextView.self)
+        )
+        #expect(textView.font?.pointSize == 16)
     }
 
     @Test("delete planning sends unsynced search rows to local delete")

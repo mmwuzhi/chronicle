@@ -66,6 +66,11 @@ only when the cache schema next changes for another reason (`TODO.md`).
   overrides, and stored sessions cannot diverge. Changing scheme, host, or
   effective port clears the old bearer token and refresh cookie; never carry a
   credential across API origins.
+- **Refresh results are scoped to their starting credential snapshot.** A
+  sign-in, sign-out, or server change can finish while an older refresh is in
+  flight; discard that stale success or 401 instead of overwriting or clearing
+  the newer session. MainActor session callbacks must act on the monitor's
+  current converged health, not a state value captured before they were queued.
 
 ## Gotchas
 

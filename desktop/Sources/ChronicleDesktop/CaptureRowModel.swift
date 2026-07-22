@@ -70,13 +70,30 @@ final class CaptureClients {
     }
 }
 
-/// What the menu-bar sign-in glyph + tooltip need to render: whether the server
-/// session is known-expired, and how many local captures are waiting to sync.
+/// What the menu-bar tooltip needs to render: whether the server session is
+/// known-expired, and how many local captures are waiting to sync.
 /// `signedOut` is deliberately only true on a *proven* 401 — an offline app stays
 /// quiet (offline-first), matching `SessionHealth.expired`.
 struct SessionStatus: Equatable {
     var signedOut: Bool = false
     var pending: Int = 0
+
+    /// Account state must not make the app look broken in the menu bar.
+    var statusItemSymbolName: String { "tray.and.arrow.down.fill" }
+
+    /// A quiet persistent dot keeps an expired session visible without turning
+    /// the app's normal icon into a warning glyph.
+    var statusItemTitle: String { signedOut ? "  •" : "" }
+}
+
+/// Refresh results are valid only for the credential snapshot that launched
+/// them. A stale 401 must not clear a newer login, and a stale success must not
+/// overwrite it with a token minted for an older session or server.
+func sessionRefreshStillCurrent(
+    startedWith expected: ChronicleConfig,
+    current: ChronicleConfig
+) -> Bool {
+    expected == current
 }
 
 // MARK: - Row model

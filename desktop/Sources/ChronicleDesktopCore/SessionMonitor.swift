@@ -4,7 +4,7 @@ import Foundation
 //
 // The desktop sat signed out for weeks once, silently queuing captures locally,
 // because nothing surfaced that the session had lapsed. `SessionHealth` is the
-// state the menu bar badge / sign-in banner read from.
+// state the menu bar tooltip and sign-in surfaces read from.
 //
 // `.unknown` is the launch default and the offline state: we have not *proven*
 // the session is dead, so the UI must not accuse the user of being signed out —
@@ -47,7 +47,7 @@ public func sessionSignal(forRefreshResult result: Result<String, Error>) -> Ses
 /// Platform-free and thread-safe so it can be driven from the app's MainActor
 /// sign-in paths and from async refresh callers alike. `onChange` fires only
 /// when the health actually transitions, so the app can rebuild the menu bar
-/// badge / banner idempotently without re-rendering on every 15-minute mint.
+/// tooltip and sign-in surfaces idempotently without re-rendering on every mint.
 public final class SessionMonitor: @unchecked Sendable {
     private let lock = NSLock()
     private var _health: SessionHealth

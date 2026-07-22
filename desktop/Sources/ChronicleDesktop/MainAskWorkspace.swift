@@ -157,6 +157,7 @@ struct MainAskWorkspace: View {
                             .frame(width: 16, height: 16)
                     }
                     .buttonStyle(.borderedProminent)
+                    .foregroundStyle(Color.chronicleOnAccent)
                     .clipShape(Circle())
                     .controlSize(.regular)
                     .disabled(
@@ -169,6 +170,7 @@ struct MainAskWorkspace: View {
                 } else {
                     Button(L("Sign in"), action: onSignIn)
                         .buttonStyle(.borderedProminent)
+                        .foregroundStyle(Color.chronicleOnAccent)
                         .controlSize(.regular)
                 }
             }

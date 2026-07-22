@@ -502,8 +502,8 @@ struct CaptureRow: View {
                 submitsOnEnter: false,
                 onSubmit: { commitDraft() },
                 onCancel: { cancelDraft() },
-                onHeight: { h in editorHeight = min(max(h, 22), 190) },
-                fontSize: 15,
+                onHeight: { h in editorHeight = min(max(h, 22), 160) },
+                fontSize: NSFont.preferredFont(forTextStyle: .body).pointSize,
             )
             .frame(height: editorHeight)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -515,21 +515,28 @@ struct CaptureRow: View {
             HStack(spacing: 8) {
                 Spacer(minLength: 12)
                 Button { cancelDraft() } label: {
-                    CaptureDraftButtonLabel(title: L("Cancel"), shortcut: "esc")
+                    Text(L("Cancel"))
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .contentShape(Rectangle())
                 }
                     .keyboardShortcut(.cancelAction)
-                    .buttonStyle(CaptureDraftButtonStyle(kind: .secondary))
-                Button { commitDraft() } label: {
-                    CaptureDraftButtonLabel(title: L("Save"), shortcut: "⌘↩")
-                }
+                    .buttonStyle(.plain)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.secondary)
+                Button(L("Save")) { commitDraft() }
                     .keyboardShortcut(.return, modifiers: .command)
                     .buttonStyle(CaptureDraftButtonStyle(kind: .primary))
                     .disabled(!canSaveDraft)
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 11)
-        .background(Color.primary.opacity(0.055), in: RoundedRectangle(cornerRadius: 18))
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(Color.primary.opacity(0.025), in: RoundedRectangle(cornerRadius: RowStyle.cornerRadius))
+        .overlay {
+            RoundedRectangle(cornerRadius: RowStyle.cornerRadius)
+                .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+        }
         .onAppear { draftFocused = true }
     }
 
@@ -601,20 +608,6 @@ func captureRowCanBeginEditing(
     return hasExternalBegin || (hasInlineEdit && item.editableRawText != nil)
 }
 
-private struct CaptureDraftButtonLabel: View {
-    var title: String
-    var shortcut: String
-
-    var body: some View {
-        HStack(spacing: 6) {
-            Text(title)
-            Text(shortcut)
-                .font(.system(size: 11, weight: .medium))
-                .opacity(0.58)
-        }
-    }
-}
-
 struct CaptureDraftButtonStyle: ButtonStyle {
     @Environment(\.isEnabled) private var isEnabled
 
@@ -642,7 +635,7 @@ struct CaptureDraftButtonStyle: ButtonStyle {
 
     private var foreground: Color {
         switch kind {
-        case .primary: .white
+        case .primary: .chronicleOnAccent
         case .secondary: .primary
         }
     }

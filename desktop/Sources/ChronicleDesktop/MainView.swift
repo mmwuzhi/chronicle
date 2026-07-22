@@ -221,7 +221,7 @@ struct MainView: View {
                         browseContent
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.trailing, 8)
+                    .padding(.trailing, DesktopScrollLayout.trailingActionGutter)
                 }
             }
             .padding(16)

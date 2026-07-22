@@ -80,7 +80,7 @@ private final class HealthRecorder: @unchecked Sendable {
     }
 
     // A dropped connection while signed out must not flip the UI back to "OK":
-    // an inconclusive signal is a no-op, so the badge stays until a real 200/401.
+    // an inconclusive signal is a no-op until a real 200/401 updates the status.
     @Test func inconclusiveSignalDoesNotChangeState() {
         let rec = HealthRecorder()
         let monitor = SessionMonitor { rec.record($0) }

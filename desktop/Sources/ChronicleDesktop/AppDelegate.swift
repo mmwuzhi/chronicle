@@ -15,6 +15,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var hotKeyController: HotKeyController?
     private let settings = SettingsStore()
     private let localStore = LocalCaptureStore(fileURL: ChronicleDesktopPaths.defaultLocalDatabaseURL())
+    private var statusItemFlashActive = false
+    private var statusItemFlashGeneration = 0
     private lazy var captureSyncCoordinator = CaptureSyncCoordinator(store: localStore)
     // Offline semantic search over the local cache via a local Ollama. Lazy so it
     // can reference localStore; degrades to keyword search when Ollama is absent.
@@ -92,7 +94,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // every time the 15-minute access token lapses. A failure is a no-op — the app
     // simply stays in offline/local mode.
     private func refreshSessionIfPossible() {
-        let apiURL = settings.load().apiURL
+        let startingConfig = settings.load()
+        let apiURL = startingConfig.apiURL
         Task { @MainActor in
             let result: Result<String, Error>
             do {
@@ -100,8 +103,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             } catch {
                 result = .failure(error)
             }
+            // A sign-in, sign-out, or server change while this request was in
+            // flight owns the newer session. Never let the stale result replace
+            // its token or clear it via the expired-session path.
+            guard sessionRefreshStillCurrent(
+                startedWith: startingConfig,
+                current: settings.load()
+            ) else { return }
             // A 401 here is the exact signal the weeks-signed-out incident lacked:
-            // flip the badge. A network failure stays quiet (offline-first).
+            // surface sign-in status. A network failure stays quiet (offline-first).
             sessionMonitor.apply(sessionSignal(forRefreshResult: result))
             guard case .success(let token) = result else { return }
             settings.save(ChronicleConfig(apiURL: apiURL, token: token))
@@ -118,8 +128,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     // Surfaces sign-out. The app once sat signed out for weeks, silently queuing
-    // captures; the monitor flips the menu bar badge / banner the moment a refresh
-    // is rejected (401) and clears it on a fresh token — a network error never
+    // captures; the monitor invalidates the stale local session and updates the
+    // sign-in surfaces when a refresh is rejected (401). A network error never
     // trips it (offline-first). onChange re-reads current health so racing
     // callbacks converge on the final state.
     private lazy var sessionMonitor = SessionMonitor { [weak self] _ in
@@ -127,13 +137,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func mintToken() async -> String? {
-        let apiURL = settings.load().apiURL
+        let startingConfig = settings.load()
+        let apiURL = startingConfig.apiURL
         let result: Result<String, Error>
         do {
             result = .success(try await AuthAPIClient(apiURL: apiURL).refresh())
         } catch {
             result = .failure(error)
         }
+        guard sessionRefreshStillCurrent(
+            startedWith: startingConfig,
+            current: settings.load()
+        ) else { return nil }
         sessionMonitor.apply(sessionSignal(forRefreshResult: result))
         guard case .success(let token) = result else { return nil }
         settings.save(ChronicleConfig(apiURL: apiURL, token: token))
@@ -148,9 +163,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
     }
 
-    // Menu bar icon + tooltip are the only sign-in surface — react to session
-    // health changes by refreshing the status-item glyph and tooltip.
+    // Keep the normal menu bar glyph stable across account states. A signed-out
+    // session is routine, not an app failure; the tooltip carries that detail.
     private func sessionHealthChanged() {
+        // Multiple refresh/sign-in callbacks may already be queued onto the main
+        // actor. Read the converged state now instead of acting on a stale value
+        // captured before a newer login completed.
+        let health = sessionMonitor.health
+        // A session transition supersedes any transient save message whose copy
+        // may now be stale (for example, "sign in to sync" after a fresh login).
+        statusItemFlashGeneration &+= 1
+        statusItemFlashActive = false
+        if health == .expired {
+            settingsModel?.handleSessionExpired()
+        }
         updateStatusItemAppearance()
     }
 
@@ -161,7 +187,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func updateStatusItemAppearance() {
         guard let button = statusItem?.button else { return }
         let status = currentSessionStatus()
-        button.image = statusItemImage(signedOut: status.signedOut)
+        button.image = statusItemImage(named: status.statusItemSymbolName)
+        if !statusItemFlashActive {
+            button.title = status.statusItemTitle
+        }
         if status.signedOut {
             let n = status.pending
             button.toolTip = n > 0
@@ -177,11 +206,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func statusItemImage(signedOut: Bool) -> NSImage? {
-        // A distinct glyph (not just a color — status-bar template images render
-        // monochrome) so a signed-out state is noticeable at a glance; the tooltip
-        // carries the pending count.
-        let name = signedOut ? "exclamationmark.triangle.fill" : "tray.and.arrow.down.fill"
+    private func statusItemImage(named name: String) -> NSImage? {
         let icon = NSImage(systemSymbolName: name, accessibilityDescription: "Chronicle")
         icon?.isTemplate = true
         return icon
@@ -362,8 +387,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func handleSignInChanged() {
         // Sign-in and sign-out both funnel here (Settings toggles + launch
         // refresh), so the real config decides which: a usable token means live,
-        // its absence means the user is signed out. This is what clears the badge
-        // the instant a sign-in lands and raises it on an explicit sign-out.
+        // its absence means the user is signed out. This refreshes the sign-in
+        // surfaces the instant a sign-in lands or an explicit sign-out occurs.
         sessionMonitor.apply(settings.load().isUsable ? .active : .expired)
         reminderNotifier?.syncFromServer()
         // Refresh pinned stickies' content now that a token is available (on launch
@@ -504,9 +529,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // A quiet status-item title flash for capture feedback. No sound — the old
     // NSSound.beep() on every capture was removed (it was jarring on each save).
     private func showNotification(title: String, body _: String) {
+        statusItemFlashGeneration &+= 1
+        let generation = statusItemFlashGeneration
+        statusItemFlashActive = true
         statusItem.button?.title = "  \(title)"
         DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
-            self?.statusItem.button?.title = ""
+            guard self?.statusItemFlashGeneration == generation else { return }
+            self?.statusItemFlashActive = false
+            self?.updateStatusItemAppearance()
         }
     }
 }
