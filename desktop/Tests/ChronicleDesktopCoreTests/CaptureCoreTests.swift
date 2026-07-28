@@ -342,6 +342,13 @@ func authClientBuildsLoginRequest() throws {
 }
 
 @Test
+func authClientCanCrossActorBoundaries() {
+    func requireSendable<T: Sendable>(_: T) {}
+
+    requireSendable(AuthAPIClient(apiURL: URL(string: "https://api.example.com/v1")!))
+}
+
+@Test
 func userIdentityClientBuildsAuthenticatedMeRequest() {
     let client = UserIdentityAPIClient(config: ChronicleConfig(
         apiURL: URL(string: "https://api.example.com/v1")!,

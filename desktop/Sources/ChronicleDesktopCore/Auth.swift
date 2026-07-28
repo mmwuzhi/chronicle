@@ -79,7 +79,7 @@ public struct DesktopOAuthPKCE: Equatable, Sendable {
     }
 }
 
-public final class AuthAPIClient {
+public final class AuthAPIClient: @unchecked Sendable {
     private let apiURL: URL
     private let session: URLSession
 
