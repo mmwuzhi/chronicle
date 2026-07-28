@@ -39,12 +39,16 @@ func parseTodoTag(text string) todoTag {
 	if m == nil {
 		return todoTag{}
 	}
+	if m[3] != "" {
+		if _, err := time.Parse("2006-01-02", m[3]); err != nil {
+			return todoTag{}
+		}
+	}
 	return todoTag{present: true, done: m[2] != "", doneDate: m[3]}
 }
 
-// doneDateStamp turns the tag's YYYY-MM-DD parameter into a timestamp (UTC
-// midnight). Invalid or absent dates return the zero (NULL) stamp so the
-// caller falls back to "keep existing, else now" — the bare #todo(done) case.
+// doneDateStamp turns the already-validated tag date into UTC midnight. An
+// absent date returns NULL so the caller handles the bare #todo(done) case.
 func doneDateStamp(d string) pgtype.Timestamptz {
 	t, err := time.Parse("2006-01-02", d)
 	if err != nil {

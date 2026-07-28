@@ -27,11 +27,12 @@ import (
 // cursor pagination in pagination.go.
 
 type handler struct {
-	q      *db.Queries
-	pool   *pgxpool.Pool
-	rag    *ragclient.Client
-	store  objectDeleter
-	bucket string
+	q    *db.Queries
+	pool *pgxpool.Pool
+	rag  *ragclient.Client
+	// kickMediaDeletion wakes the durable R2 deletion worker after an explicit
+	// permanent delete writes its tombstone.
+	kickMediaDeletion func()
 	// kickTranscription wakes the event-driven transcription worker after
 	// retryTranscription re-queues a job (see upload.StartTranscriptionWorker).
 	kickTranscription func()
@@ -42,8 +43,8 @@ type handler struct {
 }
 
 // objectDeleter is the sliver of the R2/S3 client the capture handler needs to
-// purge media on a permanent delete. Nil when R2 is not configured, in which case
-// media cleanup is skipped (the DB delete is still authoritative).
+// purge media after a permanent delete. Nil when R2 is not configured; durable
+// tombstones remain in PostgreSQL until a configured worker can drain them.
 type objectDeleter interface {
 	DeleteObject(ctx context.Context, in *s3.DeleteObjectInput, opts ...func(*s3.Options)) (*s3.DeleteObjectOutput, error)
 }
@@ -53,25 +54,26 @@ type objectDeleter interface {
 // auth.ValidateTokenOrPAT) and is applied ONLY to POST /captures, so a headless
 // quick-capture token can append captures but cannot read, update, or delete.
 //
-// store/bucket back best-effort R2 media cleanup on permanent delete; pass a nil
-// store when R2 is not configured. kickTranscription wakes the transcription
-// worker when a retry re-queues a job; pass nil when transcription is disabled.
+// kickTranscription wakes the transcription worker when a retry re-queues a
+// job; pass nil when transcription is disabled.
 // linkFetchEnabled + kickLinkFetch wire link enrichment: when enabled, creating
 // a text capture that contains a URL enqueues a background fetch and wakes the
 // link-fetch worker; pass false / nil when link fetch is disabled.
-func Register(api huma.API, pool *pgxpool.Pool, rag *ragclient.Client, store objectDeleter, bucket string, authMW, createMW func(huma.Context, func(huma.Context)), kickTranscription func(), linkFetchEnabled bool, kickLinkFetch func()) {
+func Register(api huma.API, pool *pgxpool.Pool, rag *ragclient.Client, authMW, createMW func(huma.Context, func(huma.Context)), kickTranscription func(), linkFetchEnabled bool, kickLinkFetch func(), kickMediaDeletion func()) {
 	if kickTranscription == nil {
 		kickTranscription = func() {}
 	}
 	if kickLinkFetch == nil {
 		kickLinkFetch = func() {}
 	}
+	if kickMediaDeletion == nil {
+		kickMediaDeletion = func() {}
+	}
 	h := &handler{
 		q:                 db.New(pool),
 		pool:              pool,
 		rag:               rag,
-		store:             store,
-		bucket:            bucket,
+		kickMediaDeletion: kickMediaDeletion,
 		kickTranscription: kickTranscription,
 		linkFetchEnabled:  linkFetchEnabled,
 		kickLinkFetch:     kickLinkFetch,
@@ -196,7 +198,8 @@ type ListOutput struct {
 // --- create ---
 
 type CaptureCreateInput struct {
-	Body struct {
+	IdempotencyKey string `header:"Idempotency-Key" format:"uuid"`
+	Body           struct {
 		RawText      *string `json:"rawText,omitempty"`
 		MediaUrl     *string `json:"mediaUrl,omitempty"`
 		MediaType    string  `json:"mediaType" enum:"text,image,audio"`
@@ -232,28 +235,85 @@ func (h *handler) create(ctx context.Context, input *CaptureCreateInput) (*Creat
 		tag = parseTodoTag(*input.Body.RawText)
 	}
 	todoAt, doneAt := createTodoStamps(tag, time.Now())
-	c, err := h.q.CreateCapture(ctx, db.CreateCaptureParams{
-		UserID:    uid,
-		RawText:   nullText(input.Body.RawText),
-		MediaUrl:  nullText(input.Body.MediaUrl),
-		MediaType: db.CaptureMediaType(input.Body.MediaType),
-		Source:    source,
-		TodoAt:    todoAt,
-		DoneAt:    doneAt,
+	var operationID uuid.UUID
+	if input.IdempotencyKey != "" {
+		operationID, err = uuid.Parse(input.IdempotencyKey)
+		if err != nil {
+			return nil, huma.Error422UnprocessableEntity("Idempotency-Key must be a UUID")
+		}
+		if input.Body.MediaType != "text" || input.Body.RawText == nil || input.Body.MediaUrl != nil {
+			return nil, huma.Error422UnprocessableEntity("Idempotency-Key is supported only for text captures")
+		}
+	}
+
+	var c db.Capture
+	createdNew := true
+	err = pgx.BeginFunc(ctx, h.pool, func(tx pgx.Tx) error {
+		q := h.q.WithTx(tx)
+		if operationID != uuid.Nil {
+			c, err = q.CreateCaptureWithID(ctx, db.CreateCaptureWithIDParams{
+				ID:      operationID,
+				UserID:  uid,
+				RawText: *input.Body.RawText,
+				Source:  source,
+				TodoAt:  todoAt,
+				DoneAt:  doneAt,
+			})
+			if errors.Is(err, pgx.ErrNoRows) {
+				createdNew = false
+				c, err = q.GetCaptureAnyState(ctx, db.GetCaptureAnyStateParams{
+					ID: operationID, UserID: uid,
+				})
+			}
+		} else {
+			c, err = q.CreateCapture(ctx, db.CreateCaptureParams{
+				UserID:    uid,
+				RawText:   nullText(input.Body.RawText),
+				MediaUrl:  nullText(input.Body.MediaUrl),
+				MediaType: db.CaptureMediaType(input.Body.MediaType),
+				Source:    source,
+				TodoAt:    todoAt,
+				DoneAt:    doneAt,
+			})
+		}
+		if err != nil {
+			return err
+		}
+		if !createdNew {
+			if !idempotentTextCaptureMatches(
+				c,
+				*input.Body.RawText,
+				source,
+				remindAt,
+				remindHideDefault(input.Body.RemindHide),
+			) {
+				return huma.Error409Conflict("Idempotency-Key was already used with another capture")
+			}
+			return nil
+		}
+		if remindAt.Valid {
+			c, err = q.SetCaptureRemind(ctx, db.SetCaptureRemindParams{
+				ID:         c.ID,
+				UserID:     uid,
+				RemindAt:   remindAt,
+				RemindHide: remindHideDefault(input.Body.RemindHide),
+			})
+			return err
+		}
+		return nil
 	})
 	if err != nil {
+		var statusErr huma.StatusError
+		if errors.As(err, &statusErr) {
+			return nil, statusErr
+		}
+		if errors.Is(err, pgx.ErrNoRows) && operationID != uuid.Nil {
+			return nil, huma.Error409Conflict("Idempotency-Key already belongs to another account")
+		}
 		return nil, huma.Error500InternalServerError("internal error")
 	}
-	if remindAt.Valid {
-		c, err = h.q.SetCaptureRemind(ctx, db.SetCaptureRemindParams{
-			ID:         c.ID,
-			UserID:     uid,
-			RemindAt:   remindAt,
-			RemindHide: remindHideDefault(input.Body.RemindHide),
-		})
-		if err != nil {
-			return nil, huma.Error500InternalServerError("internal error")
-		}
+	if !createdNew {
+		return &CreateOutput{Body: toBody(c)}, nil
 	}
 	// On create the prior link_url is always absent, so reconcile just enqueues
 	// a fetch when the new text carries a URL — and re-indexes once itself.
@@ -274,6 +334,23 @@ func (h *handler) create(ctx context.Context, input *CaptureCreateInput) (*Creat
 		h.rag.Index(uid.String(), c.ID.String())
 	}
 	return &CreateOutput{Body: toBody(c)}, nil
+}
+
+func idempotentTextCaptureMatches(
+	c db.Capture,
+	rawText string,
+	source string,
+	remindAt pgtype.Timestamptz,
+	remindHide bool,
+) bool {
+	return !c.DeletedAt.Valid &&
+		c.MediaType == db.CaptureMediaTypeText &&
+		c.RawText.Valid && c.RawText.String == rawText &&
+		!c.MediaUrl.Valid &&
+		c.Source == source &&
+		c.RemindAt.Valid == remindAt.Valid &&
+		(!remindAt.Valid || c.RemindAt.Time.Equal(remindAt.Time)) &&
+		c.RemindHide == remindHide
 }
 
 // reconcileLinkFetch keeps link enrichment in step with the capture text (text

@@ -1,3 +1,4 @@
+import Combine
 import SwiftUI
 import ChronicleDesktopCore
 
@@ -57,6 +58,16 @@ struct WebhooksSection: View {
         .sheet(item: $editing) { target in
             WebhookEditor(clients: clients, rule: target.rule) { await reload() }
         }
+        .onReceive(clients.session.$generation.dropFirst()) { _ in
+            rules = []
+            error = ""
+            editing = nil
+            hoverID = nil
+            loaded = false
+            if clients.webhook() != nil {
+                Task { await reload() }
+            }
+        }
     }
 
     @ViewBuilder private func ruleRow(_ rule: WebhookRule) -> some View {
@@ -101,29 +112,49 @@ struct WebhooksSection: View {
     }
 
     private func reload() async {
+        let generation = clients.session.snapshot()
         guard let client = clients.webhook() else { loaded = true; return }
-        do { rules = try await client.list(); error = "" }
-        catch let err { error = "\(err)" }
-        loaded = true
+        do {
+            let loadedRules = try await client.list()
+            guard clients.session.isCurrent(generation) else { return }
+            rules = loadedRules
+            error = ""
+        } catch let err {
+            guard clients.session.isCurrent(generation) else { return }
+            error = "\(err)"
+        }
+        if clients.session.isCurrent(generation) { loaded = true }
     }
 
     private func setEnabled(_ rule: WebhookRule, _ on: Bool) {
+        let generation = clients.session.snapshot()
         guard let client = clients.webhook() else { return }
         var draft = WebhookDraft(rule)
         draft.enabled = on
         Task { @MainActor in
             do {
                 let updated = try await client.update(id: rule.id, draft)
+                guard clients.session.isCurrent(generation) else { return }
                 if let i = rules.firstIndex(where: { $0.id == rule.id }) { rules[i] = updated }
-            } catch let err { error = "\(err)" }
+            } catch let err {
+                guard clients.session.isCurrent(generation) else { return }
+                error = "\(err)"
+            }
         }
     }
 
     private func delete(_ rule: WebhookRule) {
+        let generation = clients.session.snapshot()
         guard let client = clients.webhook() else { return }
         Task { @MainActor in
-            do { try await client.delete(id: rule.id); rules.removeAll { $0.id == rule.id } }
-            catch let err { error = "\(err)" }
+            do {
+                try await client.delete(id: rule.id)
+                guard clients.session.isCurrent(generation) else { return }
+                rules.removeAll { $0.id == rule.id }
+            } catch let err {
+                guard clients.session.isCurrent(generation) else { return }
+                error = "\(err)"
+            }
         }
     }
 }
@@ -218,6 +249,12 @@ private struct WebhookEditor: View {
             }
         }
         .padding(16).frame(width: 540)
+        .onReceive(clients.session.$generation.dropFirst()) { _ in
+            busy = false
+            error = ""
+            testResult = nil
+            dismiss()
+        }
     }
 
     private func label(_ s: String) -> some View {
@@ -232,6 +269,7 @@ private struct WebhookEditor: View {
     }
 
     private func save(thenTest: Bool) async {
+        let generation = clients.session.snapshot()
         guard let client = clients.webhook() else { error = L("Sign in to save webhooks."); return }
         busy = true; error = ""; testResult = nil
         draft.keywords = keywordsText
@@ -245,21 +283,36 @@ private struct WebhookEditor: View {
             } else {
                 saved = try await client.create(draft)
             }
+            guard clients.session.isCurrent(generation) else { return }
             await onDone()
+            guard clients.session.isCurrent(generation) else { return }
             if thenTest {
-                testResult = await runTest(client: client, ruleID: saved.id)
+                testResult = await runTest(
+                    client: client,
+                    ruleID: saved.id,
+                    generation: generation
+                )
             }
-        } catch let err { self.error = "\(err)" }
-        busy = false
+        } catch let err {
+            guard clients.session.isCurrent(generation) else { return }
+            self.error = "\(err)"
+        }
+        if clients.session.isCurrent(generation) { busy = false }
     }
 
     // Score the saved rule against the user's most recent capture (no delivery).
-    private func runTest(client: WebhookAPIClient, ruleID: String) async -> String {
+    private func runTest(
+        client: WebhookAPIClient,
+        ruleID: String,
+        generation: UInt64
+    ) async -> String {
         guard let recall = clients.recall() else { return L("Sign in to test.") }
         do {
             let page = try await recall.recent(limit: 1)
+            guard clients.session.isCurrent(generation) else { return "" }
             guard let latest = page.items.first else { return L("No captures yet to test against.") }
             let result = try await client.test(id: ruleID, captureId: latest.id)
+            guard clients.session.isCurrent(generation) else { return "" }
             let score = result.score.map { String(format: "%.3f", $0) } ?? "n/a"
             return DesktopLocalization.shared.format(
                 "Against your latest capture: %@ (score %@).",

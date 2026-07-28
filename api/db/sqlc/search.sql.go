@@ -21,7 +21,7 @@ WITH params AS (
 ),
 ranked AS (
   SELECT
-    captures.id, captures.user_id, captures.raw_text, captures.media_url, captures.media_type, captures.created_at, captures.source, captures.transcript, captures.transcription_status, captures.transcription_model, captures.transcription_attempts, captures.transcribed_at, captures.next_transcription_at, captures.audio_duration_sec, captures.media_key, captures.remind_at, captures.deleted_at, captures.remind_hide, captures.todo_at, captures.done_at, captures.link_url,
+    captures.id, captures.user_id, captures.raw_text, captures.media_url, captures.media_type, captures.classified_as, captures.task_id, captures.created_at, captures.source, captures.transcript, captures.transcription_status, captures.transcription_model, captures.transcription_attempts, captures.transcribed_at, captures.next_transcription_at, captures.audio_duration_sec, captures.media_key, captures.remind_at, captures.deleted_at, captures.remind_hide, captures.todo_at, captures.done_at, captures.link_url,
     CASE
       WHEN raw_text ILIKE params.q_like THEN 'rawText'
       WHEN transcript ILIKE params.q_like THEN 'transcript'
@@ -61,7 +61,7 @@ ranked AS (
       ) @@ websearch_to_tsquery('simple', params.q)
     )
 )
-SELECT id, user_id, raw_text, media_url, media_type, created_at, source, transcript, transcription_status, transcription_model, transcription_attempts, transcribed_at, next_transcription_at, audio_duration_sec, media_key, remind_at, deleted_at, remind_hide, todo_at, done_at, link_url, matched_field, relevance FROM ranked
+SELECT id, user_id, raw_text, media_url, media_type, classified_as, task_id, created_at, source, transcript, transcription_status, transcription_model, transcription_attempts, transcribed_at, next_transcription_at, audio_duration_sec, media_key, remind_at, deleted_at, remind_hide, todo_at, done_at, link_url, matched_field, relevance FROM ranked
 ORDER BY relevance DESC, created_at DESC
 LIMIT $1
 `
@@ -78,6 +78,8 @@ type SearchCapturesRow struct {
 	RawText               pgtype.Text         `json:"raw_text"`
 	MediaUrl              pgtype.Text         `json:"media_url"`
 	MediaType             CaptureMediaType    `json:"media_type"`
+	ClassifiedAs          CaptureClassifiedAs `json:"classified_as"`
+	TaskID                pgtype.UUID         `json:"task_id"`
 	CreatedAt             pgtype.Timestamptz  `json:"created_at"`
 	Source                string              `json:"source"`
 	Transcript            pgtype.Text         `json:"transcript"`
@@ -117,6 +119,8 @@ func (q *Queries) SearchCaptures(ctx context.Context, arg SearchCapturesParams) 
 			&i.RawText,
 			&i.MediaUrl,
 			&i.MediaType,
+			&i.ClassifiedAs,
+			&i.TaskID,
 			&i.CreatedAt,
 			&i.Source,
 			&i.Transcript,

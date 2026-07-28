@@ -60,9 +60,9 @@ jobs:
   # ── API: build Docker image and push to GHCR ────────────────────────────────
   api-build:
     name: Build & push API image
-    needs: [api-check, web-e2e]
+    needs: [api-check, web-check, web-e2e, desktop-check, ragsvc-check]
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
 
     permissions:
       contents: read
@@ -98,40 +98,6 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-
-  # ── API: migrate then deploy to Fly.io ──────────────────────────────────────
-  api-deploy:
-    name: Deploy API
-    needs: api-build
-    runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'
-
-    environment: production
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-go@v5
-        with:
-          go-version: "1.26"
-          cache-dependency-path: api/go.sum
-
-      - name: Install goose
-        run: go install github.com/pressly/goose/v3/cmd/goose@latest
-
-      - name: Run migrations
-        working-directory: api
-        run: goose -dir db/migrations postgres "$DATABASE_URL" up
-        env:
-          DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
-
-      - uses: superfly/flyctl-actions/setup-flyctl@master
-
-      - name: Deploy
-        working-directory: api
-        run: flyctl deploy --image ghcr.io/${{ github.repository_owner }}/chronicle-api:sha-${{ github.sha }}
-        env:
-          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
 
   # ── Frontend: lint + typecheck + build ──────────────────────────────────────
   web-check:
@@ -328,24 +294,298 @@ jobs:
         working-directory: ragsvc
         run: python -m pytest -q
 
-  # ── Frontend: deploy to Cloudflare Pages ────────────────────────────────────
-  web-deploy:
-    name: Deploy frontend
-    needs: [web-check, web-e2e]
+  # ── Production: one gated, serialized API + Web rollout ─────────────────────
+  production-deploy:
+    name: Deploy production
+    needs: api-build
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
 
     environment: production
+    concurrency:
+      group: chronicle-production
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      packages: read
+
+    env:
+      DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+      FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      FLY_APP: chronicle-api-mmwuzhi
+      PAGES_PROJECT: chronicle-web
+      API_URL: ${{ vars.BACKEND_URL }}
 
     steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Confirm this is still the latest main commit
+        id: freshness
+        run: |
+          latest="$(git ls-remote origin refs/heads/main | awk '{print $1}')"
+          if [ "$latest" = "$GITHUB_SHA" ]; then
+            echo "deploy=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "deploy=false" >> "$GITHUB_OUTPUT"
+            echo "Skipping stale queued deployment: latest main is $latest"
+          fi
+
+      - uses: actions/setup-go@v5
+        if: steps.freshness.outputs.deploy == 'true'
+        with:
+          go-version: "1.26"
+          cache-dependency-path: api/go.sum
+
+      - name: Install goose
+        if: steps.freshness.outputs.deploy == 'true'
+        run: go install github.com/pressly/goose/v3/cmd/goose@v3.27.1
+
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+        if: steps.freshness.outputs.deploy == 'true'
+
+      - uses: docker/login-action@v3
+        if: steps.freshness.outputs.deploy == 'true'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - uses: actions/download-artifact@v4
+        if: steps.freshness.outputs.deploy == 'true'
         with:
           name: web-dist
           path: web/dist
 
+      - name: Preflight production and record rollback targets
+        id: preflight
+        if: steps.freshness.outputs.deploy == 'true'
+        working-directory: api
+        run: |
+          version="$(goose -dir db/migrations postgres "$DATABASE_URL" version 2>&1 | awk '{print $NF}')"
+          case "$version" in
+            13|1[4-9]|2[0-9]) ;;
+            *) echo "Unexpected production schema version: $version"; exit 1 ;;
+          esac
+          echo "schema_version=$version" >> "$GITHUB_OUTPUT"
+
+          fly_status="$(flyctl status --app "$FLY_APP" --json)"
+          previous_api_image="$(jq -r '
+            [.Machines[] | select(.state == "started") | .config.image]
+            | unique
+            | if length == 1 then .[0] else empty end
+          ' <<<"$fly_status")"
+          test -n "$previous_api_image"
+          curl --fail --silent "$API_URL/health" >/dev/null
+          echo "previous_api_image=$previous_api_image" >> "$GITHUB_OUTPUT"
+
+          project="$(curl --fail --silent --show-error \
+            --header "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/pages/projects/$PAGES_PROJECT")"
+          jq -e '.success == true' <<<"$project" >/dev/null
+          pages_subdomain="$(jq -r '.result.subdomain // empty' <<<"$project")"
+          test -n "$pages_subdomain"
+          echo "pages_canonical_url=https://$pages_subdomain" >> "$GITHUB_OUTPUT"
+
+          deployments="$(curl --fail --silent --show-error \
+            --header "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/pages/projects/$PAGES_PROJECT/deployments?env=production&per_page=20")"
+          jq -e '.success == true' <<<"$deployments" >/dev/null
+          previous_id="$(jq -r '
+            [.result[]
+              | select(
+                  .environment == "production"
+                  and .latest_stage.status == "success"
+                )
+            ]
+            | sort_by(.created_on)
+            | reverse
+            | .[0].id // empty
+          ' <<<"$deployments")"
+          previous_url="$(jq -r '
+            [.result[]
+              | select(
+                  .environment == "production"
+                  and .latest_stage.status == "success"
+                )
+            ]
+            | sort_by(.created_on)
+            | reverse
+            | .[0].url // empty
+          ' <<<"$deployments")"
+          test -n "$previous_id"
+          test -n "$previous_url"
+          curl --fail --silent "$previous_url" >/dev/null
+          echo "previous_pages_id=$previous_id" >> "$GITHUB_OUTPUT"
+          echo "previous_pages_url=$previous_url" >> "$GITHUB_OUTPUT"
+
+      - name: Reconfirm latest main immediately before maintenance
+        id: latest
+        if: steps.freshness.outputs.deploy == 'true'
+        run: |
+          latest="$(git ls-remote origin refs/heads/main | awk '{print $1}')"
+          if [ "$latest" = "$GITHUB_SHA" ]; then
+            echo "deploy=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "deploy=false" >> "$GITHUB_OUTPUT"
+            echo "Skipping stale deployment before external mutations: latest main is $latest"
+          fi
+
+      - name: Enter API maintenance window
+        id: maintenance
+        if: steps.latest.outputs.deploy == 'true'
+        run: |
+          # Write before the mutation: a lost CLI response may still mean Fly
+          # accepted the scale-to-zero request, so recovery must always run.
+          echo "attempted=true" >> "$GITHUB_OUTPUT"
+          flyctl scale count 0 --yes --app "$FLY_APP"
+
+      - name: Apply database migrations
+        if: steps.latest.outputs.deploy == 'true'
+        working-directory: api
+        run: goose -dir db/migrations postgres "$DATABASE_URL" up
+
       - name: Deploy to Cloudflare Pages
+        id: pages
+        if: steps.latest.outputs.deploy == 'true'
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           command: pages deploy web/dist --project-name=chronicle-web --commit-dirty=true
+
+      - name: Deploy API image
+        if: steps.latest.outputs.deploy == 'true'
+        working-directory: api
+        run: |
+          flyctl deploy \
+            --app "$FLY_APP" \
+            --image "ghcr.io/${GITHUB_REPOSITORY_OWNER}/chronicle-api:sha-${GITHUB_SHA}"
+          flyctl scale count 1 --yes --app "$FLY_APP"
+
+      - name: Smoke production API and Web
+        if: steps.latest.outputs.deploy == 'true'
+        run: |
+          for attempt in {1..30}; do
+            if curl --fail --silent "$API_URL/health" >/dev/null; then
+              break
+            fi
+            if [ "$attempt" = 30 ]; then
+              echo "API health check timed out"
+              exit 1
+            fi
+            sleep 2
+          done
+          test "$(curl --silent --output /dev/null --write-out '%{http_code}' "$API_URL/users/me")" = "401"
+          curl --fail --silent "$API_URL/openapi.json" |
+            jq -e '.paths["/captures"] and .paths["/captures/with-attachment"]' >/dev/null
+          curl --fail --silent "${{ steps.pages.outputs.deployment-url }}" >/dev/null
+          curl --fail --silent "${{ steps.preflight.outputs.pages_canonical_url }}" >/dev/null
+
+      - name: Choose a schema-safe recovery target
+        id: recovery
+        if: (failure() || cancelled()) && steps.maintenance.outputs.attempted == 'true'
+        continue-on-error: true
+        working-directory: api
+        run: |
+          version="$(goose -dir db/migrations postgres "$DATABASE_URL" version 2>&1 | awk '{print $NF}')"
+
+          # Once any migration has advanced the schema, never boot the old API:
+          # its generated row scans and capture mutation semantics only match
+          # the exact pre-release schema. Complete the forward migration first.
+          if [ "$version" != "13" ] && [ "$version" != "29" ]; then
+            goose -dir db/migrations postgres "$DATABASE_URL" up || true
+            version="$(goose -dir db/migrations postgres "$DATABASE_URL" version 2>&1 | awk '{print $NF}')"
+          fi
+
+          case "$version" in
+            13)
+              test "${{ steps.preflight.outputs.schema_version }}" = "13"
+              echo "api_image=${{ steps.preflight.outputs.previous_api_image }}" >> "$GITHUB_OUTPUT"
+              echo "pages_mode=previous" >> "$GITHUB_OUTPUT"
+              ;;
+            29)
+              echo "api_image=ghcr.io/${GITHUB_REPOSITORY_OWNER}/chronicle-api:sha-${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+              echo "pages_mode=current" >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "Schema stopped at unsafe intermediate version $version; refusing to start an incompatible API image"
+              exit 1
+              ;;
+          esac
+          echo "schema_version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Recover API independently of frontend
+        if: always() && steps.maintenance.outputs.attempted == 'true' && steps.recovery.outputs.api_image != ''
+        working-directory: api
+        run: |
+          flyctl deploy \
+            --app "$FLY_APP" \
+            --image "${{ steps.recovery.outputs.api_image }}"
+          flyctl scale count 1 --yes --app "$FLY_APP"
+
+      - name: Restore previous frontend before schema cutover
+        if: always() && steps.maintenance.outputs.attempted == 'true' && steps.recovery.outputs.pages_mode == 'previous'
+        run: |
+          previous_pages_id="${{ steps.preflight.outputs.previous_pages_id }}"
+          test -n "$previous_pages_id"
+          rollback="$(curl --fail --silent --show-error --request POST \
+            --header "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/pages/projects/$PAGES_PROJECT/deployments/$previous_pages_id/rollback")"
+          jq -e '.success == true' <<<"$rollback" >/dev/null
+
+      - name: Re-publish current frontend after schema cutover
+        id: recovery_pages_current
+        if: always() && steps.maintenance.outputs.attempted == 'true' && steps.recovery.outputs.pages_mode == 'current'
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy web/dist --project-name=chronicle-web --commit-dirty=true
+
+      - name: Verify recovered API and frontend
+        if: always() && steps.maintenance.outputs.attempted == 'true' && steps.recovery.outputs.api_image != ''
+        working-directory: api
+        run: |
+          test "$(goose -dir db/migrations postgres "$DATABASE_URL" version 2>&1 | awk '{print $NF}')" = "${{ steps.recovery.outputs.schema_version }}"
+
+          for attempt in {1..30}; do
+            if curl --fail --silent "$API_URL/health" >/dev/null; then
+              break
+            fi
+            if [ "$attempt" = 30 ]; then
+              echo "Recovered API health check timed out"
+              exit 1
+            fi
+            sleep 2
+          done
+
+          if [ "${{ steps.recovery.outputs.pages_mode }}" = "previous" ]; then
+            recovered_pages_url="${{ steps.preflight.outputs.previous_pages_url }}"
+          else
+            recovered_pages_url="${{ steps.recovery_pages_current.outputs.deployment-url }}"
+          fi
+          test -n "$recovered_pages_url"
+
+          for url in "$recovered_pages_url" "${{ steps.preflight.outputs.pages_canonical_url }}"; do
+            for attempt in {1..30}; do
+              if curl --fail --silent "$url" >/dev/null; then
+                break
+              fi
+              if [ "$attempt" = 30 ]; then
+                echo "Recovered frontend check timed out: $url"
+                exit 1
+              fi
+              sleep 2
+            done
+          done
+
+      - name: Recovery diagnostics
+        if: always() && steps.maintenance.outputs.attempted == 'true'
+        run: |
+          echo "Recovery schema: ${{ steps.recovery.outputs.schema_version }}"
+          flyctl status --app "$FLY_APP" || true
+          curl --fail --silent "$API_URL/health" || true

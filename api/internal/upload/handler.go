@@ -3,6 +3,7 @@ package upload
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -114,23 +115,15 @@ func (h *handler) upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	captureID := uuid.New()
+	var operationID uuid.UUID
+	idempotent := false
 	if rawKey := strings.TrimSpace(r.Header.Get("Idempotency-Key")); rawKey != "" {
-		captureID, err = uuid.Parse(rawKey)
+		operationID, err = uuid.Parse(rawKey)
 		if err != nil {
 			writeErr(w, http.StatusUnprocessableEntity, "Idempotency-Key must be a UUID")
 			return
 		}
-		if existing, getErr := h.q.GetCaptureAnyState(r.Context(), db.GetCaptureAnyStateParams{ID: captureID, UserID: uid}); getErr == nil {
-			if existing.DeletedAt.Valid || !existing.MediaKey.Valid || !existing.MediaUrl.Valid {
-				writeErr(w, http.StatusConflict, "Idempotency-Key already belongs to another capture")
-				return
-			}
-			writeJSON(w, http.StatusOK, uploadedCaptureResponse(existing))
-			return
-		} else if !errors.Is(getErr, pgx.ErrNoRows) {
-			writeErr(w, http.StatusInternalServerError, "could not check upload operation")
-			return
-		}
+		idempotent = true
 	}
 
 	r.Body = http.MaxBytesReader(w, r.Body, maxUploadSize+1024)
@@ -205,13 +198,129 @@ func (h *handler) upload(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusUnprocessableEntity, "invalid capture source")
 		return
 	}
+	if !createCapture {
+		writeErr(w, http.StatusUnprocessableEntity, "createCapture=true is required")
+		return
+	}
 
-	ext := extensionFor(contentType)
-	key := fmt.Sprintf("captures/%s/%s%s", userID, captureID.String(), ext)
+	rawText := strings.TrimSpace(r.FormValue("text"))
+	contentHash := sha256.Sum256(data)
+	requestHash := uploadRequestFingerprint(
+		contentHash,
+		mediaType,
+		source,
+		duration,
+		rawText,
+		remindAt,
+		remindHide,
+	)
+	reserved := false
+	defer func() {
+		if !reserved {
+			return
+		}
+		releaseCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		_, _ = h.q.ReleaseCaptureUploadOperation(releaseCtx, db.ReleaseCaptureUploadOperationParams{
+			ID:          operationID,
+			UserID:      uid,
+			RequestHash: requestHash,
+		})
+	}()
+
+	if idempotent {
+		operation, operationErr := h.q.GetCaptureUploadOperation(r.Context(), operationID)
+		if operationErr == nil {
+			if operation.UserID != uid || operation.RequestHash != requestHash {
+				writeErr(w, http.StatusConflict, "Idempotency-Key was already used with another upload")
+				return
+			}
+			captureID = operation.CaptureID
+			key := uploadObjectKey(userID, captureID, contentHash, contentType)
+			existing, getErr := h.q.GetCaptureAnyState(
+				r.Context(),
+				db.GetCaptureAnyStateParams{ID: captureID, UserID: uid},
+			)
+			switch {
+			case getErr == nil:
+				if !uploadedCaptureMatches(
+					existing,
+					key,
+					mediaType,
+					source,
+					duration,
+					rawText,
+					remindAt,
+					remindHide,
+				) {
+					writeErr(w, http.StatusConflict, "Idempotency-Key was already used with another upload")
+					return
+				}
+				_, _ = h.q.CompleteCaptureUploadOperation(
+					r.Context(),
+					db.CompleteCaptureUploadOperationParams{
+						ID: operationID, UserID: uid, RequestHash: requestHash,
+					},
+				)
+				writeJSON(w, http.StatusOK, uploadedCaptureResponse(existing))
+				return
+			case !errors.Is(getErr, pgx.ErrNoRows):
+				writeErr(w, http.StatusInternalServerError, "could not check upload operation")
+				return
+			}
+			if operation.CompletedAt.Valid {
+				writeErr(w, http.StatusConflict, "completed upload no longer owns a capture")
+				return
+			}
+			if operation.LeaseUntil.Valid && operation.LeaseUntil.Time.After(time.Now()) {
+				writeErr(w, http.StatusConflict, "upload operation is already in progress")
+				return
+			}
+		} else if !errors.Is(operationErr, pgx.ErrNoRows) {
+			writeErr(w, http.StatusInternalServerError, "could not check upload operation")
+			return
+		}
+
+		operation, reserveErr := h.q.ReserveCaptureUploadOperation(
+			r.Context(),
+			db.ReserveCaptureUploadOperationParams{
+				ID:          operationID,
+				CaptureID:   captureID,
+				UserID:      uid,
+				RequestHash: requestHash,
+			},
+		)
+		if errors.Is(reserveErr, pgx.ErrNoRows) {
+			operation, operationErr := h.q.GetCaptureUploadOperation(r.Context(), operationID)
+			switch {
+			case operationErr == nil &&
+				operation.UserID == uid &&
+				operation.RequestHash == requestHash &&
+				!operation.CompletedAt.Valid:
+				writeErr(w, http.StatusConflict, "upload operation is already in progress")
+			case operationErr == nil:
+				writeErr(w, http.StatusConflict, "Idempotency-Key was already used with another upload")
+			case errors.Is(operationErr, pgx.ErrNoRows):
+				writeErr(w, http.StatusConflict, "Idempotency-Key was already used by another capture")
+			default:
+				writeErr(w, http.StatusInternalServerError, "could not check upload operation")
+			}
+			return
+		}
+		if reserveErr != nil {
+			writeErr(w, http.StatusInternalServerError, "could not reserve upload operation")
+			return
+		}
+		captureID = operation.CaptureID
+		reserved = true
+	}
+
+	key := uploadObjectKey(userID, captureID, contentHash, contentType)
 	publicURL := fmt.Sprintf("https://%s.%s.r2.cloudflarestorage.com/%s",
 		h.cfg.R2BucketName, h.cfg.R2AccountID, key)
-
-	_, err = h.s3.PutObject(r.Context(), &s3.PutObjectInput{
+	uploadCtx, cancelUpload := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancelUpload()
+	_, err = h.s3.PutObject(uploadCtx, &s3.PutObjectInput{
 		Bucket:      aws.String(h.cfg.R2BucketName),
 		Key:         aws.String(key),
 		Body:        bytes.NewReader(data),
@@ -221,18 +330,9 @@ func (h *handler) upload(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadGateway, "storage upload failed")
 		return
 	}
-	if !createCapture {
-		writeJSON(w, http.StatusOK, uploadResponse{
-			MediaUrl:  publicURL,
-			MediaType: mediaType,
-		})
-		return
-	}
-
 	// The composer draft sent along with the upload becomes the capture's
 	// text. Like the create/update endpoints, the text decides the todo facet
 	// (#todo tag; see internal/capture/todotag.go).
-	rawText := strings.TrimSpace(r.FormValue("text"))
 	todoAt, doneAt := capture.DeriveTodoStamps(rawText, time.Now())
 	c, err := h.q.CreateUploadedCapture(r.Context(), db.CreateUploadedCaptureParams{
 		ID:                   captureID,
@@ -251,7 +351,23 @@ func (h *handler) upload(w http.ResponseWriter, r *http.Request) {
 		VisionEnabled:        h.cfg.OpenAIKey != "" && h.cfg.VisionEnabled,
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
-		c, err = h.q.GetCapture(r.Context(), db.GetCaptureParams{ID: captureID, UserID: uid})
+		c, err = h.q.GetCaptureAnyState(
+			r.Context(),
+			db.GetCaptureAnyStateParams{ID: captureID, UserID: uid},
+		)
+		if err == nil && !uploadedCaptureMatches(
+			c,
+			key,
+			mediaType,
+			source,
+			duration,
+			rawText,
+			remindAt,
+			remindHide,
+		) {
+			writeErr(w, http.StatusConflict, "capture identity was claimed by another operation")
+			return
+		}
 	}
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "could not create capture")
@@ -260,7 +376,96 @@ func (h *handler) upload(w http.ResponseWriter, r *http.Request) {
 	if c.TranscriptionStatus == db.TranscriptionStatusPending {
 		h.kick()
 	}
+	if idempotent {
+		// The capture is the durable replay record, so a bookkeeping failure
+		// must not turn a committed upload into an ambiguous client failure.
+		_, _ = h.q.CompleteCaptureUploadOperation(
+			r.Context(),
+			db.CompleteCaptureUploadOperationParams{
+				ID:          operationID,
+				UserID:      uid,
+				RequestHash: requestHash,
+			},
+		)
+		reserved = false
+	}
 	writeJSON(w, http.StatusOK, uploadedCaptureResponse(c))
+}
+
+func uploadObjectKey(
+	userID string,
+	captureID uuid.UUID,
+	contentHash [sha256.Size]byte,
+	contentType string,
+) string {
+	return fmt.Sprintf(
+		"captures/%s/%s-%x%s",
+		userID,
+		captureID.String(),
+		contentHash[:8],
+		extensionFor(contentType),
+	)
+}
+
+func uploadRequestFingerprint(
+	contentHash [sha256.Size]byte,
+	mediaType string,
+	source string,
+	duration *int32,
+	rawText string,
+	remindAt pgtype.Timestamptz,
+	remindHide bool,
+) string {
+	var remindAtUTC *string
+	if remindAt.Valid {
+		value := remindAt.Time.UTC().Format(time.RFC3339Nano)
+		remindAtUTC = &value
+	}
+	payload, _ := json.Marshal(struct {
+		ContentHash string  `json:"contentHash"`
+		MediaType   string  `json:"mediaType"`
+		Source      string  `json:"source"`
+		Duration    *int32  `json:"durationSec"`
+		RawText     string  `json:"rawText"`
+		RemindAt    *string `json:"remindAt"`
+		RemindHide  bool    `json:"remindHide"`
+	}{
+		ContentHash: fmt.Sprintf("%x", contentHash[:]),
+		MediaType:   mediaType,
+		Source:      source,
+		Duration:    duration,
+		RawText:     rawText,
+		RemindAt:    remindAtUTC,
+		RemindHide:  remindHide,
+	})
+	sum := sha256.Sum256(payload)
+	return fmt.Sprintf("%x", sum[:])
+}
+
+func uploadedCaptureMatches(
+	existing db.Capture,
+	mediaKey string,
+	mediaType string,
+	source string,
+	duration *int32,
+	rawText string,
+	remindAt pgtype.Timestamptz,
+	remindHide bool,
+) bool {
+	expectedText := nullableText(rawText)
+	expectedDuration := nullableInt4(duration)
+	return !existing.DeletedAt.Valid &&
+		existing.MediaKey.Valid && existing.MediaKey.String == mediaKey &&
+		existing.MediaUrl.Valid &&
+		string(existing.MediaType) == mediaType &&
+		existing.Source == source &&
+		existing.RawText.Valid == expectedText.Valid &&
+		(!expectedText.Valid || existing.RawText.String == expectedText.String) &&
+		existing.AudioDurationSec.Valid == expectedDuration.Valid &&
+		(!expectedDuration.Valid || existing.AudioDurationSec.Int32 == expectedDuration.Int32) &&
+		existing.RemindAt.Valid == remindAt.Valid &&
+		(!remindAt.Valid || existing.RemindAt.Time.Equal(remindAt.Time)) &&
+		existing.RemindHide == remindHide
 }
 
 func uploadedCaptureResponse(c db.Capture) uploadResponse {

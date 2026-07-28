@@ -10,6 +10,8 @@ final class SettingsStore {
         static let hotKey = "hotKey"
         static let shortcut = "shortcut"
         static let signedInOnce = "hasSignedInOnce"
+        static let localScopeOrigin = "localCaptureScopeOrigin"
+        static let localScopeUserID = "localCaptureScopeUserID"
     }
 
     private let defaults: UserDefaults
@@ -40,6 +42,23 @@ final class SettingsStore {
     /// virgin install (pop the onboarding window) from a signed-out returning
     /// user (stay quiet; Settings and the panel surface the state).
     var hasSignedInOnce: Bool { defaults.bool(forKey: Key.signedInOnce) }
+
+    /// Last identity that this installation verified for its API origin. This
+    /// binding intentionally survives sign-out so that account's captures remain
+    /// available offline, but is returned only when the configured origin matches.
+    func loadLocalCaptureScope() -> LocalCaptureScope? {
+        guard let savedOrigin = defaults.string(forKey: Key.localScopeOrigin),
+              let userID = defaults.string(forKey: Key.localScopeUserID),
+              let candidate = LocalCaptureScope(apiURL: configuredAPIURL(), userID: userID),
+              candidate.apiOrigin == savedOrigin
+        else { return nil }
+        return candidate
+    }
+
+    func saveVerifiedLocalCaptureScope(_ scope: LocalCaptureScope) {
+        defaults.set(scope.apiOrigin, forKey: Key.localScopeOrigin)
+        defaults.set(scope.userID, forKey: Key.localScopeUserID)
+    }
 
     func saveAPIURL(_ url: URL) {
         guard ChronicleAPIEndpoint.isAllowed(url) else { return }

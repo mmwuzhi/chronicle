@@ -25,6 +25,31 @@ func dueRequestBuildsGETWithBearerAndSince() throws {
 }
 
 @Test
+func dueRequestCarriesBoundedWindowAndStablePageCursor() throws {
+    let client = ReminderAPIClient(config: testConfig)
+
+    let request = client.makeDueRequest(
+        since: "2026-06-18T00:00:00Z",
+        until: "2026-06-19T00:00:00Z",
+        beforeAt: "2026-06-18T12:00:00Z",
+        beforeID: "d2ebedc1-c6b2-40f4-a789-8e48064252a1",
+        limit: 25
+    )
+
+    let url = try #require(request.url)
+    let items = try #require(
+        URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems)
+    #expect(items.contains(URLQueryItem(name: "until", value: "2026-06-19T00:00:00Z")))
+    #expect(items.contains(URLQueryItem(name: "beforeAt", value: "2026-06-18T12:00:00Z")))
+    #expect(
+        items.contains(
+            URLQueryItem(
+                name: "beforeId",
+                value: "d2ebedc1-c6b2-40f4-a789-8e48064252a1")))
+    #expect(items.contains(URLQueryItem(name: "limit", value: "25")))
+}
+
+@Test
 func dueRequestOmitsSinceWhenNil() throws {
     let client = ReminderAPIClient(config: testConfig)
 
@@ -34,6 +59,51 @@ func dueRequestOmitsSinceWhenNil() throws {
     let components = try #require(URLComponents(url: url, resolvingAgainstBaseURL: false))
     #expect(components.path == "/reminders/due")
     #expect(components.queryItems == nil)
+}
+
+@Test
+func reminderCheckpointIsPartitionedByAccountScope() throws {
+    let suite = "ReminderTests.\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let synchronizer = ReminderDueSynchronizer(defaults: defaults)
+    let firstScope = try #require(
+        LocalCaptureScope(
+            apiURL: URL(string: "https://chronicle.example")!,
+            userID: "first-user"))
+    let secondScope = try #require(
+        LocalCaptureScope(
+            apiURL: URL(string: "https://chronicle.example")!,
+            userID: "second-user"))
+    let checkpoint = Date(timeIntervalSince1970: 1_750_204_800)
+
+    defaults.set(
+        checkpoint,
+        forKey: "chronicle.reminders.due-checkpoint.\(firstScope.persistenceKey)")
+
+    #expect(synchronizer.checkpoint(for: firstScope) == checkpoint)
+    #expect(synchronizer.checkpoint(for: secondScope) == nil)
+}
+
+@Test
+func reminderCheckpointAdvancesOnlyAfterDurableHandlingCommits() throws {
+    let suite = "ReminderTests.\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let synchronizer = ReminderDueSynchronizer(defaults: defaults)
+    let scope = try #require(
+        LocalCaptureScope(
+            apiURL: URL(string: "https://chronicle.example")!,
+            userID: "durability-user"))
+    let checkpoint = Date(timeIntervalSince1970: 1_750_204_800)
+    let fetched = ReminderDueBatch(items: [], checkpoint: checkpoint)
+
+    // Merely fetching/preparing a batch must not skip it if local persistence
+    // subsequently fails or the app crashes.
+    #expect(synchronizer.checkpoint(for: scope) == nil)
+
+    synchronizer.commit(fetched, for: scope)
+    #expect(synchronizer.checkpoint(for: scope) == checkpoint)
 }
 
 @Test
@@ -73,9 +143,11 @@ func orphanedServerRemindersTargetsSyncedRemindersMissingFromPending() {
     func record(id: String, serverId: String?) -> LocalCaptureRecord {
         LocalCaptureRecord(
             id: id,
+            scope: .testing,
             payload: CapturePayload(rawText: "reminder", remindAt: soon),
             createdAt: Date(), updatedAt: Date(),
             serverId: serverId, syncedAt: serverId == nil ? nil : Date(),
+            editRevision: 0, syncedRevision: 0,
             lastError: nil, notifiedAt: nil)
     }
 

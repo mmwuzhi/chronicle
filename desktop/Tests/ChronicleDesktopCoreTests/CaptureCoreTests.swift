@@ -1,5 +1,6 @@
 import Darwin
 import Foundation
+import SQLite3
 import Testing
 
 @testable import ChronicleDesktopCore
@@ -26,6 +27,25 @@ func apiEndpointRequiresHTTPSExceptForLoopback() {
     #expect(ChronicleAPIEndpoint.validated("ftp://localhost") == nil)
     #expect(ChronicleAPIEndpoint.validated("https://user:secret@example.com") == nil)
     #expect(ChronicleAPIEndpoint.validated("https:missing-host") == nil)
+}
+
+@Test
+func localCaptureScopeCanonicalizesOriginIndependentOfPathAndDefaultPort() {
+    let withPath = LocalCaptureScope(
+        apiURL: URL(string: "https://API.Example.com/v1")!,
+        userID: "user-1"
+    )
+    let explicitPort = LocalCaptureScope(
+        apiURL: URL(string: "https://api.example.com:443/v2")!,
+        userID: "user-1"
+    )
+    let ipv6 = LocalCaptureScope(
+        apiURL: URL(string: "http://[::1]:8080/api")!,
+        userID: "user-1"
+    )
+
+    #expect(withPath == explicitPort)
+    #expect(ipv6?.apiOrigin == "http://[::1]:8080")
 }
 
 @Test
@@ -62,11 +82,15 @@ func apiClientBuildsCaptureRequest() throws {
     let config = ChronicleConfig(apiURL: URL(string: "http://localhost:8080")!, token: "test-token")
     let client = CaptureAPIClient(config: config)
 
-    let request = try client.makeRequest(for: CapturePayload(rawText: "Quick note"))
+    let request = try client.makeRequest(
+        for: CapturePayload(rawText: "Quick note"),
+        idempotencyKey: "stable-local-uuid"
+    )
 
     #expect(request.url?.absoluteString == "http://localhost:8080/captures")
     #expect(request.httpMethod == "POST")
     #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer test-token")
+    #expect(request.value(forHTTPHeaderField: "Idempotency-Key") == "stable-local-uuid")
 
     let body = try #require(request.httpBody)
     let decoded = try JSONDecoder().decode(CapturePayload.self, from: body)
@@ -290,7 +314,7 @@ func captureDecodesEmbeddedAttachments() throws {
 
 @Test
 func serverCreatedCaptureCacheNeverEntersPendingSync() throws {
-    let store = LocalCaptureStore(fileURL: temporaryDatabaseURL())
+    let store = temporaryStore()
     let payload = CapturePayload(rawText: "uploaded image", mediaType: "image")
 
     let record = try store.cacheServerCapture(serverId: "server-media-1", payload: payload)
@@ -315,6 +339,20 @@ func authClientBuildsLoginRequest() throws {
     let decoded = try JSONDecoder().decode(LoginRequest.self, from: body)
     #expect(decoded.email == "test@example.com")
     #expect(decoded.password == "password")
+}
+
+@Test
+func userIdentityClientBuildsAuthenticatedMeRequest() {
+    let client = UserIdentityAPIClient(config: ChronicleConfig(
+        apiURL: URL(string: "https://api.example.com/v1")!,
+        token: "candidate-token"
+    ))
+
+    let request = client.makeRequest()
+
+    #expect(request.url?.absoluteString == "https://api.example.com/v1/users/me")
+    #expect(request.httpMethod == "GET")
+    #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer candidate-token")
 }
 
 @Test
@@ -420,7 +458,7 @@ func retryQueueRemovesSentCaptures() async throws {
 
 @Test
 func localCaptureStorePersistsPendingCaptureAndReminder() throws {
-    let store = LocalCaptureStore(fileURL: temporaryDatabaseURL())
+    let store = temporaryStore()
     let remindAt = Date(timeIntervalSince1970: 2_000)
     let createdAt = Date(timeIntervalSince1970: 1_800)
 
@@ -447,16 +485,16 @@ func localCaptureStorePersistsNotifyOnlyAcrossReload() throws {
     // through the local store so a later sync retry still sends hide=false; without
     // persistence it would default to hide and vanish from browse until due.
     let url = temporaryDatabaseURL()
-    let notifyOnly = try LocalCaptureStore(fileURL: url).create(
+    let notifyOnly = try LocalCaptureStore(fileURL: url, scope: .testing).create(
         CapturePayload(rawText: "pinned sticky", remindAt: Date(timeIntervalSince1970: 5_000), remindHide: false),
     )
-    let hidden = try LocalCaptureStore(fileURL: url).create(
+    let hidden = try LocalCaptureStore(fileURL: url, scope: .testing).create(
         CapturePayload(rawText: "resurface later", remindAt: Date(timeIntervalSince1970: 5_000)),
     )
 
     // Re-open the store (fresh instance) to prove it survives a relaunch, and read
     // through pendingSync — the exact path the offline retry uses.
-    let pending = try LocalCaptureStore(fileURL: url).pendingSync()
+    let pending = try LocalCaptureStore(fileURL: url, scope: .testing).pendingSync()
     let reloadedNotifyOnly = try #require(pending.first { $0.id == notifyOnly.id })
     let reloadedHidden = try #require(pending.first { $0.id == hidden.id })
     #expect(reloadedNotifyOnly.payload.remindHide == false)
@@ -465,7 +503,7 @@ func localCaptureStorePersistsNotifyOnlyAcrossReload() throws {
 
 @Test
 func localCaptureStoreMarksCaptureSynced() throws {
-    let store = LocalCaptureStore(fileURL: temporaryDatabaseURL())
+    let store = temporaryStore()
     let record = try store.create(CapturePayload(rawText: "Sync me"))
 
     try store.markSynced(localId: record.id, serverId: "server-1", syncedAt: Date(timeIntervalSince1970: 2_100))
@@ -479,7 +517,7 @@ func localCaptureStoreMarksCaptureSynced() throws {
 
 @Test
 func localCaptureStoreSyncBacklogCountsEveryPendingRecordExactly() throws {
-    let store = LocalCaptureStore(fileURL: temporaryDatabaseURL())
+    let store = temporaryStore()
 
     // The old implementation decoded a page capped at 1,000 records, so a
     // larger offline queue silently under-reported the user-visible backlog.
@@ -517,7 +555,7 @@ func localCaptureStoreFindsByLocalIdBeforeAndAfterSync() throws {
     // The local id is what a reminder notification's userInfo carries; it must
     // resolve the same row both while the capture is still local-only and after
     // markSynced rekeys it with a server id (the notification may fire days later).
-    let store = LocalCaptureStore(fileURL: temporaryDatabaseURL())
+    let store = temporaryStore()
     let record = try store.create(CapturePayload(rawText: "Find me"))
 
     let beforeSync = try #require(try store.find(localId: record.id))
@@ -532,7 +570,7 @@ func localCaptureStoreFindsByLocalIdBeforeAndAfterSync() throws {
 
 @Test
 func localCaptureStoreUpsertsServerReminderWithoutDuplicating() throws {
-    let store = LocalCaptureStore(fileURL: temporaryDatabaseURL())
+    let store = temporaryStore()
     let remindAt = Date(timeIntervalSince1970: 3_000)
 
     let first = try store.upsertServerReminder(serverId: "server-2", text: "From web", remindAt: remindAt)
@@ -548,8 +586,8 @@ func localCaptureStoreUpsertsServerReminderWithoutDuplicating() throws {
 }
 
 @Test
-func localCaptureStoreMarksDueServerReminderNotifiedOnce() throws {
-    let store = LocalCaptureStore(fileURL: temporaryDatabaseURL())
+func localCaptureStoreKeepsDueReminderRetryableUntilDeliveryIsMarked() throws {
+    let store = temporaryStore()
     let remindAt = Date(timeIntervalSince1970: 3_000)
 
     let first = try store.upsertDueServerReminder(
@@ -558,16 +596,29 @@ func localCaptureStoreMarksDueServerReminderNotifiedOnce() throws {
         remindAt: remindAt,
         now: Date(timeIntervalSince1970: 3_100),
     )
-    let second = try store.upsertDueServerReminder(
+    // Simulate UNUserNotificationCenter.add failing: without markNotified, the
+    // same stable server reminder remains eligible on the next sync.
+    let retryAfterDeliveryFailure = try store.upsertDueServerReminder(
         serverId: "server-due",
         text: "Already due",
         remindAt: remindAt,
         now: Date(timeIntervalSince1970: 3_200),
     )
+    let delivered = try #require(retryAfterDeliveryFailure)
+    try store.markNotified(
+        localId: delivered.id,
+        now: Date(timeIntervalSince1970: 3_300))
+    let afterDelivery = try store.upsertDueServerReminder(
+        serverId: "server-due",
+        text: "Already due",
+        remindAt: remindAt,
+        now: Date(timeIntervalSince1970: 3_400),
+    )
 
     #expect(first != nil)
-    #expect(first?.notifiedAt == Date(timeIntervalSince1970: 3_100))
-    #expect(second == nil)
+    #expect(first?.notifiedAt == nil)
+    #expect(retryAfterDeliveryFailure?.id == first?.id)
+    #expect(afterDelivery == nil)
 }
 
 @Test
@@ -576,7 +627,7 @@ func localCaptureStoreDoesNotReNotifyLocallyScheduledReminderAfterSync() throws 
     // ReminderNotifier marks notified) and then syncs to the server. When the
     // reminder later shows up in the server `due` list, the due path must NOT post
     // a second notification — the local trigger already covers delivery.
-    let store = LocalCaptureStore(fileURL: temporaryDatabaseURL())
+    let store = temporaryStore()
     var payload = CapturePayload(rawText: "Local reminder")
     payload.remindAt = Date(timeIntervalSince1970: 3_000)
     let record = try store.create(payload)
@@ -602,7 +653,7 @@ func localCaptureStoreEditFlagsSyncedRowDirtyForPush() throws {
     // Editing an already-synced row must surface it in pendingUpdates (an offline
     // PATCH-back) with the new text — never back in pendingSync, which is only for
     // rows that were never created on the server.
-    let store = LocalCaptureStore(fileURL: temporaryDatabaseURL())
+    let store = temporaryStore()
     let record = try store.create(CapturePayload(rawText: "original"))
     try store.markSynced(
         localId: record.id, serverId: "server-e1", syncedAt: Date(timeIntervalSince1970: 1_000))
@@ -621,10 +672,32 @@ func localCaptureStoreEditFlagsSyncedRowDirtyForPush() throws {
 }
 
 @Test
+func localCaptureStoreQueuesEditEvenWhenWallClockMovesBackward() throws {
+    let store = temporaryStore()
+    let record = try store.create(CapturePayload(rawText: "before rollback"))
+    try store.markSynced(
+        localId: record.id,
+        serverId: "server-clock-rollback",
+        syncedAt: Date(timeIntervalSince1970: 5_000)
+    )
+
+    try store.setText(
+        id: record.id,
+        rawText: "edited after rollback",
+        now: Date(timeIntervalSince1970: 1_000)
+    )
+
+    let dirty = try #require(try store.pendingUpdates().first)
+    #expect(dirty.updatedAt < dirty.syncedAt!)
+    #expect(dirty.hasPendingUpdate)
+    #expect(dirty.payload.rawText == "edited after rollback")
+}
+
+@Test
 func localCaptureStoreEditOnUnsyncedRowStaysInCreateQueue() throws {
     // Editing a not-yet-synced row must carry the new text into its eventual create
     // (pendingSync), not appear as a separate update — it has no server id to PATCH.
-    let store = LocalCaptureStore(fileURL: temporaryDatabaseURL())
+    let store = temporaryStore()
     let record = try store.create(CapturePayload(rawText: "draft"))
 
     let changed = try store.setText(id: record.id, rawText: "draft revised")
@@ -639,16 +712,15 @@ func localCaptureStoreEditOnUnsyncedRowStaysInCreateQueue() throws {
 func localCaptureStoreSetTextReturnsZeroForUnknownRow() throws {
     // A server-only browse fragment isn't in the local cache; setText must report
     // 0 changes so the caller falls back to editing directly against the server.
-    let store = LocalCaptureStore(fileURL: temporaryDatabaseURL())
+    let store = temporaryStore()
     #expect(try store.setText(id: "not-cached", rawText: "x") == 0)
 }
 
 @Test
 func localCaptureStoreMarkUpdatePushedClearsDirtyOnlyWhenNothingChangedMeanwhile() throws {
-    // markUpdatePushed advances synced_at to the pushed updated_at. When no re-edit
-    // raced the PATCH the row goes clean; when one did (updated_at moved past the
-    // pushed value), it stays dirty so the concurrent edit is re-pushed, never lost.
-    let store = LocalCaptureStore(fileURL: temporaryDatabaseURL())
+    // markUpdatePushed acknowledges the exact edit revision that was sent. When no
+    // re-edit raced the PATCH the row goes clean; a newer revision stays dirty.
+    let store = temporaryStore()
     let record = try store.create(CapturePayload(rawText: "v0"))
     try store.markSynced(
         localId: record.id, serverId: "server-race", syncedAt: Date(timeIntervalSince1970: 1_000))
@@ -662,7 +734,11 @@ func localCaptureStoreMarkUpdatePushedClearsDirtyOnlyWhenNothingChangedMeanwhile
     try store.setText(id: "server-race", rawText: "v2", now: Date(timeIntervalSince1970: 3_000))
 
     // PATCH of v1 completes: synced_at only advances to t2, not to "now".
-    try store.markUpdatePushed(localId: record.id, syncedAt: pushed.updatedAt)
+    try store.markUpdatePushed(
+        localId: record.id,
+        syncedRevision: pushed.editRevision,
+        syncedAt: pushed.updatedAt
+    )
 
     // updated_at (t3) still exceeds synced_at (t2) → still dirty, v2 re-pushes.
     let stillDirty = try store.pendingUpdates()
@@ -670,7 +746,12 @@ func localCaptureStoreMarkUpdatePushedClearsDirtyOnlyWhenNothingChangedMeanwhile
     #expect(stillDirty.first?.payload.rawText == "v2")
 
     // Pushing v2 with its own updated_at finally clears the dirty flag.
-    try store.markUpdatePushed(localId: record.id, syncedAt: Date(timeIntervalSince1970: 3_000))
+    let latest = try #require(try store.pendingUpdates().first)
+    try store.markUpdatePushed(
+        localId: record.id,
+        syncedRevision: latest.editRevision,
+        syncedAt: latest.updatedAt
+    )
     #expect(try store.pendingUpdates().isEmpty)
 }
 
@@ -679,7 +760,7 @@ func localCaptureStoreEditClearsStaleEmbedding() throws {
     // On-device semantic search ranks the cached vector, which indexed the *old*
     // text. Editing must drop that vector (rowsNeedingEmbedding only re-embeds a
     // missing/different-model one) or semantic recall keeps matching stale content.
-    let store = LocalCaptureStore(fileURL: temporaryDatabaseURL())
+    let store = temporaryStore()
     let record = try store.create(CapturePayload(rawText: "ramen shop"))
     try store.setEmbedding(id: record.id, model: "bge-m3", vector: [0.1, 0.2, 0.3])
     #expect(try store.rowsNeedingEmbedding(model: "bge-m3").isEmpty) // indexed
@@ -695,12 +776,13 @@ func localCaptureStoreMarkCreateSyncedRePushesEditThatRacedTheCreate() throws {
     // Regression: an edit made while a capture's create POST is in flight must not
     // be lost to the stale create payload. markCreateSynced compares the just-sent
     // text against the stored text and keeps the row dirty when they diverge.
-    let store = LocalCaptureStore(fileURL: temporaryDatabaseURL())
+    let store = temporaryStore()
 
     // No concurrent edit: the create's own text is what synced → row goes clean.
     let clean = try store.create(CapturePayload(rawText: "as sent"))
     let dirtyAfterClean = try store.markCreateSynced(
         localId: clean.id, serverId: "srv-clean", sentText: "as sent",
+        sentRevision: clean.editRevision,
         syncedAt: Date(timeIntervalSince1970: 1_000))
     #expect(dirtyAfterClean == false)
     #expect(try store.pendingUpdates().isEmpty)
@@ -711,8 +793,8 @@ func localCaptureStoreMarkCreateSyncedRePushesEditThatRacedTheCreate() throws {
     try store.setText(id: raced.id, rawText: "fixed", now: Date(timeIntervalSince1970: 2_000))
     let dirtyAfterRace = try store.markCreateSynced(
         localId: raced.id, serverId: "srv-raced", sentText: "typo",
-        syncedAt: Date(timeIntervalSince1970: 2_500),
-        reeditStamp: Date(timeIntervalSince1970: 3_000))
+        sentRevision: 0,
+        syncedAt: Date(timeIntervalSince1970: 2_500))
     #expect(dirtyAfterRace == true)
     let dirty = try store.pendingUpdates()
     #expect(dirty.map(\.serverId) == ["srv-raced"])
@@ -725,7 +807,7 @@ func localCaptureStoreMarkNotifiedDoesNotQueueAnEditPush() throws {
     // edit, so it must NOT surface the row in pendingUpdates. Otherwise the drain
     // PATCHes /captures/{id} with the cached text — and for a server-sourced
     // reminder that text is the reminder *summary*, corrupting the capture body.
-    let store = LocalCaptureStore(fileURL: temporaryDatabaseURL())
+    let store = temporaryStore()
     // server_id set, raw_text = the reminder summary; synced_at == updated_at (clean).
     let reminder = try store.upsertServerReminder(
         serverId: "srv-reminder", text: "reminder summary",
@@ -740,6 +822,163 @@ func localCaptureStoreMarkNotifiedDoesNotQueueAnEditPush() throws {
     #expect(try store.pendingUpdates().isEmpty)
 }
 
+@Test
+func localCaptureStoreScopesEveryOfflineSurfaceByVerifiedOriginAndUser() throws {
+    let url = temporaryDatabaseURL()
+    let scopeA = try #require(LocalCaptureScope(
+        apiURL: URL(string: "https://api.example.com/v1")!,
+        userID: "user-a"
+    ))
+    let scopeB = try #require(LocalCaptureScope(
+        apiURL: URL(string: "https://api.example.com/v2")!,
+        userID: "user-b"
+    ))
+    let otherOrigin = try #require(LocalCaptureScope(
+        apiURL: URL(string: "https://other.example.com")!,
+        userID: "user-a"
+    ))
+    let store = LocalCaptureStore(fileURL: url, scope: scopeA)
+    let a = try store.create(CapturePayload(
+        rawText: "A private pending capture",
+        remindAt: Date().addingTimeInterval(3_600)
+    ))
+    try store.setEmbedding(id: a.id, model: "test-model", vector: [1, 0])
+
+    store.activate(scopeB)
+    #expect(try store.recent().isEmpty)
+    #expect(try store.search("private").isEmpty)
+    #expect(try store.pendingSync().isEmpty)
+    #expect(try store.upcomingReminders().isEmpty)
+    #expect(try store.embeddedRows(model: "test-model").isEmpty)
+    _ = try store.create(CapturePayload(rawText: "B capture"))
+
+    store.activate(otherOrigin)
+    #expect(try store.recent().isEmpty)
+
+    store.activate(scopeA)
+    #expect(try store.recent().map(\.payload.rawText) == ["A private pending capture"])
+    #expect(try store.pendingSync().map(\.id) == [a.id])
+}
+
+@Test
+func localCaptureStoreQuarantinesRowsWrittenBeforeAccountScoping() throws {
+    let url = temporaryDatabaseURL()
+    let store = LocalCaptureStore(fileURL: url, scope: .testing)
+    let legacy = try store.create(CapturePayload(rawText: "unknown legacy owner"))
+
+    var db: OpaquePointer?
+    #expect(sqlite3_open(url.path, &db) == SQLITE_OK)
+    defer { sqlite3_close(db) }
+    let sql = "UPDATE local_captures SET account_scope = NULL WHERE id = '\(legacy.id)'"
+    #expect(sqlite3_exec(db, sql, nil, nil, nil) == SQLITE_OK)
+
+    #expect(try store.recent().isEmpty)
+    #expect(try store.pendingSync().isEmpty)
+    #expect(try store.syncBacklog().total == 0)
+}
+
+@Test
+func scopedSchemaUpgradeLetsVerifiedRowReuseLegacyServerID() throws {
+    let url = temporaryDatabaseURL()
+    try FileManager.default.createDirectory(
+        at: url.deletingLastPathComponent(),
+        withIntermediateDirectories: true
+    )
+    var db: OpaquePointer?
+    try #require(sqlite3_open(url.path, &db) == SQLITE_OK)
+    let oldSchema = """
+        CREATE TABLE local_captures (
+            id TEXT PRIMARY KEY,
+            server_id TEXT UNIQUE,
+            raw_text TEXT NOT NULL,
+            media_type TEXT NOT NULL,
+            classified_as TEXT NOT NULL,
+            source TEXT NOT NULL,
+            remind_at TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            synced_at TEXT,
+            last_error TEXT,
+            notified_at TEXT,
+            remind_hide INTEGER
+        );
+        INSERT INTO local_captures (
+            id, server_id, raw_text, media_type, classified_as, source,
+            created_at, updated_at, synced_at
+        ) VALUES (
+            'legacy-local', 'same-server-id', 'legacy unknown owner', 'text',
+            'unclassified', 'desktop_quick_capture',
+            '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z',
+            '2026-01-01T00:00:00.000Z'
+        );
+        """
+    try #require(sqlite3_exec(db, oldSchema, nil, nil, nil) == SQLITE_OK)
+    sqlite3_close(db)
+    db = nil
+
+    let store = LocalCaptureStore(fileURL: url, scope: .testing)
+    let scoped = try store.cacheServerCapture(
+        serverId: "same-server-id",
+        payload: CapturePayload(rawText: "verified owner")
+    )
+
+    #expect(scoped.payload.rawText == "verified owner")
+    #expect(try store.count() == 1)
+    #expect(try store.find(serverId: "same-server-id")?.id == scoped.id)
+}
+
+@Test
+func localCaptureStoreRejectsAccessWithoutAnExplicitIdentityScope() {
+    let store = LocalCaptureStore(fileURL: temporaryDatabaseURL())
+
+    #expect(throws: LocalCaptureStoreError.scopeUnavailable) {
+        try store.create(CapturePayload(rawText: "must not become unowned"))
+    }
+    #expect(throws: LocalCaptureStoreError.scopeUnavailable) {
+        try store.recent()
+    }
+}
+
+@Test
+func reminderRefreshPreservesDirtyOfflineTextAndUpdateClock() throws {
+    let store = temporaryStore()
+    let initial = try store.upsertServerReminder(
+        serverId: "srv-dirty-reminder",
+        text: "server summary",
+        remindAt: Date(timeIntervalSince1970: 8_000),
+        now: Date(timeIntervalSince1970: 1_000)
+    )
+    try store.setText(
+        id: initial.id,
+        rawText: "my offline edit",
+        now: Date(timeIntervalSince1970: 2_000)
+    )
+    let dirtyBefore = try #require(try store.pendingUpdates().first)
+
+    _ = try store.upsertServerReminder(
+        serverId: "srv-dirty-reminder",
+        text: "new server summary",
+        remindAt: Date(timeIntervalSince1970: 9_000),
+        now: Date(timeIntervalSince1970: 3_000)
+    )
+    let dirtyAfterPending = try #require(try store.pendingUpdates().first)
+    #expect(dirtyAfterPending.payload.rawText == "my offline edit")
+    #expect(dirtyAfterPending.updatedAt == dirtyBefore.updatedAt)
+    #expect(dirtyAfterPending.syncedAt == dirtyBefore.syncedAt)
+    #expect(dirtyAfterPending.payload.remindAt == Date(timeIntervalSince1970: 9_000))
+
+    _ = try store.upsertDueServerReminder(
+        serverId: "srv-dirty-reminder",
+        text: "due server summary",
+        remindAt: Date(timeIntervalSince1970: 9_500),
+        now: Date(timeIntervalSince1970: 4_000)
+    )
+    let dirtyAfterDue = try #require(try store.pendingUpdates().first)
+    #expect(dirtyAfterDue.payload.rawText == "my offline edit")
+    #expect(dirtyAfterDue.updatedAt == dirtyBefore.updatedAt)
+    #expect(dirtyAfterDue.syncedAt == dirtyBefore.syncedAt)
+}
+
 private func temporaryQueueURL() -> URL {
     FileManager.default.temporaryDirectory
         .appending(path: UUID().uuidString)
@@ -750,6 +989,10 @@ private func temporaryDatabaseURL() -> URL {
     FileManager.default.temporaryDirectory
         .appending(path: UUID().uuidString)
         .appending(path: "chronicle.sqlite3")
+}
+
+private func temporaryStore() -> LocalCaptureStore {
+    LocalCaptureStore(fileURL: temporaryDatabaseURL(), scope: .testing)
 }
 
 private final class StubSender: CaptureSending {

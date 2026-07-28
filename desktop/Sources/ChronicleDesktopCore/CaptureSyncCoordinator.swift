@@ -133,17 +133,72 @@ public final class CaptureSyncCoordinator: @unchecked Sendable {
         _ record: LocalCaptureRecord,
         using transport: any CaptureSyncTransport
     ) async -> CreateSyncResult {
+        guard store.isActive(record) else {
+            return CreateSyncResult(outcome: .failed, needsUpdatePush: false)
+        }
         guard createGate.begin(record.id) else {
             return CreateSyncResult(outcome: .alreadyInFlight, needsUpdatePush: false)
         }
         defer { createGate.end(record.id) }
 
         do {
-            let serverID = try await transport.send(record.payload)
+            // The local UUID survives every retry and is also scoped to the
+            // verified account. It is therefore the create operation's stable
+            // Idempotency-Key across ambiguous transport failures.
+            let serverID = try await transport.send(
+                record.payload,
+                idempotencyKey: record.id
+            )
+            guard store.isActive(record) else {
+                return CreateSyncResult(outcome: .failed, needsUpdatePush: false)
+            }
             let needsUpdatePush = try store.markCreateSynced(
                 localId: record.id,
                 serverId: serverID,
                 sentText: record.payload.rawText,
+                sentRevision: record.editRevision,
+            )
+            return CreateSyncResult(outcome: .synced, needsUpdatePush: needsUpdatePush)
+        } catch CaptureAPIError.httpStatus(409) {
+            return await recoverCommittedCreate(record, using: transport)
+        } catch {
+            try? store.markFailed(localId: record.id, error: error)
+            return CreateSyncResult(outcome: .failed, needsUpdatePush: false)
+        }
+    }
+
+    /// The server may have committed revision A before its response was lost.
+    /// If the user then edits locally to B, an idempotent retry correctly returns
+    /// 409 because the operation UUID already owns different text. Recover only
+    /// the authenticated, same-operation text Capture, mark that older server
+    /// state acknowledged, and let the normal dirty-update drain PATCH B.
+    private func recoverCommittedCreate(
+        _ record: LocalCaptureRecord,
+        using transport: any CaptureSyncTransport
+    ) async -> CreateSyncResult {
+        do {
+            guard store.isActive(record),
+                  let recovered = try await transport.recoverCreate(operationID: record.id),
+                  recovered.id == record.id,
+                  recovered.mediaType == "text",
+                  recovered.source == record.payload.source
+            else {
+                return CreateSyncResult(outcome: .failed, needsUpdatePush: false)
+            }
+            let textChanged = recovered.rawText != record.payload.rawText
+            // A mismatch without any local edit revision is not a lost-response
+            // replay; refuse to adopt an unrelated/corrupt operation.
+            guard !textChanged || record.editRevision > record.syncedRevision else {
+                return CreateSyncResult(outcome: .failed, needsUpdatePush: false)
+            }
+            let recoveredRevision = textChanged
+                ? max(record.syncedRevision, record.editRevision - 1)
+                : record.editRevision
+            let needsUpdatePush = try store.markCreateSynced(
+                localId: record.id,
+                serverId: recovered.id,
+                sentText: recovered.rawText,
+                sentRevision: recoveredRevision
             )
             return CreateSyncResult(outcome: .synced, needsUpdatePush: needsUpdatePush)
         } catch {
@@ -218,12 +273,19 @@ public final class CaptureSyncCoordinator: @unchecked Sendable {
                 return (pushed, true)
             }
             do {
+                guard store.isActive(record) else {
+                    return (pushed, true)
+                }
                 try await transport.update(
                     serverId: serverID,
                     rawText: record.payload.rawText,
                 )
+                guard store.isActive(record) else {
+                    return (pushed, true)
+                }
                 try store.markUpdatePushed(
                     localId: record.id,
+                    syncedRevision: record.editRevision,
                     syncedAt: record.updatedAt,
                 )
                 pushed += 1
@@ -269,9 +331,7 @@ public final class CaptureSyncCoordinator: @unchecked Sendable {
 
 private extension LocalCaptureRecord {
     var needsUpdatePush: Bool {
-        guard serverId != nil else { return false }
-        guard let syncedAt else { return true }
-        return updatedAt > syncedAt
+        hasPendingUpdate
     }
 }
 

@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import SwiftUI
 import ChronicleDesktopCore
 
@@ -49,6 +50,9 @@ struct MainView: View {
     @State private var editDraft: CaptureEditDraft?
     @State private var pendingEditTarget: RowItem?
     @State private var loadingEditID: String?
+    @State private var searchTask: Task<Void, Never>?
+    @State private var askTask: Task<Void, Never>?
+    @State private var editTask: Task<Void, Never>?
 
     @StateObject private var captureDraft = MainCaptureSheetModel()
     @State private var capturePresented = false
@@ -208,7 +212,51 @@ struct MainView: View {
         .onReceive(NotificationCenter.default.publisher(for: .chroniclePinsChanged)) { _ in
             pinTick &+= 1
         }
+        .onReceive(clients.session.$generation.dropFirst()) { _ in
+            resetForSessionBoundary()
+            if clients.recall() != nil {
+                Task { await loadBrowse(reset: true) }
+            }
+        }
         .onDisappear { flushPendingDelete() }
+    }
+
+    private func resetForSessionBoundary() {
+        searchTask?.cancel()
+        askTask?.cancel()
+        editTask?.cancel()
+        searchTask = nil
+        askTask = nil
+        editTask = nil
+        pendingDeleteTask?.cancel()
+        pendingDeleteTask = nil
+        pendingDeleteId = nil
+        pendingDeletePlan = nil
+        query = ""
+        fragments = []
+        localRows = []
+        hits = []
+        browseRows = []
+        searched = false
+        degraded = false
+        nextCursor = nil
+        loadingMore = false
+        editDraft = nil
+        pendingEditTarget = nil
+        loadingEditID = nil
+        askQuery = ""
+        submittedQuestion = ""
+        answer = ""
+        sources = []
+        busy = false
+        error = ""
+        offline = false
+        signedIn = clients.recall() != nil
+        signInAfterCaptureDismissal = false
+        if capturePresented {
+            captureDraft.discardDraft()
+            capturePresented = false
+        }
     }
 
     private func completeCaptureDismissal() {
@@ -393,6 +441,7 @@ struct MainView: View {
     }
 
     private func runBrowse() {
+        let generation = clients.session.snapshot()
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
         error = ""
         if q.isEmpty {
@@ -407,18 +456,22 @@ struct MainView: View {
         // on top when signed in. Neither depends on the other.
         let client = clients.recall()
         busy = hits.isEmpty
-        Task { @MainActor in
-            mergeHits(await clients.localSemanticSearch(q))
+        searchTask?.cancel()
+        searchTask = Task { @MainActor in
+            let localSemantic = await clients.localSemanticSearch(q)
+            guard !Task.isCancelled, clients.session.isCurrent(generation) else { return }
+            mergeHits(localSemantic)
             if let client {
                 do {
                     let res = try await client.find(q: q)
+                    guard !Task.isCancelled, clients.session.isCurrent(generation) else { return }
                     mergeHits(res.items.map(RowItem.init))
                     degraded = res.degraded
                 } catch {
                     // Keep local results; a server/auth error must not blank them.
                 }
             }
-            busy = false
+            if !Task.isCancelled, clients.session.isCurrent(generation) { busy = false }
         }
     }
 
@@ -435,6 +488,7 @@ struct MainView: View {
     }
 
     private func loadBrowse(reset: Bool) async {
+        let generation = clients.session.snapshot()
         if reset {
             fragments = []
             localRows = clients.localRecent(200)
@@ -450,11 +504,13 @@ struct MainView: View {
         signedIn = true
         do {
             let page = try await client.recent(cursor: reset ? nil : nextCursor)
+            guard clients.session.isCurrent(generation) else { return }
             fragments.append(contentsOf: page.items)
             nextCursor = page.nextCursor
             offline = false
             error = ""
         } catch let err {
+            guard clients.session.isCurrent(generation) else { return }
             // Reachable token but the request failed (server down, or the session
             // could not be refreshed). Surface the error but still load the local
             // store so captures saved on this device stay browsable offline.
@@ -479,6 +535,7 @@ struct MainView: View {
     // MARK: - Ask
 
     private func runAsk() {
+        let generation = clients.session.snapshot()
         let q = askQuery.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !q.isEmpty, !busy else { return }
         guard let client = clients.recall() else { signedIn = false; return }
@@ -488,13 +545,18 @@ struct MainView: View {
         sources = []
         busy = true
         error = ""
-        Task { @MainActor in
+        askTask?.cancel()
+        askTask = Task { @MainActor in
             do {
                 let res = try await client.ask(question: q)
+                guard !Task.isCancelled, clients.session.isCurrent(generation) else { return }
                 answer = res.answer
                 sources = res.sources
-            } catch let err { error = describeCaptureError(err) }
-            busy = false
+            } catch let err {
+                guard !Task.isCancelled, clients.session.isCurrent(generation) else { return }
+                error = describeCaptureError(err)
+            }
+            if !Task.isCancelled, clients.session.isCurrent(generation) { busy = false }
         }
     }
 
@@ -547,10 +609,13 @@ struct MainView: View {
             return
         }
         loadingEditID = row.id
-        Task { @MainActor in
+        let generation = clients.session.snapshot()
+        editTask?.cancel()
+        editTask = Task { @MainActor in
             do {
                 let capture = try await client.capture(id: row.id)
-                guard loadingEditID == row.id else { return }
+                guard !Task.isCancelled, clients.session.isCurrent(generation),
+                      loadingEditID == row.id else { return }
                 loadingEditID = nil
                 guard let draft = CaptureEditDraft(item: RowItem(capture)) else {
                     error = L("This Capture has no editable text.")
@@ -558,7 +623,8 @@ struct MainView: View {
                 }
                 editDraft = draft
             } catch let err {
-                guard loadingEditID == row.id else { return }
+                guard !Task.isCancelled, clients.session.isCurrent(generation),
+                      loadingEditID == row.id else { return }
                 loadingEditID = nil
                 error = describeCaptureError(err)
             }
@@ -622,12 +688,18 @@ struct MainView: View {
                 error = L("Not signed in — sign in from Settings to edit.")
                 return
             }
-            Task { @MainActor in
+            let generation = clients.session.snapshot()
+            editTask?.cancel()
+            editTask = Task { @MainActor in
                 do {
                     _ = try await client.update(id: id, rawText: text)
+                    guard !Task.isCancelled, clients.session.isCurrent(generation) else { return }
                     CaptureEvents.postChanged(from: captureEventToken)
                     if searched { runBrowse() } else { await loadBrowse(reset: true) }
-                } catch let err { error = describeCaptureError(err) }
+                } catch let err {
+                    guard !Task.isCancelled, clients.session.isCurrent(generation) else { return }
+                    error = describeCaptureError(err)
+                }
             }
             return
         }
@@ -651,6 +723,7 @@ struct MainView: View {
 
     // Hide the row now; commit the soft delete after the undo window unless undone.
     private func delete(_ row: RowItem) {
+        let generation = clients.session.snapshot()
         let plan = captureDeletePlan(for: row, hasServerClient: clients.recall() != nil)
         guard plan != .unavailable else { return }
         error = ""
@@ -661,7 +734,8 @@ struct MainView: View {
         pendingDeleteTask = Task { @MainActor in
             try? await Task.sleep(for: Self.undoWindow)
             guard !Task.isCancelled else { return }
-            await commitDelete(plan)
+            guard clients.session.isCurrent(generation) else { return }
+            await commitDelete(plan, generation: generation)
         }
     }
 
@@ -677,13 +751,17 @@ struct MainView: View {
     // until commitDelete clears it.
     private func flushPendingDelete() {
         guard let plan = pendingDeletePlan else { return }
+        let generation = clients.session.snapshot()
         pendingDeleteTask?.cancel()
         pendingDeleteTask = nil
-        Task { @MainActor in await commitDelete(plan) }
+        Task { @MainActor in
+            await commitDelete(plan, generation: generation)
+        }
     }
 
     @MainActor
-    private func commitDelete(_ plan: CaptureDeletePlan) async {
+    private func commitDelete(_ plan: CaptureDeletePlan, generation: UInt64) async {
+        guard clients.session.isCurrent(generation) else { return }
         let id: String
         switch plan {
         case .serverThenLocal(let captureId):
@@ -695,7 +773,9 @@ struct MainView: View {
             }
             do {
                 try await client.delete(id: captureId)
+                guard clients.session.isCurrent(generation) else { return }
             } catch let err {
+                guard clients.session.isCurrent(generation) else { return }
                 // Couldn't delete — un-hide the row and surface the error.
                 clearPendingDelete(for: captureId)
                 error = describeCaptureError(err)
@@ -707,6 +787,7 @@ struct MainView: View {
         case .unavailable:
             return
         }
+        guard clients.session.isCurrent(generation) else { return }
         // The server soft-deleted it; also drop the cached local row, or it reappears
         // in offline browse/search. Local-only rows have no server trash yet, so the
         // deferred local delete is the whole operation.

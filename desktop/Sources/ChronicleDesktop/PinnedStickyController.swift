@@ -25,6 +25,7 @@ import ChronicleDesktopCore
 @MainActor
 final class PinnedStickyController: NSObject, NSWindowDelegate {
     private let recall: () -> RecallAPIClient?
+    private var activeScopeKey: String?
     private var windows: [String: NSPanel] = [:]
     private var saved: [String: PersistedPin] = [:]
     private var manualHeight: Set<String> = [] // pins the user resized: auto-fit off
@@ -38,8 +39,12 @@ final class PinnedStickyController: NSObject, NSWindowDelegate {
     private static let width: CGFloat = 300
     private static let defaultMaxHeight: CGFloat = 360
 
-    init(recall: @escaping () -> RecallAPIClient?) {
+    init(
+        recall: @escaping () -> RecallAPIClient?,
+        initialScope: LocalCaptureScope?
+    ) {
         self.recall = recall
+        activeScopeKey = initialScope?.persistenceKey
         super.init()
         load()
         // See class note: re-composite the glass on wake or every sticky renders dark.
@@ -80,6 +85,23 @@ final class PinnedStickyController: NSObject, NSWindowDelegate {
 
     func isPinned(_ id: String) -> Bool { saved[id] != nil }
 
+    /// Hide the previous account's cached stickies and load only the newly active
+    /// verified/offline scope. Legacy pins without a scope remain quarantined.
+    func activate(_ scope: LocalCaptureScope?) {
+        guard activeScopeKey != scope?.persistenceKey else { return }
+        for panel in Array(windows.values) {
+            panel.orderOut(nil)
+            panel.close()
+        }
+        windows.removeAll()
+        saved.removeAll()
+        manualHeight.removeAll()
+        deferredUntilNormalSpace.removeAll()
+        activeScopeKey = scope?.persistenceKey
+        load()
+        restore()
+    }
+
     /// Toggle a row's pinned state — the surface for the pin button on capture rows.
     func toggle(_ row: RowItem) {
         if isPinned(row.id) { unpin(row.id) } else { pin(row) }
@@ -109,6 +131,7 @@ final class PinnedStickyController: NSObject, NSWindowDelegate {
     // MARK: - Pin / unpin
 
     private func pin(_ row: RowItem) {
+        guard let activeScopeKey else { return }
         if let existing = windows[row.id] {
             surface(existing, id: row.id) // already pinned: just surface it
             return
@@ -116,7 +139,8 @@ final class PinnedStickyController: NSObject, NSWindowDelegate {
         let pin = PersistedPin(
             id: row.id, content: row.content, createdAt: row.createdAt,
             mediaType: row.modality, mediaUrl: row.mediaUrl,
-            todoDone: row.todoState.map { $0 == .done }, frame: nil)
+            todoDone: row.todoState.map { $0 == .done }, frame: nil,
+            accountScope: activeScopeKey)
         saved[row.id] = pin
         let panel = makePanel(for: pin, cascade: true)
         windows[row.id] = panel
@@ -274,10 +298,10 @@ final class PinnedStickyController: NSObject, NSWindowDelegate {
     // out, a 404 for a capture deleted elsewhere) keeps the cached sticky, which the
     // user can still read and close. Only a successful fetch updates cache + view.
     private func refresh(_ id: String) {
-        guard let client = recall() else { return }
+        guard let scope = activeScopeKey, let client = recall() else { return }
         Task { @MainActor in
             guard let capture = try? await client.capture(id: id) else { return }
-            guard saved[id] != nil else { return } // unpinned while in flight
+            guard activeScopeKey == scope, saved[id] != nil else { return }
             saved[id]?.content = capture.content
             saved[id]?.createdAt = capture.createdAt
             saved[id]?.mediaType = capture.mediaType
@@ -293,9 +317,10 @@ final class PinnedStickyController: NSObject, NSWindowDelegate {
     // MARK: - Persistence
 
     private func load() {
+        guard let activeScopeKey else { return }
         guard let data = try? Data(contentsOf: ChronicleDesktopPaths.defaultPinsURL()),
               let list = try? JSONDecoder().decode([PersistedPin].self, from: data) else { return }
-        for var pin in list {
+        for var pin in list where pin.accountScope == activeScopeKey {
             // Pins written before todoDone existed can still recover text-capture
             // state offline from their cached source text. Transcript-only pins
             // remain unknown until their normal best-effort server refresh.
@@ -309,11 +334,22 @@ final class PinnedStickyController: NSObject, NSWindowDelegate {
     }
 
     private func persist() {
+        guard let activeScopeKey else { return }
         let url = ChronicleDesktopPaths.defaultPinsURL()
         do {
             try FileManager.default.createDirectory(
                 at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-            let data = try JSONEncoder().encode(Array(saved.values))
+            let existing: [PersistedPin]
+            if let data = try? Data(contentsOf: url),
+               let decoded = try? JSONDecoder().decode([PersistedPin].self, from: data)
+            {
+                existing = decoded
+            } else {
+                existing = []
+            }
+            // Preserve every other account and all legacy unscoped pins verbatim.
+            let otherScopes = existing.filter { $0.accountScope != activeScopeKey }
+            let data = try JSONEncoder().encode(otherScopes + Array(saved.values))
             try data.write(to: url, options: .atomic)
         } catch {
             NSLog("Chronicle: pin persist failed: \(error)")
@@ -349,6 +385,7 @@ private struct PersistedPin: Codable {
     var todoDone: Bool?
     var frame: NSRect?
     var manualHeight: Bool?
+    var accountScope: String?
 }
 
 /// A borderless sticky can't become key by default, so its content never sees the

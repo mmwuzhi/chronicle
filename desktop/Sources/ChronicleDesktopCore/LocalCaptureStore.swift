@@ -1,13 +1,56 @@
 import Foundation
 import SQLite3
 
+/// The security boundary for Chronicle's on-device cache.
+///
+/// An API bearer token is not an identity: the desktop must first verify it with
+/// `/users/me`, then bind local data to that returned user id plus the API origin
+/// that vouched for it. Keeping the origin in the key prevents two independent
+/// Chronicle servers from colliding even if they issue the same user UUID.
+public struct LocalCaptureScope: Equatable, Hashable, Sendable {
+    public let apiOrigin: String
+    public let userID: String
+
+    public init?(apiURL: URL, userID: String) {
+        let userID = userID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !userID.isEmpty, let origin = Self.origin(of: apiURL) else { return nil }
+        self.apiOrigin = origin
+        self.userID = userID
+    }
+
+    public static func origin(of apiURL: URL) -> String? {
+        guard let scheme = apiURL.scheme?.lowercased(),
+              let host = apiURL.host?.lowercased(),
+              !scheme.isEmpty, !host.isEmpty
+        else { return nil }
+        let port = apiURL.port ?? (scheme == "https" ? 443 : 80)
+        let renderedHost = host.contains(":") ? "[\(host)]" : host
+        return "\(scheme)://\(renderedHost):\(port)"
+    }
+
+    /// Stable SQLite / pin-cache key. This is an identifier, not a secret.
+    public var persistenceKey: String {
+        "\(apiOrigin)\u{1F}\(userID)"
+    }
+
+    /// Deterministic scope for isolated test databases and the executable E2E
+    /// harness. Production app code never falls back to this scope.
+    public static let testing = LocalCaptureScope(
+        apiURL: URL(string: "http://localhost")!,
+        userID: "chronicle-desktop-test-user"
+    )!
+}
+
 public struct LocalCaptureRecord: Equatable, Identifiable, Sendable {
     public var id: String
+    public var scope: LocalCaptureScope
     public var payload: CapturePayload
     public var createdAt: Date
     public var updatedAt: Date
     public var serverId: String?
     public var syncedAt: Date?
+    public var editRevision: Int
+    public var syncedRevision: Int
     public var lastError: String?
     public var notifiedAt: Date?
 
@@ -18,6 +61,10 @@ public struct LocalCaptureRecord: Equatable, Identifiable, Sendable {
     public var isSynced: Bool {
         serverId != nil && syncedAt != nil
     }
+
+    public var hasPendingUpdate: Bool {
+        serverId != nil && editRevision > syncedRevision
+    }
 }
 
 public enum LocalCaptureStoreError: Error, Equatable {
@@ -25,6 +72,7 @@ public enum LocalCaptureStoreError: Error, Equatable {
     case execFailed(String)
     case prepareFailed(String)
     case stepFailed(String)
+    case scopeUnavailable
 }
 
 public struct LocalCaptureSyncBacklog: Equatable, Sendable {
@@ -39,31 +87,53 @@ public struct LocalCaptureSyncBacklog: Equatable, Sendable {
 public final class LocalCaptureStore: @unchecked Sendable {
     private let fileURL: URL
     private let lock = NSLock()
+    private var activeScope: LocalCaptureScope?
 
-    public init(fileURL: URL) {
+    public init(fileURL: URL, scope: LocalCaptureScope? = nil) {
         self.fileURL = fileURL
+        activeScope = scope
+    }
+
+    /// Switch the complete local data boundary atomically. Passing nil quarantines
+    /// every row until an identity has been verified (or a persisted, same-origin
+    /// signed-out binding is explicitly restored).
+    public func activate(_ scope: LocalCaptureScope?) {
+        lock.withLock {
+            activeScope = scope
+        }
+    }
+
+    public var scope: LocalCaptureScope? {
+        lock.withLock { activeScope }
+    }
+
+    public func isActive(_ record: LocalCaptureRecord) -> Bool {
+        lock.withLock { activeScope == record.scope }
     }
 
     @discardableResult
     public func create(_ payload: CapturePayload, now: Date = Date()) throws -> LocalCaptureRecord {
         let id = UUID().uuidString
-        let record = LocalCaptureRecord(
-            id: id,
-            payload: payload,
-            createdAt: now,
-            updatedAt: now,
-            serverId: nil,
-            syncedAt: nil,
-            lastError: nil,
-            notifiedAt: nil,
-        )
-        try withDatabase { db in
+        return try withScopedDatabase { db, scope in
+            let record = LocalCaptureRecord(
+                id: id,
+                scope: scope,
+                payload: payload,
+                createdAt: now,
+                updatedAt: now,
+                serverId: nil,
+                syncedAt: nil,
+                editRevision: 0,
+                syncedRevision: 0,
+                lastError: nil,
+                notifiedAt: nil,
+            )
             let sql = """
                 INSERT INTO local_captures (
                     id, server_id, raw_text, media_type, classified_as, source,
                     remind_at, created_at, updated_at, synced_at, last_error, notified_at,
-                    remind_hide
-                ) VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, ?)
+                    remind_hide, account_scope
+                ) VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, ?, ?)
                 """
             try executeStatement(db, sql) { stmt in
                 bindText(stmt, 1, record.id)
@@ -78,9 +148,10 @@ public final class LocalCaptureStore: @unchecked Sendable {
                 bindDate(stmt, 7, record.createdAt)
                 bindDate(stmt, 8, record.updatedAt)
                 bindOptionalBool(stmt, 9, payload.remindHide)
+                bindText(stmt, 10, scope.persistenceKey)
             }
+            return record
         }
-        return record
     }
 
     // Offline-first keyword search over the local store. The desktop searches
@@ -98,15 +169,15 @@ public final class LocalCaptureStore: @unchecked Sendable {
             """
             SELECT id, server_id, raw_text, media_type, classified_as, source,
                    remind_at, created_at, updated_at, synced_at, last_error, notified_at,
-                   remind_hide
+                   remind_hide, account_scope, edit_revision, synced_revision
             FROM local_captures
-            WHERE raw_text LIKE ? ESCAPE '\\'
+            WHERE account_scope = ? AND raw_text LIKE ? ESCAPE '\\'
             ORDER BY created_at DESC
             LIMIT ?
             """,
         ) { stmt in
-            bindText(stmt, 1, "%\(escaped)%")
-            sqlite3_bind_int(stmt, 2, Int32(limit))
+            bindText(stmt, 2, "%\(escaped)%")
+            sqlite3_bind_int(stmt, 3, Int32(limit))
         }
     }
 
@@ -120,31 +191,36 @@ public final class LocalCaptureStore: @unchecked Sendable {
             """
             SELECT id, server_id, raw_text, media_type, classified_as, source,
                    remind_at, created_at, updated_at, synced_at, last_error, notified_at,
-                   remind_hide
+                   remind_hide, account_scope, edit_revision, synced_revision
             FROM local_captures
-            WHERE trim(raw_text) <> ''
+            WHERE account_scope = ?
+              AND trim(raw_text) <> ''
               AND (embedding IS NULL OR embed_model IS NOT ?)
             ORDER BY created_at DESC
             LIMIT ?
             """,
         ) { stmt in
-            bindText(stmt, 1, model)
-            sqlite3_bind_int(stmt, 2, Int32(limit))
+            bindText(stmt, 2, model)
+            sqlite3_bind_int(stmt, 3, Int32(limit))
         }
     }
 
     // Cache one capture's embedding (raw float32 bytes) and its producing model.
     public func setEmbedding(id: String, model: String, vector: [Float]) throws {
         let data = vector.withUnsafeBytes { Data($0) }
-        try withDatabase { db in
+        try withScopedDatabase { db, scope in
             try executeStatement(
-                db, "UPDATE local_captures SET embedding = ?, embed_model = ? WHERE id = ?"
+                db, """
+                UPDATE local_captures SET embedding = ?, embed_model = ?
+                WHERE id = ? AND account_scope = ?
+                """
             ) { stmt in
                 data.withUnsafeBytes { raw in
                     _ = sqlite3_bind_blob(stmt, 1, raw.baseAddress, Int32(data.count), sqliteTransient)
                 }
                 bindText(stmt, 2, model)
                 bindText(stmt, 3, id)
+                bindText(stmt, 4, scope.persistenceKey)
             }
         }
     }
@@ -153,20 +229,21 @@ public final class LocalCaptureStore: @unchecked Sendable {
     // vector — the corpus the caller ranks a query against. Small by nature (the
     // on-device store), so loading all vectors and ranking in memory is fine.
     public func embeddedRows(model: String) throws -> [(record: LocalCaptureRecord, vector: [Float])] {
-        try withDatabase { db in
+        try withScopedDatabase { db, scope in
             let sql = """
                 SELECT id, server_id, raw_text, media_type, classified_as, source,
                        remind_at, created_at, updated_at, synced_at, last_error, notified_at,
-                       remind_hide, embedding
+                       remind_hide, account_scope, edit_revision, synced_revision, embedding
                 FROM local_captures
-                WHERE embed_model = ? AND embedding IS NOT NULL
+                WHERE account_scope = ? AND embed_model = ? AND embedding IS NOT NULL
                 """
             var stmt: OpaquePointer?
             guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
                 throw LocalCaptureStoreError.prepareFailed(lastError(db))
             }
             defer { sqlite3_finalize(stmt) }
-            bindText(stmt, 1, model)
+            bindText(stmt, 1, scope.persistenceKey)
+            bindText(stmt, 2, model)
 
             var rows: [(record: LocalCaptureRecord, vector: [Float])] = []
             while true {
@@ -175,7 +252,7 @@ public final class LocalCaptureStore: @unchecked Sendable {
                 guard result == SQLITE_ROW else {
                     throw LocalCaptureStoreError.stepFailed(lastError(db))
                 }
-                let vector = columnFloatArray(stmt, 13)
+                let vector = columnFloatArray(stmt, 16)
                 if !vector.isEmpty {
                     rows.append((try decodeRecord(stmt), vector))
                 }
@@ -189,14 +266,15 @@ public final class LocalCaptureStore: @unchecked Sendable {
             """
             SELECT id, server_id, raw_text, media_type, classified_as, source,
                    remind_at, created_at, updated_at, synced_at, last_error, notified_at,
-                   remind_hide
+                   remind_hide, account_scope, edit_revision, synced_revision
             FROM local_captures
+            WHERE account_scope = ?
             ORDER BY created_at DESC
             LIMIT ? OFFSET ?
             """,
         ) { stmt in
-            sqlite3_bind_int(stmt, 1, Int32(limit))
-            sqlite3_bind_int(stmt, 2, Int32(offset))
+            sqlite3_bind_int(stmt, 2, Int32(limit))
+            sqlite3_bind_int(stmt, 3, Int32(offset))
         }
     }
 
@@ -205,35 +283,37 @@ public final class LocalCaptureStore: @unchecked Sendable {
             """
             SELECT id, server_id, raw_text, media_type, classified_as, source,
                    remind_at, created_at, updated_at, synced_at, last_error, notified_at,
-                   remind_hide
+                   remind_hide, account_scope, edit_revision, synced_revision
             FROM local_captures
-            WHERE server_id IS NULL
+            WHERE account_scope = ? AND server_id IS NULL
             ORDER BY created_at
             LIMIT ?
             """,
         ) { stmt in
-            sqlite3_bind_int(stmt, 1, Int32(limit))
+            sqlite3_bind_int(stmt, 2, Int32(limit))
         }
     }
 
-    // Server-backed rows edited since their last sync (updated_at > synced_at):
+    // Server-backed rows whose edit revision is ahead of its acknowledged revision:
     // offline/optimistic edits waiting to be PATCHed back. Distinct from
     // pendingSync (never-created rows, server_id IS NULL) — these already exist on
-    // the server and only need their new text pushed. `synced_at IS NULL` is
-    // defensive; a server-backed row should always carry one.
+    // the server and only need their new text pushed. Revisions are monotonic and
+    // deliberately independent of wall-clock changes.
     public func pendingUpdates(limit: Int = 50) throws -> [LocalCaptureRecord] {
         try query(
             """
             SELECT id, server_id, raw_text, media_type, classified_as, source,
                    remind_at, created_at, updated_at, synced_at, last_error, notified_at,
-                   remind_hide
+                   remind_hide, account_scope, edit_revision, synced_revision
             FROM local_captures
-            WHERE server_id IS NOT NULL AND (synced_at IS NULL OR updated_at > synced_at)
+            WHERE account_scope = ?
+              AND server_id IS NOT NULL
+              AND edit_revision > synced_revision
             ORDER BY updated_at
             LIMIT ?
             """,
         ) { stmt in
-            sqlite3_bind_int(stmt, 1, Int32(limit))
+            sqlite3_bind_int(stmt, 2, Int32(limit))
         }
     }
 
@@ -241,22 +321,24 @@ public final class LocalCaptureStore: @unchecked Sendable {
     /// Count both kinds in SQLite instead of loading and decoding bounded record
     /// lists: the user-visible backlog must not silently stop at a page limit.
     public func syncBacklog() throws -> LocalCaptureSyncBacklog {
-        try withDatabase { db in
+        try withScopedDatabase { db, scope in
             let sql = """
                 SELECT
                     COALESCE(SUM(CASE WHEN server_id IS NULL THEN 1 ELSE 0 END), 0),
                     COALESCE(SUM(CASE
                         WHEN server_id IS NOT NULL
-                         AND (synced_at IS NULL OR updated_at > synced_at)
+                         AND edit_revision > synced_revision
                         THEN 1 ELSE 0
                     END), 0)
                 FROM local_captures
+                WHERE account_scope = ?
                 """
             var stmt: OpaquePointer?
             guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
                 throw LocalCaptureStoreError.prepareFailed(lastError(db))
             }
             defer { sqlite3_finalize(stmt) }
+            bindText(stmt, 1, scope.persistenceKey)
             guard sqlite3_step(stmt) == SQLITE_ROW else {
                 throw LocalCaptureStoreError.stepFailed(lastError(db))
             }
@@ -279,32 +361,40 @@ public final class LocalCaptureStore: @unchecked Sendable {
             """
             SELECT id, server_id, raw_text, media_type, classified_as, source,
                    remind_at, created_at, updated_at, synced_at, last_error, notified_at,
-                   remind_hide
+                   remind_hide, account_scope, edit_revision, synced_revision
             FROM local_captures
-            WHERE remind_at IS NOT NULL AND remind_at > ?
+            WHERE account_scope = ? AND remind_at IS NOT NULL AND remind_at > ?
             ORDER BY remind_at
             """,
         ) { stmt in
-            bindDate(stmt, 1, now)
+            bindDate(stmt, 2, now)
         }
     }
 
     public func markSynced(localId: String, serverId: String, syncedAt: Date = Date()) throws {
-        try withDatabase { db in
-            try executeStatement(db, "DELETE FROM local_captures WHERE server_id = ? AND id <> ?") { stmt in
-                bindText(stmt, 1, serverId)
-                bindText(stmt, 2, localId)
+        try withScopedDatabase { db, scope in
+            try executeStatement(
+                db, """
+                DELETE FROM local_captures
+                WHERE account_scope = ? AND server_id = ? AND id <> ?
+                """
+            ) { stmt in
+                bindText(stmt, 1, scope.persistenceKey)
+                bindText(stmt, 2, serverId)
+                bindText(stmt, 3, localId)
             }
             let sql = """
                 UPDATE local_captures
-                SET server_id = ?, synced_at = ?, updated_at = ?, last_error = NULL
-                WHERE id = ?
+                SET server_id = ?, synced_at = ?, updated_at = ?,
+                    synced_revision = edit_revision, last_error = NULL
+                WHERE id = ? AND account_scope = ?
                 """
             try executeStatement(db, sql) { stmt in
                 bindText(stmt, 1, serverId)
                 bindDate(stmt, 2, syncedAt)
                 bindDate(stmt, 3, syncedAt)
                 bindText(stmt, 4, localId)
+                bindText(stmt, 5, scope.persistenceKey)
             }
         }
     }
@@ -319,22 +409,13 @@ public final class LocalCaptureStore: @unchecked Sendable {
         createdAt: Date = Date(),
         syncedAt: Date = Date()
     ) throws -> LocalCaptureRecord {
-        try withDatabase { db in
+        try withScopedDatabase { db, scope in
             let sql = """
-                INSERT INTO local_captures (
+                INSERT OR IGNORE INTO local_captures (
                     id, server_id, raw_text, media_type, classified_as, source,
                     remind_at, created_at, updated_at, synced_at, last_error, notified_at,
-                    remind_hide
-                ) VALUES (?, ?, ?, ?, 'unclassified', ?, ?, ?, ?, ?, NULL, NULL, ?)
-                ON CONFLICT(server_id) DO UPDATE SET
-                    raw_text = excluded.raw_text,
-                    media_type = excluded.media_type,
-                    source = excluded.source,
-                    remind_at = excluded.remind_at,
-                    updated_at = excluded.updated_at,
-                    synced_at = excluded.synced_at,
-                    last_error = NULL,
-                    remind_hide = excluded.remind_hide
+                    remind_hide, account_scope
+                ) VALUES (?, ?, ?, ?, 'unclassified', ?, ?, ?, ?, ?, NULL, NULL, ?, ?)
                 """
             try executeStatement(db, sql) { stmt in
                 bindText(stmt, 1, UUID().uuidString)
@@ -347,6 +428,26 @@ public final class LocalCaptureStore: @unchecked Sendable {
                 bindDate(stmt, 8, syncedAt)
                 bindDate(stmt, 9, syncedAt)
                 bindOptionalBool(stmt, 10, payload.remindHide)
+                bindText(stmt, 11, scope.persistenceKey)
+            }
+            try executeStatement(
+                db, """
+                UPDATE local_captures
+                SET raw_text = ?, media_type = ?, source = ?, remind_at = ?,
+                    updated_at = ?, synced_at = ?, last_error = NULL,
+                    remind_hide = ?, synced_revision = edit_revision
+                WHERE account_scope = ? AND server_id = ?
+                """
+            ) { stmt in
+                bindText(stmt, 1, payload.rawText)
+                bindText(stmt, 2, payload.mediaType)
+                bindText(stmt, 3, payload.source)
+                bindOptionalDate(stmt, 4, payload.remindAt)
+                bindDate(stmt, 5, syncedAt)
+                bindDate(stmt, 6, syncedAt)
+                bindOptionalBool(stmt, 7, payload.remindHide)
+                bindText(stmt, 8, scope.persistenceKey)
+                bindText(stmt, 9, serverId)
             }
         }
         guard let record = try find(serverId: serverId) else {
@@ -358,59 +459,59 @@ public final class LocalCaptureStore: @unchecked Sendable {
     // Complete a create-sync. Marks the row synced (server_id + synced_at), but if
     // its text changed since `sentText` was snapshotted — an edit raced the
     // in-flight create POST, so the server received the stale create payload —
-    // leaves the row dirty (updated_at > synced_at) so pendingUpdates re-PATCHes
+    // leaves edit_revision ahead of synced_revision so pendingUpdates re-PATCHes
     // the newer text instead of stranding the server on the old copy. Returns true
     // when a concurrent edit was detected and the row was kept dirty for re-push.
     @discardableResult
     public func markCreateSynced(
-        localId: String, serverId: String, sentText: String,
-        syncedAt: Date = Date(), reeditStamp: Date? = nil
+        localId: String, serverId: String, sentText: String, sentRevision: Int,
+        syncedAt: Date = Date()
     ) throws -> Bool {
-        // DateCodec persists fractional seconds at millisecond precision. Two
-        // back-to-back Date() values can therefore round to the same stored value,
-        // making updated_at == synced_at and incorrectly clearing the dirty row.
-        // Keep the test override, but make the production fallback strictly later.
-        let dirtyStamp = reeditStamp ?? syncedAt.addingTimeInterval(0.001)
-        return try withDatabase { db in
+        return try withScopedDatabase { db, scope in
             // Keep the create completion and re-edit detection under the store
             // lock. Most importantly, never write raw_text here: an edit arriving
             // during the POST already owns that column and must not be overwritten
             // by the older payload snapshot.
             try executeStatement(
-                db, "DELETE FROM local_captures WHERE server_id = ? AND id <> ?"
+                db, """
+                DELETE FROM local_captures
+                WHERE account_scope = ? AND server_id = ? AND id <> ?
+                """
             ) { stmt in
-                bindText(stmt, 1, serverId)
-                bindText(stmt, 2, localId)
+                bindText(stmt, 1, scope.persistenceKey)
+                bindText(stmt, 2, serverId)
+                bindText(stmt, 3, localId)
             }
             let sql = """
                 UPDATE local_captures
                 SET server_id = ?, synced_at = ?,
-                    updated_at = CASE
-                        WHEN raw_text = ? THEN ?
-                        WHEN updated_at > ? THEN updated_at
-                        ELSE ?
-                    END,
+                    synced_revision = MAX(synced_revision, ?),
+                    updated_at = CASE WHEN raw_text = ? THEN ? ELSE updated_at END,
                     last_error = NULL
-                WHERE id = ?
+                WHERE id = ? AND account_scope = ?
                 """
             try executeStatement(db, sql) { stmt in
                 bindText(stmt, 1, serverId)
                 bindDate(stmt, 2, syncedAt)
-                bindText(stmt, 3, sentText)
-                bindDate(stmt, 4, syncedAt)
+                sqlite3_bind_int64(stmt, 3, sqlite3_int64(sentRevision))
+                bindText(stmt, 4, sentText)
                 bindDate(stmt, 5, syncedAt)
-                bindDate(stmt, 6, dirtyStamp)
-                bindText(stmt, 7, localId)
+                bindText(stmt, 6, localId)
+                bindText(stmt, 7, scope.persistenceKey)
             }
 
             var stmt: OpaquePointer?
             guard sqlite3_prepare_v2(
-                db, "SELECT raw_text FROM local_captures WHERE id = ?", -1, &stmt, nil
+                db, """
+                SELECT raw_text FROM local_captures
+                WHERE id = ? AND account_scope = ?
+                """, -1, &stmt, nil
             ) == SQLITE_OK else {
                 throw LocalCaptureStoreError.prepareFailed(lastError(db))
             }
             defer { sqlite3_finalize(stmt) }
             bindText(stmt, 1, localId)
+            bindText(stmt, 2, scope.persistenceKey)
             guard sqlite3_step(stmt) == SQLITE_ROW else {
                 throw LocalCaptureStoreError.stepFailed(lastError(db))
             }
@@ -418,25 +519,34 @@ public final class LocalCaptureStore: @unchecked Sendable {
         }
     }
 
-    // Mark a server-backed row's edit as pushed by advancing synced_at to the
-    // updated_at we just PATCHed — never re-stamping updated_at or raw_text. If a
-    // concurrent re-edit bumped updated_at past `syncedAt`, the row stays dirty
-    // (updated_at > synced_at) and re-pushes on the next drain, so an edit made
-    // during the network round-trip is never silently dropped.
-    public func markUpdatePushed(localId: String, syncedAt: Date) throws {
-        try withDatabase { db in
+    // Acknowledge exactly the revision that was PATCHed. A concurrent re-edit
+    // increments edit_revision, so it stays ahead of synced_revision regardless
+    // of wall-clock movement and is replayed on the next pass.
+    public func markUpdatePushed(
+        localId: String,
+        syncedRevision: Int,
+        syncedAt: Date
+    ) throws {
+        try withScopedDatabase { db, scope in
             try executeStatement(
-                db, "UPDATE local_captures SET synced_at = ?, last_error = NULL WHERE id = ?"
+                db, """
+                UPDATE local_captures
+                SET synced_at = ?, synced_revision = MAX(synced_revision, ?),
+                    last_error = NULL
+                WHERE id = ? AND account_scope = ?
+                """
             ) { stmt in
                 bindDate(stmt, 1, syncedAt)
-                bindText(stmt, 2, localId)
+                sqlite3_bind_int64(stmt, 2, sqlite3_int64(syncedRevision))
+                bindText(stmt, 3, localId)
+                bindText(stmt, 4, scope.persistenceKey)
             }
         }
     }
 
     // Edit a capture's text in place (offline-first). Bumps updated_at but leaves
-    // synced_at untouched, so a server-backed row becomes "dirty"
-    // (updated_at > synced_at) and pendingUpdates re-pushes it; an unsynced row
+    // synced_revision untouched, so a server-backed row becomes dirty by revision
+    // and pendingUpdates re-pushes it; an unsynced row
     // just carries the new text into its eventual create. `id` may be a server id
     // (synced rows key on it) or a local id (unsynced), so match both — as delete
     // does. Also drops any cached embedding: the vector indexed the *old* text, so
@@ -448,17 +558,19 @@ public final class LocalCaptureStore: @unchecked Sendable {
     // against the server instead.
     @discardableResult
     public func setText(id: String, rawText: String, now: Date = Date()) throws -> Int {
-        try withDatabase { db in
+        try withScopedDatabase { db, scope in
             let sql = """
                 UPDATE local_captures
-                SET raw_text = ?, updated_at = ?, embedding = NULL, embed_model = NULL
-                WHERE server_id = ? OR id = ?
+                SET raw_text = ?, updated_at = ?, edit_revision = edit_revision + 1,
+                    embedding = NULL, embed_model = NULL
+                WHERE account_scope = ? AND (server_id = ? OR id = ?)
                 """
             try executeStatement(db, sql) { stmt in
                 bindText(stmt, 1, rawText)
                 bindDate(stmt, 2, now)
-                bindText(stmt, 3, id)
+                bindText(stmt, 3, scope.persistenceKey)
                 bindText(stmt, 4, id)
+                bindText(stmt, 5, id)
             }
             return Int(sqlite3_changes(db))
         }
@@ -471,27 +583,32 @@ public final class LocalCaptureStore: @unchecked Sendable {
     // both. Hard delete is correct here — this is the on-device cache, not the
     // server's soft-delete-only user data.
     public func delete(id: String) throws {
-        try withDatabase { db in
+        try withScopedDatabase { db, scope in
             try executeStatement(
-                db, "DELETE FROM local_captures WHERE server_id = ? OR id = ?"
+                db, """
+                DELETE FROM local_captures
+                WHERE account_scope = ? AND (server_id = ? OR id = ?)
+                """
             ) { stmt in
-                bindText(stmt, 1, id)
+                bindText(stmt, 1, scope.persistenceKey)
                 bindText(stmt, 2, id)
+                bindText(stmt, 3, id)
             }
         }
     }
 
     public func markFailed(localId: String, error: Error, now: Date = Date()) throws {
-        try withDatabase { db in
+        try withScopedDatabase { db, scope in
             let sql = """
                 UPDATE local_captures
                 SET last_error = ?, updated_at = ?
-                WHERE id = ?
+                WHERE id = ? AND account_scope = ?
                 """
             try executeStatement(db, sql) { stmt in
                 bindText(stmt, 1, String(describing: error))
                 bindDate(stmt, 2, now)
                 bindText(stmt, 3, localId)
+                bindText(stmt, 4, scope.persistenceKey)
             }
         }
     }
@@ -503,21 +620,14 @@ public final class LocalCaptureStore: @unchecked Sendable {
         remindAt: Date,
         now: Date = Date()
     ) throws -> LocalCaptureRecord {
-        try withDatabase { db in
-            let sql = """
-                INSERT INTO local_captures (
+        try withScopedDatabase { db, scope in
+            try executeStatement(db, """
+                INSERT OR IGNORE INTO local_captures (
                     id, server_id, raw_text, media_type, classified_as, source,
-                    remind_at, created_at, updated_at, synced_at, last_error, notified_at
-                ) VALUES (?, ?, ?, 'text', 'unclassified', 'server', ?, ?, ?, ?, NULL, NULL)
-                ON CONFLICT(server_id) DO UPDATE SET
-                    raw_text = excluded.raw_text,
-                    remind_at = excluded.remind_at,
-                    updated_at = excluded.updated_at,
-                    synced_at = excluded.synced_at,
-                    last_error = NULL,
-                    notified_at = NULL
-                """
-            try executeStatement(db, sql) { stmt in
+                    remind_at, created_at, updated_at, synced_at, last_error, notified_at,
+                    account_scope
+                ) VALUES (?, ?, ?, 'text', 'unclassified', 'server', ?, ?, ?, ?, NULL, NULL, ?)
+                """) { stmt in
                 bindText(stmt, 1, UUID().uuidString)
                 bindText(stmt, 2, serverId)
                 bindText(stmt, 3, text)
@@ -525,6 +635,36 @@ public final class LocalCaptureStore: @unchecked Sendable {
                 bindDate(stmt, 5, now)
                 bindDate(stmt, 6, now)
                 bindDate(stmt, 7, now)
+                bindText(stmt, 8, scope.persistenceKey)
+            }
+            // A reminder refresh is not a text edit. Preserve a dirty offline edit
+            // and its clocks so the update drain still PATCHes the user's text;
+            // only clean rows may accept the server's summary snapshot.
+            try executeStatement(db, """
+                UPDATE local_captures
+                SET raw_text = CASE
+                        WHEN edit_revision <= synced_revision THEN ?
+                        ELSE raw_text
+                    END,
+                    remind_at = ?,
+                    updated_at = CASE
+                        WHEN edit_revision <= synced_revision THEN ?
+                        ELSE updated_at
+                    END,
+                    synced_at = CASE
+                        WHEN edit_revision <= synced_revision THEN ?
+                        ELSE synced_at
+                    END,
+                    last_error = NULL,
+                    notified_at = NULL
+                WHERE account_scope = ? AND server_id = ?
+                """) { stmt in
+                bindText(stmt, 1, text)
+                bindDate(stmt, 2, remindAt)
+                bindDate(stmt, 3, now)
+                bindDate(stmt, 4, now)
+                bindText(stmt, 5, scope.persistenceKey)
+                bindText(stmt, 6, serverId)
             }
         }
         if let existing = try find(serverId: serverId) {
@@ -538,13 +678,13 @@ public final class LocalCaptureStore: @unchecked Sendable {
             """
             SELECT id, server_id, raw_text, media_type, classified_as, source,
                    remind_at, created_at, updated_at, synced_at, last_error, notified_at,
-                   remind_hide
+                   remind_hide, account_scope, edit_revision, synced_revision
             FROM local_captures
-            WHERE server_id = ?
+            WHERE account_scope = ? AND server_id = ?
             LIMIT 1
             """,
         ) { stmt in
-            bindText(stmt, 1, serverId)
+            bindText(stmt, 2, serverId)
         }.first
     }
 
@@ -556,23 +696,27 @@ public final class LocalCaptureStore: @unchecked Sendable {
             """
             SELECT id, server_id, raw_text, media_type, classified_as, source,
                    remind_at, created_at, updated_at, synced_at, last_error, notified_at,
-                   remind_hide
+                   remind_hide, account_scope, edit_revision, synced_revision
             FROM local_captures
-            WHERE id = ?
+            WHERE account_scope = ? AND id = ?
             LIMIT 1
             """,
         ) { stmt in
-            bindText(stmt, 1, localId)
+            bindText(stmt, 2, localId)
         }.first
     }
 
     public func count() throws -> Int {
-        try withDatabase { db in
+        try withScopedDatabase { db, scope in
             var stmt: OpaquePointer?
-            guard sqlite3_prepare_v2(db, "SELECT COUNT(*) FROM local_captures", -1, &stmt, nil) == SQLITE_OK else {
+            guard sqlite3_prepare_v2(
+                db, "SELECT COUNT(*) FROM local_captures WHERE account_scope = ?",
+                -1, &stmt, nil
+            ) == SQLITE_OK else {
                 throw LocalCaptureStoreError.prepareFailed(lastError(db))
             }
             defer { sqlite3_finalize(stmt) }
+            bindText(stmt, 1, scope.persistenceKey)
             guard sqlite3_step(stmt) == SQLITE_ROW else {
                 throw LocalCaptureStoreError.stepFailed(lastError(db))
             }
@@ -581,19 +725,22 @@ public final class LocalCaptureStore: @unchecked Sendable {
     }
 
     // Record that a reminder's local notification fired. This is bookkeeping, NOT a
-    // text edit: it must not touch `updated_at`. The offline edit-replay queue keys
-    // dirtiness on `updated_at > synced_at` (see pendingUpdates), so bumping it here
-    // would make a server-backed reminder look edited and get PATCHed to
+    // text edit: it must not increment edit_revision. Doing so would make a
+    // server-backed reminder look edited and get PATCHed to
     // /captures/{id} with the cached text — for server-sourced reminders that text
     // is the reminder *summary*, so the drain would overwrite the capture body.
-    // Only user text edits (setText) and create may advance `updated_at`.
+    // Only user text edits (setText) advance edit_revision.
     public func markNotified(localId: String, now: Date = Date()) throws {
-        try withDatabase { db in
+        try withScopedDatabase { db, scope in
             try executeStatement(
-                db, "UPDATE local_captures SET notified_at = ? WHERE id = ?"
+                db, """
+                UPDATE local_captures SET notified_at = ?
+                WHERE id = ? AND account_scope = ?
+                """
             ) { stmt in
                 bindDate(stmt, 1, now)
                 bindText(stmt, 2, localId)
+                bindText(stmt, 3, scope.persistenceKey)
             }
         }
     }
@@ -604,20 +751,14 @@ public final class LocalCaptureStore: @unchecked Sendable {
         remindAt: Date,
         now: Date = Date()
     ) throws -> LocalCaptureRecord? {
-        try withDatabase { db in
-            let sql = """
-                INSERT INTO local_captures (
+        try withScopedDatabase { db, scope in
+            try executeStatement(db, """
+                INSERT OR IGNORE INTO local_captures (
                     id, server_id, raw_text, media_type, classified_as, source,
-                    remind_at, created_at, updated_at, synced_at, last_error, notified_at
-                ) VALUES (?, ?, ?, 'text', 'unclassified', 'server', ?, ?, ?, ?, NULL, NULL)
-                ON CONFLICT(server_id) DO UPDATE SET
-                    raw_text = excluded.raw_text,
-                    remind_at = excluded.remind_at,
-                    updated_at = excluded.updated_at,
-                    synced_at = excluded.synced_at,
-                    last_error = NULL
-                """
-            try executeStatement(db, sql) { stmt in
+                    remind_at, created_at, updated_at, synced_at, last_error, notified_at,
+                    account_scope
+                ) VALUES (?, ?, ?, 'text', 'unclassified', 'server', ?, ?, ?, ?, NULL, NULL, ?)
+                """) { stmt in
                 bindText(stmt, 1, UUID().uuidString)
                 bindText(stmt, 2, serverId)
                 bindText(stmt, 3, text)
@@ -625,25 +766,54 @@ public final class LocalCaptureStore: @unchecked Sendable {
                 bindDate(stmt, 5, now)
                 bindDate(stmt, 6, now)
                 bindDate(stmt, 7, now)
+                bindText(stmt, 8, scope.persistenceKey)
+            }
+            try executeStatement(db, """
+                UPDATE local_captures
+                SET raw_text = CASE
+                        WHEN edit_revision <= synced_revision THEN ?
+                        ELSE raw_text
+                    END,
+                    remind_at = ?,
+                    updated_at = CASE
+                        WHEN edit_revision <= synced_revision THEN ?
+                        ELSE updated_at
+                    END,
+                    synced_at = CASE
+                        WHEN edit_revision <= synced_revision THEN ?
+                        ELSE synced_at
+                    END,
+                    last_error = NULL
+                WHERE account_scope = ? AND server_id = ?
+                """) { stmt in
+                bindText(stmt, 1, text)
+                bindDate(stmt, 2, remindAt)
+                bindDate(stmt, 3, now)
+                bindDate(stmt, 4, now)
+                bindText(stmt, 5, scope.persistenceKey)
+                bindText(stmt, 6, serverId)
             }
         }
         guard let record = try find(serverId: serverId), record.notifiedAt == nil else {
             return nil
         }
-        try markNotified(localId: record.id, now: now)
-        return try find(serverId: serverId)
+        // Persisting the server row is only phase one. The notifier marks it
+        // notified after UNUserNotificationCenter accepts the stable-id request;
+        // an add/crash failure must leave this record retryable.
+        return record
     }
 
     private func query(
         _ sql: String,
         bind: (OpaquePointer?) -> Void
     ) throws -> [LocalCaptureRecord] {
-        try withDatabase { db in
+        try withScopedDatabase { db, scope in
             var stmt: OpaquePointer?
             guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
                 throw LocalCaptureStoreError.prepareFailed(lastError(db))
             }
             defer { sqlite3_finalize(stmt) }
+            bindText(stmt, 1, scope.persistenceKey)
             bind(stmt)
 
             var rows: [LocalCaptureRecord] = []
@@ -681,11 +851,22 @@ public final class LocalCaptureStore: @unchecked Sendable {
         return try body(db)
     }
 
+    private func withScopedDatabase<T>(
+        _ body: (OpaquePointer?, LocalCaptureScope) throws -> T
+    ) throws -> T {
+        try withDatabase { db in
+            guard let activeScope else {
+                throw LocalCaptureStoreError.scopeUnavailable
+            }
+            return try body(db, activeScope)
+        }
+    }
+
     private func migrate(_ db: OpaquePointer?) throws {
         let sql = """
             CREATE TABLE IF NOT EXISTS local_captures (
                 id TEXT PRIMARY KEY,
-                server_id TEXT UNIQUE,
+                server_id TEXT,
                 raw_text TEXT NOT NULL,
                 media_type TEXT NOT NULL,
                 classified_as TEXT NOT NULL,
@@ -718,6 +899,120 @@ public final class LocalCaptureStore: @unchecked Sendable {
         // invalidate stale vectors (rowsNeedingEmbedding re-embeds them).
         try ensureColumn(db, table: "local_captures", column: "embedding", definition: "BLOB")
         try ensureColumn(db, table: "local_captures", column: "embed_model", definition: "TEXT")
+        // NULL deliberately quarantines every row written by an older, unscoped
+        // build. There is no safe way to infer which Chronicle account owned it,
+        // so it must never appear or enter a future account's sync queue.
+        try ensureColumn(db, table: "local_captures", column: "account_scope", definition: "TEXT")
+        try ensureColumn(
+            db, table: "local_captures", column: "edit_revision",
+            definition: "INTEGER NOT NULL DEFAULT 0"
+        )
+        try ensureColumn(
+            db, table: "local_captures", column: "synced_revision",
+            definition: "INTEGER NOT NULL DEFAULT 0"
+        )
+        // Preserve pending edits from the timestamp-based schema on first upgrade.
+        // False positives are safer than dropping an edit: a replay is idempotent,
+        // while an unqueued local change is permanent data loss.
+        let migrateDirtyRows = """
+            UPDATE local_captures
+            SET edit_revision = 1, synced_revision = 0
+            WHERE server_id IS NOT NULL
+              AND (synced_at IS NULL OR updated_at <> synced_at)
+              AND edit_revision = 0
+              AND synced_revision = 0;
+            """
+        if sqlite3_exec(db, migrateDirtyRows, nil, nil, nil) != SQLITE_OK {
+            throw LocalCaptureStoreError.execFailed(lastError(db))
+        }
+        try removeLegacyGlobalServerIDUniqueness(db)
+        let scopedIndexes = """
+            DROP INDEX IF EXISTS local_captures_pending_sync_idx;
+            DROP INDEX IF EXISTS local_captures_remind_at_idx;
+            CREATE INDEX IF NOT EXISTS local_captures_scope_recent_idx
+                ON local_captures(account_scope, created_at DESC);
+            CREATE INDEX IF NOT EXISTS local_captures_scope_pending_sync_idx
+                ON local_captures(account_scope, created_at)
+                WHERE server_id IS NULL;
+            CREATE INDEX IF NOT EXISTS local_captures_scope_remind_at_idx
+                ON local_captures(account_scope, remind_at)
+                WHERE remind_at IS NOT NULL;
+            CREATE UNIQUE INDEX IF NOT EXISTS local_captures_scope_server_id_uidx
+                ON local_captures(account_scope, server_id)
+                WHERE account_scope IS NOT NULL AND server_id IS NOT NULL;
+            """
+        if sqlite3_exec(db, scopedIndexes, nil, nil, nil) != SQLITE_OK {
+            throw LocalCaptureStoreError.execFailed(lastError(db))
+        }
+    }
+
+    private func removeLegacyGlobalServerIDUniqueness(_ db: OpaquePointer?) throws {
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(
+            db,
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'local_captures'",
+            -1,
+            &stmt,
+            nil
+        ) == SQLITE_OK else {
+            throw LocalCaptureStoreError.prepareFailed(lastError(db))
+        }
+        let hasLegacyUnique: Bool
+        if sqlite3_step(stmt) == SQLITE_ROW,
+           let createSQL = columnText(stmt, 0)
+        {
+            hasLegacyUnique = createSQL.uppercased().contains("SERVER_ID TEXT UNIQUE")
+        } else {
+            hasLegacyUnique = false
+        }
+        sqlite3_finalize(stmt)
+        stmt = nil
+        guard hasLegacyUnique else { return }
+
+        let rebuild = """
+            BEGIN IMMEDIATE;
+            DROP TABLE IF EXISTS local_captures_scoped_rebuild;
+            CREATE TABLE local_captures_scoped_rebuild (
+                id TEXT PRIMARY KEY,
+                server_id TEXT,
+                raw_text TEXT NOT NULL,
+                media_type TEXT NOT NULL,
+                classified_as TEXT NOT NULL,
+                source TEXT NOT NULL,
+                remind_at TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                synced_at TEXT,
+                last_error TEXT,
+                notified_at TEXT,
+                remind_hide INTEGER,
+                embedding BLOB,
+                embed_model TEXT,
+                account_scope TEXT,
+                edit_revision INTEGER NOT NULL DEFAULT 0,
+                synced_revision INTEGER NOT NULL DEFAULT 0
+            );
+            INSERT INTO local_captures_scoped_rebuild (
+                id, server_id, raw_text, media_type, classified_as, source,
+                remind_at, created_at, updated_at, synced_at, last_error, notified_at,
+                remind_hide, embedding, embed_model, account_scope,
+                edit_revision, synced_revision
+            )
+            SELECT
+                id, server_id, raw_text, media_type, classified_as, source,
+                remind_at, created_at, updated_at, synced_at, last_error, notified_at,
+                remind_hide, embedding, embed_model, account_scope,
+                edit_revision, synced_revision
+            FROM local_captures;
+            DROP TABLE local_captures;
+            ALTER TABLE local_captures_scoped_rebuild RENAME TO local_captures;
+            COMMIT;
+            """
+        if sqlite3_exec(db, rebuild, nil, nil, nil) != SQLITE_OK {
+            let message = lastError(db)
+            _ = sqlite3_exec(db, "ROLLBACK", nil, nil, nil)
+            throw LocalCaptureStoreError.execFailed(message)
+        }
     }
 
     private func ensureColumn(
@@ -777,16 +1072,32 @@ private func decodeRecord(_ stmt: OpaquePointer?) throws -> LocalCaptureRecord {
         remindAt: remindAt,
         remindHide: columnOptionalBool(stmt, 12),
     )
+    guard let scopeKey = columnText(stmt, 13),
+          let scope = localCaptureScope(fromPersistenceKey: scopeKey)
+    else {
+        throw LocalCaptureStoreError.stepFailed("scoped query returned an invalid account scope")
+    }
     return LocalCaptureRecord(
         id: columnText(stmt, 0) ?? "",
+        scope: scope,
         payload: payload,
         createdAt: try columnDate(stmt, 7) ?? Date(timeIntervalSince1970: 0),
         updatedAt: try columnDate(stmt, 8) ?? Date(timeIntervalSince1970: 0),
         serverId: columnText(stmt, 1),
         syncedAt: try columnDate(stmt, 9),
+        editRevision: Int(sqlite3_column_int64(stmt, 14)),
+        syncedRevision: Int(sqlite3_column_int64(stmt, 15)),
         lastError: columnText(stmt, 10),
         notifiedAt: try columnDate(stmt, 11),
     )
+}
+
+private func localCaptureScope(fromPersistenceKey key: String) -> LocalCaptureScope? {
+    let parts = key.split(separator: "\u{1F}", maxSplits: 1, omittingEmptySubsequences: false)
+    guard parts.count == 2,
+          let originURL = URL(string: String(parts[0]))
+    else { return nil }
+    return LocalCaptureScope(apiURL: originURL, userID: String(parts[1]))
 }
 
 private func bindText(_ stmt: OpaquePointer?, _ index: Int32, _ value: String) {

@@ -15,6 +15,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var hotKeyController: HotKeyController?
     private let settings = SettingsStore()
     private let localStore = LocalCaptureStore(fileURL: ChronicleDesktopPaths.defaultLocalDatabaseURL())
+    private let captureSession = CaptureSession()
+    private var verifiedSessionScope: LocalCaptureScope?
+    private var identityVerificationTask: Task<Void, Never>?
     private var statusItemFlashActive = false
     private var statusItemFlashGeneration = 0
     private lazy var captureSyncCoordinator = CaptureSyncCoordinator(store: localStore)
@@ -31,15 +34,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.setActivationPolicy(.accessory)
 
         if E2ERunner.isEnabled {
+            localStore.activate(.testing)
             E2ERunner(delegate: self).run()
             return
         }
 
+        // A persisted binding is safe for offline use only on the same API
+        // origin. Remote clients remain disabled until /users/me verifies the
+        // current token below.
+        localStore.activate(settings.loadLocalCaptureScope())
         cleanupStaleCaptureTemporaryFiles()
         installApplicationMenu()
-        drainLegacyQueue()
-        // Warm the on-device semantic index in the background (embeds any captures
-        // missing a vector, including ones just drained from the legacy queue).
+        // The former JSON queue and pre-scope SQLite rows have no trustworthy
+        // account identity. Keep them on disk, but never adopt them into whichever
+        // account happens to sign in next.
+        // Warm the active account's on-device semantic index in the background.
         Task { await localSemantic.ensureIndexed() }
         clients = makeClients()
         panelController = QuickCapturePanelController(
@@ -49,7 +58,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             },
         )
         detailWindowController = CaptureDetailWindowController(clients: clients)
-        pinnedStickyController = PinnedStickyController(recall: clients.recall)
+        pinnedStickyController = PinnedStickyController(
+            recall: clients.recall,
+            initialScope: localStore.scope
+        )
         // Double-clicking a sticky opens that capture in a detail window.
         pinnedStickyController.onOpen = { [weak self] row in self?.detailWindowController?.open(row) }
         settingsModel = SettingsModel(
@@ -98,6 +110,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // simply stays in offline/local mode.
     private func refreshSessionIfPossible() {
         let startingConfig = settings.load()
+        let generation = captureSession.snapshot()
         let apiURL = startingConfig.apiURL
         Task { @MainActor in
             let result: Result<String, Error>
@@ -112,7 +125,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard sessionRefreshStillCurrent(
                 startedWith: startingConfig,
                 current: settings.load()
-            ) else { return }
+            ), captureSession.isCurrent(generation) else { return }
             // A 401 here is the exact signal the weeks-signed-out incident lacked:
             // surface sign-in status. A network failure stays quiet (offline-first).
             sessionMonitor.apply(sessionSignal(forRefreshResult: result))
@@ -126,9 +139,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // the client's 401 funnels here for a fresh one instead of stalling until the
     // next launch. @MainActor (AppDelegate is) so it can touch `settings`; the
     // AuthRefresher actor single-flights concurrent callers onto one mint.
-    private lazy var authRefresher = AuthRefresher { [weak self] in
-        await self?.mintToken()
-    }
+    private lazy var authRefresher = AuthRefresher(
+        mint: { [weak self] requestToken in
+            await self?.mintToken(refreshing: requestToken)
+        },
+        permitsRetry: { [weak self] _, refresh in
+            await self?.permitsRetry(with: refresh) ?? false
+        }
+    )
 
     // Surfaces sign-out. The app once sat signed out for weeks, silently queuing
     // captures; the monitor invalidates the stale local session and updates the
@@ -139,8 +157,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Task { @MainActor in self?.sessionHealthChanged() }
     }
 
-    private func mintToken() async -> String? {
+    private func mintToken(refreshing requestToken: String) async -> AuthRefreshResult? {
+        let generation = captureSession.snapshot()
         let startingConfig = settings.load()
+        guard startingConfig.isUsable, startingConfig.token == requestToken else {
+            return nil
+        }
         let apiURL = startingConfig.apiURL
         let result: Result<String, Error>
         do {
@@ -151,11 +173,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard sessionRefreshStillCurrent(
             startedWith: startingConfig,
             current: settings.load()
-        ) else { return nil }
+        ), captureSession.isCurrent(generation) else { return nil }
         sessionMonitor.apply(sessionSignal(forRefreshResult: result))
         guard case .success(let token) = result else { return nil }
-        settings.save(ChronicleConfig(apiURL: apiURL, token: token))
-        return token
+        let refreshed = ChronicleConfig(apiURL: apiURL, token: token)
+        // A rotating refresh cookie is still a credential, not an identity.
+        // Re-verify it before allowing the request that triggered refresh to retry.
+        // If it unexpectedly belongs to a different account, transition the app
+        // after verification but never replay the old account's operation as it.
+        guard let identity = try? await UserIdentityAPIClient(config: refreshed).me(),
+              let scope = LocalCaptureScope(apiURL: apiURL, userID: identity.id)
+        else { return nil }
+        guard captureSession.isCurrent(generation) else { return nil }
+        settings.save(refreshed)
+        guard scope == verifiedSessionScope else {
+            handleSignInChanged()
+            return nil
+        }
+        return AuthRefreshResult(token: token, sessionGeneration: generation)
+    }
+
+    private func permitsRetry(with refresh: AuthRefreshResult) -> Bool {
+        guard captureSession.isCurrent(refresh.sessionGeneration) else { return false }
+        guard let config = verifiedConfig() else { return false }
+        return config.token == refresh.token
     }
 
     // Snapshot for the sign-in nudge: signed-out (proven-expired) + queued count.
@@ -217,15 +258,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func makeClients() -> CaptureClients {
         CaptureClients(
-            recall: { [settings, authRefresher] in
-                let config = settings.load()
+            session: captureSession,
+            recall: { [weak self] in
+                guard let self, let config = self.verifiedConfig() else { return nil }
                 return config.isUsable
-                    ? RecallAPIClient(config: config, refresher: authRefresher) : nil
+                    ? RecallAPIClient(config: config, refresher: self.authRefresher) : nil
             },
-            webhook: { [settings, authRefresher] in
-                let config = settings.load()
+            webhook: { [weak self] in
+                guard let self, let config = self.verifiedConfig() else { return nil }
                 return config.isUsable
-                    ? WebhookAPIClient(config: config, refresher: authRefresher) : nil
+                    ? WebhookAPIClient(config: config, refresher: self.authRefresher) : nil
             },
             openSignIn: { [weak self] in self?.showSignIn() },
             createCapture: { [unowned self] payload in
@@ -268,31 +310,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
     }
 
-    // One-time migration: the app moved from a JSON queue (CaptureQueue) to the
-    // SQLite LocalCaptureStore. Drain captures still stranded in the old queue into
-    // the store so they become locally searchable and sync-eligible, then clear it.
-    // Idempotent — the emptied queue has nothing to drain on the next launch.
-    // Runs at launch before any window exists, so it deliberately skips
-    // CaptureEvents.postChanged(); if it ever runs mid-session, post it so open
-    // lists rebuild.
-    private func drainLegacyQueue() {
-        let queue = CaptureQueue(fileURL: ChronicleDesktopPaths.defaultQueueURL())
-        guard let queued = try? queue.load(), !queued.isEmpty else { return }
-        // Drop only the items we actually persisted. If localStore.create throws
-        // (e.g. a corrupt or locked SQLite store), keep that capture in the queue
-        // for the next launch to retry instead of clearing it wholesale and losing
-        // it. Still idempotent: a fully drained queue has nothing left to migrate.
-        var unpersisted: [QueuedCapture] = []
-        for item in queued {
-            do {
-                _ = try localStore.create(item.payload, now: item.queuedAt)
-            } catch {
-                unpersisted.append(item)
-            }
-        }
-        try? queue.replace(with: unpersisted)
-    }
-
     private func installReminderNotifier() {
         // UNUserNotificationCenter traps without a bundle id, i.e. under a bare
         // `swift run` / `make desktop-capture`. Only schedule from the packaged
@@ -304,10 +321,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.openCaptureFromNotification(localId)
         })
         UNUserNotificationCenter.current().delegate = notificationDelegate
-        reminderNotifier = ReminderNotifier(store: localStore, makeClient: { [settings, authRefresher] in
-            let config = settings.load()
-            return config.isUsable
-                ? ReminderAPIClient(config: config, refresher: authRefresher) : nil
+        reminderNotifier = ReminderNotifier(store: localStore, makeClient: { [weak self] in
+            guard let self, let config = self.verifiedConfig() else { return nil }
+            return ReminderAPIClient(config: config, refresher: self.authRefresher)
         })
         reminderNotifier?.start()
     }
@@ -416,23 +432,94 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         settingsModel.presentSignIn()
     }
 
-    // Re-sync reminders + offline captures after the signed-in state changes.
+    // Rebind the local cache only after the server proves which user owns the
+    // current token. A token change is an untrusted identity transition until
+    // GET /users/me succeeds; during that gap every local account is hidden and
+    // every remote client/sync path is disabled.
     private func handleSignInChanged() {
-        // Google Drive authority must never survive a Chronicle account boundary.
-        // This callback runs for sign-in, sign-out, expiry, and API-origin changes.
+        // Invalidate every async result before touching credentials, identity, or
+        // account-scoped state. Detail windows are account content, so scrub them
+        // rather than leaving A visible while B is being verified.
+        captureSession.advance()
+        detailWindowController?.closeAll()
         googleDriveAuthorizer.invalidate()
-        // Sign-in and sign-out both funnel here (Settings toggles + launch
-        // refresh), so the real config decides which: a usable token means live,
-        // its absence means the user is signed out. This refreshes the sign-in
-        // surfaces the instant a sign-in lands or an explicit sign-out occurs.
-        sessionMonitor.apply(settings.load().isUsable ? .active : .expired)
-        reminderNotifier?.syncFromServer()
-        // Refresh pinned stickies' content now that a token is available (on launch
-        // they restore from cache before the silent refresh completes).
-        pinnedStickyController?.refreshAll()
-        Task { @MainActor in
-            if let client = makeClient() {
-                _ = await syncPendingCaptures(using: client)
+        identityVerificationTask?.cancel()
+        identityVerificationTask = nil
+        verifiedSessionScope = nil
+
+        let config = settings.load()
+        guard config.isUsable else {
+            // Explicit sign-out/expiry: the last verified same-origin account is
+            // still a safe, explicit offline boundary.
+            localStore.activate(settings.loadLocalCaptureScope())
+            reminderNotifier?.accountScopeChanged()
+            pinnedStickyController?.activate(localStore.scope)
+            sessionMonitor.apply(.expired)
+            CaptureEvents.postChanged()
+            return
+        }
+
+        // Never leave the previously active account visible while a new token is
+        // being identified (the common A → sign out → B transition).
+        localStore.activate(nil)
+        reminderNotifier?.accountScopeChanged()
+        pinnedStickyController?.activate(nil)
+        CaptureEvents.postChanged()
+
+        let verificationGeneration = captureSession.snapshot()
+        identityVerificationTask = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                guard let self else { return }
+                do {
+                    let identity = try await UserIdentityAPIClient(
+                        config: config,
+                        refresher: self.authRefresher
+                    ).me()
+                    let current = self.settings.load()
+                    guard !Task.isCancelled,
+                          self.captureSession.isCurrent(verificationGeneration),
+                          current.isUsable,
+                          LocalCaptureScope.origin(of: current.apiURL)
+                            == LocalCaptureScope.origin(of: config.apiURL),
+                          let scope = LocalCaptureScope(
+                            apiURL: config.apiURL,
+                            userID: identity.id
+                          )
+                    else { return }
+
+                    // Identity verification is its own boundary: callbacks from
+                    // the quarantined pre-verification phase cannot write into
+                    // the newly active account.
+                    self.settings.saveVerifiedLocalCaptureScope(scope)
+                    self.verifiedSessionScope = scope
+                    self.localStore.activate(scope)
+                    self.sessionMonitor.apply(.active)
+                    let verifiedGeneration = self.captureSession.advance()
+                    self.googleDriveAuthorizer.invalidate()
+                    self.reminderNotifier?.accountScopeChanged()
+                    self.pinnedStickyController?.activate(scope)
+                    self.pinnedStickyController?.refreshAll()
+                    CaptureEvents.postChanged()
+                    await self.localSemantic.ensureIndexed()
+                    guard !Task.isCancelled,
+                          self.captureSession.isCurrent(verifiedGeneration)
+                    else { return }
+                    if let client = self.makeClient() {
+                        _ = await self.syncPendingCaptures(using: client)
+                    }
+                    return
+                } catch AuthAPIError.httpStatus(401) {
+                    guard !Task.isCancelled,
+                          self.captureSession.isCurrent(verificationGeneration)
+                    else { return }
+                    self.sessionMonitor.apply(.expired)
+                    return
+                } catch {
+                    // Network/server uncertainty is not proof of either identity.
+                    // Keep the cache quarantined and retry until connectivity
+                    // returns or a newer sign-in/origin transition cancels us.
+                    try? await Task.sleep(for: .seconds(5))
+                }
             }
         }
     }
@@ -504,12 +591,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func uploadMediaCapture(_ upload: CaptureMediaUpload) async throws -> RowItem {
-        let config = settings.load()
-        guard config.isUsable else { throw CaptureClientError.requiresSignIn }
+        let generation = captureSession.snapshot()
+        guard let config = verifiedConfig() else {
+            throw CaptureClientError.requiresSignIn
+        }
         let uploaded = try await CaptureMediaUploadClient(
             config: config,
             refresher: authRefresher
         ).upload(upload)
+        guard !Task.isCancelled, captureSession.isCurrent(generation) else {
+            throw CancellationError()
+        }
         let payload = CapturePayload(
             rawText: upload.text,
             mediaType: uploaded.mediaType,
@@ -540,13 +632,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         remindAt: Date?,
         remindHide: Bool?
     ) async throws -> RowItem {
-        let config = settings.load()
-        guard config.isUsable else { throw CaptureClientError.requiresSignIn }
+        let generation = captureSession.snapshot()
+        guard let config = verifiedConfig() else {
+            throw CaptureClientError.requiresSignIn
+        }
         guard let clientID = GoogleDriveConfiguration.clientID() else {
             throw GoogleDriveError.notConfigured
         }
         var accessToken = try await googleDriveAuthorizer.authorize(clientID: clientID)
-        let attachment: CloudAttachmentDraft
+        guard !Task.isCancelled, captureSession.isCurrent(generation) else {
+            throw CancellationError()
+        }
+        var attachment: CloudAttachmentDraft
         do {
             attachment = try await googleDriveClient.upload(
                 fileURL: upload.fileURL,
@@ -556,9 +653,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 operationId: upload.operationId,
                 accessToken: accessToken
             )
+            guard !Task.isCancelled, captureSession.isCurrent(generation) else {
+                throw CancellationError()
+            }
         } catch GoogleDriveError.httpStatus(401) {
             googleDriveAuthorizer.invalidate()
             accessToken = try await googleDriveAuthorizer.authorize(clientID: clientID)
+            guard !Task.isCancelled, captureSession.isCurrent(generation) else {
+                throw CancellationError()
+            }
             do {
                 attachment = try await googleDriveClient.upload(
                     fileURL: upload.fileURL,
@@ -568,6 +671,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     operationId: upload.operationId,
                     accessToken: accessToken
                 )
+                guard !Task.isCancelled, captureSession.isCurrent(generation) else {
+                    throw CancellationError()
+                }
             } catch GoogleDriveError.httpStatus(401) {
                 // Do not cache a token that the provider has already rejected.
                 // The next user retry must start a fresh authorization flow.
@@ -590,6 +696,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             remindHide: remindHide,
             attachment: attachment
         )
+        guard !Task.isCancelled, captureSession.isCurrent(generation) else {
+            throw CancellationError()
+        }
         // Never compensate an API error by deleting the Drive object. A previous
         // ambiguous attempt may already have committed a reference to that exact
         // operation file; automatic deletion would turn a safe retry into data loss.
@@ -611,23 +720,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func syncPendingCaptures(using client: CaptureAPIClient) async -> CaptureSyncSummary {
+        let generation = captureSession.snapshot()
         let summary = await captureSyncCoordinator.syncPending(using: client)
-        if summary.changed {
+        if captureSession.isCurrent(generation), summary.changed {
             CaptureEvents.postChanged()
         }
         return summary
     }
 
     private func pushPendingCaptureUpdates(using client: CaptureAPIClient) async {
+        let generation = captureSession.snapshot()
         let summary = await captureSyncCoordinator.pushPendingUpdates(using: client)
-        if summary.changed {
+        if captureSession.isCurrent(generation), summary.changed {
             CaptureEvents.postChanged()
         }
     }
 
     @discardableResult
     func sync(_ record: LocalCaptureRecord, using client: CaptureAPIClient, notifySuccess: Bool) async -> Bool {
+        let generation = captureSession.snapshot()
         let outcome = await captureSyncCoordinator.sync(record, using: client)
+        guard captureSession.isCurrent(generation) else { return false }
         switch outcome {
         case .synced:
             CaptureEvents.postChanged()
@@ -651,14 +764,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func syncServerReminders(using client: ReminderAPIClient) async {
         let pending = (try? await client.pending()) ?? []
-        let due = (try? await client.due(since: nil)) ?? []
+        guard let scope = localStore.scope else { return }
+        let defaults: UserDefaults
+        if let databasePath = ProcessInfo.processInfo.environment["CHRONICLE_DESKTOP_DB_PATH"] {
+            let databaseID = URL(fileURLWithPath: databasePath)
+                .deletingLastPathComponent().lastPathComponent
+            defaults = UserDefaults(suiteName: "chronicle.e2e.reminders.\(databaseID)") ?? .standard
+        } else {
+            defaults = .standard
+        }
+        let dueSynchronizer = ReminderDueSynchronizer(defaults: defaults)
+        let dueBatch = try? await dueSynchronizer.fetch(using: client, scope: scope)
         for item in pending {
             guard let at = item.remindAt.flatMap(Self.parseISO) else { continue }
             _ = try? localStore.upsertServerReminder(serverId: item.id, text: item.summary, remindAt: at)
         }
-        for item in due {
-            let at = item.remindAt.flatMap(Self.parseISO) ?? Date()
-            _ = try? localStore.upsertDueServerReminder(serverId: item.id, text: item.summary, remindAt: at)
+        if let dueBatch {
+            do {
+                for item in dueBatch.items {
+                    let at = item.remindAt.flatMap(Self.parseISO) ?? Date()
+                    if let record = try localStore.upsertDueServerReminder(
+                        serverId: item.id,
+                        text: item.summary,
+                        remindAt: at
+                    ) {
+                        // The executable E2E harness has no notification center;
+                        // reaching here represents successful delivery.
+                        try localStore.markNotified(localId: record.id)
+                    }
+                }
+                dueSynchronizer.commit(dueBatch, for: scope)
+            } catch {
+                // Leave the checkpoint unchanged. A later sync retries the
+                // complete window; already persisted rows remain deduplicated.
+            }
         }
     }
 
@@ -671,11 +810,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func makeClient() -> CaptureAPIClient? {
-        let config = settings.load()
-        guard config.isUsable else {
-            return nil
-        }
+        guard let config = verifiedConfig() else { return nil }
         return CaptureAPIClient(config: config, refresher: authRefresher)
+    }
+
+    private func verifiedConfig() -> ChronicleConfig? {
+        let config = settings.load()
+        guard config.isUsable,
+              let verifiedSessionScope,
+              localStore.scope == verifiedSessionScope,
+              LocalCaptureScope.origin(of: config.apiURL) == verifiedSessionScope.apiOrigin
+        else { return nil }
+        return config
     }
 
     // A quiet status-item title flash for capture feedback. No sound — the old

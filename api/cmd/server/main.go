@@ -79,7 +79,7 @@ func main() {
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   allowedOrigins,
 		AllowedMethods:   []string{"GET", "POST", "PATCH", "DELETE", "OPTIONS"},
-		AllowedHeaders:   []string{"Authorization", "Content-Type"},
+		AllowedHeaders:   []string{"Authorization", "Content-Type", "Idempotency-Key"},
 		AllowCredentials: true,
 	}))
 	r.Use(middleware.TraceID)
@@ -143,12 +143,13 @@ func main() {
 	}
 	kickTranscription := upload.StartTranscriptionWorker(ctx, pool, s3client, uploadConfig, rag)
 	kickLinkFetch := linkfetch.StartLinkFetchWorker(ctx, pool, cfg.LinkFetchEnabled, rag)
+	kickMediaDeletion := capture.StartMediaDeletionWorker(ctx, pool, s3client, cfg.R2BucketName)
 	if cfg.LinkFetchEnabled {
 		slog.Info("link enrichment enabled")
 	}
 	upload.Register(r, pool, s3client, uploadConfig, auth.ValidateToken(cfg.JWTSecret), kickTranscription)
-	capture.Register(api, pool, rag, s3client, cfg.R2BucketName, authMW, captureCreateMW, kickTranscription, cfg.LinkFetchEnabled, kickLinkFetch)
-	user.Register(api, pool, authMW)
+	capture.Register(api, pool, rag, authMW, captureCreateMW, kickTranscription, cfg.LinkFetchEnabled, kickLinkFetch, kickMediaDeletion)
+	user.Register(api, pool, authMW, kickMediaDeletion)
 	ai.Register(api, cfg.GeminiKey, authMW)
 	search.Register(api, pool, rag, authMW)
 	// Always register the webhook CRUD so the API contract (and the generated web

@@ -18,6 +18,8 @@
     { "desc": "URL fragment is not a tag (no whitespace/start before)", "text": "https://x.com/#todo", "present": false, "done": false, "doneDate": "" },
     { "desc": "malformed parameter disqualifies the token", "text": "#todo(later)", "present": false, "done": false, "doneDate": "" },
     { "desc": "malformed date disqualifies the token", "text": "#todo(done:2026-7-9)", "present": false, "done": false, "doneDate": "" },
+    { "desc": "impossible day disqualifies the token", "text": "#todo(done:2026-02-30)", "present": false, "done": false, "doneDate": "" },
+    { "desc": "impossible month disqualifies the token", "text": "#todo(done:2026-13-01)", "present": false, "done": false, "doneDate": "" },
     { "desc": "uppercase is not the tag (case-sensitive)", "text": "#TODO", "present": false, "done": false, "doneDate": "" },
     { "desc": "word without a hash is not a tag", "text": "todo", "present": false, "done": false, "doneDate": "" },
     { "desc": "empty text", "text": "", "present": false, "done": false, "doneDate": "" }

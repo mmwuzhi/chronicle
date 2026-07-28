@@ -23,6 +23,7 @@ final class CaptureDetailModel: ObservableObject {
     private let clients: CaptureClients
     private var loadTask: Task<Void, Never>?
     private var editTask: Task<Void, Never>?
+    private var mutationTask: Task<Void, Never>?
 
     init(capture: RowItem, clients: CaptureClients) {
         self.capture = capture
@@ -47,13 +48,15 @@ final class CaptureDetailModel: ObservableObject {
         }
 
         let id = capture.id
+        let generation = clients.session.snapshot()
         loadingEdit = true
         editTask?.cancel()
         editTask = Task { @MainActor in
             defer { loadingEdit = false }
             do {
                 let fullCapture = try await client.capture(id: id)
-                guard !Task.isCancelled, capture.id == id else { return }
+                guard !Task.isCancelled, clients.session.isCurrent(generation),
+                      capture.id == id else { return }
                 let fullRow = RowItem(fullCapture)
                 capture = fullRow
                 guard let draft = CaptureEditDraft(item: fullRow) else {
@@ -63,7 +66,8 @@ final class CaptureDetailModel: ObservableObject {
                 editDraft = draft
                 error = ""
             } catch let editError {
-                guard !Task.isCancelled, capture.id == id else { return }
+                guard !Task.isCancelled, clients.session.isCurrent(generation),
+                      capture.id == id else { return }
                 error = describeCaptureError(editError)
             }
         }
@@ -104,18 +108,21 @@ final class CaptureDetailModel: ObservableObject {
         }
 
         loadingEdit = true
+        let generation = clients.session.snapshot()
         editTask?.cancel()
         editTask = Task { @MainActor in
             defer { loadingEdit = false }
             do {
                 let updated = try await client.update(id: id, rawText: next)
-                guard !Task.isCancelled, capture.id == id else { return }
+                guard !Task.isCancelled, clients.session.isCurrent(generation),
+                      capture.id == id else { return }
                 capture = RowItem(updated)
                 editDraft = nil
                 error = ""
                 CaptureEvents.postChanged()
             } catch let editError {
-                guard !Task.isCancelled, capture.id == id else { return }
+                guard !Task.isCancelled, clients.session.isCurrent(generation),
+                      capture.id == id else { return }
                 error = describeCaptureError(editError)
             }
         }
@@ -145,13 +152,15 @@ final class CaptureDetailModel: ObservableObject {
         related = []
         error = ""
         let id = capture.id
+        let generation = clients.session.snapshot()
         loading = true
         loadTask = Task { @MainActor in
             defer { loading = false }
+            guard clients.session.isCurrent(generation) else { return }
             if clients.recall() == nil {
-                await self.loadLocalRelated(for: self.capture)
+                await self.loadLocalRelated(for: self.capture, generation: generation)
             } else {
-                await self.loadLinksAndRelated(for: id)
+                await self.loadLinksAndRelated(for: id, generation: generation)
             }
         }
     }
@@ -159,47 +168,53 @@ final class CaptureDetailModel: ObservableObject {
     // Links are the durable, user-owned surface, so a load failure surfaces a clear
     // auth lapse; related suggestions are best-effort and never an error surface.
     // The id guard drops a write whose capture the user has since navigated past.
-    private func loadLinksAndRelated(for id: String) async {
+    private func loadLinksAndRelated(for id: String, generation: UInt64) async {
         guard let client = clients.recall() else { return }
         do {
             let attachments = try await client.attachments(id: id)
-            guard !Task.isCancelled, id == capture.id else { return }
+            guard !Task.isCancelled, clients.session.isCurrent(generation),
+                  id == capture.id else { return }
             capture = capture.replacingAttachments(attachments)
         } catch {
-            guard !Task.isCancelled, id == capture.id else { return }
+            guard !Task.isCancelled, clients.session.isCurrent(generation),
+                  id == capture.id else { return }
             if case CaptureAPIError.httpStatus(401) = error {
                 self.error = L("Session expired — sign in again from Settings.")
             }
         }
         do {
             let items = try await client.links(id: id)
-            guard !Task.isCancelled, id == capture.id else { return }
+            guard !Task.isCancelled, clients.session.isCurrent(generation),
+                  id == capture.id else { return }
             linked = items.map(RowItem.init)
         } catch {
-            guard !Task.isCancelled, id == capture.id else { return }
+            guard !Task.isCancelled, clients.session.isCurrent(generation),
+                  id == capture.id else { return }
             if case CaptureAPIError.httpStatus(401) = error {
                 self.error = L("Session expired — sign in again from Settings.")
             }
         }
         if let items = try? await client.related(id: id) {
-            guard !Task.isCancelled, id == capture.id else { return }
+            guard !Task.isCancelled, clients.session.isCurrent(generation),
+                  id == capture.id else { return }
             related = items.map(RowItem.init)
         }
         if related.isEmpty {
-            await loadLocalRelated(for: capture)
+            await loadLocalRelated(for: capture, generation: generation)
         }
     }
 
     // Offline/default suggestions: use the on-device semantic index to surface
     // possible neighbours even when the user is signed out or the server has no
     // embedding result. Explicit links and the current capture are filtered out.
-    private func loadLocalRelated(for row: RowItem) async {
+    private func loadLocalRelated(for row: RowItem, generation: UInt64) async {
         let q = row.content.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !q.isEmpty else { return }
         let excluded = Set(linked.map(\.id)).union([row.id])
         let local = await clients.localSemanticSearch(q)
             .filter { !excluded.contains($0.id) }
-        guard !Task.isCancelled, row.id == capture.id else { return }
+        guard !Task.isCancelled, clients.session.isCurrent(generation),
+              row.id == capture.id else { return }
         related = Array(local.prefix(10))
     }
 
@@ -209,30 +224,36 @@ final class CaptureDetailModel: ObservableObject {
     func addLink(_ targetId: String) {
         guard let client = clients.recall() else { return }
         let id = capture.id
-        Task { @MainActor in
+        let generation = clients.session.snapshot()
+        mutationTask?.cancel()
+        mutationTask = Task { @MainActor in
             do {
                 try await client.addLink(id: id, targetId: targetId)
             } catch {
                 handleMutateError(error, id: id)
                 return
             }
-            guard id == capture.id else { return }
-            await loadLinksAndRelated(for: id)
+            guard !Task.isCancelled, clients.session.isCurrent(generation),
+                  id == capture.id else { return }
+            await loadLinksAndRelated(for: id, generation: generation)
         }
     }
 
     func removeLink(_ targetId: String) {
         guard let client = clients.recall() else { return }
         let id = capture.id
-        Task { @MainActor in
+        let generation = clients.session.snapshot()
+        mutationTask?.cancel()
+        mutationTask = Task { @MainActor in
             do {
                 try await client.removeLink(id: id, targetId: targetId)
             } catch {
                 handleMutateError(error, id: id)
                 return
             }
-            guard id == capture.id else { return }
-            await loadLinksAndRelated(for: id)
+            guard !Task.isCancelled, clients.session.isCurrent(generation),
+                  id == capture.id else { return }
+            await loadLinksAndRelated(for: id, generation: generation)
         }
     }
 
@@ -246,11 +267,30 @@ final class CaptureDetailModel: ObservableObject {
     // Candidates for the "+ Link" picker: full-text search hits minus this capture
     // and anything already linked. Blank query or any failure yields no candidates.
     func linkCandidates(matching query: String) async -> [RowItem] {
+        let generation = clients.session.snapshot()
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !q.isEmpty, let client = clients.recall() else { return [] }
         guard let res = try? await client.find(q: q) else { return [] }
+        guard clients.session.isCurrent(generation) else { return [] }
         let exclude = Set(linked.map(\.id)).union([capture.id])
         return res.items.map(RowItem.init).filter { !exclude.contains($0.id) }
+    }
+
+    func invalidateForSessionBoundary() {
+        loadTask?.cancel()
+        editTask?.cancel()
+        mutationTask?.cancel()
+        loadTask = nil
+        editTask = nil
+        mutationTask = nil
+        linked = []
+        related = []
+        history = []
+        canGoBack = false
+        loading = false
+        loadingEdit = false
+        editDraft = nil
+        error = ""
     }
 }
 
@@ -487,6 +527,16 @@ final class CaptureDetailWindowController: NSObject, NSWindowDelegate {
     func windowWillClose(_ notification: Notification) {
         guard let w = notification.object as? NSWindow else { return }
         entries.removeAll { $0.window === w }
+    }
+
+    func closeAll() {
+        let closing = entries
+        entries.removeAll()
+        for entry in closing {
+            entry.model.invalidateForSessionBoundary()
+            entry.window.orderOut(nil)
+            entry.window.close()
+        }
     }
 
     private func makeWindow(title: String) -> NSWindow {

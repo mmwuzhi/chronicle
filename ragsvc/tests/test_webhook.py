@@ -151,7 +151,18 @@ def test_post_rejects_dns_rebind_to_private(monkeypatch):
     # refuse before opening any connection.
     monkeypatch.setattr(webhook.socket, "getaddrinfo", _fake_getaddrinfo("10.0.0.5"))
     with pytest.raises(RuntimeError):
-        webhook._post("http://rebind.example/hook", {}, True)
+        webhook._post("https://rebind.example/hook", {}, True)
+
+
+def test_post_rejects_plaintext_http_before_resolution(monkeypatch):
+    resolve = monkeypatch.setattr(
+        webhook, "_resolve_and_vet", lambda _url: (_ for _ in ()).throw(
+            AssertionError("HTTP target must be rejected before DNS")
+        )
+    )
+    assert resolve is None
+    with pytest.raises(RuntimeError, match="must use https"):
+        webhook._post("http://example.com/hook", {}, True)
 
 
 def test_delivery_log_never_prints_target_query_secret(monkeypatch, capsys):

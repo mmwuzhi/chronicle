@@ -63,8 +63,31 @@ public protocol CaptureSending {
 /// The two remote operations needed to drain the offline capture store.
 /// Keeping this protocol smaller than the full API client makes sync orchestration
 /// independently testable without constructing URL sessions or HTTP responses.
-public protocol CaptureSyncTransport: CaptureSending, Sendable {
+public protocol CaptureSyncTransport: Sendable {
+    /// Create replay uses the local UUID as a stable remote operation identity.
+    func send(_ payload: CapturePayload, idempotencyKey: String) async throws -> String
+    func recoverCreate(operationID: String) async throws -> RecoveredCaptureCreate?
     func update(serverId: String, rawText: String) async throws
+}
+
+public struct RecoveredCaptureCreate: Equatable, Sendable {
+    public let id: String
+    public let rawText: String
+    public let mediaType: String
+    public let source: String
+
+    public init(id: String, rawText: String, mediaType: String, source: String) {
+        self.id = id
+        self.rawText = rawText
+        self.mediaType = mediaType
+        self.source = source
+    }
+}
+
+public extension CaptureSyncTransport {
+    func recoverCreate(operationID _: String) async throws -> RecoveredCaptureCreate? {
+        nil
+    }
 }
 
 public final class CaptureAPIClient: CaptureSyncTransport, @unchecked Sendable {
@@ -81,11 +104,17 @@ public final class CaptureAPIClient: CaptureSyncTransport, @unchecked Sendable {
         self.refresher = refresher
     }
 
-    public func makeRequest(for payload: CapturePayload) throws -> URLRequest {
+    public func makeRequest(
+        for payload: CapturePayload,
+        idempotencyKey: String? = nil
+    ) throws -> URLRequest {
         var request = URLRequest(url: config.apiURL.appending(path: "captures"))
         request.httpMethod = "POST"
         request.setValue("Bearer \(config.token)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        if let idempotencyKey {
+            request.setValue(idempotencyKey, forHTTPHeaderField: "Idempotency-Key")
+        }
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601  // remindAt → RFC3339 the Go API parses
         request.httpBody = try encoder.encode(payload)
@@ -106,6 +135,54 @@ public final class CaptureAPIClient: CaptureSyncTransport, @unchecked Sendable {
             throw CaptureAPIError.httpStatus(httpResponse.statusCode)
         }
         return try JSONDecoder().decode(CreatedCapture.self, from: data).id
+    }
+
+    @discardableResult
+    public func send(
+        _ payload: CapturePayload,
+        idempotencyKey: String
+    ) async throws -> String {
+        let request = try makeRequest(for: payload, idempotencyKey: idempotencyKey)
+        let (data, response) = try await AuthedTransport.send(
+            request, session: session, refresher: refresher)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw CaptureAPIError.invalidResponse
+        }
+        guard (200..<300).contains(httpResponse.statusCode) else {
+            throw CaptureAPIError.httpStatus(httpResponse.statusCode)
+        }
+        return try JSONDecoder().decode(CreatedCapture.self, from: data).id
+    }
+
+    public func recoverCreate(operationID: String) async throws -> RecoveredCaptureCreate? {
+        var request = URLRequest(
+            url: config.apiURL.appending(path: "captures").appending(path: operationID)
+        )
+        request.httpMethod = "GET"
+        request.setValue("Bearer \(config.token)", forHTTPHeaderField: "Authorization")
+        let (data, response) = try await AuthedTransport.send(
+            request, session: session, refresher: refresher)
+        guard let http = response as? HTTPURLResponse else {
+            throw CaptureAPIError.invalidResponse
+        }
+        if http.statusCode == 404 { return nil }
+        guard (200..<300).contains(http.statusCode) else {
+            throw CaptureAPIError.httpStatus(http.statusCode)
+        }
+        struct Body: Decodable {
+            let id: String
+            let rawText: String?
+            let mediaType: String
+            let source: String
+        }
+        let capture = try JSONDecoder().decode(Body.self, from: data)
+        guard let rawText = capture.rawText else { return nil }
+        return RecoveredCaptureCreate(
+            id: capture.id,
+            rawText: rawText,
+            mediaType: capture.mediaType,
+            source: capture.source
+        )
     }
 
     // Push an edited capture's text back (PATCH /captures/{id}). Mirrors

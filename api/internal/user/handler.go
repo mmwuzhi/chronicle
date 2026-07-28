@@ -17,11 +17,20 @@ import (
 )
 
 type handler struct {
-	q *db.Queries
+	q                 *db.Queries
+	kickMediaDeletion func()
 }
 
-func Register(api huma.API, pool *pgxpool.Pool, authMW func(huma.Context, func(huma.Context))) {
-	h := &handler{q: db.New(pool)}
+func Register(
+	api huma.API,
+	pool *pgxpool.Pool,
+	authMW func(huma.Context, func(huma.Context)),
+	kickMediaDeletion func(),
+) {
+	h := &handler{
+		q:                 db.New(pool),
+		kickMediaDeletion: kickMediaDeletion,
+	}
 
 	huma.Register(api, huma.Operation{
 		OperationID: "getMe",
@@ -274,10 +283,11 @@ func (h *handler) deleteAccount(ctx context.Context, _ *struct{}) (*struct{}, er
 		return nil, huma.Error401Unauthorized("unauthorized")
 	}
 
-	if err := h.q.DeleteUser(ctx, uid); err != nil {
+	if _, err := h.q.DeleteUser(ctx, uid); err != nil {
 		slog.ErrorContext(ctx, "failed to delete user", "traceId", traceID, "err", err)
 		return nil, huma.Error500InternalServerError("internal error")
 	}
+	h.kickMediaDeletion()
 
 	return nil, nil
 }

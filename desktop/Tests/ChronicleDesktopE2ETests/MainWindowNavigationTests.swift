@@ -140,6 +140,27 @@ struct MainWindowNavigationTests {
         #expect(store.load().token == "bearer-secret")
     }
 
+    @Test("offline cache binding survives sign-out only on its verified origin")
+    func offlineCacheBindingIsOriginScoped() throws {
+        let defaults = UserDefaults(suiteName: UUID().uuidString)!
+        defaults.set("https://one.example/api", forKey: "apiURL")
+        let store = SettingsStore(defaults: defaults)
+        let verified = try #require(LocalCaptureScope(
+            apiURL: URL(string: "https://one.example/api")!,
+            userID: "verified-user-a"
+        ))
+
+        store.saveVerifiedLocalCaptureScope(verified)
+        store.signOut()
+        #expect(store.loadLocalCaptureScope() == verified)
+
+        store.saveAPIURL(URL(string: "https://one.example/v2")!)
+        #expect(store.loadLocalCaptureScope() == verified)
+
+        store.saveAPIURL(URL(string: "https://two.example/api")!)
+        #expect(store.loadLocalCaptureScope() == nil)
+    }
+
     @Test("a proven expired session clears credentials and updates open surfaces")
     func expiredSessionUpdatesSettingsModel() {
         let defaults = UserDefaults(suiteName: UUID().uuidString)!
@@ -613,7 +634,7 @@ struct MainWindowNavigationTests {
     private func tempStore() -> LocalCaptureStore {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("chronicle-main-window-tests-\(UUID().uuidString).sqlite")
-        return LocalCaptureStore(fileURL: url)
+        return LocalCaptureStore(fileURL: url, scope: .testing)
     }
 }
 

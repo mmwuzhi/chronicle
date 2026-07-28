@@ -18,6 +18,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
+	"golang.org/x/crypto/bcrypt"
 
 	db "github.com/sikaoshenmi/chronicle/db/sqlc"
 	"github.com/sikaoshenmi/chronicle/internal/auth"
@@ -348,6 +349,181 @@ func TestDesktopOAuthExchange_MFARequiresSecondStep(t *testing.T) {
 	defer replay.Body.Close()
 	if replay.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("expected one-time MFA code replay to return 401, got %d", replay.StatusCode)
+	}
+}
+
+func TestMFAVerify_RecoveryCodeSingleUseUnderConcurrency(t *testing.T) {
+	pool := testutil.NewPool(t)
+	testutil.Truncate(t, pool, "recovery_codes", "refresh_tokens", "users")
+
+	r := chi.NewRouter()
+	api := humachi.New(r, huma.DefaultConfig("Test API", "0.0.0"))
+	api.UseMiddleware(auth.InjectHumaContext)
+	auth.Register(api, r, pool, nil, auth.Options{JWTSecret: testSecret})
+	srv := httptest.NewServer(r)
+	t.Cleanup(srv.Close)
+
+	const (
+		email        = "mfa-recovery-race@example.com"
+		password     = "password123"
+		recoveryCode = "recovery-code"
+	)
+	registerUser(t, srv, email, password)
+
+	ctx := context.Background()
+	queries := db.New(pool)
+	user, err := queries.GetUserByEmail(ctx, email)
+	if err != nil {
+		t.Fatalf("get registered user: %v", err)
+	}
+	codeHash, err := bcrypt.GenerateFromPassword([]byte(recoveryCode), bcrypt.MinCost)
+	if err != nil {
+		t.Fatalf("hash recovery code: %v", err)
+	}
+	if err := queries.CreateRecoveryCode(ctx, db.CreateRecoveryCodeParams{
+		UserID:   user.ID,
+		CodeHash: string(codeHash),
+	}); err != nil {
+		t.Fatalf("create recovery code: %v", err)
+	}
+	codes, err := queries.GetRecoveryCodes(ctx, user.ID)
+	if err != nil || len(codes) != 1 {
+		t.Fatalf("get recovery code row: count=%d err=%v", len(codes), err)
+	}
+
+	mfaToken, err := auth.NewMFAToken(user.ID.String(), testSecret)
+	if err != nil {
+		t.Fatalf("create MFA token: %v", err)
+	}
+	requestBody, err := json.Marshal(map[string]string{
+		"mfaToken": mfaToken,
+		"code":     recoveryCode,
+	})
+	if err != nil {
+		t.Fatalf("marshal MFA request: %v", err)
+	}
+
+	// Hold the recovery-code row so both requests finish verification and block
+	// at consumption. Releasing the lock then deterministically exercises the
+	// conditional update instead of depending on scheduler timing.
+	blocker, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatalf("begin row-lock transaction: %v", err)
+	}
+	if _, err := blocker.Exec(ctx,
+		"UPDATE recovery_codes SET used = used WHERE id = $1",
+		codes[0].ID,
+	); err != nil {
+		_ = blocker.Rollback(ctx)
+		t.Fatalf("lock recovery code row: %v", err)
+	}
+
+	type result struct {
+		status           int
+		hasRefreshCookie bool
+		err              error
+	}
+	results := make(chan result, 2)
+	start := make(chan struct{})
+	for range 2 {
+		go func() {
+			<-start
+			resp, err := srv.Client().Post(
+				srv.URL+"/auth/mfa/verify",
+				"application/json",
+				bytes.NewReader(requestBody),
+			)
+			if err != nil {
+				results <- result{err: err}
+				return
+			}
+			defer resp.Body.Close()
+			hasRefreshCookie := false
+			for _, cookie := range resp.Cookies() {
+				if cookie.Name == "refresh_token" {
+					hasRefreshCookie = true
+				}
+			}
+			results <- result{
+				status:           resp.StatusCode,
+				hasRefreshCookie: hasRefreshCookie,
+			}
+		}()
+	}
+	close(start)
+
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		var blocked int
+		err := pool.QueryRow(ctx, `
+			SELECT count(*)
+			FROM pg_stat_activity
+			WHERE datname = current_database()
+			  AND pid <> pg_backend_pid()
+			  AND state = 'active'
+			  AND wait_event_type = 'Lock'
+			  AND query LIKE '%UPDATE recovery_codes%'
+		`).Scan(&blocked)
+		if err != nil {
+			_ = blocker.Rollback(ctx)
+			t.Fatalf("inspect blocked recovery-code consumers: %v", err)
+		}
+		if blocked == 2 {
+			break
+		}
+		if time.Now().After(deadline) {
+			_ = blocker.Rollback(ctx)
+			for range 2 {
+				<-results
+			}
+			t.Fatalf("expected 2 blocked recovery-code consumers, got %d", blocked)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if err := blocker.Commit(ctx); err != nil {
+		t.Fatalf("release recovery-code row: %v", err)
+	}
+
+	successes := 0
+	rejections := 0
+	refreshCookies := 0
+	for range 2 {
+		got := <-results
+		if got.err != nil {
+			t.Fatalf("MFA verify request: %v", got.err)
+		}
+		switch got.status {
+		case http.StatusOK:
+			successes++
+		case http.StatusUnauthorized:
+			rejections++
+		default:
+			t.Errorf("unexpected MFA verify status: %d", got.status)
+		}
+		if got.hasRefreshCookie {
+			refreshCookies++
+		}
+	}
+	if successes != 1 || rejections != 1 {
+		t.Fatalf("expected one success and one rejection, got successes=%d rejections=%d", successes, rejections)
+	}
+	if refreshCookies != 1 {
+		t.Fatalf("expected exactly one refresh cookie, got %d", refreshCookies)
+	}
+
+	var refreshTokens int
+	if err := pool.QueryRow(ctx,
+		"SELECT count(*) FROM refresh_tokens WHERE user_id = $1",
+		user.ID,
+	).Scan(&refreshTokens); err != nil {
+		t.Fatalf("count refresh sessions: %v", err)
+	}
+	if refreshTokens != 1 {
+		t.Fatalf("expected exactly one refresh session, got %d", refreshTokens)
+	}
+	codes, err = queries.GetRecoveryCodes(ctx, user.ID)
+	if err != nil || len(codes) != 1 || !codes[0].Used {
+		t.Fatalf("expected recovery code consumed once, codes=%+v err=%v", codes, err)
 	}
 }
 

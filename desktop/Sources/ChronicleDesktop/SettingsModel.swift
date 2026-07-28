@@ -64,13 +64,13 @@ final class SettingsModel: ObservableObject {
             status = L("Use HTTPS for remote servers (HTTP is allowed only on localhost).")
             return
         }
-        let wasSignedIn = isSignedIn
+        cancelAuthenticationForSessionBoundary()
         settings.saveAPIURL(url)
         isSignedIn = settings.load().isUsable
         status = isSignedIn ? L("Server URL saved.") : L("Server URL saved. Sign in to this server.")
-        if wasSignedIn != isSignedIn {
-            onSignInChanged()
-        }
+        // Even a signed-out origin change must switch the offline data boundary;
+        // otherwise the previous server/account remains visible under the new URL.
+        onSignInChanged()
     }
 
     func saveShortcut(_ spec: ShortcutSpec) {
@@ -329,6 +329,7 @@ final class SettingsModel: ObservableObject {
     }
 
     func signOut() {
+        cancelAuthenticationForSessionBoundary()
         let url = currentURL ?? settings.load().apiURL
         // Snapshot the refresh cookie, then clear ALL local credentials up front.
         // onSignInChanged() (and the upload/reminder sync it triggers) must not run
@@ -351,6 +352,7 @@ final class SettingsModel: ObservableObject {
     /// existing signed-out state without presenting an alarming status-bar icon.
     func handleSessionExpired() {
         guard isSignedIn || settings.load().isUsable else { return }
+        cancelAuthenticationForSessionBoundary()
         settings.signOut()
         isSignedIn = false
         status = L("Session expired — sign in again from Settings.")
@@ -367,8 +369,10 @@ final class SettingsModel: ObservableObject {
     }
 
     func retryNow() {
+        let generation = clients.session.snapshot()
         Task { @MainActor in
             let result = await retry()
+            guard clients.session.isCurrent(generation) else { return }
             switch result.status {
             case .completed:
                 status = DesktopLocalization.shared.format(
@@ -381,6 +385,17 @@ final class SettingsModel: ObservableObject {
             }
             refreshPending()
         }
+    }
+
+    private func cancelAuthenticationForSessionBoundary() {
+        authenticationTask?.cancel()
+        authenticationTask = nil
+        authenticationGate.cancel()
+        webAuthenticationSession?.cancel()
+        webAuthenticationSession = nil
+        isAuthenticating = false
+        pendingMFA = nil
+        mfaCode = ""
     }
 }
 

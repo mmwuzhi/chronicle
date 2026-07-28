@@ -693,9 +693,27 @@ limit?: number;
 
 export type DueRemindersParams = {
 /**
- * RFC3339 lower bound (exclusive); reminders due after this and up to now. Omit for all past-due.
+ * RFC3339 lower bound (exclusive). Omit to use the last 24 hours instead of unbounded history.
  */
 since?: string;
+/**
+ * RFC3339 upper bound (inclusive). Omit to use the request time.
+ */
+until?: string;
+/**
+ * RFC3339 timestamp from the final item of the previous page; requires beforeId.
+ */
+beforeAt?: string;
+/**
+ * Capture id from the final item of the previous page; requires beforeAt.
+ */
+beforeId?: string;
+/**
+ * Maximum reminders returned in this page.
+ * @minimum 1
+ * @maximum 100
+ */
+limit?: number;
 };
 
 export type ReviewTodayParams = {

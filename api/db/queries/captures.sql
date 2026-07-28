@@ -178,6 +178,9 @@ SET transcription_status = 'pending',
 WHERE id = $1
   AND user_id = $2
   AND deleted_at IS NULL
+  -- A manual retry must not invalidate a live worker's claim. Expired claims
+  -- are reclaimed by ClaimPendingTranscription after their lease comes due.
+  AND transcription_status <> 'processing'
   AND (
     -- audio: same size guard the create path applies before queueing
     (media_type = 'audio' AND audio_duration_sec IS NOT NULL AND audio_duration_sec <= 300)
@@ -207,16 +210,22 @@ WHERE id = (
 )
 RETURNING *;
 
--- name: CompleteCaptureTranscription :exec
+-- name: CompleteCaptureTranscription :execrows
+-- next_transcription_at is the claim's lease token. Requiring the exact token
+-- prevents a worker whose lease expired from overwriting a newer claimant.
 UPDATE captures
 SET transcript = $2,
     transcription_status = 'completed',
     transcription_model = $3,
     transcribed_at = now(),
     next_transcription_at = NULL
-WHERE id = $1;
+WHERE id = $1
+  AND media_key IS NOT NULL
+  AND deleted_at IS NULL
+  AND transcription_status = 'processing'
+  AND next_transcription_at = sqlc.arg('lease_expires_at');
 
--- name: FailCaptureTranscription :exec
+-- name: FailCaptureTranscription :execrows
 UPDATE captures
 SET transcription_status = CASE
       WHEN transcription_attempts >= 4 THEN 'failed'::transcription_status
@@ -228,7 +237,11 @@ SET transcription_status = CASE
       WHEN 3 THEN now() + interval '30 minutes'
       ELSE NULL
     END
-WHERE id = $1;
+WHERE id = sqlc.arg('id')
+  AND media_key IS NOT NULL
+  AND deleted_at IS NULL
+  AND transcription_status = 'processing'
+  AND next_transcription_at = sqlc.arg('lease_expires_at');
 
 -- name: MinScheduledTranscriptionIn :one
 -- Seconds until the earliest not-yet-claimable transcription work comes due: a
@@ -245,15 +258,20 @@ WHERE transcription_status IN ('pending', 'processing')
   AND deleted_at IS NULL
   AND next_transcription_at > now();
 
--- name: SkipCaptureTranscription :exec
+-- name: SkipCaptureTranscription :execrows
 -- Mark a capture's transcription skipped and clear its retry schedule, so it
 -- leaves the worker queue. Used to enforce the vision opt-out at the sink: an
 -- image that reached 'pending' (e.g. via retry) while VISION_ENABLED is off is
--- skipped instead of being sent to the vision provider.
+-- skipped instead of being sent to the vision provider. The lease token keeps
+-- a stale worker from skipping a task that another worker has reclaimed.
 UPDATE captures
 SET transcription_status = 'skipped',
     next_transcription_at = NULL
-WHERE id = $1;
+WHERE id = sqlc.arg('id')
+  AND media_key IS NOT NULL
+  AND deleted_at IS NULL
+  AND transcription_status = 'processing'
+  AND next_transcription_at = sqlc.arg('lease_expires_at');
 
 -- name: EnqueueCaptureLinkFetch :exec
 -- Record the URL detected in a text capture and hand it to the link-fetch worker
@@ -298,7 +316,7 @@ SET transcription_status = 'processing',
 WHERE id = (
   SELECT id
   FROM captures
-  WHERE transcription_status IN ('pending', 'processing')
+  WHERE transcription_status IN ('pending', 'processing', 'failed')
     AND media_key IS NULL
     AND deleted_at IS NULL
     AND next_transcription_at <= now()
@@ -341,7 +359,7 @@ WHERE id = sqlc.arg('id')
 -- MinScheduledTranscriptionIn; see its comment for why the clock math is in SQL.
 SELECT COALESCE(EXTRACT(EPOCH FROM MIN(next_transcription_at) - now()), 0)::float8 AS next_in_seconds
 FROM captures
-WHERE transcription_status IN ('pending', 'processing')
+WHERE transcription_status IN ('pending', 'processing', 'failed')
   AND media_key IS NULL
   AND deleted_at IS NULL
   AND next_transcription_at > now();
@@ -368,18 +386,23 @@ WHERE id = $1
 
 -- name: FailCaptureLinkFetch :execrows
 -- Link-job counterpart to FailCaptureTranscription, guarded by the URL lease so
--- an old failed request cannot strand a newly-enqueued URL (whose attempts were
--- reset to zero) with a NULL retry time.
+-- an old failed request cannot strand a newly-enqueued URL. After the short
+-- retry budget is exhausted, keep a bounded daily self-heal schedule: a
+-- temporary provider outage gets several later chances, while a permanently
+-- hostile URL eventually leaves the shared single-worker queue.
 UPDATE captures
 SET transcription_status = CASE
       WHEN transcription_attempts >= 4 THEN 'failed'::transcription_status
       ELSE 'pending'::transcription_status
     END,
-    next_transcription_at = CASE transcription_attempts
+    next_transcription_at = CASE
+      WHEN transcription_attempts >= 8 THEN NULL
+      ELSE CASE transcription_attempts
       WHEN 1 THEN now() + interval '1 minute'
       WHEN 2 THEN now() + interval '5 minutes'
       WHEN 3 THEN now() + interval '30 minutes'
-      ELSE NULL
+      ELSE now() + interval '24 hours'
+      END
     END
 WHERE id = sqlc.arg('id')
   AND media_key IS NULL
@@ -449,19 +472,59 @@ RETURNING *;
 -- soft, the trash offers permanent removal for content the user truly wants gone
 -- (a mistaken or sensitive capture). FK ON DELETE CASCADE clears the derived rows
 -- (capture_links, capture_attachments, capture_embeddings, capture_metadata).
--- Returns media_key so the handler can best-effort delete the R2 object too.
+-- If media exists, enqueue its R2 key in the durable deletion outbox in the
+-- SAME statement as the hard delete. A request cancellation or provider outage
+-- can therefore never turn the object key into an untraceable orphan.
 -- No row (live capture or wrong owner) → pgx.ErrNoRows → 404.
-DELETE FROM captures
-WHERE id = $1 AND user_id = $2 AND deleted_at IS NOT NULL
-RETURNING media_key;
+WITH target AS (
+    SELECT id, media_key
+    FROM captures
+    WHERE captures.id = sqlc.arg('id')
+      AND captures.user_id = sqlc.arg('user_id')
+      AND deleted_at IS NOT NULL
+    FOR UPDATE
+),
+queued AS (
+    INSERT INTO capture_media_deletions (object_key)
+    SELECT media_key
+    FROM target
+    WHERE media_key IS NOT NULL AND media_key <> ''
+    ON CONFLICT (object_key) DO NOTHING
+),
+deleted AS (
+    DELETE FROM captures
+    USING target
+    WHERE captures.id = target.id
+    RETURNING captures.id
+)
+SELECT id FROM deleted;
 
 -- name: EmptyTrash :many
 -- Hard delete every trashed capture for the user (explicit "empty trash").
--- Same cascade semantics as PermanentDeleteCapture. Returns each media_key so the
--- handler can best-effort purge the R2 objects; the row count is the purged total.
-DELETE FROM captures
-WHERE user_id = $1 AND deleted_at IS NOT NULL
-RETURNING media_key;
+-- Same cascade + transactional deletion-outbox semantics as
+-- PermanentDeleteCapture. Returns one id per deleted capture so the handler can
+-- report the exact purged count, including text captures with no media object.
+WITH target AS (
+    SELECT id, media_key
+    FROM captures
+    WHERE captures.user_id = sqlc.arg('user_id')
+      AND deleted_at IS NOT NULL
+    FOR UPDATE
+),
+queued AS (
+    INSERT INTO capture_media_deletions (object_key)
+    SELECT media_key
+    FROM target
+    WHERE media_key IS NOT NULL AND media_key <> ''
+    ON CONFLICT (object_key) DO NOTHING
+),
+deleted AS (
+    DELETE FROM captures
+    USING target
+    WHERE captures.id = target.id
+    RETURNING captures.id
+)
+SELECT id FROM deleted;
 
 -- name: ListCapturesInRange :many
 SELECT * FROM captures
@@ -487,16 +550,24 @@ WHERE id = sqlc.arg('id') AND user_id = sqlc.arg('user_id') AND deleted_at IS NU
 RETURNING *;
 
 -- name: DueReminders :many
--- Reminders that came due in (since, now] — left-open to avoid re-notifying the
--- same one (since = caller's last check), right-closed to include "due right now".
--- Newest first for the feed's "due" section.
+-- A bounded page of reminders that came due in (since, until]. Callers walk
+-- backwards with (before_at, before_id), which keeps equal timestamps stable and
+-- lets the desktop advance its durable checkpoint only after every page succeeds.
 SELECT * FROM captures
 WHERE user_id = $1
   AND deleted_at IS NULL
   AND remind_at IS NOT NULL
   AND remind_at > sqlc.arg('since')::timestamptz
-  AND remind_at <= now()
-ORDER BY remind_at DESC;
+  AND remind_at <= sqlc.arg('until')::timestamptz
+  AND (
+    NOT sqlc.arg('has_before')::boolean
+    OR (remind_at, id) < (
+      sqlc.arg('before_at')::timestamptz,
+      sqlc.arg('before_id')::uuid
+    )
+  )
+ORDER BY remind_at DESC, id DESC
+LIMIT sqlc.arg('page_size');
 
 -- name: PendingReminders :many
 -- All not-yet-due reminders (remind_at > now), so the desktop app can reconcile

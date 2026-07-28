@@ -85,7 +85,7 @@ export function createGoogleDriveAdapter(
     label: "Google Drive",
     available: typeof clientId === "string" && clientId.trim().length > 0,
     maxFileBytes: MAX_CLOUD_FILE_BYTES,
-    upload: async (file: File) => {
+    upload: async (file: File, operationId: string) => {
       assertCloudFileSize(file.size);
       if (!clientId?.trim()) {
         throw new CloudDriveError(
@@ -103,7 +103,7 @@ export function createGoogleDriveAdapter(
           "Google authorization failed.",
         );
       }
-      return uploadFileToGoogleDrive(file, accessToken, fetcher);
+      return uploadFileToGoogleDrive(file, operationId, accessToken, fetcher);
     },
   };
 }
@@ -148,16 +148,20 @@ export function buildGoogleDriveMultipartBody(
 
 async function uploadFileToGoogleDrive(
   file: File,
+  operationId: string,
   accessToken: string,
   fetcher: Fetcher,
 ): Promise<CloudAttachmentDraft> {
   const folderId = await ensureChronicleFolder(accessToken, fetcher);
-  const fileResponse = await createGoogleDriveFile(
-    file,
-    folderId,
-    accessToken,
-    fetcher,
-  );
+  const fileResponse =
+    (await findGoogleDriveFile(folderId, operationId, accessToken, fetcher)) ??
+    (await createGoogleDriveFile(
+      file,
+      folderId,
+      operationId,
+      accessToken,
+      fetcher,
+    ));
   return {
     provider: "google_drive",
     providerFileId: fileResponse.id,
@@ -168,6 +172,37 @@ async function uploadFileToGoogleDrive(
       fileResponse.webViewLink ??
       `https://drive.google.com/file/d/${encodeURIComponent(fileResponse.id)}/view`,
   };
+}
+
+async function findGoogleDriveFile(
+  folderId: string,
+  operationId: string,
+  accessToken: string,
+  fetcher: Fetcher,
+): Promise<GoogleDriveFile | undefined> {
+  const searchUrl = new URL(`${DRIVE_API_BASE_URL}/files`);
+  searchUrl.searchParams.set(
+    "q",
+    [
+      `'${escapeDriveQueryValue(folderId)}' in parents`,
+      "trashed=false",
+      `appProperties has { key='chronicleOperationId' and value='${escapeDriveQueryValue(operationId)}' }`,
+    ].join(" and "),
+  );
+  searchUrl.searchParams.set("spaces", "drive");
+  searchUrl.searchParams.set(
+    "fields",
+    "files(id,name,mimeType,size,webViewLink)",
+  );
+  searchUrl.searchParams.set("pageSize", "1");
+  const result = await requestDriveJson<GoogleDriveFileList>(
+    fetcher,
+    searchUrl,
+    { method: "GET" },
+    accessToken,
+    isGoogleDriveFileList,
+  );
+  return result.files[0];
 }
 
 async function ensureChronicleFolder(
@@ -220,6 +255,7 @@ async function ensureChronicleFolder(
 async function createGoogleDriveFile(
   file: File,
   folderId: string,
+  operationId: string,
   accessToken: string,
   fetcher: Fetcher,
 ): Promise<GoogleDriveFile> {
@@ -231,7 +267,10 @@ async function createGoogleDriveFile(
       name: file.name,
       mimeType: file.type || DEFAULT_MIME_TYPE,
       parents: [folderId],
-      appProperties: { chronicle: "true" },
+      appProperties: {
+        chronicle: "true",
+        chronicleOperationId: operationId,
+      },
     },
     file,
   );

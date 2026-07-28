@@ -19,16 +19,19 @@ enum GoogleDriveConfiguration {
 final class GoogleDriveAuthorizer {
     private let session: URLSession
     private var cachedToken: (value: String, expiresAt: Date)?
+    private var generation: UInt64 = 0
 
     init(session: URLSession = .shared) {
         self.session = session
     }
 
     func invalidate() {
+        generation &+= 1
         cachedToken = nil
     }
 
     func authorize(clientID: String) async throws -> String {
+        let startedGeneration = generation
         if let cachedToken, cachedToken.expiresAt > Date().addingTimeInterval(30) {
             return cachedToken.value
         }
@@ -36,6 +39,9 @@ final class GoogleDriveAuthorizer {
         parameters.requiredLocalEndpoint = .hostPort(host: "127.0.0.1", port: .any)
         let listener = try NWListener(using: parameters)
         let port = try await start(listener)
+        guard generation == startedGeneration, !Task.isCancelled else {
+            throw CancellationError()
+        }
         defer { listener.cancel() }
 
         let redirectURI = "http://127.0.0.1:\(port)/oauth/callback"
@@ -55,6 +61,9 @@ final class GoogleDriveAuthorizer {
             expectedPath: "/oauth/callback",
             expectedState: state
         )
+        guard generation == startedGeneration, !Task.isCancelled else {
+            throw CancellationError()
+        }
         let request = GoogleDriveOAuth.tokenRequest(
             clientID: clientID,
             redirectURI: redirectURI,
@@ -62,12 +71,18 @@ final class GoogleDriveAuthorizer {
             codeVerifier: pkce.verifier
         )
         let (data, response) = try await session.data(for: request)
+        guard generation == startedGeneration, !Task.isCancelled else {
+            throw CancellationError()
+        }
         guard let http = response as? HTTPURLResponse,
               (200..<300).contains(http.statusCode),
               let token = try? JSONDecoder().decode(GoogleOAuthTokenResponse.self, from: data),
               !token.accessToken.isEmpty
         else {
             throw GoogleDriveError.authorizationFailed
+        }
+        guard generation == startedGeneration else {
+            throw CancellationError()
         }
         cachedToken = (
             token.accessToken,

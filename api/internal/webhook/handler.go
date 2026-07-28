@@ -135,6 +135,9 @@ func (h *handler) create(ctx context.Context, input *WebhookCreateInput) (*Webho
 	if err := validateWebhookURL(input.Body.TargetURL); err != nil {
 		return nil, err
 	}
+	if (input.Body.Enabled == nil || *input.Body.Enabled) && !h.rag.Enabled() {
+		return nil, huma.Error503ServiceUnavailable("webhook delivery requires the RAG sidecar")
+	}
 	w, err := h.q.CreateWebhook(ctx, db.CreateWebhookParams{
 		UserID:            uid,
 		Name:              input.Body.Name,
@@ -194,6 +197,9 @@ func (h *handler) update(ctx context.Context, input *WebhookUpdateInput) (*Webho
 	}
 	if err := validateWebhookURL(input.Body.TargetURL); err != nil {
 		return nil, err
+	}
+	if (input.Body.Enabled == nil || *input.Body.Enabled) && !h.rag.Enabled() {
+		return nil, huma.Error503ServiceUnavailable("webhook delivery requires the RAG sidecar")
 	}
 	w, err := h.q.UpdateWebhook(ctx, db.UpdateWebhookParams{
 		ID:                id,
@@ -335,17 +341,17 @@ func thresholdOrDefault(t *float64) float64 {
 }
 
 // validateWebhookURL is a first-line SSRF guard: the sidecar will POST to this
-// URL when a capture matches, so reject non-http(s) schemes and literal
+// URL when a capture matches, so require transport encryption and reject literal
 // private/loopback/link-local destinations (including the cloud metadata IP).
 // Domain names that resolve to private addresses are not caught here — deeper
 // resolve-time defense belongs at the sidecar's delivery point if needed.
 func validateWebhookURL(raw string) error {
 	u, err := url.Parse(strings.TrimSpace(raw))
 	if err != nil || u.Host == "" {
-		return huma.Error422UnprocessableEntity("target URL must be an absolute http(s) URL")
+		return huma.Error422UnprocessableEntity("target URL must be an absolute https URL")
 	}
-	if u.Scheme != "http" && u.Scheme != "https" {
-		return huma.Error422UnprocessableEntity("target URL must use http or https")
+	if u.Scheme != "https" {
+		return huma.Error422UnprocessableEntity("target URL must use https")
 	}
 	host := strings.ToLower(u.Hostname())
 	if host == "localhost" || strings.HasSuffix(host, ".localhost") {

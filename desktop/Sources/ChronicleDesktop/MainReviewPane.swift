@@ -1,3 +1,4 @@
+import Combine
 import SwiftUI
 import ChronicleDesktopCore
 
@@ -69,6 +70,18 @@ struct MainReviewPane: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .chroniclePinsChanged)) { _ in
             pinTick &+= 1
+        }
+        .onReceive(clients.session.$generation.dropFirst()) { _ in
+            loadGeneration &+= 1
+            refreshing = false
+            loaded = false
+            signedIn = clients.recall() != nil
+            onThisDay = []
+            rediscover = []
+            error = ""
+            if signedIn {
+                Task { await load() }
+            }
         }
         .onDisappear {
             loadGeneration &+= 1
@@ -159,6 +172,7 @@ struct MainReviewPane: View {
     @MainActor
     private func load() async {
         let generation = loadGeneration
+        let sessionGeneration = clients.session.snapshot()
         guard !refreshing else { return }
         guard let client = clients.recall() else {
             signedIn = false
@@ -176,13 +190,17 @@ struct MainReviewPane: View {
         do {
             let offset = -TimeZone.current.secondsFromGMT(for: Date()) / 60
             let response = try await client.reviewToday(timezoneOffsetMinutes: offset)
-            guard generation == loadGeneration, sessionAvailable else { return }
+            guard generation == loadGeneration,
+                  clients.session.isCurrent(sessionGeneration),
+                  sessionAvailable else { return }
             onThisDay = response.onThisDay
             rediscover = response.rediscover
             loaded = true
             error = ""
         } catch let loadError {
-            guard generation == loadGeneration, sessionAvailable else { return }
+            guard generation == loadGeneration,
+                  clients.session.isCurrent(sessionGeneration),
+                  sessionAvailable else { return }
             loaded = true
             error = describeCaptureError(loadError)
         }

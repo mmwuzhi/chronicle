@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import SwiftUI
 import ChronicleDesktopCore
 
@@ -132,6 +133,13 @@ struct PanelContentView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .chroniclePinsChanged)) { _ in
             pinTick &+= 1
+        }
+        .onReceive(clients.session.$generation.dropFirst()) { _ in
+            inFlight?.cancel()
+            inFlight = nil
+            texts[.search] = ""
+            texts[.ask] = ""
+            collapseResults()
         }
         // In the body (not at the hosting site): the controller's hosting view is
         // typed NSHostingView<PanelContentView>, which a modifier there would break.
@@ -316,6 +324,7 @@ struct PanelContentView: View {
     }
 
     private func runFind(_ query: String) {
+        let generation = clients.session.snapshot()
         inFlight?.cancel()
         collapseResults()
         // 1) Local substring results immediately — offline-first, no login, no network.
@@ -328,19 +337,19 @@ struct PanelContentView: View {
         busy = hits.isEmpty
         inFlight = Task { @MainActor in
             let semantic = await clients.localSemanticSearch(query)
-            if Task.isCancelled { return }
+            guard !Task.isCancelled, clients.session.isCurrent(generation) else { return }
             mergeHits(semantic)
             if let client {
                 do {
                     let res = try await client.find(q: query)
-                    if Task.isCancelled { return }
+                    guard !Task.isCancelled, clients.session.isCurrent(generation) else { return }
                     mergeHits(res.items.map(RowItem.init))
                     degraded = res.degraded
                 } catch {
                     // Keep local results; a server/auth error must not blank them.
                 }
             }
-            busy = false
+            if clients.session.isCurrent(generation) { busy = false }
         }
     }
 
@@ -357,6 +366,7 @@ struct PanelContentView: View {
     }
 
     private func loadRecentPreview() {
+        let generation = clients.session.snapshot()
         inFlight?.cancel()
         collapseResults()
         let local = clients.localRecent(Self.recentPreviewLimit)
@@ -370,7 +380,7 @@ struct PanelContentView: View {
         inFlight = Task { @MainActor in
             do {
                 let page = try await client.recent(limit: Self.recentPreviewLimit)
-                if Task.isCancelled { return }
+                guard !Task.isCancelled, clients.session.isCurrent(generation) else { return }
                 recentRows = Array(
                     RowMerge.newestFirst(
                         primary: page.items.map(RowItem.init),
@@ -384,22 +394,27 @@ struct PanelContentView: View {
                 if local.isEmpty { error = describeCaptureError(err) }
                 recentLoaded = true
             }
-            busy = false
+            if clients.session.isCurrent(generation) { busy = false }
         }
     }
 
     private func runAsk(_ question: String) {
+        let generation = clients.session.snapshot()
         guard let client = clients.recall() else { needsSignIn = true; collapseResults(); return }
         collapseResults(); busy = true
         inFlight?.cancel()
         inFlight = Task { @MainActor in
             do {
                 let res = try await client.ask(question: question)
-                if Task.isCancelled { return }
+                guard !Task.isCancelled, clients.session.isCurrent(generation) else { return }
                 answer = res.answer.isEmpty ? L("No answer — not enough captures yet.") : res.answer
                 sources = res.sources
-            } catch let err { if !Task.isCancelled { error = describeCaptureError(err) } }
-            busy = false
+            } catch let err {
+                if !Task.isCancelled, clients.session.isCurrent(generation) {
+                    error = describeCaptureError(err)
+                }
+            }
+            if clients.session.isCurrent(generation) { busy = false }
         }
     }
 
@@ -433,25 +448,30 @@ struct PanelContentView: View {
     }
 
     private func delete(_ row: RowItem) {
+        let generation = clients.session.snapshot()
         let plan = captureDeletePlan(for: row, hasServerClient: clients.recall() != nil)
         guard plan != .unavailable else { return }
         error = ""
-        Task { @MainActor in
+        inFlight?.cancel()
+        inFlight = Task { @MainActor in
             let id: String
             do {
                 switch plan {
                 case .serverThenLocal(let captureId):
                     guard let client = clients.recall() else { return }
                     try await client.delete(id: captureId)
+                    guard clients.session.isCurrent(generation) else { return }
                     id = captureId
                 case .localOnly(let localId):
                     id = localId
                 case .unavailable:
                     return
                 }
+                guard clients.session.isCurrent(generation) else { return }
                 clients.localDelete(id)
                 CaptureEvents.postChanged()
             } catch let err {
+                guard clients.session.isCurrent(generation) else { return }
                 error = describeCaptureError(err)
                 return
             }

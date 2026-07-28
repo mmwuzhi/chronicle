@@ -158,6 +158,8 @@ def _resolve_and_vet(url: str) -> str:
 
 def _post(url: str, payload: object, is_json: bool) -> None:
     parts = urlparse(url)
+    if parts.scheme != "https":
+        raise RuntimeError("webhook target must use https")
     host = parts.hostname or ""
     ip = _resolve_and_vet(url)
     # Connect to the exact IP we just vetted so a second DNS lookup can't rebind
@@ -169,7 +171,7 @@ def _post(url: str, payload: object, is_json: bool) -> None:
         netloc = f"{netloc}:{parts.port}"
     pinned_url = parts._replace(netloc=netloc).geturl()
     headers = {"Host": host}
-    extensions = {"sni_hostname": host.encode("ascii")} if parts.scheme == "https" else {}
+    extensions = {"sni_hostname": host.encode("ascii")}
     with httpx.Client(timeout=TIMEOUT, follow_redirects=False) as client:
         if is_json:
             request = client.build_request("POST", pinned_url, json=payload,

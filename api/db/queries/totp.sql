@@ -13,8 +13,10 @@ INSERT INTO recovery_codes (user_id, code_hash) VALUES ($1, $2);
 -- name: GetRecoveryCodes :many
 SELECT * FROM recovery_codes WHERE user_id = $1;
 
--- name: UseRecoveryCode :exec
-UPDATE recovery_codes SET used = true WHERE id = $1;
+-- name: UseRecoveryCode :execrows
+UPDATE recovery_codes
+SET used = true
+WHERE id = $1 AND used = false;
 
 -- name: DeleteRecoveryCodes :exec
 DELETE FROM recovery_codes WHERE user_id = $1;

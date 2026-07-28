@@ -28,6 +28,8 @@ func TestParseTodoTag(t *testing.T) {
 		{"cjk-extended tag", "#todo买牛奶", todoTag{}},
 		{"malformed param", "#todo(later)", todoTag{}},
 		{"malformed date", "#todo(done:07-09)", todoTag{}},
+		{"impossible day", "#todo(done:2026-02-30)", todoTag{}},
+		{"impossible month", "#todo(done:2026-13-01)", todoTag{}},
 		{"double hash", "##todo", todoTag{}},
 	}
 	for _, c := range cases {

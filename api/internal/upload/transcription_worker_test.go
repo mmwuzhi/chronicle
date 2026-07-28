@@ -272,6 +272,135 @@ func TestProcessAvailableReportsScheduledRetryAcrossDrains(t *testing.T) {
 	}
 }
 
+// A processing row can be reclaimed after its lease expires. The original
+// worker must not be able to complete, fail, or skip the newer worker's claim.
+func TestTranscriptionTerminalWritesRequireCurrentClaimLease(t *testing.T) {
+	for _, terminal := range []string{"complete", "fail", "skip"} {
+		t.Run(terminal, func(t *testing.T) {
+			pool := testutil.NewPool(t)
+			testutil.Truncate(t, pool, "captures", "users")
+			ctx := context.Background()
+
+			userID := uuid.New()
+			if _, err := pool.Exec(ctx,
+				"INSERT INTO users (id, email, password_hash) VALUES ($1, $2, 'hash')",
+				userID, userID.String()+"@test.com",
+			); err != nil {
+				t.Fatalf("create user: %v", err)
+			}
+
+			q := db.New(pool)
+			created, err := q.CreateUploadedCapture(ctx, db.CreateUploadedCaptureParams{
+				ID:                   uuid.New(),
+				UserID:               userID,
+				MediaUrl:             "https://r2.example/a.webm",
+				MediaType:            db.CaptureMediaTypeAudio,
+				Source:               "desktop",
+				MediaKey:             "captures/a.webm",
+				AudioDurationSec:     pgtype.Int4{Int32: 60, Valid: true},
+				TranscriptionEnabled: true,
+			})
+			if err != nil {
+				t.Fatalf("create capture: %v", err)
+			}
+			if _, err := q.ClaimPendingTranscription(ctx); err != nil {
+				t.Fatalf("first claim: %v", err)
+			}
+
+			// Model the first claim reaching its expiry while its worker still
+			// holds the old token, then let another worker reclaim the row.
+			var expiredLease time.Time
+			if err := pool.QueryRow(ctx, `
+				UPDATE captures
+				SET next_transcription_at = now() - interval '1 second'
+				WHERE id = $1
+				RETURNING next_transcription_at`,
+				created.ID,
+			).Scan(&expiredLease); err != nil {
+				t.Fatalf("expire first lease: %v", err)
+			}
+			staleLease := pgtype.Timestamptz{Time: expiredLease, Valid: true}
+			current, err := q.ClaimPendingTranscription(ctx)
+			if err != nil {
+				t.Fatalf("reclaim: %v", err)
+			}
+			if current.NextTranscriptionAt.Time.Equal(expiredLease) {
+				t.Fatal("reclaim must issue a new lease token")
+			}
+
+			var affected int64
+			switch terminal {
+			case "complete":
+				affected, err = q.CompleteCaptureTranscription(ctx, db.CompleteCaptureTranscriptionParams{
+					ID:                 created.ID,
+					Transcript:         pgtype.Text{String: "stale transcript", Valid: true},
+					TranscriptionModel: pgtype.Text{String: "stale-model", Valid: true},
+					LeaseExpiresAt:     staleLease,
+				})
+			case "fail":
+				affected, err = q.FailCaptureTranscription(ctx, db.FailCaptureTranscriptionParams{
+					ID:             created.ID,
+					LeaseExpiresAt: staleLease,
+				})
+			case "skip":
+				affected, err = q.SkipCaptureTranscription(ctx, db.SkipCaptureTranscriptionParams{
+					ID:             created.ID,
+					LeaseExpiresAt: staleLease,
+				})
+			}
+			if err != nil {
+				t.Fatalf("stale %s: %v", terminal, err)
+			}
+			if affected != 0 {
+				t.Fatalf("stale %s changed %d rows, want 0", terminal, affected)
+			}
+
+			state, err := q.GetCapture(ctx, db.GetCaptureParams{ID: created.ID, UserID: userID})
+			if err != nil {
+				t.Fatalf("read reclaimed capture: %v", err)
+			}
+			if state.TranscriptionStatus != db.TranscriptionStatusProcessing {
+				t.Fatalf("stale %s changed status to %q", terminal, state.TranscriptionStatus)
+			}
+			if state.TranscriptionAttempts != 2 {
+				t.Fatalf("stale %s changed attempts to %d, want 2", terminal, state.TranscriptionAttempts)
+			}
+			if state.Transcript.Valid {
+				t.Fatalf("stale %s stored transcript %q", terminal, state.Transcript.String)
+			}
+			if !state.NextTranscriptionAt.Time.Equal(current.NextTranscriptionAt.Time) {
+				t.Fatalf("stale %s changed the current lease", terminal)
+			}
+
+			switch terminal {
+			case "complete":
+				affected, err = q.CompleteCaptureTranscription(ctx, db.CompleteCaptureTranscriptionParams{
+					ID:                 created.ID,
+					Transcript:         pgtype.Text{String: "current transcript", Valid: true},
+					TranscriptionModel: pgtype.Text{String: "current-model", Valid: true},
+					LeaseExpiresAt:     current.NextTranscriptionAt,
+				})
+			case "fail":
+				affected, err = q.FailCaptureTranscription(ctx, db.FailCaptureTranscriptionParams{
+					ID:             created.ID,
+					LeaseExpiresAt: current.NextTranscriptionAt,
+				})
+			case "skip":
+				affected, err = q.SkipCaptureTranscription(ctx, db.SkipCaptureTranscriptionParams{
+					ID:             created.ID,
+					LeaseExpiresAt: current.NextTranscriptionAt,
+				})
+			}
+			if err != nil {
+				t.Fatalf("current %s: %v", terminal, err)
+			}
+			if affected != 1 {
+				t.Fatalf("current %s changed %d rows, want 1", terminal, affected)
+			}
+		})
+	}
+}
+
 func TestChatCompletionsEndpointAcceptsFullEndpoint(t *testing.T) {
 	full := "https://example.test/v1/chat/completions"
 	if got := chatCompletionsEndpoint(full); got != full {

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -340,6 +341,99 @@ func TestStaleLinkFetchCannotOverwriteReplacementURL(t *testing.T) {
 	status, linkURL, transcript := readLinkState(t, pool, id)
 	if status != "pending" || linkURL == nil || *linkURL != newURL || transcript != nil {
 		t.Fatalf("replacement state changed: status=%q linkURL=%v transcript=%v", status, linkURL, transcript)
+	}
+}
+
+func TestFailedLinkFetchSelfHealsAfterDailyCooldown(t *testing.T) {
+	srv, pool := newServerOpts(t, true)
+	_, token := createTestUser(t, pool)
+	queries := db.New(pool)
+	ctx := context.Background()
+	linkURL := "https://recover.example.com/page"
+	id := createCapture(t, srv, token, map[string]any{"rawText": "see " + linkURL})
+	captureID := uuid.MustParse(id)
+
+	if _, err := queries.ClaimPendingLinkFetch(ctx); err != nil {
+		t.Fatalf("claim link: %v", err)
+	}
+	if _, err := pool.Exec(
+		ctx,
+		"UPDATE captures SET transcription_attempts = 4 WHERE id = $1",
+		captureID,
+	); err != nil {
+		t.Fatalf("set exhausted attempts: %v", err)
+	}
+	if n, err := queries.FailCaptureLinkFetch(ctx, db.FailCaptureLinkFetchParams{
+		ID: captureID, LinkUrl: linkURL,
+	}); err != nil || n != 1 {
+		t.Fatalf("fail exhausted link: rows=%d err=%v", n, err)
+	}
+
+	var status string
+	var retryAt time.Time
+	if err := pool.QueryRow(
+		ctx,
+		"SELECT transcription_status, next_transcription_at FROM captures WHERE id = $1",
+		captureID,
+	).Scan(&status, &retryAt); err != nil {
+		t.Fatalf("read failed schedule: %v", err)
+	}
+	if status != "failed" || retryAt.Before(time.Now().Add(23*time.Hour)) {
+		t.Fatalf("expected failed job scheduled for daily retry, got status=%s at=%s", status, retryAt)
+	}
+
+	if _, err := pool.Exec(
+		ctx,
+		"UPDATE captures SET next_transcription_at = now() WHERE id = $1",
+		captureID,
+	); err != nil {
+		t.Fatalf("make retry due: %v", err)
+	}
+	reclaimed, err := queries.ClaimPendingLinkFetch(ctx)
+	if err != nil || reclaimed.ID != captureID {
+		t.Fatalf("reclaim failed link: capture=%s err=%v", reclaimed.ID, err)
+	}
+}
+
+func TestFailedLinkFetchLeavesQueueAfterBoundedDailyRetries(t *testing.T) {
+	srv, pool := newServerOpts(t, true)
+	_, token := createTestUser(t, pool)
+	queries := db.New(pool)
+	ctx := context.Background()
+	linkURL := "https://permanent-failure.example.com/page"
+	id := createCapture(t, srv, token, map[string]any{"rawText": "see " + linkURL})
+	captureID := uuid.MustParse(id)
+
+	if _, err := queries.ClaimPendingLinkFetch(ctx); err != nil {
+		t.Fatalf("claim link: %v", err)
+	}
+	if _, err := pool.Exec(
+		ctx,
+		"UPDATE captures SET transcription_attempts = 8 WHERE id = $1",
+		captureID,
+	); err != nil {
+		t.Fatalf("set terminal attempts: %v", err)
+	}
+	if n, err := queries.FailCaptureLinkFetch(ctx, db.FailCaptureLinkFetchParams{
+		ID: captureID, LinkUrl: linkURL,
+	}); err != nil || n != 1 {
+		t.Fatalf("fail terminal link: rows=%d err=%v", n, err)
+	}
+
+	var status string
+	var retryAt *time.Time
+	if err := pool.QueryRow(
+		ctx,
+		"SELECT transcription_status, next_transcription_at FROM captures WHERE id = $1",
+		captureID,
+	).Scan(&status, &retryAt); err != nil {
+		t.Fatalf("read terminal schedule: %v", err)
+	}
+	if status != "failed" || retryAt != nil {
+		t.Fatalf("expected terminal failed job outside queue, got status=%s at=%v", status, retryAt)
+	}
+	if _, err := queries.ClaimPendingLinkFetch(ctx); !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("terminal failed link was reclaimed: %v", err)
 	}
 }
 

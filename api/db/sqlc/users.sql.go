@@ -65,13 +65,36 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 	return i, err
 }
 
-const deleteUser = `-- name: DeleteUser :exec
-DELETE FROM users WHERE id = $1
+const deleteUser = `-- name: DeleteUser :one
+WITH media AS (
+  SELECT media_key
+  FROM captures
+  WHERE user_id = $1
+    AND media_key IS NOT NULL
+    AND media_key <> ''
+  FOR UPDATE
+),
+queued AS (
+  INSERT INTO capture_media_deletions (object_key)
+  SELECT media_key FROM media
+  ON CONFLICT (object_key) DO NOTHING
+),
+deleted AS (
+  DELETE FROM users
+  WHERE users.id = $1
+  RETURNING users.id
+)
+SELECT id FROM deleted
 `
 
-func (q *Queries) DeleteUser(ctx context.Context, id uuid.UUID) error {
-	_, err := q.db.Exec(ctx, deleteUser, id)
-	return err
+// Account deletion cascades through captures, so retain every R2 key in the
+// same statement before deleting the user. The media worker owns the durable
+// provider cleanup after the database privacy boundary is complete.
+func (q *Queries) DeleteUser(ctx context.Context, id uuid.UUID) (uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, deleteUser, id)
+	var id_2 uuid.UUID
+	err := row.Scan(&id_2)
+	return id_2, err
 }
 
 const getUserByEmail = `-- name: GetUserByEmail :one

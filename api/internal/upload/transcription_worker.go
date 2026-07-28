@@ -135,7 +135,10 @@ func (w *transcriptionWorker) processAvailable(ctx context.Context) (time.Durati
 		// pending; refuse to send it to the vision provider here too, marking it
 		// skipped so it leaves the queue instead of looping. Audio is unaffected.
 		if capture.MediaType == db.CaptureMediaTypeImage && !w.visionEnabled {
-			if err := w.q.SkipCaptureTranscription(ctx, capture.ID); err != nil {
+			if _, err := w.q.SkipCaptureTranscription(ctx, db.SkipCaptureTranscriptionParams{
+				ID:             capture.ID,
+				LeaseExpiresAt: capture.NextTranscriptionAt,
+			}); err != nil {
 				return 0, err
 			}
 			continue
@@ -143,8 +146,15 @@ func (w *transcriptionWorker) processAvailable(ctx context.Context) (time.Durati
 
 		transcript, model, err := w.transcribeCapture(ctx, capture)
 		if err != nil {
-			if failErr := w.q.FailCaptureTranscription(ctx, capture.ID); failErr != nil {
+			failed, failErr := w.q.FailCaptureTranscription(ctx, db.FailCaptureTranscriptionParams{
+				ID:             capture.ID,
+				LeaseExpiresAt: capture.NextTranscriptionAt,
+			})
+			if failErr != nil {
 				return 0, failErr
+			}
+			if failed == 0 {
+				continue // a newer claim owns this capture now
 			}
 			slog.Warn(
 				"transcription attempt failed",
@@ -156,12 +166,17 @@ func (w *transcriptionWorker) processAvailable(ctx context.Context) (time.Durati
 			)
 			continue
 		}
-		if err := w.q.CompleteCaptureTranscription(ctx, db.CompleteCaptureTranscriptionParams{
+		completed, err := w.q.CompleteCaptureTranscription(ctx, db.CompleteCaptureTranscriptionParams{
 			ID:                 capture.ID,
 			Transcript:         pgtype.Text{String: transcript, Valid: true},
 			TranscriptionModel: pgtype.Text{String: model, Valid: true},
-		}); err != nil {
+			LeaseExpiresAt:     capture.NextTranscriptionAt,
+		})
+		if err != nil {
 			return 0, err
+		}
+		if completed == 0 {
+			continue // a newer claim owns this capture now
 		}
 		// Transcript is now the capture's indexable content — embed it.
 		w.rag.Index(capture.UserID.String(), capture.ID.String())

@@ -1,7 +1,8 @@
 import Foundation
 
 // Time-based recall for the desktop app. The Go API exposes:
-//   GET /reminders/due?since=   captures whose remind_at fell in (since, now]
+//   GET /reminders/due?since=&until=   a bounded page whose remind_at fell in
+//                                     (since, until]
 //   GET /reminders/pending      captures whose remind_at is still in the future
 // Both return CaptureBody rows; we decode only the fields the notifier needs
 // (JSONDecoder ignores the rest). remind_at filtering is browse-only on the
@@ -48,14 +49,34 @@ public final class ReminderAPIClient: @unchecked Sendable {
         self.refresher = refresher
     }
 
-    public func makeDueRequest(since: String?) -> URLRequest {
+    public func makeDueRequest(
+        since: String?,
+        until: String? = nil,
+        beforeAt: String? = nil,
+        beforeID: String? = nil,
+        limit: Int? = nil
+    ) -> URLRequest {
         var components = URLComponents(
             url: config.apiURL.appending(path: "reminders/due"),
             resolvingAgainstBaseURL: false,
         )!
+        var queryItems: [URLQueryItem] = []
         if let since, !since.isEmpty {
-            components.queryItems = [URLQueryItem(name: "since", value: since)]
+            queryItems.append(URLQueryItem(name: "since", value: since))
         }
+        if let until, !until.isEmpty {
+            queryItems.append(URLQueryItem(name: "until", value: until))
+        }
+        if let beforeAt, !beforeAt.isEmpty {
+            queryItems.append(URLQueryItem(name: "beforeAt", value: beforeAt))
+        }
+        if let beforeID, !beforeID.isEmpty {
+            queryItems.append(URLQueryItem(name: "beforeId", value: beforeID))
+        }
+        if let limit {
+            queryItems.append(URLQueryItem(name: "limit", value: String(limit)))
+        }
+        components.queryItems = queryItems.isEmpty ? nil : queryItems
         var request = URLRequest(url: components.url!)
         request.httpMethod = "GET"
         request.setValue("Bearer \(config.token)", forHTTPHeaderField: "Authorization")
@@ -69,9 +90,24 @@ public final class ReminderAPIClient: @unchecked Sendable {
         return request
     }
 
-    public func due(since: String?) async throws -> [ReminderItem] {
+    public func due(
+        since: String?,
+        until: String? = nil,
+        beforeAt: String? = nil,
+        beforeID: String? = nil,
+        limit: Int? = nil
+    ) async throws -> [ReminderItem] {
         let (data, response) = try await AuthedTransport.send(
-            makeDueRequest(since: since), session: session, refresher: refresher)
+            makeDueRequest(
+                since: since,
+                until: until,
+                beforeAt: beforeAt,
+                beforeID: beforeID,
+                limit: limit
+            ),
+            session: session,
+            refresher: refresher
+        )
         try Self.validate(response)
         return try JSONDecoder().decode([ReminderItem].self, from: data)
     }
@@ -90,6 +126,89 @@ public final class ReminderAPIClient: @unchecked Sendable {
         guard (200..<300).contains(http.statusCode) else {
             throw CaptureAPIError.httpStatus(http.statusCode)
         }
+    }
+}
+
+/// Durable due-reminder paging policy. A brand-new device intentionally fetches
+/// only the newest 25 reminders from the last day, preventing an account's
+/// historical backlog from becoming an alert storm. Once that bootstrap
+/// succeeds, the saved per-account checkpoint makes later syncs lossless and
+/// walks every bounded server page before advancing.
+public struct ReminderDueBatch: Equatable, Sendable {
+    public let items: [ReminderItem]
+    public let checkpoint: Date
+
+    public init(items: [ReminderItem], checkpoint: Date) {
+        self.items = items
+        self.checkpoint = checkpoint
+    }
+}
+
+public final class ReminderDueSynchronizer: @unchecked Sendable {
+    public static let initialLookback: TimeInterval = 24 * 60 * 60
+    public static let initialLimit = 25
+    public static let pageLimit = 100
+
+    private let defaults: UserDefaults
+
+    public init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+    }
+
+    public func checkpoint(for scope: LocalCaptureScope) -> Date? {
+        defaults.object(forKey: checkpointKey(for: scope)) as? Date
+    }
+
+    public func fetch(
+        using client: ReminderAPIClient,
+        scope: LocalCaptureScope,
+        now: Date = Date()
+    ) async throws -> ReminderDueBatch {
+        let checkpoint = checkpoint(for: scope)
+        let since = checkpoint ?? now.addingTimeInterval(-Self.initialLookback)
+        let sinceString = Self.formatISO(since)
+        let untilString = Self.formatISO(now)
+        let limit = checkpoint == nil ? Self.initialLimit : Self.pageLimit
+
+        var items: [ReminderItem] = []
+        var beforeAt: String?
+        var beforeID: String?
+        repeat {
+            let page = try await client.due(
+                since: sinceString,
+                until: untilString,
+                beforeAt: beforeAt,
+                beforeID: beforeID,
+                limit: limit
+            )
+            items.append(contentsOf: page)
+            guard checkpoint != nil, page.count == limit, let last = page.last,
+                  let lastRemindAt = last.remindAt
+            else {
+                break
+            }
+            beforeAt = lastRemindAt
+            beforeID = last.id
+        } while true
+
+        // Do not advance here. The caller must first durably record every item;
+        // otherwise a crash or SQLite failure between fetch and persistence
+        // would permanently skip the returned reminders.
+        return ReminderDueBatch(items: items, checkpoint: now)
+    }
+
+    public func commit(_ batch: ReminderDueBatch, for scope: LocalCaptureScope) {
+        defaults.set(batch.checkpoint, forKey: checkpointKey(for: scope))
+    }
+
+    private func checkpointKey(for scope: LocalCaptureScope) -> String {
+        "chronicle.reminders.due-checkpoint.\(scope.persistenceKey)"
+    }
+
+    private static func formatISO(_ date: Date) -> String {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter.string(from: date)
     }
 }
 

@@ -4,8 +4,8 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import {
   getListCapturePageInfiniteQueryKey,
-  useAddCaptureAttachment,
   useCreateCapture,
+  useCreateCaptureWithAttachment,
   useDeleteCapture,
   useListCapturePageInfinite,
   useRetryCaptureTranscription,
@@ -14,7 +14,6 @@ import {
   type CaptureBody,
 } from "@/api";
 import {
-  appendAttachmentInPages,
   patchCaptureInPages,
   prependCaptureToPages,
   removeCaptureFromPages,
@@ -115,10 +114,9 @@ function Captures() {
       onError: () => showMutationToast(tc("errors.mutationFailed")),
     },
   });
-  const addAttachment = useAddCaptureAttachment({
+  const createWithAttachment = useCreateCaptureWithAttachment({
     mutation: {
-      onSuccess: (attachment, variables) =>
-        appendAttachmentInPages(queryClient, variables.id, attachment),
+      onSuccess: (capture) => prependCaptureToPages(queryClient, capture),
       onError: () => showMutationToast(tc("errors.mutationFailed")),
     },
   });
@@ -196,19 +194,18 @@ function Captures() {
               { onSuccess },
             )
           }
-          onCreateAttachmentCapture={async (rawText) => {
-            const capture = await create.mutateAsync({
-              data: { rawText, mediaType: "text" },
-            });
-            return capture.id;
-          }}
-          onAttachCloudFile={async (
-            captureId,
+          onCreateWithAttachment={async (
+            operationId,
+            rawText,
             attachment: CloudAttachmentDraft,
           ) => {
-            await addAttachment.mutateAsync({
-              id: captureId,
-              data: attachment,
+            await createWithAttachment.mutateAsync({
+              data: {
+                operationId,
+                rawText,
+                source: "web",
+                attachment,
+              },
             });
           }}
           onUploaded={invalidateCaptures}

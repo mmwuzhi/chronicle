@@ -65,7 +65,11 @@ func remindHideDefault(hide *bool) bool {
 }
 
 type RemindersDueInput struct {
-	Since string `query:"since" doc:"RFC3339 lower bound (exclusive); reminders due after this and up to now. Omit for all past-due."`
+	Since    string `query:"since" doc:"RFC3339 lower bound (exclusive). Omit to use the last 24 hours instead of unbounded history."`
+	Until    string `query:"until" doc:"RFC3339 upper bound (inclusive). Omit to use the request time."`
+	BeforeAt string `query:"beforeAt" doc:"RFC3339 timestamp from the final item of the previous page; requires beforeId."`
+	BeforeID string `query:"beforeId" format:"uuid" doc:"Capture id from the final item of the previous page; requires beforeAt."`
+	Limit    int    `query:"limit" minimum:"1" maximum:"100" default:"100" doc:"Maximum reminders returned in this page."`
 }
 
 func (h *handler) dueReminders(ctx context.Context, input *RemindersDueInput) (*ListOutput, error) {
@@ -73,17 +77,50 @@ func (h *handler) dueReminders(ctx context.Context, input *RemindersDueInput) (*
 	if err != nil {
 		return nil, err
 	}
-	since := time.Time{} // zero value matches all past-due reminders
-	if strings.TrimSpace(input.Since) != "" {
-		parsed, perr := time.Parse(time.RFC3339, input.Since)
-		if perr != nil {
-			return nil, huma.Error422UnprocessableEntity("since must be an RFC3339 timestamp")
+	until := time.Now().UTC()
+	if strings.TrimSpace(input.Until) != "" {
+		until, err = parseReminderBound("until", input.Until)
+		if err != nil {
+			return nil, err
 		}
-		since = parsed
+	}
+	since := until.Add(-24 * time.Hour)
+	if strings.TrimSpace(input.Since) != "" {
+		since, err = parseReminderBound("since", input.Since)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if !since.Before(until) {
+		return nil, huma.Error422UnprocessableEntity("since must be before until")
+	}
+
+	beforeAtRaw := strings.TrimSpace(input.BeforeAt)
+	beforeIDRaw := strings.TrimSpace(input.BeforeID)
+	if (beforeAtRaw == "") != (beforeIDRaw == "") {
+		return nil, huma.Error422UnprocessableEntity("beforeAt and beforeId must be provided together")
+	}
+	var beforeAt time.Time
+	var beforeID uuid.UUID
+	hasBefore := beforeAtRaw != ""
+	if hasBefore {
+		beforeAt, err = parseReminderBound("beforeAt", beforeAtRaw)
+		if err != nil {
+			return nil, err
+		}
+		beforeID, err = uuid.Parse(beforeIDRaw)
+		if err != nil {
+			return nil, huma.Error422UnprocessableEntity("beforeId must be a UUID")
+		}
 	}
 	rows, err := h.q.DueReminders(ctx, db.DueRemindersParams{
-		UserID: uid,
-		Since:  pgtype.Timestamptz{Time: since, Valid: true},
+		UserID:    uid,
+		Since:     pgtype.Timestamptz{Time: since, Valid: true},
+		Until:     pgtype.Timestamptz{Time: until, Valid: true},
+		HasBefore: hasBefore,
+		BeforeAt:  pgtype.Timestamptz{Time: beforeAt, Valid: hasBefore},
+		BeforeID:  beforeID,
+		PageSize:  int32(input.Limit),
 	})
 	if err != nil {
 		return nil, huma.Error500InternalServerError("internal error")
@@ -93,6 +130,14 @@ func (h *handler) dueReminders(ctx context.Context, input *RemindersDueInput) (*
 		out.Body[i] = toBody(c)
 	}
 	return out, nil
+}
+
+func parseReminderBound(name, value string) (time.Time, error) {
+	parsed, err := time.Parse(time.RFC3339, strings.TrimSpace(value))
+	if err != nil {
+		return time.Time{}, huma.Error422UnprocessableEntity(name + " must be an RFC3339 timestamp")
+	}
+	return parsed, nil
 }
 
 type RemindersPendingInput struct{}

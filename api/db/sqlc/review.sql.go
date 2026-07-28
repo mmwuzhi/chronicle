@@ -17,7 +17,7 @@ WITH clock AS (
     now() AS now_utc,
     make_interval(mins => $3::int) AS tz_offset
 )
-SELECT c.id, c.user_id, c.raw_text, c.media_url, c.media_type, c.created_at, c.source, c.transcript, c.transcription_status, c.transcription_model, c.transcription_attempts, c.transcribed_at, c.next_transcription_at, c.audio_duration_sec, c.media_key, c.remind_at, c.deleted_at, c.remind_hide, c.todo_at, c.done_at, c.link_url FROM captures c, clock
+SELECT c.id, c.user_id, c.raw_text, c.media_url, c.media_type, c.classified_as, c.task_id, c.created_at, c.source, c.transcript, c.transcription_status, c.transcription_model, c.transcription_attempts, c.transcribed_at, c.next_transcription_at, c.audio_duration_sec, c.media_key, c.remind_at, c.deleted_at, c.remind_hide, c.todo_at, c.done_at, c.link_url FROM captures c, clock
 WHERE user_id = $1
   AND deleted_at IS NULL
   AND EXTRACT(MONTH FROM c.created_at - clock.tz_offset) = EXTRACT(MONTH FROM clock.now_utc - clock.tz_offset)
@@ -55,6 +55,8 @@ func (q *Queries) ListOnThisDay(ctx context.Context, arg ListOnThisDayParams) ([
 			&i.RawText,
 			&i.MediaUrl,
 			&i.MediaType,
+			&i.ClassifiedAs,
+			&i.TaskID,
 			&i.CreatedAt,
 			&i.Source,
 			&i.Transcript,
@@ -83,7 +85,7 @@ func (q *Queries) ListOnThisDay(ctx context.Context, arg ListOnThisDayParams) ([
 }
 
 const listRediscover = `-- name: ListRediscover :many
-SELECT id, user_id, raw_text, media_url, media_type, created_at, source, transcript, transcription_status, transcription_model, transcription_attempts, transcribed_at, next_transcription_at, audio_duration_sec, media_key, remind_at, deleted_at, remind_hide, todo_at, done_at, link_url FROM captures
+SELECT id, user_id, raw_text, media_url, media_type, classified_as, task_id, created_at, source, transcript, transcription_status, transcription_model, transcription_attempts, transcribed_at, next_transcription_at, audio_duration_sec, media_key, remind_at, deleted_at, remind_hide, todo_at, done_at, link_url FROM captures
 WHERE user_id = $1
   AND deleted_at IS NULL
   AND created_at < now() - interval '7 days'
@@ -115,6 +117,8 @@ func (q *Queries) ListRediscover(ctx context.Context, arg ListRediscoverParams) 
 			&i.RawText,
 			&i.MediaUrl,
 			&i.MediaType,
+			&i.ClassifiedAs,
+			&i.TaskID,
 			&i.CreatedAt,
 			&i.Source,
 			&i.Transcript,

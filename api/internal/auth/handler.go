@@ -45,6 +45,7 @@ type Options struct {
 
 type handler struct {
 	q               *db.Queries
+	pool            *pgxpool.Pool
 	secret          string
 	resendKey       string
 	frontendURL     string
@@ -59,6 +60,7 @@ type handler struct {
 func Register(api huma.API, r chi.Router, pool *pgxpool.Pool, rdb *redis.Client, opts Options) {
 	h := &handler{
 		q:               db.New(pool),
+		pool:            pool,
 		secret:          opts.JWTSecret,
 		resendKey:       opts.ResendAPIKey,
 		frontendURL:     opts.FrontendURL,

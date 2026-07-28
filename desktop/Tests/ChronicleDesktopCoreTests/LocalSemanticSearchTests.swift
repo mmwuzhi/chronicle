@@ -61,7 +61,7 @@ func rankByCosineSortsFiltersAndLimits() {
 
 @Test
 func storeEmbeddingRoundTripsAndFiltersByModel() throws {
-    let store = LocalCaptureStore(fileURL: temporarySemanticDBURL())
+    let store = LocalCaptureStore(fileURL: temporarySemanticDBURL(), scope: .testing)
     let alpha = try store.create(CapturePayload(rawText: "alpha"))
     let beta = try store.create(CapturePayload(rawText: "beta"))
 
@@ -87,7 +87,7 @@ func storeEmbeddingRoundTripsAndFiltersByModel() throws {
 
 @Test
 func rowsNeedingEmbeddingSkipsEmptyText() throws {
-    let store = LocalCaptureStore(fileURL: temporarySemanticDBURL())
+    let store = LocalCaptureStore(fileURL: temporarySemanticDBURL(), scope: .testing)
     _ = try store.create(CapturePayload(rawText: "   ", mediaType: "audio"))
 
     // A media-only / blank-text capture has nothing to embed.

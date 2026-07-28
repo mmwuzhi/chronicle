@@ -7,6 +7,7 @@ import {
 } from "@/lib/cloudDrive";
 import { apiClient } from "@/lib/axios";
 import { Composer } from "@/components/Composer";
+import { fingerprintFile } from "@/utils/file-fingerprint";
 
 interface UploadResult {
   id: string;
@@ -22,9 +23,9 @@ const DIRECT_UPLOAD_MAX_BYTES = 20 * 1024 * 1024;
 interface CaptureComposerProps {
   creating: boolean;
   onCreate: (text: string, onSuccess: () => void) => void;
-  onCreateAttachmentCapture: (text: string) => Promise<string>;
-  onAttachCloudFile: (
-    captureId: string,
+  onCreateWithAttachment: (
+    operationId: string,
+    text: string,
     attachment: CloudAttachmentDraft,
   ) => Promise<void>;
   onUploaded: () => void;
@@ -33,8 +34,7 @@ interface CaptureComposerProps {
 export function CaptureComposer({
   creating,
   onCreate,
-  onCreateAttachmentCapture,
-  onAttachCloudFile,
+  onCreateWithAttachment,
   onUploaded,
 }: CaptureComposerProps): React.JSX.Element {
   const { t } = useTranslation("captures");
@@ -57,6 +57,10 @@ export function CaptureComposer({
   const recordingTimerRef = useRef<number | null>(null);
   const recordingTimeoutRef = useRef<number | null>(null);
   const cancelRecordingRef = useRef(false);
+  const pendingFileOperationRef = useRef<{
+    fingerprint: string;
+    operationId: string;
+  } | null>(null);
 
   const clearRecordingTimers = useCallback(() => {
     if (recordingTimerRef.current != null) {
@@ -89,9 +93,10 @@ export function CaptureComposer({
 
   const upload = async (
     file: File | Blob,
+    operationId: string,
     filename?: string,
     durationSec?: number,
-  ) => {
+  ): Promise<boolean> => {
     setUploadError(null);
     setUploading(true);
     const draft = textRef.current.trim();
@@ -105,26 +110,30 @@ export function CaptureComposer({
       form.append("createCapture", "true");
       if (draft) form.append("text", draft);
       if (durationSec != null) form.append("durationSec", String(durationSec));
-      await apiClient.post<UploadResult>("/captures/upload", form);
+      await apiClient.post<UploadResult>("/captures/upload", form, {
+        headers: { "Idempotency-Key": operationId },
+      });
       consumeDraft(draft);
       onUploaded();
+      return true;
     } catch {
       setUploadError(t("uploadFailed"));
       window.setTimeout(() => setUploadError(null), 3000);
+      return false;
     } finally {
       setUploading(false);
     }
   };
 
-  const uploadToCloud = async (file: File) => {
+  const uploadToCloud = async (file: File, operationId: string) => {
     setUploadError(null);
     setUploading(true);
     const draft = textRef.current.trim();
     try {
       const adapter = getCloudDriveProvider("google_drive");
-      const attachment = await adapter.upload(file);
-      const captureId = await onCreateAttachmentCapture(draft || file.name);
-      await onAttachCloudFile(captureId, attachment);
+      const attachment = await adapter.upload(file, operationId);
+      await onCreateWithAttachment(operationId, draft || file.name, attachment);
+      pendingFileOperationRef.current = null;
       consumeDraft(draft);
       onUploaded();
     } catch (error) {
@@ -139,16 +148,27 @@ export function CaptureComposer({
   // (and fit under the direct-upload cap) stays on Chronicle's R2 and enters
   // the OCR/Whisper pipeline; everything else goes to the user's cloud drive
   // as an external reference.
-  const handleAttachPick = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleAttachPick = async (
+    event: React.ChangeEvent<HTMLInputElement>,
+  ) => {
     const file = event.target.files?.[0];
     event.target.value = "";
     if (!file) return;
+    const fingerprint = await fingerprintFile(file);
+    const pending = pendingFileOperationRef.current;
+    const operationId =
+      pending?.fingerprint === fingerprint
+        ? pending.operationId
+        : crypto.randomUUID();
+    pendingFileOperationRef.current = { fingerprint, operationId };
     const transcribable =
       file.type.startsWith("image/") || file.type.startsWith("audio/");
     if (transcribable && file.size <= DIRECT_UPLOAD_MAX_BYTES) {
-      void upload(file);
+      void upload(file, operationId).then((succeeded) => {
+        if (succeeded) pendingFileOperationRef.current = null;
+      });
     } else {
-      void uploadToCloud(file);
+      void uploadToCloud(file, operationId);
     }
   };
 
@@ -181,7 +201,7 @@ export function CaptureComposer({
         setRecordingSeconds(0);
         if (cancelRecordingRef.current) return;
         const blob = new Blob(audioChunksRef.current, { type: "audio/webm" });
-        void upload(blob, "recording.webm", durationSec);
+        void upload(blob, crypto.randomUUID(), "recording.webm", durationSec);
       };
       recorder.start();
       mediaRecorderRef.current = recorder;
@@ -243,7 +263,7 @@ export function CaptureComposer({
           ref={attachInputRef}
           type="file"
           className="hidden"
-          onChange={handleAttachPick}
+          onChange={(event) => void handleAttachPick(event)}
         />
       }
     />

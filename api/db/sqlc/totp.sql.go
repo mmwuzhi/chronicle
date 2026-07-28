@@ -96,11 +96,16 @@ func (q *Queries) SetTOTPSecret(ctx context.Context, arg SetTOTPSecretParams) er
 	return err
 }
 
-const useRecoveryCode = `-- name: UseRecoveryCode :exec
-UPDATE recovery_codes SET used = true WHERE id = $1
+const useRecoveryCode = `-- name: UseRecoveryCode :execrows
+UPDATE recovery_codes
+SET used = true
+WHERE id = $1 AND used = false
 `
 
-func (q *Queries) UseRecoveryCode(ctx context.Context, id uuid.UUID) error {
-	_, err := q.db.Exec(ctx, useRecoveryCode, id)
-	return err
+func (q *Queries) UseRecoveryCode(ctx context.Context, id uuid.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, useRecoveryCode, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }

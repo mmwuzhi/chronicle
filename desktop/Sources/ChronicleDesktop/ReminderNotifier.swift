@@ -27,11 +27,17 @@ final class ReminderNotifier {
 
     private let store: LocalCaptureStore
     private let makeClient: () -> ReminderAPIClient?
+    private let dueSynchronizer: ReminderDueSynchronizer
     private var lastEnabled = ReminderNotifier.notificationsEnabled
 
-    init(store: LocalCaptureStore, makeClient: @escaping () -> ReminderAPIClient?) {
+    init(
+        store: LocalCaptureStore,
+        makeClient: @escaping () -> ReminderAPIClient?,
+        dueSynchronizer: ReminderDueSynchronizer = ReminderDueSynchronizer()
+    ) {
         self.store = store
         self.makeClient = makeClient
+        self.dueSynchronizer = dueSynchronizer
     }
 
     // Call once at launch (only when Bundle.main.bundleIdentifier != nil).
@@ -41,6 +47,17 @@ final class ReminderNotifier {
         reconcileLocal()
         syncFromServer()
         observeEnabledToggle()
+    }
+
+    /// Account/origin boundaries also own macOS notification state. Scheduled or
+    /// delivered reminders from the previous account must not survive a switch.
+    func accountScopeChanged() {
+        let center = UNUserNotificationCenter.current()
+        center.removeAllPendingNotificationRequests()
+        center.removeAllDeliveredNotifications()
+        guard store.scope != nil else { return }
+        reconcileLocal()
+        syncFromServer()
     }
 
     // The reminders toggle is an @AppStorage default; react to it at runtime so
@@ -123,6 +140,7 @@ final class ReminderNotifier {
 
     func syncFromServer() {
         guard let client = makeClient() else { return }  // not signed in → local only
+        guard let requestedScope = store.scope else { return }
         Task {
             // Distinguish "no pending reminders" from "fetch failed": only a
             // successful pending() is the complete set we can safely reconcile
@@ -131,14 +149,37 @@ final class ReminderNotifier {
             // scheduling (there is nothing to schedule anyway) but still surface
             // due alerts.
             let pending = try? await client.pending()
-            let due = (try? await client.due(since: nil)) ?? []
-            await MainActor.run {
-                if let pending {
-                    self.reconcileDeletedServerReminders(
-                        alivePendingServerIds: Set(pending.map(\.id)))
-                    for item in pending { self.scheduleFromServer(item) }
+            let dueBatch: ReminderDueBatch?
+            if Self.notificationsEnabled {
+                dueBatch = try? await dueSynchronizer.fetch(
+                    using: client,
+                    scope: requestedScope
+                )
+            } else {
+                dueBatch = nil
+            }
+            // An account/origin switch may complete while the requests are in
+            // flight. Never apply the old account's reminders to the new
+            // account's active local scope.
+            guard self.store.scope == requestedScope else { return }
+            if let pending {
+                self.reconcileDeletedServerReminders(
+                    alivePendingServerIds: Set(pending.map(\.id)))
+                for item in pending { self.scheduleFromServer(item) }
+            }
+            if let dueBatch {
+                var persisted = true
+                for item in dueBatch.items {
+                    guard self.store.scope == requestedScope,
+                          await self.notifyDueFromServer(item, scope: requestedScope)
+                    else {
+                        persisted = false
+                        break
+                    }
                 }
-                for item in due { self.notifyDueFromServer(item) }
+                if persisted {
+                    self.dueSynchronizer.commit(dueBatch, for: requestedScope)
+                }
             }
         }
     }
@@ -170,28 +211,58 @@ final class ReminderNotifier {
         schedule(record)
     }
 
-    private func notifyDueFromServer(_ item: ReminderItem) {
+    @discardableResult
+    private func notifyDueFromServer(
+        _ item: ReminderItem,
+        scope requestedScope: LocalCaptureScope
+    ) async -> Bool {
         // Honor the toggle for server-due reminders too, not just locally
         // scheduled ones (schedule() already guards). Without this, turning
         // notifications off still posts an alert for every reminder the server
         // reports as due.
-        guard Self.notificationsEnabled else { return }
+        guard Self.notificationsEnabled, store.scope == requestedScope else { return false }
         let remindAt = item.remindAt.flatMap(Self.parseISO) ?? Date()
-        guard let record = try? store.upsertDueServerReminder(
-            serverId: item.id,
-            text: item.summary,
-            remindAt: remindAt,
-        ) else {
-            return
+        let record: LocalCaptureRecord?
+        do {
+            record = try store.upsertDueServerReminder(
+                serverId: item.id,
+                text: item.summary,
+                remindAt: remindAt,
+            )
+        } catch {
+            return false
         }
+        // nil means this server reminder was already durably marked notified;
+        // local dedupe succeeded, so it is safe to advance past it.
+        guard let record else { return true }
 
         let content = UNMutableNotificationContent()
         content.title = "Chronicle reminder"
         content.body = item.summary
         content.sound = .default
         content.userInfo = [Self.captureLocalIdKey: record.id]
-        UNUserNotificationCenter.current().add(
-            UNNotificationRequest(identifier: "rmd-\(item.id)", content: content, trigger: nil))
+        do {
+            // Stable server-derived id makes a retry safe if the app exits after
+            // add succeeds but before the local notified marker is durable.
+            let notificationID = "rmd-\(item.id)"
+            try await UNUserNotificationCenter.current().add(
+                UNNotificationRequest(
+                    identifier: notificationID,
+                    content: content,
+                    trigger: nil
+                )
+            )
+            guard store.scope == requestedScope else {
+                let center = UNUserNotificationCenter.current()
+                center.removePendingNotificationRequests(withIdentifiers: [notificationID])
+                center.removeDeliveredNotifications(withIdentifiers: [notificationID])
+                return false
+            }
+            try store.markNotified(localId: record.id)
+            return true
+        } catch {
+            return false
+        }
     }
 
     private static func parseISO(_ s: String) -> Date? {

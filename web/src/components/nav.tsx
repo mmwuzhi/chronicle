@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
+import { RAG_ENABLED } from "@/constants/features";
 import { SearchModal } from "@/components/search-modal";
 
 const HomeIcon = () => (
@@ -67,18 +68,11 @@ const SettingsIcon = () => (
   </svg>
 );
 
-// The Ask page depends on the RAG sidecar, which isn't part of the deployed
-// (Fly) image yet — only the host-run local-first setup has it. Show the tab in
-// dev, or when a deployment that runs the sidecar opts in via VITE_ASK_ENABLED,
-// so production users never see a tab that only 503s.
-const ASK_ENABLED =
-  import.meta.env.DEV || import.meta.env.VITE_ASK_ENABLED === "true";
-
 const tabs = [
   { to: "/" as const, labelKey: "nav.home", icon: <HomeIcon />, exact: true },
   { to: "/captures" as const, labelKey: "nav.captures", icon: <CaptureIcon /> },
   { to: "/review" as const, labelKey: "nav.review", icon: <ReviewIcon /> },
-  ...(ASK_ENABLED
+  ...(RAG_ENABLED
     ? [{ to: "/ask" as const, labelKey: "nav.ask", icon: <AskIcon /> }]
     : []),
 ];

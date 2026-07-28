@@ -12,6 +12,51 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type CaptureClassifiedAs string
+
+const (
+	CaptureClassifiedAsTask         CaptureClassifiedAs = "task"
+	CaptureClassifiedAsIdea         CaptureClassifiedAs = "idea"
+	CaptureClassifiedAsRoutine      CaptureClassifiedAs = "routine"
+	CaptureClassifiedAsLog          CaptureClassifiedAs = "log"
+	CaptureClassifiedAsUnclassified CaptureClassifiedAs = "unclassified"
+)
+
+func (e *CaptureClassifiedAs) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = CaptureClassifiedAs(s)
+	case string:
+		*e = CaptureClassifiedAs(s)
+	default:
+		return fmt.Errorf("unsupported scan type for CaptureClassifiedAs: %T", src)
+	}
+	return nil
+}
+
+type NullCaptureClassifiedAs struct {
+	CaptureClassifiedAs CaptureClassifiedAs `json:"capture_classified_as"`
+	Valid               bool                `json:"valid"` // Valid is true if CaptureClassifiedAs is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullCaptureClassifiedAs) Scan(value interface{}) error {
+	if value == nil {
+		ns.CaptureClassifiedAs, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.CaptureClassifiedAs.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullCaptureClassifiedAs) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.CaptureClassifiedAs), nil
+}
+
 type CaptureMediaType string
 
 const (
@@ -300,6 +345,8 @@ type Capture struct {
 	RawText               pgtype.Text         `json:"raw_text"`
 	MediaUrl              pgtype.Text         `json:"media_url"`
 	MediaType             CaptureMediaType    `json:"media_type"`
+	ClassifiedAs          CaptureClassifiedAs `json:"classified_as"`
+	TaskID                pgtype.UUID         `json:"task_id"`
 	CreatedAt             pgtype.Timestamptz  `json:"created_at"`
 	Source                string              `json:"source"`
 	Transcript            pgtype.Text         `json:"transcript"`
@@ -351,6 +398,15 @@ type CaptureLink struct {
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
 
+type CaptureMediaDeletion struct {
+	ObjectKey     string             `json:"object_key"`
+	Attempts      int32              `json:"attempts"`
+	NextAttemptAt pgtype.Timestamptz `json:"next_attempt_at"`
+	LeaseUntil    pgtype.Timestamptz `json:"lease_until"`
+	LastError     pgtype.Text        `json:"last_error"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+}
+
 type CaptureMetadatum struct {
 	CaptureID  uuid.UUID          `json:"capture_id"`
 	UserID     uuid.UUID          `json:"user_id"`
@@ -370,6 +426,16 @@ type CaptureToken struct {
 	CreatedAt  pgtype.Timestamptz `json:"created_at"`
 }
 
+type CaptureUploadOperation struct {
+	ID          uuid.UUID          `json:"id"`
+	CaptureID   uuid.UUID          `json:"capture_id"`
+	UserID      uuid.UUID          `json:"user_id"`
+	RequestHash string             `json:"request_hash"`
+	LeaseUntil  pgtype.Timestamptz `json:"lease_until"`
+	CompletedAt pgtype.Timestamptz `json:"completed_at"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+}
+
 type CaptureWebhook struct {
 	ID                uuid.UUID          `json:"id"`
 	UserID            uuid.UUID          `json:"user_id"`
@@ -382,6 +448,16 @@ type CaptureWebhook struct {
 	Enabled           bool               `json:"enabled"`
 	CreatedAt         pgtype.Timestamptz `json:"created_at"`
 	DeletedAt         pgtype.Timestamptz `json:"deleted_at"`
+}
+
+type LogEntry struct {
+	ID          uuid.UUID          `json:"id"`
+	UserID      uuid.UUID          `json:"user_id"`
+	TaskID      pgtype.UUID        `json:"task_id"`
+	Body        string             `json:"body"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	DeletedAt   pgtype.Timestamptz `json:"deleted_at"`
+	TimeBlockID pgtype.UUID        `json:"time_block_id"`
 }
 
 type OauthAccount struct {
@@ -401,6 +477,22 @@ type Passkey struct {
 	SignCount    int64              `json:"sign_count"`
 	Name         string             `json:"name"`
 	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+}
+
+type Project struct {
+	ID        uuid.UUID          `json:"id"`
+	UserID    uuid.UUID          `json:"user_id"`
+	Name      string             `json:"name"`
+	Color     string             `json:"color"`
+	Archived  bool               `json:"archived"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
+type PublicShare struct {
+	ID        uuid.UUID          `json:"id"`
+	ReportID  uuid.UUID          `json:"report_id"`
+	Slug      string             `json:"slug"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
 
 type RagConfig struct {
@@ -424,6 +516,33 @@ type RefreshToken struct {
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
 
+type Task struct {
+	ID        uuid.UUID          `json:"id"`
+	UserID    uuid.UUID          `json:"user_id"`
+	ProjectID pgtype.UUID        `json:"project_id"`
+	Title     string             `json:"title"`
+	Type      TaskType           `json:"type"`
+	Status    TaskStatus         `json:"status"`
+	DueAt     pgtype.Timestamptz `json:"due_at"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	DeletedAt pgtype.Timestamptz `json:"deleted_at"`
+	MediaUrl  pgtype.Text        `json:"media_url"`
+	MediaType pgtype.Text        `json:"media_type"`
+	StartAt   pgtype.Timestamptz `json:"start_at"`
+}
+
+type TimeBlock struct {
+	ID          uuid.UUID          `json:"id"`
+	UserID      uuid.UUID          `json:"user_id"`
+	TaskID      pgtype.UUID        `json:"task_id"`
+	StartedAt   pgtype.Timestamptz `json:"started_at"`
+	EndedAt     pgtype.Timestamptz `json:"ended_at"`
+	DurationSec pgtype.Int4        `json:"duration_sec"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	DeletedAt   pgtype.Timestamptz `json:"deleted_at"`
+	InputMode   string             `json:"input_mode"`
+}
+
 type User struct {
 	ID                   uuid.UUID          `json:"id"`
 	Email                string             `json:"email"`
@@ -435,4 +554,12 @@ type User struct {
 	PasswordResetExpires pgtype.Timestamptz `json:"password_reset_expires"`
 	TotpSecret           pgtype.Text        `json:"totp_secret"`
 	TotpEnabled          bool               `json:"totp_enabled"`
+}
+
+type WeeklyReport struct {
+	ID        uuid.UUID          `json:"id"`
+	UserID    uuid.UUID          `json:"user_id"`
+	WeekStart pgtype.Date        `json:"week_start"`
+	Data      []byte             `json:"data"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }

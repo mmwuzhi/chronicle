@@ -17,6 +17,7 @@ import { WebhooksSection } from "@/components/settings/WebhooksSection";
 import { QuickCaptureTokenSection } from "@/components/settings/QuickCaptureTokenSection";
 import { PageHeader, PageShell, PageTitle } from "@/components/ui/page";
 import { sectionTabClassName } from "@/components/ui/tab";
+import { RAG_ENABLED } from "@/constants/features";
 
 export const Route = createFileRoute("/settings")({
   component: Settings,
@@ -138,7 +139,7 @@ function Settings() {
           {section === "integrations" && (
             <div className="flex flex-col gap-5">
               <QuickCaptureTokenSection />
-              <WebhooksSection />
+              {RAG_ENABLED && <WebhooksSection />}
             </div>
           )}
         </div>

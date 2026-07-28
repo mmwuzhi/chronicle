@@ -32,7 +32,7 @@ func TestNormalizeKeywords(t *testing.T) {
 func TestValidateWebhookURL(t *testing.T) {
 	valid := []string{
 		"https://example.com/hook",
-		"http://hooks.example.com:8080/path",
+		"https://hooks.example.com:8443/path",
 		"https://sub.domain.example.org/webhooks/abc",
 	}
 	for _, u := range valid {
@@ -42,6 +42,7 @@ func TestValidateWebhookURL(t *testing.T) {
 	}
 
 	invalid := []string{
+		"http://hooks.example.com/path",
 		"",
 		"ftp://example.com",
 		"file:///etc/passwd",

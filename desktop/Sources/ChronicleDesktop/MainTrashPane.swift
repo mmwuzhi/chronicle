@@ -1,3 +1,4 @@
+import Combine
 import SwiftUI
 import ChronicleDesktopCore
 
@@ -65,6 +66,17 @@ struct MainTrashPane: View {
         .onReceive(NotificationCenter.default.publisher(for: .chronicleCapturesChanged)) { note in
             guard (note.object as? NSObject) !== captureEventToken else { return }
             Task { await load() }
+        }
+        .onReceive(clients.session.$generation.dropFirst()) { _ in
+            trash = []
+            trashQuery = ""
+            confirmingEmptyTrash = false
+            pendingPermanentDeleteId = nil
+            loaded = false
+            error = ""
+            if clients.recall() != nil {
+                Task { await load() }
+            }
         }
     }
 
@@ -145,6 +157,7 @@ struct MainTrashPane: View {
     }
 
     private func load() async {
+        let generation = clients.session.snapshot()
         guard let client = clients.recall() else {
             trash = []
             loaded = true
@@ -152,49 +165,68 @@ struct MainTrashPane: View {
         }
         do {
             let items = try await client.trash()
+            guard clients.session.isCurrent(generation) else { return }
             withAnimation(.easeInOut(duration: 0.2)) { trash = items }
             error = ""
-        } catch let err { error = describeCaptureError(err) }
-        loaded = true
+        } catch let err {
+            guard clients.session.isCurrent(generation) else { return }
+            error = describeCaptureError(err)
+        }
+        if clients.session.isCurrent(generation) { loaded = true }
     }
 
     // Restore returns the capture (with its links + reminder) to browse. Drop it
     // from the local trash list and let the next browse load pick it back up.
     private func restore(_ id: String) {
+        let generation = clients.session.snapshot()
         guard let client = clients.recall() else { return }
         Task { @MainActor in
             do {
                 try await client.restore(id: id)
+                guard clients.session.isCurrent(generation) else { return }
                 CaptureEvents.postChanged(from: captureEventToken)
                 withAnimation(.easeInOut(duration: 0.2)) { trash.removeAll { $0.id == id } }
-            } catch let err { error = describeCaptureError(err) }
+            } catch let err {
+                guard clients.session.isCurrent(generation) else { return }
+                error = describeCaptureError(err)
+            }
         }
     }
 
     // Permanent delete is irreversible; the trash is itself the undo buffer, so
     // there's no toast — just drop the row.
     private func permanentlyDelete(_ id: String) {
+        let generation = clients.session.snapshot()
         guard let client = clients.recall() else { return }
         Task { @MainActor in
             do {
                 try await client.permanentDelete(id: id)
+                guard clients.session.isCurrent(generation) else { return }
                 clients.localDelete(id)
                 CaptureEvents.postChanged(from: captureEventToken)
                 withAnimation(.easeInOut(duration: 0.2)) { trash.removeAll { $0.id == id } }
-            } catch let err { error = describeCaptureError(err) }
+            } catch let err {
+                guard clients.session.isCurrent(generation) else { return }
+                error = describeCaptureError(err)
+            }
         }
     }
 
     private func emptyTrash() {
+        let generation = clients.session.snapshot()
         guard let client = clients.recall() else { return }
         let ids = trash.map(\.id)
         Task { @MainActor in
             do {
                 _ = try await client.emptyTrash()
+                guard clients.session.isCurrent(generation) else { return }
                 for id in ids { clients.localDelete(id) }
                 CaptureEvents.postChanged(from: captureEventToken)
                 withAnimation(.easeInOut(duration: 0.2)) { trash = [] }
-            } catch let err { error = describeCaptureError(err) }
+            } catch let err {
+                guard clients.session.isCurrent(generation) else { return }
+                error = describeCaptureError(err)
+            }
         }
     }
 }

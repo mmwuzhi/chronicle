@@ -4,7 +4,7 @@
 // before, end or a character that cannot extend a tag name after. Group 2 is
 // the token, group 3 the (done…) parameter.
 export const TODO_TAG_RE =
-  /(^|\s)(#todo(\(done(?::\d{4}-\d{2}-\d{2})?\))?)(?=[^\p{L}\p{N}_(-]|$)/u;
+  /(^|\s)(#todo(\(done(?::(\d{4}-\d{2}-\d{2}))?\))?)(?=[^\p{L}\p{N}_(-]|$)/u;
 
 // Parse the first #todo token in text, mirroring the API's parseTodoTag
 // (api/internal/capture/todotag.go). `present` is whether the standalone tag
@@ -18,7 +18,20 @@ export function parseTodoTag(text: string): {
 } {
   const m = TODO_TAG_RE.exec(text);
   if (!m) return { present: false, done: false };
+  if (m[4] && !isCalendarDate(m[4])) {
+    return { present: false, done: false };
+  }
   return { present: true, done: Boolean(m[3]) };
+}
+
+function isCalendarDate(value: string): boolean {
+  const [year, month, day] = value.split("-").map(Number);
+  const parsed = new Date(Date.UTC(year, month - 1, day));
+  return (
+    parsed.getUTCFullYear() === year &&
+    parsed.getUTCMonth() === month - 1 &&
+    parsed.getUTCDate() === day
+  );
 }
 
 // The trailing #-token being typed at the end of the composer text, used to

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/textproto"
+	"sync"
 	"testing"
 	"time"
 
@@ -20,15 +21,24 @@ import (
 
 type countingS3 struct {
 	workerS3
+	mu   sync.Mutex
 	puts int
 }
 
 func (s *countingS3) PutObject(ctx context.Context, input *s3.PutObjectInput, options ...func(*s3.Options)) (*s3.PutObjectOutput, error) {
+	s.mu.Lock()
 	s.puts++
+	s.mu.Unlock()
 	return s.workerS3.PutObject(ctx, input, options...)
 }
 
-func TestUploadCreatesCaptureOnlyWhenRequested(t *testing.T) {
+func (s *countingS3) putCount() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.puts
+}
+
+func TestUploadRequiresAtomicCaptureCreation(t *testing.T) {
 	pool := testutil.NewPool(t)
 	testutil.Truncate(t, pool, "captures", "users")
 	userID := uuid.New()
@@ -58,13 +68,19 @@ func TestUploadCreatesCaptureOnlyWhenRequested(t *testing.T) {
 	for _, test := range []struct {
 		name           string
 		createCapture  bool
+		expectedCode   int
 		expectedCount  int
 		expectedStatus string
 	}{
-		{name: "attachment upload", expectedCount: 0},
+		{
+			name:          "upload-only mode rejected",
+			expectedCode:  http.StatusUnprocessableEntity,
+			expectedCount: 0,
+		},
 		{
 			name:           "capture upload",
 			createCapture:  true,
+			expectedCode:   http.StatusOK,
 			expectedCount:  1,
 			expectedStatus: "pending",
 		},
@@ -73,8 +89,8 @@ func TestUploadCreatesCaptureOnlyWhenRequested(t *testing.T) {
 			request := newUploadRequest(t, test.createCapture, "")
 			recorder := httptest.NewRecorder()
 			h.upload(recorder, request)
-			if recorder.Code != http.StatusOK {
-				t.Fatalf("expected 200, got %d: %s", recorder.Code, recorder.Body.String())
+			if recorder.Code != test.expectedCode {
+				t.Fatalf("expected %d, got %d: %s", test.expectedCode, recorder.Code, recorder.Body.String())
 			}
 
 			var count int
@@ -171,6 +187,7 @@ func TestUploadRetryUsesOneCaptureAndOneObject(t *testing.T) {
 		kick: func() {},
 	}
 	operationID := uuid.New()
+	var captureID uuid.UUID
 	remindAt := time.Now().UTC().Add(time.Hour).Truncate(time.Second)
 	for attempt := 0; attempt < 2; attempt++ {
 		request := newUploadRequestWithFields(t, true, "voice note", map[string]string{
@@ -188,8 +205,17 @@ func TestUploadRetryUsesOneCaptureAndOneObject(t *testing.T) {
 		if err := json.NewDecoder(recorder.Body).Decode(&response); err != nil {
 			t.Fatalf("decode attempt %d: %v", attempt+1, err)
 		}
-		if response.ID != operationID.String() {
-			t.Fatalf("attempt %d: expected operation id %s, got %s", attempt+1, operationID, response.ID)
+		responseID, parseErr := uuid.Parse(response.ID)
+		if parseErr != nil {
+			t.Fatalf("attempt %d: response id is not a UUID: %v", attempt+1, parseErr)
+		}
+		if attempt == 0 {
+			captureID = responseID
+			if captureID == operationID {
+				t.Fatal("capture id must be namespaced separately from the public operation id")
+			}
+		} else if responseID != captureID {
+			t.Fatalf("attempt %d: expected capture id %s, got %s", attempt+1, captureID, responseID)
 		}
 	}
 
@@ -199,16 +225,166 @@ func TestUploadRetryUsesOneCaptureAndOneObject(t *testing.T) {
 	if err := pool.QueryRow(
 		context.Background(),
 		"SELECT count(*), min(remind_at), bool_and(remind_hide) FROM captures WHERE id = $1",
-		operationID,
+		captureID,
 	).Scan(&count, &storedReminder, &remindHide); err != nil {
 		t.Fatalf("read capture: %v", err)
 	}
-	if count != 1 || storage.puts != 1 {
-		t.Fatalf("expected one capture and one object upload, got %d captures and %d uploads", count, storage.puts)
+	if count != 1 || storage.putCount() != 1 {
+		t.Fatalf("expected one capture and one object upload, got %d captures and %d uploads", count, storage.putCount())
 	}
 	if !storedReminder.Equal(remindAt) || remindHide {
 		t.Fatalf("expected atomic notify-only reminder %s, got %s hide=%v", remindAt, storedReminder, remindHide)
 	}
+}
+
+func TestOverlappingUploadRetriesSerializeBeforeObjectWrite(t *testing.T) {
+	pool := testutil.NewPool(t)
+	testutil.Truncate(t, pool, "captures", "users")
+	userID := uuid.New()
+	if _, err := pool.Exec(
+		context.Background(),
+		"INSERT INTO users (id, email, password_hash) VALUES ($1, $2, 'hash')",
+		userID,
+		userID.String()+"@test.com",
+	); err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+
+	storage := &blockingS3{
+		entered: make(chan struct{}),
+		release: make(chan struct{}),
+	}
+	h := handler{
+		s3:  storage,
+		q:   db.New(pool),
+		cfg: Config{R2BucketName: "bucket", R2AccountID: "account"},
+		validate: func(string) (string, error) {
+			return userID.String(), nil
+		},
+		kick: func() {},
+	}
+	operationID := uuid.NewString()
+	run := func(done chan<- *httptest.ResponseRecorder) {
+		request := newUploadRequest(t, true, "same draft")
+		request.Header.Set("Idempotency-Key", operationID)
+		recorder := httptest.NewRecorder()
+		h.upload(recorder, request)
+		done <- recorder
+	}
+
+	done := make(chan *httptest.ResponseRecorder, 2)
+	go run(done)
+	<-storage.entered
+	if _, err := pool.Exec(
+		context.Background(),
+		`INSERT INTO captures (id, user_id, raw_text, media_type, source)
+		 VALUES ($1, $2, 'concurrent text capture', 'text', 'web')`,
+		operationID,
+		userID,
+	); err != nil {
+		t.Fatalf("create same-id text capture during upload: %v", err)
+	}
+	go run(done)
+	overlap := <-done
+	if overlap.Code != http.StatusConflict {
+		t.Fatalf("overlapping retry: expected 409, got %d: %s", overlap.Code, overlap.Body.String())
+	}
+	close(storage.release)
+
+	first := <-done
+	if first.Code != http.StatusOK {
+		t.Fatalf("first attempt: expected 200, got %d: %s", first.Code, first.Body.String())
+	}
+
+	retryDone := make(chan *httptest.ResponseRecorder, 1)
+	go run(retryDone)
+	retry := <-retryDone
+	if retry.Code != http.StatusOK {
+		t.Fatalf("retry after completion: expected 200, got %d: %s", retry.Code, retry.Body.String())
+	}
+	if storage.putCount() != 1 {
+		t.Fatalf("expected one object write for overlapping retries, got %d", storage.putCount())
+	}
+	var captureCount int
+	if err := pool.QueryRow(
+		context.Background(),
+		"SELECT count(*) FROM captures WHERE user_id = $1",
+		userID,
+	).Scan(&captureCount); err != nil {
+		t.Fatalf("count cross-endpoint captures: %v", err)
+	}
+	if captureCount != 2 {
+		t.Fatalf("expected distinct text and upload captures, got %d", captureCount)
+	}
+}
+
+func TestUploadRetryRejectsChangedPayload(t *testing.T) {
+	pool := testutil.NewPool(t)
+	testutil.Truncate(t, pool, "captures", "users")
+	userID := uuid.New()
+	if _, err := pool.Exec(
+		context.Background(),
+		"INSERT INTO users (id, email, password_hash) VALUES ($1, $2, 'hash')",
+		userID,
+		userID.String()+"@test.com",
+	); err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	storage := &countingS3{}
+	h := handler{
+		s3:  storage,
+		q:   db.New(pool),
+		cfg: Config{R2BucketName: "bucket", R2AccountID: "account"},
+		validate: func(string) (string, error) {
+			return userID.String(), nil
+		},
+		kick: func() {},
+	}
+	operationID := uuid.NewString()
+	for attempt, text := range []string{"first draft", "changed draft"} {
+		request := newUploadRequest(t, true, text)
+		request.Header.Set("Idempotency-Key", operationID)
+		recorder := httptest.NewRecorder()
+		h.upload(recorder, request)
+		want := http.StatusOK
+		if attempt == 1 {
+			want = http.StatusConflict
+		}
+		if recorder.Code != want {
+			t.Fatalf("attempt %d: expected %d, got %d: %s", attempt+1, want, recorder.Code, recorder.Body.String())
+		}
+	}
+	if storage.putCount() != 1 {
+		t.Fatalf("changed retry must not rewrite storage; got %d puts", storage.putCount())
+	}
+}
+
+type blockingS3 struct {
+	workerS3
+	once    sync.Once
+	entered chan struct{}
+	release chan struct{}
+	mu      sync.Mutex
+	puts    int
+}
+
+func (s *blockingS3) PutObject(ctx context.Context, input *s3.PutObjectInput, options ...func(*s3.Options)) (*s3.PutObjectOutput, error) {
+	s.once.Do(func() { close(s.entered) })
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case <-s.release:
+	}
+	s.mu.Lock()
+	s.puts++
+	s.mu.Unlock()
+	return s.workerS3.PutObject(ctx, input, options...)
+}
+
+func (s *blockingS3) putCount() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.puts
 }
 
 func TestUploadRejectsDeclaredMediaClassMismatch(t *testing.T) {

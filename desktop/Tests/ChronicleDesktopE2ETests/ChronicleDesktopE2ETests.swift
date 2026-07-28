@@ -10,7 +10,7 @@ final class ChronicleDesktopE2ETests: XCTestCase {
 
         try runApp(mode: "capture-local", dbURL: dbURL, text: text)
 
-        let pending = try LocalCaptureStore(fileURL: dbURL).pendingSync()
+        let pending = try LocalCaptureStore(fileURL: dbURL, scope: .testing).pendingSync()
         XCTAssertEqual(pending.count, 1)
         XCTAssertEqual(pending.first?.payload.rawText, text)
         XCTAssertNil(pending.first?.serverId)
@@ -44,7 +44,10 @@ final class ChronicleDesktopE2ETests: XCTestCase {
         XCTAssertEqual(body["source"] as? String, desktopQuickCaptureSource)
         XCTAssertEqual(body["remindAt"] as? String, remindAt)
 
-        let synced = try XCTUnwrap(LocalCaptureStore(fileURL: dbURL).find(serverId: "server-capture-1"))
+        let synced = try XCTUnwrap(
+            LocalCaptureStore(fileURL: dbURL, scope: .testing)
+                .find(serverId: "server-capture-1")
+        )
         XCTAssertEqual(synced.payload.rawText, text)
         XCTAssertNotNil(synced.syncedAt)
         XCTAssertEqual(try notificationCount(at: notificationCountURL), 2)
@@ -63,7 +66,10 @@ final class ChronicleDesktopE2ETests: XCTestCase {
         try runApp(mode: "reminders-sync", dbURL: dbURL, apiURL: server.baseURL, token: "test-token")
 
         XCTAssertTrue(server.requests.contains { $0.method == "GET" && $0.path == "/reminders/pending" })
-        let reminder = try XCTUnwrap(LocalCaptureStore(fileURL: dbURL).find(serverId: "pending-reminder-1"))
+        let reminder = try XCTUnwrap(
+            LocalCaptureStore(fileURL: dbURL, scope: .testing)
+                .find(serverId: "pending-reminder-1")
+        )
         XCTAssertEqual(reminder.payload.rawText, "web reminder")
         XCTAssertEqual(reminder.payload.remindAt, isoDate("2026-06-18T10:00:00Z"))
         XCTAssertNil(reminder.notifiedAt)
@@ -71,8 +77,9 @@ final class ChronicleDesktopE2ETests: XCTestCase {
 
     func testDueReminderSyncMarksNotifiedOnlyOnce() throws {
         let server = try FakeChronicleServer()
+        let dueAt = ISO8601DateFormatter().string(from: Date().addingTimeInterval(-60))
         server.dueReminders = [
-            reminderJSON(id: "due-reminder-1", text: "due reminder", remindAt: "2026-06-18T08:00:00Z"),
+            reminderJSON(id: "due-reminder-1", text: "due reminder", remindAt: dueAt),
         ]
         try server.start()
         defer { server.stop() }
@@ -80,15 +87,50 @@ final class ChronicleDesktopE2ETests: XCTestCase {
         let dbURL = temporaryDatabaseURL()
 
         try runApp(mode: "reminders-sync", dbURL: dbURL, apiURL: server.baseURL, token: "test-token")
-        let first = try XCTUnwrap(LocalCaptureStore(fileURL: dbURL).find(serverId: "due-reminder-1"))
+        let first = try XCTUnwrap(
+            LocalCaptureStore(fileURL: dbURL, scope: .testing)
+                .find(serverId: "due-reminder-1")
+        )
         let firstNotifiedAt = try XCTUnwrap(first.notifiedAt)
 
         try runApp(mode: "reminders-sync", dbURL: dbURL, apiURL: server.baseURL, token: "test-token")
-        let second = try XCTUnwrap(LocalCaptureStore(fileURL: dbURL).find(serverId: "due-reminder-1"))
+        let second = try XCTUnwrap(
+            LocalCaptureStore(fileURL: dbURL, scope: .testing)
+                .find(serverId: "due-reminder-1")
+        )
 
-        XCTAssertEqual(try LocalCaptureStore(fileURL: dbURL).count(), 1)
+        XCTAssertEqual(try LocalCaptureStore(fileURL: dbURL, scope: .testing).count(), 1)
         XCTAssertEqual(second.notifiedAt, firstNotifiedAt)
         XCTAssertGreaterThanOrEqual(server.requests.filter { $0.path == "/reminders/due" }.count, 2)
+    }
+
+    func testFreshReminderSyncIgnoresOldHistoryButKeepsRecentDue() throws {
+        let server = try FakeChronicleServer()
+        let oldAt = ISO8601DateFormatter().string(
+            from: Date().addingTimeInterval(-7 * 24 * 60 * 60))
+        let recentAt = ISO8601DateFormatter().string(from: Date().addingTimeInterval(-60))
+        server.dueReminders = [
+            reminderJSON(id: "old-due", text: "old history", remindAt: oldAt),
+            reminderJSON(id: "recent-due", text: "recent reminder", remindAt: recentAt),
+        ]
+        try server.start()
+        defer { server.stop() }
+
+        let dbURL = temporaryDatabaseURL()
+        try runApp(
+            mode: "reminders-sync",
+            dbURL: dbURL,
+            apiURL: server.baseURL,
+            token: "test-token")
+
+        let store = LocalCaptureStore(fileURL: dbURL, scope: .testing)
+        XCTAssertNil(try store.find(serverId: "old-due"))
+        XCTAssertNotNil(try store.find(serverId: "recent-due"))
+        let dueRequest = try XCTUnwrap(
+            server.requests.first { $0.method == "GET" && $0.path == "/reminders/due" })
+        XCTAssertEqual(dueRequest.queryItems["limit"], "25")
+        XCTAssertNotNil(dueRequest.queryItems["since"])
+        XCTAssertNotNil(dueRequest.queryItems["until"])
     }
 
     private func runApp(
@@ -242,7 +284,8 @@ private final class FakeChronicleServer: @unchecked Sendable {
                 body = try JSONSerialization.data(withJSONObject: pendingReminders)
                 status = "200 OK"
             case ("GET", "/reminders/due"):
-                body = try JSONSerialization.data(withJSONObject: dueReminders)
+                body = try JSONSerialization.data(
+                    withJSONObject: filteredDueReminders(for: request))
                 status = "200 OK"
             default:
                 body = Data("{}".utf8)
@@ -263,11 +306,47 @@ private final class FakeChronicleServer: @unchecked Sendable {
             connection.cancel()
         })
     }
+
+    private func filteredDueReminders(for request: HTTPRequest) -> [[String: Any]] {
+        let formatter = ISO8601DateFormatter()
+        let since = request.queryItems["since"].flatMap(formatter.date)
+        let until = request.queryItems["until"].flatMap(formatter.date)
+        let beforeAt = request.queryItems["beforeAt"].flatMap(formatter.date)
+        let beforeID = request.queryItems["beforeId"]
+        let limit = Int(request.queryItems["limit"] ?? "") ?? 100
+
+        return dueReminders
+            .filter { item in
+                guard let raw = item["remindAt"] as? String,
+                      let remindAt = formatter.date(from: raw)
+                else { return false }
+                if let since, remindAt <= since { return false }
+                if let until, remindAt > until { return false }
+                if let beforeAt {
+                    let id = item["id"] as? String ?? ""
+                    if remindAt > beforeAt || (remindAt == beforeAt && id >= (beforeID ?? "")) {
+                        return false
+                    }
+                }
+                return true
+            }
+            .sorted {
+                let lhsDate = formatter.date(from: $0["remindAt"] as? String ?? "") ?? .distantPast
+                let rhsDate = formatter.date(from: $1["remindAt"] as? String ?? "") ?? .distantPast
+                if lhsDate == rhsDate {
+                    return ($0["id"] as? String ?? "") > ($1["id"] as? String ?? "")
+                }
+                return lhsDate > rhsDate
+            }
+            .prefix(limit)
+            .map { $0 }
+    }
 }
 
 private struct HTTPRequest: Equatable {
     var method: String
     var path: String
+    var queryItems: [String: String]
     var headers: [String: String]
     var body: Data
 
@@ -294,7 +373,12 @@ private struct HTTPRequest: Equatable {
         guard data.count >= bodyStart + contentLength else { return nil }
 
         method = requestParts[0]
-        path = URLComponents(string: requestParts[1])?.path ?? requestParts[1]
+        let components = URLComponents(string: requestParts[1])
+        path = components?.path ?? requestParts[1]
+        queryItems = Dictionary(
+            uniqueKeysWithValues: (components?.queryItems ?? []).compactMap { item in
+                item.value.map { (item.name, $0) }
+            })
         self.headers = headers
         body = data[bodyStart..<bodyStart + contentLength]
     }
@@ -309,7 +393,9 @@ private struct HTTPRequest: Equatable {
     }
 
     static func == (lhs: HTTPRequest, rhs: HTTPRequest) -> Bool {
-        lhs.method == rhs.method && lhs.path == rhs.path && lhs.headers == rhs.headers && lhs.body == rhs.body
+        lhs.method == rhs.method && lhs.path == rhs.path
+            && lhs.queryItems == rhs.queryItems && lhs.headers == rhs.headers
+            && lhs.body == rhs.body
     }
 }
 

@@ -6,6 +6,17 @@ import ChronicleDesktopCore
 @MainActor
 @Suite("Capture row text ownership")
 struct CaptureRowModelTests {
+    @Test("session generation invalidates every captured async snapshot")
+    func captureSessionGenerationInvalidatesSnapshots() {
+        let session = CaptureSession()
+        let accountA = session.snapshot()
+
+        session.advance()
+
+        #expect(session.isCurrent(accountA) == false)
+        #expect(session.isCurrent(session.snapshot()))
+    }
+
     @Test("sign-out keeps the normal Chronicle menu bar glyph")
     func signedOutSessionKeepsNormalStatusItemGlyph() {
         let signedIn = SessionStatus(signedOut: false, pending: 0)
@@ -164,7 +175,7 @@ struct CaptureRowModelTests {
         )
         let storeURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("chronicle-detail-edit-\(UUID().uuidString).sqlite")
-        let record = try LocalCaptureStore(fileURL: storeURL)
+        let record = try LocalCaptureStore(fileURL: storeURL, scope: .testing)
             .create(CapturePayload(rawText: "Before"))
         let row = RowItem(record)
         let model = CaptureDetailModel(capture: row, clients: clients)

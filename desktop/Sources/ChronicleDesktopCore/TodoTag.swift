@@ -4,7 +4,7 @@ import Foundation
 /// truth; these helpers only derive display state and composer suggestions.
 public enum CaptureTodoTag {
     private static let expression = try! NSRegularExpression(
-        pattern: #"(^|\s)(#todo(\(done(?::\d{4}-\d{2}-\d{2})?\))?)(?=[^\p{L}\p{N}_(-]|$)"#
+        pattern: #"(^|\s)(#todo(\(done(?::(\d{4}-\d{2}-\d{2}))?\))?)(?=[^\p{L}\p{N}_(-]|$)"#
     )
 
     public static func state(in text: String) -> CaptureTodoState? {
@@ -56,9 +56,19 @@ public enum CaptureTodoTag {
     }
 
     private static func firstMatch(in text: String) -> NSTextCheckingResult? {
-        expression.firstMatch(
+        guard let match = expression.firstMatch(
             in: text,
             range: NSRange(text.startIndex..<text.endIndex, in: text)
-        )
+        ) else { return nil }
+        guard match.range(at: 4).location != NSNotFound,
+              let dateRange = Range(match.range(at: 4), in: text)
+        else { return match }
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "yyyy-MM-dd"
+        formatter.isLenient = false
+        return formatter.date(from: String(text[dateRange])) == nil ? nil : match
     }
 }

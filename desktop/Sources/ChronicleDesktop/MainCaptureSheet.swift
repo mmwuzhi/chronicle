@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import ChronicleDesktopCore
 import ImageIO
 import SwiftUI
@@ -262,6 +263,10 @@ struct MainCaptureSheet: View {
             DispatchQueue.main.async { model.focused = true }
         }
         .onDisappear { model.prepareToDismiss() }
+        .onReceive(clients.session.$generation.dropFirst()) { _ in
+            model.discardDraft()
+            dismiss()
+        }
         .onDrop(of: [UTType.fileURL.identifier], isTargeted: $dropTargeted) { providers in
             acceptDrop(providers)
         }
@@ -511,6 +516,7 @@ struct MainCaptureSheet: View {
         let reminder = model.remindOn ? model.remindAt : nil
         let remindHide = model.remindOn ? !model.keepVisible : nil
         if let file = model.file {
+            let generation = clients.session.snapshot()
             let operationId = model.operationId
             let task = Task { @MainActor in
                 defer { model.finishSaveTask() }
@@ -548,6 +554,9 @@ struct MainCaptureSheet: View {
                             reminder,
                             remindHide
                         )
+                    }
+                    guard clients.session.isCurrent(generation) else {
+                        throw CancellationError()
                     }
                     finish(row)
                 } catch is CancellationError {

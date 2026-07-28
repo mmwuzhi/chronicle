@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -62,10 +63,9 @@ func newServerOptsWithRAG(t *testing.T, linkFetch bool, ragURL string) (*httptes
 	// create accepts a JWT or a capture token (the real create-only validator);
 	// read/mutate routes stay JWT-only via authMW.
 	createMW := middleware.RequireAuthHumaCtx(auth.ValidateTokenOrPAT(testutil.TestJWTSecret, db.New(pool)))
-	// nil store + empty bucket: permanent delete still hard-deletes the row; R2
-	// media cleanup is simply skipped (no object storage wired in tests). nil
-	// kick: no transcription worker to wake in tests.
-	capture.Register(api, pool, ragclient.New(ragURL), nil, "", authMW, createMW, nil, linkFetch, nil)
+	// No background workers run in tests; durable media-deletion tombstones stay
+	// queued until a worker is explicitly exercised by its focused tests.
+	capture.Register(api, pool, ragclient.New(ragURL), authMW, createMW, nil, linkFetch, nil, nil)
 
 	srv := httptest.NewServer(r)
 	t.Cleanup(srv.Close)
@@ -86,6 +86,18 @@ func createTestUser(t *testing.T, pool *pgxpool.Pool) (userID, token string) {
 }
 
 func do(t *testing.T, client *http.Client, method, url, token string, body any) *http.Response {
+	return doWithHeaders(t, client, method, url, token, body, nil)
+}
+
+func doWithHeaders(
+	t *testing.T,
+	client *http.Client,
+	method string,
+	url string,
+	token string,
+	body any,
+	headers map[string]string,
+) *http.Response {
 	t.Helper()
 	var r io.Reader
 	if body != nil {
@@ -101,6 +113,9 @@ func do(t *testing.T, client *http.Client, method, url, token string, body any) 
 	}
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	for name, value := range headers {
+		req.Header.Set(name, value)
 	}
 	resp, err := client.Do(req)
 	if err != nil {
@@ -225,6 +240,74 @@ func TestCreateCapture_DesktopSource(t *testing.T) {
 
 	if body.Source != "desktop_quick_capture" {
 		t.Fatalf("expected desktop source, got %q", body.Source)
+	}
+}
+
+func TestCreateCapture_IdempotentDesktopRetry(t *testing.T) {
+	srv, pool := newServer(t)
+	userID, token := createTestUser(t, pool)
+	operationID := uuid.NewString()
+	remindAt := time.Now().Add(time.Hour).UTC().Truncate(time.Second).Format(time.RFC3339)
+	body := map[string]any{
+		"mediaType": "text",
+		"rawText":   "offline draft",
+		"source":    "desktop_quick_capture",
+		"remindAt":  remindAt,
+	}
+
+	var firstID string
+	for attempt := range 2 {
+		resp := doWithHeaders(
+			t,
+			srv.Client(),
+			http.MethodPost,
+			srv.URL+"/captures",
+			token,
+			body,
+			map[string]string{"Idempotency-Key": operationID},
+		)
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("attempt %d: expected 200, got %d", attempt+1, resp.StatusCode)
+		}
+		var created struct {
+			ID string `json:"id"`
+		}
+		decodeBody(t, resp, &created)
+		if attempt == 0 {
+			firstID = created.ID
+		} else if created.ID != firstID {
+			t.Fatalf("retry returned a different capture: %s != %s", created.ID, firstID)
+		}
+	}
+	if firstID != operationID {
+		t.Fatalf("capture must use the operation id, got %s", firstID)
+	}
+	var count int
+	if err := pool.QueryRow(
+		context.Background(),
+		"SELECT count(*) FROM captures WHERE user_id = $1",
+		uuid.MustParse(userID),
+	).Scan(&count); err != nil {
+		t.Fatalf("count captures: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("expected one capture after retry, got %d", count)
+	}
+
+	changed := maps.Clone(body)
+	changed["rawText"] = "different draft"
+	conflict := doWithHeaders(
+		t,
+		srv.Client(),
+		http.MethodPost,
+		srv.URL+"/captures",
+		token,
+		changed,
+		map[string]string{"Idempotency-Key": operationID},
+	)
+	defer conflict.Body.Close()
+	if conflict.StatusCode != http.StatusConflict {
+		t.Fatalf("changed retry: expected 409, got %d", conflict.StatusCode)
 	}
 }
 
@@ -372,6 +455,39 @@ func TestRetryCaptureTranscription(t *testing.T) {
 	if body.Status != "pending" {
 		t.Fatalf("expected pending status, got %q", body.Status)
 	}
+
+	leaseExpiresAt := time.Now().UTC().Truncate(time.Microsecond).Add(10 * time.Minute)
+	if _, err := pool.Exec(context.Background(), `
+		UPDATE captures
+		SET transcription_status = 'processing',
+		    transcription_attempts = 1,
+		    next_transcription_at = $2
+		WHERE id = $1`,
+		id, leaseExpiresAt,
+	); err != nil {
+		t.Fatalf("mark capture processing: %v", err)
+	}
+
+	resp = do(t, srv.Client(), http.MethodPost, srv.URL+"/captures/"+id.String()+"/transcription/retry", token, nil)
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("expected processing capture retry to return 404, got %d", resp.StatusCode)
+	}
+
+	var status string
+	var attempts int32
+	var lease time.Time
+	if err := pool.QueryRow(context.Background(), `
+		SELECT transcription_status, transcription_attempts, next_transcription_at
+		FROM captures
+		WHERE id = $1`,
+		id,
+	).Scan(&status, &attempts, &lease); err != nil {
+		t.Fatalf("read processing capture: %v", err)
+	}
+	if status != string(db.TranscriptionStatusProcessing) || attempts != 1 || !lease.Equal(leaseExpiresAt) {
+		t.Fatalf("manual retry changed in-flight claim: status=%q attempts=%d lease=%v", status, attempts, lease)
+	}
 }
 
 func TestUploadedAudioTranscriptionDurationBoundary(t *testing.T) {
@@ -504,9 +620,12 @@ func TestCaptureReminderBrowseAndRecall(t *testing.T) {
 	}
 
 	// DueReminders returns only the past-due one.
+	dueUntil := time.Now()
 	due, err := queries.DueReminders(ctx, db.DueRemindersParams{
-		UserID: uid,
-		Since:  pgtype.Timestamptz{Time: time.Now().Add(-24 * time.Hour), Valid: true},
+		UserID:   uid,
+		Since:    pgtype.Timestamptz{Time: dueUntil.Add(-24 * time.Hour), Valid: true},
+		Until:    pgtype.Timestamptz{Time: dueUntil, Valid: true},
+		PageSize: 100,
 	})
 	if err != nil {
 		t.Fatalf("due reminders: %v", err)
@@ -532,6 +651,78 @@ func TestCaptureReminderBrowseAndRecall(t *testing.T) {
 	}
 	if !ids(browse2)[future.ID] {
 		t.Fatalf("cleared reminder should reappear in default browse")
+	}
+}
+
+func TestDueRemindersDefaultsToRecentBoundedPage(t *testing.T) {
+	srv, pool := newServer(t)
+	uidRaw, token := createTestUser(t, pool)
+	uid := uuid.MustParse(uidRaw)
+	queries := db.New(pool)
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Second)
+
+	setDue := func(text string, at time.Time) string {
+		id := uuid.MustParse(createCapture(t, srv, token, map[string]any{"rawText": text}))
+		if _, err := queries.SetCaptureRemind(ctx, db.SetCaptureRemindParams{
+			ID: id, UserID: uid,
+			RemindAt:   pgtype.Timestamptz{Time: at, Valid: true},
+			RemindHide: true,
+		}); err != nil {
+			t.Fatalf("set reminder: %v", err)
+		}
+		return id.String()
+	}
+
+	oldID := setDue("old history", now.Add(-7*24*time.Hour))
+	recentIDs := map[string]bool{
+		setDue("recent one", now.Add(-time.Hour)):     true,
+		setDue("recent two", now.Add(-2*time.Hour)):   true,
+		setDue("recent three", now.Add(-3*time.Hour)): true,
+	}
+
+	resp := do(
+		t, srv.Client(), http.MethodGet,
+		srv.URL+"/reminders/due?until="+url.QueryEscape(now.Format(time.RFC3339))+"&limit=2",
+		token, nil,
+	)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("due reminders: got %d", resp.StatusCode)
+	}
+	var page []struct {
+		ID       string  `json:"id"`
+		RemindAt *string `json:"remindAt"`
+	}
+	decodeBody(t, resp, &page)
+	if len(page) != 2 {
+		t.Fatalf("expected bounded page of 2, got %d", len(page))
+	}
+	for _, item := range page {
+		if item.ID == oldID || !recentIDs[item.ID] {
+			t.Fatalf("default lookback returned unexpected reminder %s", item.ID)
+		}
+	}
+
+	last := page[len(page)-1]
+	if last.RemindAt == nil {
+		t.Fatal("expected page cursor timestamp")
+	}
+	nextURL := srv.URL + "/reminders/due?since=" +
+		url.QueryEscape(now.Add(-24*time.Hour).Format(time.RFC3339)) +
+		"&until=" + url.QueryEscape(now.Format(time.RFC3339)) +
+		"&beforeAt=" + url.QueryEscape(*last.RemindAt) +
+		"&beforeId=" + url.QueryEscape(last.ID) +
+		"&limit=2"
+	nextResp := do(t, srv.Client(), http.MethodGet, nextURL, token, nil)
+	if nextResp.StatusCode != http.StatusOK {
+		t.Fatalf("next due reminders page: got %d", nextResp.StatusCode)
+	}
+	var nextPage []struct {
+		ID string `json:"id"`
+	}
+	decodeBody(t, nextResp, &nextPage)
+	if len(nextPage) != 1 || !recentIDs[nextPage[0].ID] {
+		t.Fatalf("expected final recent reminder, got %#v", nextPage)
 	}
 }
 

@@ -14,7 +14,7 @@ export interface CloudDriveProviderAdapter {
   label: string;
   available: boolean;
   maxFileBytes: number;
-  upload: (file: File) => Promise<CloudAttachmentDraft>;
+  upload: (file: File, operationId: string) => Promise<CloudAttachmentDraft>;
 }
 
 export type CloudDriveErrorCode =

@@ -114,8 +114,11 @@ func webhookDraftFromRuleCopiesFields() {
 // MARK: - Local offline search
 
 private func tempStore() -> LocalCaptureStore {
-    LocalCaptureStore(fileURL: FileManager.default.temporaryDirectory
-        .appending(path: "chronicle-test-\(UUID().uuidString).sqlite3"))
+    LocalCaptureStore(
+        fileURL: FileManager.default.temporaryDirectory
+            .appending(path: "chronicle-test-\(UUID().uuidString).sqlite3"),
+        scope: .testing
+    )
 }
 
 @Test

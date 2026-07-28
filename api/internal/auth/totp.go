@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/pquerna/otp/totp"
 	"golang.org/x/crypto/bcrypt"
@@ -20,6 +22,8 @@ import (
 )
 
 const MFATokenTTL = 5 * time.Minute
+
+var errRecoveryCodeAlreadyUsed = errors.New("recovery code already used")
 
 // --- MFA token ---
 
@@ -273,6 +277,7 @@ func (h *handler) mfaVerify(ctx context.Context, input *MFAVerifyInput) (*MFAVer
 	}
 
 	verified := false
+	var recoveryCodeID uuid.UUID
 
 	// Try TOTP code
 	if user.TotpSecret.Valid && totp.Validate(input.Body.Code, user.TotpSecret.String) {
@@ -282,16 +287,18 @@ func (h *handler) mfaVerify(ctx context.Context, input *MFAVerifyInput) (*MFAVer
 	// Try recovery code
 	if !verified {
 		codes, err := h.q.GetRecoveryCodes(ctx, uid)
-		if err == nil {
-			for _, rc := range codes {
-				if rc.Used {
-					continue
-				}
-				if err := bcrypt.CompareHashAndPassword([]byte(rc.CodeHash), []byte(input.Body.Code)); err == nil {
-					verified = true
-					_ = h.q.UseRecoveryCode(ctx, rc.ID)
-					break
-				}
+		if err != nil {
+			slog.ErrorContext(ctx, "failed to get recovery codes", "traceId", traceID, "err", err)
+			return nil, huma.Error500InternalServerError("internal error")
+		}
+		for _, rc := range codes {
+			if rc.Used {
+				continue
+			}
+			if err := bcrypt.CompareHashAndPassword([]byte(rc.CodeHash), []byte(input.Body.Code)); err == nil {
+				recoveryCodeID = rc.ID
+				verified = true
+				break
 			}
 		}
 	}
@@ -312,11 +319,31 @@ func (h *handler) mfaVerify(ctx context.Context, input *MFAVerifyInput) (*MFAVer
 		return nil, huma.Error500InternalServerError("internal error")
 	}
 
-	if _, err := h.q.CreateRefreshToken(ctx, db.CreateRefreshTokenParams{
+	refreshParams := db.CreateRefreshTokenParams{
 		UserID:    uid,
 		TokenHash: hashedRefresh,
 		ExpiresAt: pgtype.Timestamptz{Time: time.Now().Add(RefreshTokenTTL), Valid: true},
-	}); err != nil {
+	}
+	if recoveryCodeID != uuid.Nil {
+		err = pgx.BeginFunc(ctx, h.pool, func(tx pgx.Tx) error {
+			q := h.q.WithTx(tx)
+			used, consumeErr := q.UseRecoveryCode(ctx, recoveryCodeID)
+			if consumeErr != nil {
+				return consumeErr
+			}
+			if used != 1 {
+				return errRecoveryCodeAlreadyUsed
+			}
+			_, createErr := q.CreateRefreshToken(ctx, refreshParams)
+			return createErr
+		})
+	} else {
+		_, err = h.q.CreateRefreshToken(ctx, refreshParams)
+	}
+	if errors.Is(err, errRecoveryCodeAlreadyUsed) {
+		return nil, huma.Error401Unauthorized("invalid code")
+	}
+	if err != nil {
 		slog.ErrorContext(ctx, "failed to store refresh token", "traceId", traceID, "err", err)
 		return nil, huma.Error500InternalServerError("internal error")
 	}

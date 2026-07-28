@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 import ChronicleDesktopCore
 
@@ -6,10 +7,30 @@ import ChronicleDesktopCore
 
 // MARK: - Clients
 
+/// Monotonic boundary shared by every long-lived desktop surface.
+///
+/// A generation changes before credentials/origin are replaced and again when a
+/// newly verified identity becomes active. Async work captures a generation and
+/// must discard its result if the boundary moved while it was suspended.
+@MainActor
+final class CaptureSession: ObservableObject {
+    @Published private(set) var generation: UInt64 = 0
+
+    @discardableResult
+    func advance() -> UInt64 {
+        generation &+= 1
+        return generation
+    }
+
+    func snapshot() -> UInt64 { generation }
+    func isCurrent(_ snapshot: UInt64) -> Bool { generation == snapshot }
+}
+
 /// Fresh API clients built from the current signed-in config, or nil when not
 /// signed in. Views call these per request so a sign-in mid-session is picked up.
 @MainActor
 final class CaptureClients {
+    let session: CaptureSession
     let recall: () -> RecallAPIClient?
     let webhook: () -> WebhookAPIClient?
     let openSignIn: () -> Void
@@ -45,6 +66,7 @@ final class CaptureClients {
     let syncEdits: () async -> Void
 
     init(
+        session: CaptureSession = CaptureSession(),
         recall: @escaping () -> RecallAPIClient?,
         webhook: @escaping () -> WebhookAPIClient?,
         openSignIn: @escaping () -> Void,
@@ -68,6 +90,7 @@ final class CaptureClients {
         localSetText: @escaping (String, String) -> Bool = { _, _ in false },
         syncEdits: @escaping () async -> Void = {}
     ) {
+        self.session = session
         self.recall = recall
         self.webhook = webhook
         self.openSignIn = openSignIn
@@ -225,8 +248,8 @@ struct RowItem: Identifiable, Equatable {
     // From a local record. A synced record keys on its server id so it dedupes
     // against the same capture's server search hit; an unsynced one keeps its
     // local id (it exists only on this device until it syncs). `dirty` mirrors
-    // LocalCaptureStore.pendingUpdates: a server-backed row edited since its last
-    // sync (updated_at > synced_at) — the not-yet-pushed edit the merge must float
+    // LocalCaptureStore.pendingUpdates: a server-backed row whose edit revision is
+    // ahead of its sync ack — the not-yet-pushed edit the merge must float
     // above the stale server fragment.
     init(_ record: LocalCaptureRecord) {
         id = record.serverId ?? record.id
@@ -237,7 +260,7 @@ struct RowItem: Identifiable, Equatable {
         createdDate = record.createdAt
         modality = record.payload.mediaType
         synced = record.serverId != nil
-        dirty = record.serverId != nil && (record.syncedAt.map { record.updatedAt > $0 } ?? true)
+        dirty = record.hasPendingUpdate
         mediaUrl = nil
         todoState = CaptureTodoTag.state(in: record.payload.rawText)
         attachments = []

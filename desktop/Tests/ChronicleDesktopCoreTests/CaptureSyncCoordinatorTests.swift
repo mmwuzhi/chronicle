@@ -5,7 +5,7 @@ import Testing
 
 @Test
 func captureSyncCoordinatorDrainsCreatesBeforeDirtyUpdates() async throws {
-    let store = LocalCaptureStore(fileURL: syncTemporaryDatabaseURL())
+    let store = syncTemporaryStore()
     let pending = try store.create(CapturePayload(rawText: "new capture"))
     let edited = try store.create(CapturePayload(rawText: "original"))
     try store.markSynced(
@@ -37,7 +37,7 @@ func captureSyncCoordinatorDrainsCreatesBeforeDirtyUpdates() async throws {
 
 @Test
 func captureSyncCoordinatorReplaysEditThatRacesCreate() async throws {
-    let store = LocalCaptureStore(fileURL: syncTemporaryDatabaseURL())
+    let store = syncTemporaryStore()
     let record = try store.create(CapturePayload(rawText: "typo"))
     let transport = StubCaptureSyncTransport { payload in
         try store.setText(
@@ -63,7 +63,7 @@ func captureSyncCoordinatorReplaysEditThatRacesCreate() async throws {
 
 @Test
 func captureSyncCoordinatorImmediatelyReplaysEditThatRacesSingleCreate() async throws {
-    let store = LocalCaptureStore(fileURL: syncTemporaryDatabaseURL())
+    let store = syncTemporaryStore()
     let record = try store.create(CapturePayload(rawText: "typo"))
     let transport = StubCaptureSyncTransport { _ in
         try store.setText(
@@ -91,7 +91,7 @@ func captureSyncCoordinatorImmediatelyReplaysEditThatRacesSingleCreate() async t
 
 @Test
 func captureSyncCoordinatorLeavesFailedCreatePending() async throws {
-    let store = LocalCaptureStore(fileURL: syncTemporaryDatabaseURL())
+    let store = syncTemporaryStore()
     let record = try store.create(CapturePayload(rawText: "retry later"))
     let transport = StubCaptureSyncTransport(failingCreateTexts: ["retry later"])
     let coordinator = CaptureSyncCoordinator(store: store)
@@ -106,8 +106,73 @@ func captureSyncCoordinatorLeavesFailedCreatePending() async throws {
 }
 
 @Test
+func captureSyncCoordinatorReusesLocalUUIDAsCreateIdempotencyKey() async throws {
+    let store = syncTemporaryStore()
+    let record = try store.create(CapturePayload(rawText: "retry identity"))
+    let first = StubCaptureSyncTransport(failingCreateTexts: ["retry identity"])
+    let coordinator = CaptureSyncCoordinator(store: store)
+
+    _ = await coordinator.syncPending(using: first)
+    let failedCalls = await first.calls()
+    #expect(failedCalls.idempotencyKeys == [record.id])
+
+    let retry = StubCaptureSyncTransport()
+    _ = await coordinator.syncPending(using: retry)
+    let retryCalls = await retry.calls()
+    #expect(retryCalls.idempotencyKeys == [record.id])
+}
+
+@Test
+func captureSyncCoordinatorNeverSendsAccountAPendingCreateAsAccountB() async throws {
+    let scopeA = try #require(LocalCaptureScope(
+        apiURL: URL(string: "https://api.example.com")!,
+        userID: "account-a"
+    ))
+    let scopeB = try #require(LocalCaptureScope(
+        apiURL: URL(string: "https://api.example.com")!,
+        userID: "account-b"
+    ))
+    let store = LocalCaptureStore(fileURL: syncTemporaryDatabaseURL(), scope: scopeA)
+    let pendingA = try store.create(CapturePayload(rawText: "A only"))
+    store.activate(nil) // explicit sign-out / identity transition
+    store.activate(scopeB)
+    let transportB = StubCaptureSyncTransport()
+    let coordinator = CaptureSyncCoordinator(store: store)
+
+    let summaryB = await coordinator.syncPending(using: transportB)
+
+    #expect(summaryB == CaptureSyncSummary())
+    #expect((await transportB.calls()).creates.isEmpty)
+    store.activate(scopeA)
+    #expect(try store.pendingSync().map(\.id) == [pendingA.id])
+}
+
+@Test
+func captureSyncCoordinatorRecoversLostCreateResponseThenPushesLatestEdit() async throws {
+    let store = syncTemporaryStore()
+    let record = try store.create(CapturePayload(rawText: "server committed A"))
+    try store.setText(id: record.id, rawText: "local edit B")
+    let transport = LostCreateResponseTransport(
+        operationID: record.id,
+        committedText: "server committed A"
+    )
+    let coordinator = CaptureSyncCoordinator(store: store)
+
+    let summary = await coordinator.syncPending(using: transport)
+
+    #expect(summary == CaptureSyncSummary(createsSent: 1, updatesPushed: 1))
+    #expect(await transport.recoveredOperationIDs() == [record.id])
+    #expect(await transport.updates() == [
+        StubCaptureUpdate(serverID: record.id, rawText: "local edit B"),
+    ])
+    #expect(try store.pendingSync().isEmpty)
+    #expect(try store.pendingUpdates().isEmpty)
+    #expect(try store.find(localId: record.id)?.serverId == record.id)
+}
+
+@Test
 func captureSyncCoordinatorLeavesFailedUpdateDirty() async throws {
-    let store = LocalCaptureStore(fileURL: syncTemporaryDatabaseURL())
+    let store = syncTemporaryStore()
     let record = try store.create(CapturePayload(rawText: "original"))
     try store.markSynced(
         localId: record.id,
@@ -135,7 +200,7 @@ func captureSyncCoordinatorLeavesFailedUpdateDirty() async throws {
 
 @Test
 func captureSyncCoordinatorReportsAlreadyInFlight() async throws {
-    let store = LocalCaptureStore(fileURL: syncTemporaryDatabaseURL())
+    let store = syncTemporaryStore()
     let record = try store.create(CapturePayload(rawText: "only once"))
     let gate = CaptureSyncGate()
     #expect(gate.begin(record.id))
@@ -150,7 +215,7 @@ func captureSyncCoordinatorReportsAlreadyInFlight() async throws {
 
 @Test
 func captureSyncCoordinatorSerializesAndReplaysRacingUpdates() async throws {
-    let store = LocalCaptureStore(fileURL: syncTemporaryDatabaseURL())
+    let store = syncTemporaryStore()
     let record = try store.create(CapturePayload(rawText: "original"))
     try store.markSynced(
         localId: record.id,
@@ -196,7 +261,10 @@ func captureSyncCoordinatorSurfacesStoreReadFailure() async throws {
         .appending(path: UUID().uuidString)
     try Data().write(to: parentFile)
     defer { try? FileManager.default.removeItem(at: parentFile) }
-    let store = LocalCaptureStore(fileURL: parentFile.appending(path: "sync.sqlite3"))
+    let store = LocalCaptureStore(
+        fileURL: parentFile.appending(path: "sync.sqlite3"),
+        scope: .testing
+    )
     let coordinator = CaptureSyncCoordinator(store: store)
 
     let summary = await coordinator.syncPending(using: StubCaptureSyncTransport())
@@ -218,6 +286,7 @@ private actor StubCaptureSyncTransport: CaptureSyncTransport {
     private let failingUpdateIDs: Set<String>
     private let sendHandler: @Sendable (CapturePayload) throws -> String
     private var creates: [String] = []
+    private var idempotencyKeys: [String] = []
     private var updates: [StubCaptureUpdate] = []
 
     init(
@@ -232,8 +301,9 @@ private actor StubCaptureSyncTransport: CaptureSyncTransport {
         self.sendHandler = sendHandler
     }
 
-    func send(_ payload: CapturePayload) async throws -> String {
+    func send(_ payload: CapturePayload, idempotencyKey: String) async throws -> String {
         creates.append(payload.rawText)
+        idempotencyKeys.append(idempotencyKey)
         if failingCreateTexts.contains(payload.rawText) {
             throw StubCaptureSyncError.failed
         }
@@ -247,8 +317,12 @@ private actor StubCaptureSyncTransport: CaptureSyncTransport {
         }
     }
 
-    func calls() -> (creates: [String], updates: [StubCaptureUpdate]) {
-        (creates, updates)
+    func calls() -> (
+        creates: [String],
+        updates: [StubCaptureUpdate],
+        idempotencyKeys: [String]
+    ) {
+        (creates, updates, idempotencyKeys)
     }
 }
 
@@ -258,7 +332,7 @@ private actor BlockingUpdateTransport: CaptureSyncTransport {
     private var firstUpdateRelease: CheckedContinuation<Void, Never>?
     private var releaseRequested = false
 
-    func send(_ payload: CapturePayload) async throws -> String {
+    func send(_ payload: CapturePayload, idempotencyKey _: String) async throws -> String {
         "unused"
     }
 
@@ -292,8 +366,47 @@ private actor BlockingUpdateTransport: CaptureSyncTransport {
     }
 }
 
+private actor LostCreateResponseTransport: CaptureSyncTransport {
+    private let operationID: String
+    private let committedText: String
+    private var recoveryIDs: [String] = []
+    private var recordedUpdates: [StubCaptureUpdate] = []
+
+    init(operationID: String, committedText: String) {
+        self.operationID = operationID
+        self.committedText = committedText
+    }
+
+    func send(_ payload: CapturePayload, idempotencyKey: String) async throws -> String {
+        #expect(payload.rawText == "local edit B")
+        #expect(idempotencyKey == operationID)
+        throw CaptureAPIError.httpStatus(409)
+    }
+
+    func recoverCreate(operationID: String) async throws -> RecoveredCaptureCreate? {
+        recoveryIDs.append(operationID)
+        return RecoveredCaptureCreate(
+            id: self.operationID,
+            rawText: committedText,
+            mediaType: "text",
+            source: desktopQuickCaptureSource
+        )
+    }
+
+    func update(serverId: String, rawText: String) async throws {
+        recordedUpdates.append(StubCaptureUpdate(serverID: serverId, rawText: rawText))
+    }
+
+    func recoveredOperationIDs() -> [String] { recoveryIDs }
+    func updates() -> [StubCaptureUpdate] { recordedUpdates }
+}
+
 private func syncTemporaryDatabaseURL() -> URL {
     FileManager.default.temporaryDirectory
         .appending(path: UUID().uuidString)
         .appending(path: "capture-sync.sqlite3")
+}
+
+private func syncTemporaryStore() -> LocalCaptureStore {
+    LocalCaptureStore(fileURL: syncTemporaryDatabaseURL(), scope: .testing)
 }

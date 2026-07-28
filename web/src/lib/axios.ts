@@ -1,4 +1,5 @@
 import axios, { type AxiosRequestConfig } from "axios";
+import { isSameAccessToken } from "@/lib/auth-session";
 
 export const apiClient = axios.create({
   baseURL: import.meta.env.VITE_API_URL ?? "/api",
@@ -14,7 +15,9 @@ apiClient.interceptors.request.use((config) => {
   return config;
 });
 
-let refreshing: Promise<string> | null = null;
+class SessionChangedDuringRefresh extends Error {}
+
+let refreshing: { token: string; promise: Promise<string> } | null = null;
 
 apiClient.interceptors.response.use(
   (res) => res,
@@ -29,25 +32,56 @@ apiClient.interceptors.response.use(
       return Promise.reject(error);
     }
     original._retry = true;
+    const requestToken = String(original.headers.Authorization).replace(
+      /^Bearer\s+/,
+      "",
+    );
+    // This 401 belongs to an older session. Never refresh or replay its request
+    // with credentials that a newer login placed in shared localStorage.
+    if (
+      !isSameAccessToken(localStorage.getItem("access_token"), requestToken)
+    ) {
+      return Promise.reject(error);
+    }
     try {
-      if (!refreshing) {
-        refreshing = apiClient
+      if (!refreshing || refreshing.token !== requestToken) {
+        const startedWith = localStorage.getItem("access_token");
+        const promise = apiClient
           .post<{ accessToken: string }>("/auth/refresh")
           .then((r) => {
             const token = r.data.accessToken;
+            if (
+              !isSameAccessToken(
+                localStorage.getItem("access_token"),
+                startedWith,
+              )
+            ) {
+              throw new SessionChangedDuringRefresh();
+            }
             localStorage.setItem("access_token", token);
             return token;
           })
           .finally(() => {
-            refreshing = null;
+            if (refreshing?.promise === promise) refreshing = null;
           });
+        refreshing = { token: requestToken, promise };
       }
-      const token = await refreshing;
+      const token = await refreshing.promise;
+      if (!isSameAccessToken(localStorage.getItem("access_token"), token)) {
+        throw new SessionChangedDuringRefresh();
+      }
       original.headers.Authorization = `Bearer ${token}`;
       return apiClient(original);
-    } catch {
-      localStorage.removeItem("access_token");
-      window.location.href = "/login";
+    } catch (refreshError) {
+      if (refreshError instanceof SessionChangedDuringRefresh) {
+        return Promise.reject(error);
+      }
+      if (
+        isSameAccessToken(localStorage.getItem("access_token"), requestToken)
+      ) {
+        localStorage.removeItem("access_token");
+        window.location.href = "/login";
+      }
       return Promise.reject(error);
     }
   },
