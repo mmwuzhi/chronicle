@@ -26,6 +26,10 @@
     "removeReference": "削除"
   },
   "loadMore": "さらに読み込む",
+  "openCapture": "Captureを開く",
+  "longContent": {
+    "showMore": "もっと見る"
+  },
   "showScheduled": "予約済みを表示",
   "scheduledHint": "将来のリマインダーがあるCaptureは期限まで非表示です。表示してリマインダーを編集・解除できます。",
   "context": {

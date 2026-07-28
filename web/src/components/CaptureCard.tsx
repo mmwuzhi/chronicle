@@ -1,4 +1,12 @@
-import { useState, useRef, useEffect, useCallback, memo } from "react";
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+} from "react";
 import { useTranslation } from "react-i18next";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { useQueryClient } from "@tanstack/react-query";
@@ -10,9 +18,14 @@ import {
 import { fmtFileSize, fmtListTime, fmtPreciseDateTime } from "@/utils/format";
 import { patchCaptureInPages } from "@/utils/capture-cache";
 import { useTranscriptionPoll } from "@/hooks/use-transcription-poll";
-import { Markdown } from "@/components/Markdown";
+import { CaptureDetailDialog } from "@/components/CaptureDetailDialog";
+import { CollapsibleMarkdown } from "@/components/CollapsibleMarkdown";
 import { RemindControl } from "@/components/RemindControl";
 import { cn } from "@/lib/cn";
+import {
+  hasActiveTextSelection,
+  isInteractiveTarget,
+} from "@/utils/interaction";
 import { Button, buttonClassName } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Meta } from "@/components/ui/page";
@@ -76,6 +89,7 @@ export function AutoTextarea({
 // would give it a new identity on every data change.
 export const CaptureCard = memo(function CaptureCard({
   c,
+  masonry = false,
   onDelete,
   onSaveText,
   onSaveTranscript,
@@ -85,9 +99,10 @@ export const CaptureCard = memo(function CaptureCard({
   onMutationError,
 }: {
   c: CaptureBody;
+  masonry?: boolean;
   onDelete: (id: string) => void;
-  onSaveText: (id: string, text: string) => void;
-  onSaveTranscript: (id: string, transcript: string) => void;
+  onSaveText: (id: string, text: string) => Promise<unknown>;
+  onSaveTranscript: (id: string, transcript: string) => Promise<unknown>;
   onUseTranscript: (capture: CaptureBody, mode: "append" | "replace") => void;
   onRetryTranscription: (id: string) => void;
   onSetRemind: (id: string, at: string | null, hide: boolean) => void;
@@ -96,10 +111,31 @@ export const CaptureCard = memo(function CaptureCard({
   const { t, i18n } = useTranslation("captures");
   const { t: tc } = useTranslation("common");
   const queryClient = useQueryClient();
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(c.rawText ?? "");
-  const [editingTranscript, setEditingTranscript] = useState(false);
-  const [transcriptDraft, setTranscriptDraft] = useState(c.transcript ?? "");
+  const [detailOpen, setDetailOpen] = useState(false);
+  const cardRef = useRef<HTMLLIElement>(null);
+  const [masonrySpan, setMasonrySpan] = useState(1);
+  useLayoutEffect(() => {
+    const card = cardRef.current;
+    if (!masonry || !card) return;
+
+    const resize = () => {
+      const grid = card.parentElement;
+      if (!grid) return;
+      const gap = Number.parseFloat(
+        getComputedStyle(grid).getPropertyValue("--masonry-gap"),
+      );
+      const nextSpan = Math.max(
+        1,
+        Math.ceil(card.getBoundingClientRect().height + (gap || 0)),
+      );
+      setMasonrySpan((current) => (current === nextSpan ? current : nextSpan));
+    };
+
+    resize();
+    const observer = new ResizeObserver(resize);
+    observer.observe(card);
+    return () => observer.disconnect();
+  }, [masonry]);
   // Both audio and image captures go through the transcription/OCR workflow, so
   // their processing/failed/retry status surfaces the same way.
   const transcribable = c.mediaType === "audio" || c.mediaType === "image";
@@ -120,220 +156,183 @@ export const CaptureCard = memo(function CaptureCard({
       onError: onMutationError,
     },
   });
-
-  const commitEdit = () => {
-    const trimmed = draft.trim();
-    if (trimmed && trimmed !== c.rawText) {
-      onSaveText(c.id, trimmed);
-    }
-    setEditing(false);
-  };
-
-  const commitTranscript = () => {
-    const trimmed = transcriptDraft.trim();
-    if (trimmed && trimmed !== c.transcript) {
-      onSaveTranscript(c.id, trimmed);
-    }
-    setEditingTranscript(false);
-  };
+  const openDetail = () => setDetailOpen(true);
 
   return (
     <Card asChild>
-      <li className="group flex flex-col gap-3 p-4 transition-[border-color,box-shadow]">
-        {c.mediaType === "image" && c.mediaUrl && (
-          <img
-            src={c.mediaUrl}
-            alt=""
-            className="max-h-40 w-full rounded-control object-contain"
-          />
+      <li
+        ref={cardRef}
+        className={cn(
+          "group flex cursor-pointer flex-col gap-3 p-4 transition-[border-color,box-shadow] hover:border-strong",
+          masonry ? "ch-capture-masonry-card" : "h-full",
         )}
-        {c.mediaType === "audio" && c.mediaUrl && (
-          <audio controls src={c.mediaUrl} className="h-8 w-full" />
-        )}
-        {transcribable &&
-          ["pending", "processing"].includes(c.transcriptionStatus) && (
-            <div className="flex items-center gap-2 text-caption text-muted">
-              {t("transcript.processing")}
+        style={
+          masonry
+            ? ({
+                "--masonry-span": masonrySpan,
+              } as CSSProperties)
+            : undefined
+        }
+        onClick={(event) => {
+          const target = event.target;
+          if (
+            (target instanceof Element &&
+              target.closest("[data-capture-card-actions]")) ||
+            isInteractiveTarget(target) ||
+            hasActiveTextSelection()
+          ) {
+            return;
+          }
+          openDetail();
+        }}
+      >
+        <div className="ch-capture-card-body flex flex-1 cursor-pointer flex-col gap-3 rounded-control">
+          {c.mediaType === "image" && c.mediaUrl && (
+            <img
+              src={c.mediaUrl}
+              alt=""
+              className="max-h-40 w-full rounded-control object-contain"
+            />
+          )}
+          {c.mediaType === "audio" && c.mediaUrl && (
+            <audio controls src={c.mediaUrl} className="h-8 w-full" />
+          )}
+          {transcribable &&
+            ["pending", "processing"].includes(c.transcriptionStatus) && (
+              <div className="flex items-center gap-2 text-caption text-muted">
+                {t("transcript.processing")}
+              </div>
+            )}
+          {transcribable && c.transcriptionStatus === "failed" && (
+            <div className="flex items-center gap-2 text-caption text-danger">
+              <span>{t("transcript.failed")}</span>
+              <Button size="sm" onClick={() => onRetryTranscription(c.id)}>
+                {t("transcript.retry")}
+              </Button>
             </div>
           )}
-        {transcribable && c.transcriptionStatus === "failed" && (
-          <div className="flex items-center gap-2 text-caption text-danger">
-            <span>{t("transcript.failed")}</span>
-            <Button size="sm" onClick={() => onRetryTranscription(c.id)}>
-              {t("transcript.retry")}
-            </Button>
-          </div>
-        )}
-        {editing ? (
-          <AutoTextarea
-            autoFocus
-            value={draft}
-            onChange={setDraft}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-                e.preventDefault();
-                commitEdit();
-              }
-              if (e.key === "Escape") {
-                setDraft(c.rawText ?? "");
-                setEditing(false);
-              }
-            }}
-            onBlur={commitEdit}
-            className="w-full resize-none border-0 bg-transparent p-0 text-small text-ink outline-none"
-          />
-        ) : (
-          <div
-            className="cursor-text"
-            onClick={() => {
-              setDraft(c.rawText ?? "");
-              setEditing(true);
-            }}
-          >
-            <Markdown>{c.rawText ?? ""}</Markdown>
-          </div>
-        )}
-        {transcribable && c.transcript && (
-          <div className="rounded-control border border-accent-weak bg-accent-weak/30 p-3">
-            <div className="mb-2 flex items-center justify-between gap-2 text-caption font-bold uppercase text-accent-strong">
-              <span>{t("transcript.label")}</span>
-              {!editingTranscript && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => {
-                    setTranscriptDraft(c.transcript ?? "");
-                    setEditingTranscript(true);
-                  }}
-                >
-                  {tc("actions.edit")}
-                </Button>
-              )}
+          <CollapsibleMarkdown showMoreLabel={t("longContent.showMore")}>
+            {c.rawText ?? ""}
+          </CollapsibleMarkdown>
+          {transcribable && c.transcript && (
+            <div className="rounded-control border border-accent-weak bg-accent-weak/30 p-3">
+              <div className="mb-2 text-caption font-bold uppercase text-accent-strong">
+                {t("transcript.label")}
+              </div>
+              <CollapsibleMarkdown
+                showMoreLabel={t("longContent.showMore")}
+                tone="accent"
+              >
+                {c.transcript}
+              </CollapsibleMarkdown>
             </div>
-            {editingTranscript ? (
-              <>
-                <AutoTextarea
-                  autoFocus
-                  value={transcriptDraft}
-                  onChange={setTranscriptDraft}
-                  onKeyDown={(event) => {
-                    if (event.key === "Escape") setEditingTranscript(false);
-                  }}
-                  className="min-h-24 w-full resize-none rounded-control border border-line bg-surface px-[13px] py-[11px] font-app text-body leading-normal text-ink outline-none focus:border-accent focus:shadow-focus"
-                />
-                <div className="mt-2.5 flex justify-end gap-2">
-                  <Button
-                    variant="primary"
-                    size="sm"
-                    onClick={commitTranscript}
-                  >
-                    {tc("actions.save")}
-                  </Button>
-                  <Button size="sm" onClick={() => setEditingTranscript(false)}>
-                    {tc("actions.cancel")}
-                  </Button>
-                </div>
-              </>
-            ) : (
-              <>
-                <Markdown>{c.transcript}</Markdown>
-                <div className="mt-2.5 flex justify-end gap-2">
-                  {c.rawText && (
-                    <Button
-                      size="sm"
-                      onClick={() => onUseTranscript(c, "append")}
-                    >
-                      {t("transcript.append")}
-                    </Button>
-                  )}
-                  <Button
-                    variant="primary"
-                    size="sm"
-                    onClick={() => onUseTranscript(c, "replace")}
-                  >
-                    {c.rawText
-                      ? t("transcript.replace")
-                      : t("transcript.useAsText")}
-                  </Button>
-                </div>
-              </>
+          )}
+          {attachments.length > 0 && (
+            <button
+              type="button"
+              className="flex cursor-pointer items-center justify-between gap-3 rounded-control border border-line bg-surface-2 px-3 py-2 text-left text-small text-muted transition-colors hover:border-strong hover:text-ink"
+              onClick={openDetail}
+            >
+              <span>{t("attachments.title")}</span>
+              <span className="font-code text-caption text-faint">
+                {attachments.length}
+              </span>
+            </button>
+          )}
+        </div>
+        <div className="mt-auto flex items-center">
+          <span className="flex-1" />
+          <div
+            className="flex cursor-default items-center gap-2"
+            data-capture-card-actions
+          >
+            <RemindControl
+              remindAt={c.remindAt}
+              remindHide={c.remindHide}
+              onSet={(at, hide) => onSetRemind(c.id, at, hide)}
+            />
+            {c.createdAt && (
+              <Meta title={fmtPreciseDateTime(c.createdAt, i18n.language)}>
+                {fmtListTime(c.createdAt, i18n.language)}
+              </Meta>
             )}
+            <button
+              type="button"
+              className="grid size-7 cursor-pointer place-items-center rounded-full border border-transparent bg-transparent text-muted transition-colors hover:bg-tint hover:text-ink focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-accent/20"
+              aria-label={t("openCapture")}
+              aria-haspopup="dialog"
+              onClick={openDetail}
+            >
+              <svg
+                viewBox="0 0 20 20"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                aria-hidden="true"
+                className="size-4"
+              >
+                <path
+                  d="m7 5 5 5-5 5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </button>
+            <DropdownMenu.Root>
+              <DropdownMenu.Trigger asChild>
+                <button
+                  className="grid size-7 cursor-pointer place-items-center rounded-full border border-transparent bg-transparent text-muted transition-colors hover:bg-tint hover:text-ink [&_svg]:size-[19px]"
+                  aria-label="More options"
+                >
+                  <svg
+                    viewBox="0 0 24 24"
+                    fill="currentColor"
+                    aria-hidden="true"
+                  >
+                    <circle cx="5" cy="12" r="1.9" />
+                    <circle cx="12" cy="12" r="1.9" />
+                    <circle cx="19" cy="12" r="1.9" />
+                  </svg>
+                </button>
+              </DropdownMenu.Trigger>
+              <DropdownMenu.Portal>
+                <DropdownMenu.Content
+                  className="z-100 min-w-35 rounded-control border border-line bg-surface p-1 shadow-overlay"
+                  align="end"
+                  sideOffset={4}
+                >
+                  <DropdownMenu.Item
+                    className="flex cursor-pointer select-none items-center rounded-md px-3 py-2 text-small text-danger outline-none hover:bg-danger-weak data-[highlighted]:bg-danger-weak"
+                    onSelect={() => onDelete(c.id)}
+                  >
+                    {tc("actions.delete")}
+                  </DropdownMenu.Item>
+                </DropdownMenu.Content>
+              </DropdownMenu.Portal>
+            </DropdownMenu.Root>
           </div>
-        )}
-        {attachments.length > 0 && (
-          <CaptureAttachments
-            attachments={attachments}
-            deleting={deleteAttachment.isPending}
-            onDelete={(attachmentId) =>
-              deleteAttachment.mutate({ id: c.id, attachmentId })
+        </div>
+        {detailOpen && (
+          <CaptureDetailDialog
+            capture={c}
+            open
+            onOpenChange={setDetailOpen}
+            onSaveText={onSaveText}
+            onSaveTranscript={onSaveTranscript}
+            onUseTranscript={onUseTranscript}
+            attachments={
+              attachments.length > 0 ? (
+                <CaptureAttachments
+                  attachments={attachments}
+                  deleting={deleteAttachment.isPending}
+                  onDelete={(attachmentId) =>
+                    deleteAttachment.mutate({ id: c.id, attachmentId })
+                  }
+                />
+              ) : undefined
             }
           />
         )}
-        <div className="flex items-center gap-2">
-          <span className="flex-1" />
-          {editing ? (
-            <>
-              <Button size="sm" onClick={commitEdit}>
-                {tc("actions.save")}
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  setDraft(c.rawText ?? "");
-                  setEditing(false);
-                }}
-              >
-                {tc("actions.cancel")}
-              </Button>
-            </>
-          ) : (
-            <>
-              <RemindControl
-                remindAt={c.remindAt}
-                remindHide={c.remindHide}
-                onSet={(at, hide) => onSetRemind(c.id, at, hide)}
-              />
-              {c.createdAt && (
-                <Meta title={fmtPreciseDateTime(c.createdAt, i18n.language)}>
-                  {fmtListTime(c.createdAt, i18n.language)}
-                </Meta>
-              )}
-              <DropdownMenu.Root>
-                <DropdownMenu.Trigger asChild>
-                  <button
-                    className="grid size-7 cursor-pointer place-items-center rounded-full border border-transparent bg-transparent text-muted transition-colors hover:bg-tint hover:text-ink [&_svg]:size-[19px]"
-                    aria-label="More options"
-                  >
-                    <svg
-                      viewBox="0 0 24 24"
-                      fill="currentColor"
-                      aria-hidden="true"
-                    >
-                      <circle cx="5" cy="12" r="1.9" />
-                      <circle cx="12" cy="12" r="1.9" />
-                      <circle cx="19" cy="12" r="1.9" />
-                    </svg>
-                  </button>
-                </DropdownMenu.Trigger>
-                <DropdownMenu.Portal>
-                  <DropdownMenu.Content
-                    className="z-100 min-w-35 rounded-control border border-line bg-surface p-1 shadow-overlay"
-                    align="end"
-                    sideOffset={4}
-                  >
-                    <DropdownMenu.Item
-                      className="flex cursor-pointer select-none items-center rounded-md px-3 py-2 text-small text-danger outline-none hover:bg-danger-weak data-[highlighted]:bg-danger-weak"
-                      onSelect={() => onDelete(c.id)}
-                    >
-                      {tc("actions.delete")}
-                    </DropdownMenu.Item>
-                  </DropdownMenu.Content>
-                </DropdownMenu.Portal>
-              </DropdownMenu.Root>
-            </>
-          )}
-        </div>
       </li>
     </Card>
   );

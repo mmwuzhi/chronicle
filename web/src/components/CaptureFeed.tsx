@@ -1,6 +1,7 @@
 import { useTranslation } from "react-i18next";
 import type { CaptureBody } from "@/api";
 import { CaptureCard } from "@/components/CaptureCard";
+import { cn } from "@/lib/cn";
 import { Button } from "@/components/ui/button";
 import { EmptyState, Meta } from "@/components/ui/page";
 
@@ -9,10 +10,11 @@ interface CaptureFeedProps {
   loading: boolean;
   hasMore: boolean;
   loadingMore: boolean;
+  masonry?: boolean;
   onLoadMore: () => void;
   onDelete: (id: string) => void;
-  onSaveText: (id: string, text: string) => void;
-  onSaveTranscript: (id: string, transcript: string) => void;
+  onSaveText: (id: string, text: string) => Promise<unknown>;
+  onSaveTranscript: (id: string, transcript: string) => Promise<unknown>;
   onUseTranscript: (capture: CaptureBody, mode: "append" | "replace") => void;
   onRetryTranscription: (id: string) => void;
   onSetRemind: (id: string, at: string | null, hide: boolean) => void;
@@ -24,6 +26,7 @@ export function CaptureFeed({
   loading,
   hasMore,
   loadingMore,
+  masonry = false,
   onLoadMore,
   ...cardActions
 }: CaptureFeedProps): React.JSX.Element {
@@ -41,11 +44,23 @@ export function CaptureFeed({
 
   return (
     <>
-      <div className="flex flex-col gap-3">
+      <ul
+        className={cn(
+          "m-0 list-none p-0",
+          masonry
+            ? "ch-capture-masonry grid grid-cols-1 gap-3"
+            : "flex flex-col gap-3",
+        )}
+      >
         {captures.map((capture) => (
-          <CaptureCard key={capture.id} c={capture} {...cardActions} />
+          <CaptureCard
+            key={capture.id}
+            c={capture}
+            masonry={masonry}
+            {...cardActions}
+          />
         ))}
-      </div>
+      </ul>
       {hasMore && (
         <div className="flex justify-center pb-2 pt-[18px]">
           <Button onClick={onLoadMore} disabled={loadingMore}>

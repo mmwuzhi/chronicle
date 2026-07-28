@@ -53,6 +53,10 @@
   },
   "confirm": {
     "cannotUndo": "此操作无法撤销。",
-    "deleteCapture": "删除 Capture？"
+    "deleteCapture": "删除 Capture？",
+    "discardChanges": "放弃未保存的更改？",
+    "discardChangesDescription": "刚才的编辑将会丢失。",
+    "discard": "放弃更改",
+    "keepEditing": "继续编辑"
   }
 }

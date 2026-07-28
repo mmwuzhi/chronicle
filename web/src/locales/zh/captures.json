@@ -26,6 +26,10 @@
     "removeReference": "移除"
   },
   "loadMore": "加载更多",
+  "openCapture": "打开 Capture",
+  "longContent": {
+    "showMore": "展开"
+  },
   "showScheduled": "显示已安排提醒",
   "scheduledHint": "设有未来提醒的 Capture 在到期前会被隐藏。显示它们以编辑或清除提醒。",
   "context": {

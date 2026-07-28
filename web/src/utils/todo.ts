@@ -5,6 +5,7 @@
 // the token, group 3 the (done…) parameter.
 export const TODO_TAG_RE =
   /(^|\s)(#todo(\(done(?::(\d{4}-\d{2}-\d{2}))?\))?)(?=[^\p{L}\p{N}_(-]|$)/u;
+export const TODO_TAG = "#todo";
 
 // Parse the first #todo token in text, mirroring the API's parseTodoTag
 // (api/internal/capture/todotag.go). `present` is whether the standalone tag

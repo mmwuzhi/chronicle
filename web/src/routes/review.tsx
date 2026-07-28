@@ -75,9 +75,9 @@ function Review() {
       if (ok) remove.mutate({ id });
     },
     onSaveText: (id: string, rawText: string) =>
-      update.mutate({ id, data: { rawText } }),
+      update.mutateAsync({ id, data: { rawText } }),
     onSaveTranscript: (id: string, transcript: string) =>
-      update.mutate({ id, data: { transcript } }),
+      update.mutateAsync({ id, data: { transcript } }),
     onUseTranscript: (capture: CaptureBody, mode: "append" | "replace") => {
       if (!capture.transcript) return;
       const rawText =

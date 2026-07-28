@@ -8,6 +8,7 @@ import {
 import { apiClient } from "@/lib/axios";
 import { Composer } from "@/components/Composer";
 import { fingerprintFile } from "@/utils/file-fingerprint";
+import { TODO_TAG } from "@/utils/todo";
 
 interface UploadResult {
   id: string;
@@ -244,7 +245,8 @@ export function CaptureComposer({
       placeholder={t("placeholder")}
       submitLabel={tc("actions.save")}
       submitDisabled={creating}
-      tagSuggestions={[{ tag: "#todo", hint: t("tagMenu.todoHint") }]}
+      minRows={3}
+      tagSuggestions={[{ tag: TODO_TAG, hint: t("tagMenu.todoHint") }]}
       onPolish={handlePolish}
       onAttach={() => attachInputRef.current?.click()}
       onRecord={() => void handleAudioToggle()}

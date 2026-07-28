@@ -53,6 +53,10 @@
   },
   "confirm": {
     "cannotUndo": "This cannot be undone.",
-    "deleteCapture": "Delete capture?"
+    "deleteCapture": "Delete capture?",
+    "discardChanges": "Discard unsaved changes?",
+    "discardChangesDescription": "Your edits will be lost.",
+    "discard": "Discard changes",
+    "keepEditing": "Keep editing"
   }
 }

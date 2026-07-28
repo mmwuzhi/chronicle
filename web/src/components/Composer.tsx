@@ -211,7 +211,7 @@ export function Composer({
         </div>
       )}
 
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-1.5">
         {onAttach && (
           <Button
             size="sm"
@@ -246,12 +246,12 @@ export function Composer({
             {polishing ? "..." : "*"} {tc("actions.polish")}
           </Button>
         )}
-        <div className="flex-1" />
         {shownError && <FieldError>{shownError}</FieldError>}
         {busy && busyLabel && <Meta>{busyLabel}</Meta>}
         <Button
           variant="primary"
           size="sm"
+          className="ml-auto"
           onClick={() => {
             if (canSubmit) onSubmit(trimmed);
           }}

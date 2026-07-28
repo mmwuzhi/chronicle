@@ -26,6 +26,10 @@
     "removeReference": "Remove"
   },
   "loadMore": "Load more",
+  "openCapture": "Open Capture",
+  "longContent": {
+    "showMore": "Show more"
+  },
   "showScheduled": "Show scheduled",
   "scheduledHint": "Captures with a future reminder are hidden until due. Show them to edit or clear the reminder.",
   "context": {

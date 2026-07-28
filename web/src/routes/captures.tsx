@@ -19,6 +19,7 @@ import {
   removeCaptureFromPages,
 } from "@/utils/capture-cache";
 import { CaptureComposer } from "@/components/CaptureComposer";
+import { CapturesLayout } from "@/components/CapturesLayout";
 import {
   CaptureFilterBar,
   type CaptureTab,
@@ -33,7 +34,6 @@ import type { CloudAttachmentDraft } from "@/lib/cloudDrive";
 import {
   PageError,
   PageHeader,
-  PageShell,
   PageSubtitle,
   PageTitle,
 } from "@/components/ui/page";
@@ -86,12 +86,13 @@ function Captures() {
       onError: () => showMutationToast(tc("errors.mutationFailed")),
     },
   });
-  const { mutate: updateCapture } = useUpdateCapture({
-    mutation: {
-      onSuccess: patchCapture,
-      onError: () => showMutationToast(tc("errors.mutationFailed")),
-    },
-  });
+  const { mutate: updateCapture, mutateAsync: updateCaptureAsync } =
+    useUpdateCapture({
+      mutation: {
+        onSuccess: patchCapture,
+        onError: () => showMutationToast(tc("errors.mutationFailed")),
+      },
+    });
   const { mutate: deleteCapture } = useDeleteCapture({
     mutation: {
       onSuccess: (_data, variables) =>
@@ -137,13 +138,14 @@ function Captures() {
     [confirm, deleteCapture, tc],
   );
   const onSaveText = useCallback(
-    (id: string, rawText: string) => updateCapture({ id, data: { rawText } }),
-    [updateCapture],
+    (id: string, rawText: string) =>
+      updateCaptureAsync({ id, data: { rawText } }),
+    [updateCaptureAsync],
   );
   const onSaveTranscript = useCallback(
     (id: string, transcript: string) =>
-      updateCapture({ id, data: { transcript } }),
-    [updateCapture],
+      updateCaptureAsync({ id, data: { transcript } }),
+    [updateCaptureAsync],
   );
   const onUseTranscript = useCallback(
     (capture: CaptureBody, mode: "append" | "replace") => {
@@ -181,57 +183,66 @@ function Captures() {
   return (
     <>
       <Nav />
-      <PageShell>
-        <PageHeader>
-          <PageTitle>{t("title")}</PageTitle>
-          <PageSubtitle>{t("subtitle")}</PageSubtitle>
-        </PageHeader>
-        <CaptureComposer
-          creating={create.isPending}
-          onCreate={(rawText, onSuccess) =>
-            create.mutate(
-              { data: { rawText, mediaType: "text" } },
-              { onSuccess },
-            )
-          }
-          onCreateWithAttachment={async (
-            operationId,
-            rawText,
-            attachment: CloudAttachmentDraft,
-          ) => {
-            await createWithAttachment.mutateAsync({
-              data: {
-                operationId,
-                rawText,
-                source: "web",
-                attachment,
-              },
-            });
-          }}
-          onUploaded={invalidateCaptures}
-        />
-        <CaptureFilterBar
-          tabs={tabs}
-          activeTab={tab}
-          showScheduled={showScheduled}
-          onTabChange={setTab}
-          onToggleScheduled={() => setShowScheduled((value) => !value)}
-        />
-        <CaptureFeed
-          captures={captures}
-          loading={captureQuery.isLoading}
-          hasMore={captureQuery.hasNextPage}
-          loadingMore={captureQuery.isFetchingNextPage}
-          onLoadMore={() => void captureQuery.fetchNextPage()}
-          onDelete={onDelete}
-          onSaveText={onSaveText}
-          onSaveTranscript={onSaveTranscript}
-          onUseTranscript={onUseTranscript}
-          onRetryTranscription={onRetryTranscription}
-          onSetRemind={onSetRemind}
-          onMutationError={onMutationError}
-        />
-      </PageShell>
+      <CapturesLayout
+        header={
+          <PageHeader>
+            <PageTitle>{t("title")}</PageTitle>
+            <PageSubtitle>{t("subtitle")}</PageSubtitle>
+          </PageHeader>
+        }
+        composer={
+          <CaptureComposer
+            creating={create.isPending}
+            onCreate={(rawText, onSuccess) =>
+              create.mutate(
+                { data: { rawText, mediaType: "text" } },
+                { onSuccess },
+              )
+            }
+            onCreateWithAttachment={async (
+              operationId,
+              rawText,
+              attachment: CloudAttachmentDraft,
+            ) => {
+              await createWithAttachment.mutateAsync({
+                data: {
+                  operationId,
+                  rawText,
+                  source: "web",
+                  attachment,
+                },
+              });
+            }}
+            onUploaded={invalidateCaptures}
+          />
+        }
+        content={
+          <>
+            <CaptureFilterBar
+              tabs={tabs}
+              activeTab={tab}
+              showScheduled={showScheduled}
+              onTabChange={setTab}
+              onToggleScheduled={() => setShowScheduled((value) => !value)}
+            />
+            <CaptureFeed
+              captures={captures}
+              loading={captureQuery.isLoading}
+              hasMore={captureQuery.hasNextPage}
+              loadingMore={captureQuery.isFetchingNextPage}
+              masonry
+              onLoadMore={() => void captureQuery.fetchNextPage()}
+              onDelete={onDelete}
+              onSaveText={onSaveText}
+              onSaveTranscript={onSaveTranscript}
+              onUseTranscript={onUseTranscript}
+              onRetryTranscription={onRetryTranscription}
+              onSetRemind={onSetRemind}
+              onMutationError={onMutationError}
+            />
+          </>
+        }
+      />
       <MutationToast message={mutationMessage} />
     </>
   );
