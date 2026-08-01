@@ -6,7 +6,7 @@ visible from any single file. Setup and commands live in the root `Justfile`.
 
 ## Package map
 
-- `cmd/server` — entry point: config load, postgres/redis wiring, middleware
+- `cmd/server` — entry point: config load, PostgreSQL wiring, middleware
   order, and every package's `Register(...)` call. New route packages get
   mounted here.
 - `internal/config` — envconfig struct; startup fails fast on invalid env.

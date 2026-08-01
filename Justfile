@@ -17,7 +17,7 @@ _default:
 # first-time setup: copy .env, start data layer, run migrations
 setup: docker-check
     @test -f .env || cp .env.example .env
-    docker compose up -d postgres redis
+    docker compose up -d postgres
     sleep 3
     cd {{ api_dir }} && goose -dir db/migrations postgres "$DATABASE_URL" up
 
@@ -29,15 +29,15 @@ dev: docker-check
 dev-all: docker-check desktop-reload
     @just _quiet "{{ compose_watch }}"
 
-# start only postgres + redis
+# start the PostgreSQL data layer
 dev-data: docker-check
-    docker compose up -d postgres redis
+    docker compose up -d postgres
 
 # stop and remove all dev containers
 down: docker-check
     docker compose down
 
-# run API server locally (starts postgres + redis if needed)
+# run API server locally (starts PostgreSQL if needed)
 api: dev-data
     @lsof -ti :${PORT:-8080} | xargs kill -9 2>/dev/null || true
     @just _quiet "cd {{ api_dir }} && go run cmd/server/main.go"
@@ -106,11 +106,38 @@ rag-test:
     @test -d {{ rag_dir }}/.venv || just rag-setup
     cd {{ rag_dir }} && .venv/bin/python -m pytest -q
 
-# run the deterministic end-to-end search policy evaluation and print Hit@1,
-# Hit@3, and MRR (model/network independent; suitable for CI and local tuning)
+# run the deterministic multilingual retrieval-quality gate
 rag-eval:
     @test -d {{ rag_dir }}/.venv || just rag-setup
-    cd {{ rag_dir }} && .venv/bin/python -m pytest -q -s tests/test_search_eval.py
+    cd {{ rag_dir }} && .venv/bin/python search_benchmark.py
+
+# run the same corpus against the configured live embedding/rerank backends
+rag-eval-live:
+    @test -d {{ rag_dir }}/.venv || just rag-setup
+    cd {{ rag_dir }} && .venv/bin/python search_benchmark.py --live --output search-live-report.json
+
+# build and verify the Chrome/Edge Manifest V3 extension
+extension-test:
+    cd {{ web_dir }} && pnpm --filter @chronicle/browser-extension test
+
+extension-e2e:
+    cd {{ web_dir }} && pnpm --filter @chronicle/browser-extension e2e
+
+extension-package:
+    cd {{ web_dir }} && pnpm --filter @chronicle/browser-extension package
+
+# supported production-style self-host stack
+selfhost-up:
+    bash scripts/selfhost.sh up
+
+selfhost-down:
+    bash scripts/selfhost.sh down
+
+selfhost-logs:
+    bash scripts/selfhost.sh logs
+
+selfhost-backup:
+    bash scripts/selfhost.sh backup
 
 # run a long-lived dev command, exiting 0 when it is stopped with Ctrl-C
 _quiet cmd:

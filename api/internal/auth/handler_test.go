@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"testing"
 	"time"
 
@@ -16,8 +15,8 @@ import (
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/redis/go-redis/v9"
 	"golang.org/x/crypto/bcrypt"
 
 	db "github.com/sikaoshenmi/chronicle/db/sqlc"
@@ -29,44 +28,30 @@ const testSecret = "test-jwt-secret-long-enough"
 
 func newServer(t *testing.T) *httptest.Server {
 	t.Helper()
-	pool := testutil.NewPool(t)
-	testutil.Truncate(t, pool, "refresh_tokens", "users")
-
-	r := chi.NewRouter()
-	api := humachi.New(r, huma.DefaultConfig("Test API", "0.0.0"))
-	api.UseMiddleware(auth.InjectHumaContext)
-	auth.Register(api, r, pool, nil, auth.Options{JWTSecret: testSecret})
-
-	srv := httptest.NewServer(r)
-	t.Cleanup(srv.Close)
+	srv, _ := newServerWithPool(t)
 	return srv
 }
 
-func newServerWithRedis(t *testing.T) (*httptest.Server, *redis.Client, *pgxpool.Pool) {
+func newServerWithPool(t *testing.T) (*httptest.Server, *pgxpool.Pool) {
 	t.Helper()
-	redisURL := os.Getenv("REDIS_URL")
-	if redisURL == "" {
-		redisURL = "redis://localhost:6379"
-	}
-	redisOptions, err := redis.ParseURL(redisURL)
-	if err != nil {
-		t.Fatalf("parse REDIS_URL: %v", err)
-	}
-	rdb := redis.NewClient(redisOptions)
-	if err := rdb.Ping(context.Background()).Err(); err != nil {
-		t.Skipf("redis is required for desktop OAuth exchange: %v", err)
-	}
-	t.Cleanup(func() { _ = rdb.Close() })
-
 	pool := testutil.NewPool(t)
-	testutil.Truncate(t, pool, "refresh_tokens", "users")
+	testutil.Truncate(
+		t,
+		pool,
+		"auth_ephemeral_states",
+		"auth_rate_limits",
+		"refresh_tokens",
+		"users",
+	)
+
 	r := chi.NewRouter()
 	api := humachi.New(r, huma.DefaultConfig("Test API", "0.0.0"))
 	api.UseMiddleware(auth.InjectHumaContext)
-	auth.Register(api, r, pool, rdb, auth.Options{JWTSecret: testSecret})
+	auth.Register(api, r, pool, auth.Options{JWTSecret: testSecret})
+
 	srv := httptest.NewServer(r)
 	t.Cleanup(srv.Close)
-	return srv, rdb, pool
+	return srv, pool
 }
 
 func post(t *testing.T, srv *httptest.Server, path string, body any) *http.Response {
@@ -216,8 +201,34 @@ func TestLogin_UnknownEmail(t *testing.T) {
 	}
 }
 
+func TestLogin_UsesDurableNormalizedAccountRateLimit(t *testing.T) {
+	srv := newServer(t)
+
+	for attempt := 0; attempt < 10; attempt++ {
+		email := "Missing@Example.com"
+		if attempt%2 == 1 {
+			email = "missing@example.com"
+		}
+		resp := post(t, srv, "/auth/login", map[string]string{
+			"email": email, "password": "wrongpassword",
+		})
+		if resp.StatusCode != http.StatusUnauthorized {
+			t.Fatalf("attempt %d: expected 401, got %d", attempt+1, resp.StatusCode)
+		}
+		resp.Body.Close()
+	}
+
+	resp := post(t, srv, "/auth/login", map[string]string{
+		"email": "missing@example.com", "password": "wrongpassword",
+	})
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusTooManyRequests {
+		t.Fatalf("expected durable account limit to return 429, got %d", resp.StatusCode)
+	}
+}
+
 func TestDesktopOAuthExchange_IsOneTimeAndSetsRefreshCookie(t *testing.T) {
-	srv, rdb, _ := newServerWithRedis(t)
+	srv, pool := newServerWithPool(t)
 	registerResp := post(t, srv, "/auth/register", map[string]string{
 		"email": "oauth-desktop@example.com", "password": "password123",
 	})
@@ -227,7 +238,6 @@ func TestDesktopOAuthExchange_IsOneTimeAndSetsRefreshCookie(t *testing.T) {
 	decodeBody(t, registerResp, &registered)
 
 	code := uuid.NewString()
-	key := "oauth:desktop:" + code
 	verifier := "0123456789012345678901234567890123456789012"
 	handoff, err := json.Marshal(map[string]string{
 		"userId":        registered.UserID,
@@ -236,10 +246,16 @@ func TestDesktopOAuthExchange_IsOneTimeAndSetsRefreshCookie(t *testing.T) {
 	if err != nil {
 		t.Fatalf("encode desktop OAuth handoff: %v", err)
 	}
-	if err := rdb.Set(context.Background(), key, handoff, time.Minute).Err(); err != nil {
+	codeHash := sha256.Sum256([]byte(code))
+	queries := db.New(pool)
+	if err := queries.StoreAuthEphemeralState(context.Background(), db.StoreAuthEphemeralStateParams{
+		Purpose:   "desktop_oauth_handoff",
+		KeyHash:   codeHash[:],
+		Payload:   handoff,
+		ExpiresAt: pgtype.Timestamptz{Time: time.Now().Add(time.Minute), Valid: true},
+	}); err != nil {
 		t.Fatalf("seed desktop OAuth handoff: %v", err)
 	}
-	t.Cleanup(func() { _ = rdb.Del(context.Background(), key).Err() })
 
 	wrongVerifier := "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ"
 	wrong := post(t, srv, "/auth/oauth/desktop/exchange", map[string]string{
@@ -249,8 +265,11 @@ func TestDesktopOAuthExchange_IsOneTimeAndSetsRefreshCookie(t *testing.T) {
 	if wrong.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("expected wrong verifier to return 401, got %d", wrong.StatusCode)
 	}
-	if exists, err := rdb.Exists(context.Background(), key).Result(); err != nil || exists != 1 {
-		t.Fatalf("wrong verifier must not consume handoff: exists=%d err=%v", exists, err)
+	if _, err := queries.GetAuthEphemeralState(context.Background(), db.GetAuthEphemeralStateParams{
+		Purpose: "desktop_oauth_handoff",
+		KeyHash: codeHash[:],
+	}); err != nil {
+		t.Fatalf("wrong verifier must not consume handoff: %v", err)
 	}
 
 	resp := post(t, srv, "/auth/oauth/desktop/exchange", map[string]string{
@@ -286,7 +305,7 @@ func TestDesktopOAuthExchange_IsOneTimeAndSetsRefreshCookie(t *testing.T) {
 }
 
 func TestDesktopOAuthExchange_MFARequiresSecondStep(t *testing.T) {
-	srv, rdb, pool := newServerWithRedis(t)
+	srv, pool := newServerWithPool(t)
 	registerResp := post(t, srv, "/auth/register", map[string]string{
 		"email": "oauth-desktop-mfa@example.com", "password": "password123",
 	})
@@ -296,7 +315,6 @@ func TestDesktopOAuthExchange_MFARequiresSecondStep(t *testing.T) {
 	decodeBody(t, registerResp, &registered)
 
 	code := uuid.NewString()
-	key := "oauth:desktop:" + code
 	verifier := "0123456789012345678901234567890123456789012"
 	handoff, err := json.Marshal(map[string]string{
 		"userId":        registered.UserID,
@@ -305,10 +323,15 @@ func TestDesktopOAuthExchange_MFARequiresSecondStep(t *testing.T) {
 	if err != nil {
 		t.Fatalf("encode desktop OAuth MFA handoff: %v", err)
 	}
-	if err := rdb.Set(context.Background(), key, handoff, time.Minute).Err(); err != nil {
+	codeHash := sha256.Sum256([]byte(code))
+	if err := db.New(pool).StoreAuthEphemeralState(context.Background(), db.StoreAuthEphemeralStateParams{
+		Purpose:   "desktop_oauth_handoff",
+		KeyHash:   codeHash[:],
+		Payload:   handoff,
+		ExpiresAt: pgtype.Timestamptz{Time: time.Now().Add(time.Minute), Valid: true},
+	}); err != nil {
 		t.Fatalf("seed desktop OAuth MFA handoff: %v", err)
 	}
-	t.Cleanup(func() { _ = rdb.Del(context.Background(), key).Err() })
 
 	// The handoff was created while MFA was disabled. Enabling it before the
 	// exchange must still require the second factor; a cached boolean would let
@@ -354,12 +377,20 @@ func TestDesktopOAuthExchange_MFARequiresSecondStep(t *testing.T) {
 
 func TestMFAVerify_RecoveryCodeSingleUseUnderConcurrency(t *testing.T) {
 	pool := testutil.NewPool(t)
-	testutil.Truncate(t, pool, "recovery_codes", "refresh_tokens", "users")
+	testutil.Truncate(
+		t,
+		pool,
+		"auth_ephemeral_states",
+		"auth_rate_limits",
+		"recovery_codes",
+		"refresh_tokens",
+		"users",
+	)
 
 	r := chi.NewRouter()
 	api := humachi.New(r, huma.DefaultConfig("Test API", "0.0.0"))
 	api.UseMiddleware(auth.InjectHumaContext)
-	auth.Register(api, r, pool, nil, auth.Options{JWTSecret: testSecret})
+	auth.Register(api, r, pool, auth.Options{JWTSecret: testSecret})
 	srv := httptest.NewServer(r)
 	t.Cleanup(srv.Close)
 

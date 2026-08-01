@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"time"
@@ -18,7 +19,12 @@ import (
 	"github.com/sikaoshenmi/chronicle/internal/middleware"
 )
 
-const passkeyChallengeTTL = 5 * time.Minute
+const (
+	passkeyChallengeTTL        = 5 * time.Minute
+	passkeyRegisterPurpose     = "passkey_registration"
+	passkeyLoginPurpose        = "passkey_login"
+	passkeyLoginRateLimitScope = "passkey_login_ip"
+)
 
 type webauthnUser struct {
 	id          []byte
@@ -95,7 +101,13 @@ func (h *handler) passkeyRegisterBegin(ctx context.Context, _ *struct{}) (*Passk
 	if err != nil {
 		return nil, huma.Error500InternalServerError("internal error")
 	}
-	if err := h.rdb.Set(ctx, "passkey:reg:"+rawID, string(sessionJSON), passkeyChallengeTTL).Err(); err != nil {
+	if err := h.storeEphemeralState(
+		ctx,
+		passkeyRegisterPurpose,
+		rawID,
+		sessionJSON,
+		passkeyChallengeTTL,
+	); err != nil {
 		slog.ErrorContext(ctx, "failed to store passkey session", "traceId", traceID, "err", err)
 		return nil, huma.Error500InternalServerError("internal error")
 	}
@@ -145,13 +157,17 @@ func (h *handler) passkeyRegisterFinish(ctx context.Context, input *PasskeyRegis
 		return nil, huma.Error500InternalServerError("internal error")
 	}
 
-	sessionJSON, err := h.rdb.GetDel(ctx, "passkey:reg:"+rawID).Result()
-	if err != nil {
+	sessionJSON, err := h.consumeEphemeralState(ctx, passkeyRegisterPurpose, rawID)
+	if errors.Is(err, errEphemeralStateNotFound) {
 		return nil, huma.Error400BadRequest("registration session expired")
+	}
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to consume passkey session", "traceId", traceID, "err", err)
+		return nil, huma.Error500InternalServerError("internal error")
 	}
 
 	var session webauthn.SessionData
-	if err := json.Unmarshal([]byte(sessionJSON), &session); err != nil {
+	if err := json.Unmarshal(sessionJSON, &session); err != nil {
 		return nil, huma.Error400BadRequest("invalid session")
 	}
 
@@ -231,8 +247,13 @@ func (h *handler) passkeyLoginBegin(ctx context.Context, _ *struct{}) (*PasskeyL
 		return nil, huma.Error500InternalServerError("internal error")
 	}
 
-	challengeKey := "passkey:login:" + string(session.Challenge)
-	if err := h.rdb.Set(ctx, challengeKey, string(sessionJSON), passkeyChallengeTTL).Err(); err != nil {
+	if err := h.storeEphemeralState(
+		ctx,
+		passkeyLoginPurpose,
+		session.Challenge,
+		sessionJSON,
+		passkeyChallengeTTL,
+	); err != nil {
 		slog.ErrorContext(ctx, "failed to store passkey login session", "traceId", traceID, "err", err)
 		return nil, huma.Error500InternalServerError("internal error")
 	}
@@ -268,19 +289,14 @@ func (h *handler) passkeyLoginFinish(ctx context.Context, input *PasskeyLoginFin
 		return nil, huma.Error500InternalServerError("passkeys not configured")
 	}
 
-	if h.rdb != nil {
-		r, _ := responseWriter(ctx)
-		ip := clientIP(r)
-		key := "pk:login:ip:" + ip
-		count, err := h.rdb.Incr(ctx, key).Result()
-		if err == nil {
-			if count == 1 {
-				h.rdb.Expire(ctx, key, 15*time.Minute)
-			}
-			if count > 10 {
-				return nil, huma.NewError(http.StatusTooManyRequests, "too many attempts, try again later")
-			}
-		}
+	r, _ := responseWriter(ctx)
+	count, err := h.incrementRateLimit(ctx, passkeyLoginRateLimitScope, clientIP(r), 15*time.Minute)
+	if err != nil {
+		slog.ErrorContext(ctx, "passkey rate limit failed", "traceId", traceID, "err", err)
+		return nil, huma.Error500InternalServerError("internal error")
+	}
+	if count > 10 {
+		return nil, huma.NewError(http.StatusTooManyRequests, "too many attempts, try again later")
 	}
 
 	parsedResponse, err := protocol.ParseCredentialRequestResponseBody(
@@ -291,14 +307,18 @@ func (h *handler) passkeyLoginFinish(ctx context.Context, input *PasskeyLoginFin
 		return nil, huma.Error400BadRequest("invalid credential response")
 	}
 
-	challengeKey := "passkey:login:" + string(parsedResponse.Response.CollectedClientData.Challenge)
-	sessionJSON, err := h.rdb.GetDel(ctx, challengeKey).Result()
-	if err != nil {
+	challenge := string(parsedResponse.Response.CollectedClientData.Challenge)
+	sessionJSON, err := h.consumeEphemeralState(ctx, passkeyLoginPurpose, challenge)
+	if errors.Is(err, errEphemeralStateNotFound) {
 		return nil, huma.Error400BadRequest("login session expired")
+	}
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to consume passkey login session", "traceId", traceID, "err", err)
+		return nil, huma.Error500InternalServerError("internal error")
 	}
 
 	var session webauthn.SessionData
-	if err := json.Unmarshal([]byte(sessionJSON), &session); err != nil {
+	if err := json.Unmarshal(sessionJSON, &session); err != nil {
 		return nil, huma.Error400BadRequest("invalid session")
 	}
 

@@ -60,7 +60,7 @@ jobs:
   # ── API: build Docker image and push to GHCR ────────────────────────────────
   api-build:
     name: Build & push API image
-    needs: [api-check, web-check, web-e2e, desktop-check, ragsvc-check]
+    needs: [api-check, web-check, web-e2e, desktop-check, ragsvc-check, selfhost-e2e]
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
 
@@ -143,12 +143,24 @@ jobs:
         env:
           VITE_API_URL: ${{ vars.BACKEND_URL }}
 
+      - name: Test and package browser extension
+        working-directory: web
+        run: |
+          pnpm --filter @chronicle/browser-extension test
+          pnpm --filter @chronicle/browser-extension package
+
       - uses: actions/upload-artifact@v4
         if: github.ref == 'refs/heads/main'
         with:
           name: web-dist
           path: web/dist
           retention-days: 1
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: chronicle-browser-extension
+          path: web/extension/chronicle-extension.zip
+          retention-days: 7
 
   # ── Frontend: browser E2E against a real API + data layer ──────────────────
   web-e2e:
@@ -169,19 +181,8 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 5
-      redis:
-        image: redis:7-alpine
-        ports:
-          - 6379:6379
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 5
-
     env:
       DATABASE_URL: postgres://chronicle:chronicle@localhost:5432/chronicle_e2e?sslmode=disable
-      REDIS_URL: redis://localhost:6379
       JWT_SECRET: chronicle-e2e-only-secret
       API_BASE_URL: http://localhost:8080
       FRONTEND_URL: http://localhost:5173
@@ -240,6 +241,10 @@ jobs:
         working-directory: web
         run: pnpm e2e
 
+      - name: Run unpacked extension Playwright E2E
+        working-directory: web
+        run: xvfb-run -a pnpm --filter @chronicle/browser-extension e2e
+
       - name: Upload Playwright diagnostics
         if: failure()
         uses: actions/upload-artifact@v4
@@ -293,6 +298,21 @@ jobs:
       - name: Test
         working-directory: ragsvc
         run: python -m pytest -q
+
+      - name: Deterministic retrieval quality gate
+        working-directory: ragsvc
+        run: python search_benchmark.py
+
+  # ── Self-host: production Compose build + persistence E2E ─────────────────
+  selfhost-e2e:
+    name: Self-host Compose E2E
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build stack and verify persistence
+        run: bash scripts/selfhost-e2e.sh
 
   # ── Production: one gated, serialized API + Web rollout ─────────────────────
   production-deploy:
@@ -367,7 +387,7 @@ jobs:
         run: |
           version="$(goose -dir db/migrations postgres "$DATABASE_URL" version 2>&1 | awk '{print $NF}')"
           case "$version" in
-            13|1[4-9]|2[0-9]) ;;
+            13|1[4-9]|2[0-9]|3[01]) ;;
             *) echo "Unexpected production schema version: $version"; exit 1 ;;
           esac
           echo "schema_version=$version" >> "$GITHUB_OUTPUT"
@@ -493,27 +513,22 @@ jobs:
         run: |
           version="$(goose -dir db/migrations postgres "$DATABASE_URL" version 2>&1 | awk '{print $NF}')"
 
-          # Once any migration has advanced the schema, never boot the old API:
-          # its generated row scans and capture mutation semantics only match
-          # the exact pre-release schema. Complete the forward migration first.
-          if [ "$version" != "13" ] && [ "$version" != "29" ]; then
+          # Migrations 14–31 are expand-only and covered by the production
+          # compatibility test, so the previous API remains the safest
+          # recovery target even after a forward migration.
+          if [ "$version" != "${{ steps.preflight.outputs.schema_version }}" ] && [ "$version" != "31" ]; then
             goose -dir db/migrations postgres "$DATABASE_URL" up || true
             version="$(goose -dir db/migrations postgres "$DATABASE_URL" version 2>&1 | awk '{print $NF}')"
           fi
 
           case "$version" in
-            13)
-              test "${{ steps.preflight.outputs.schema_version }}" = "13"
-              echo "api_image=${{ steps.preflight.outputs.previous_api_image }}" >> "$GITHUB_OUTPUT"
-              echo "pages_mode=previous" >> "$GITHUB_OUTPUT"
-              ;;
-            29)
-              echo "api_image=ghcr.io/${GITHUB_REPOSITORY_OWNER}/chronicle-api:sha-${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
-              echo "pages_mode=current" >> "$GITHUB_OUTPUT"
+            13|1[4-9]|2[0-9]|3[01])
+            echo "api_image=${{ steps.preflight.outputs.previous_api_image }}" >> "$GITHUB_OUTPUT"
+            echo "pages_mode=previous" >> "$GITHUB_OUTPUT"
               ;;
             *)
-              echo "Schema stopped at unsafe intermediate version $version; refusing to start an incompatible API image"
-              exit 1
+            echo "Schema stopped at unsafe intermediate version $version; refusing to start an incompatible API image"
+            exit 1
               ;;
           esac
           echo "schema_version=$version" >> "$GITHUB_OUTPUT"

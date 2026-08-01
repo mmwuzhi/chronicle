@@ -18,6 +18,7 @@ import { QuickCaptureTokenSection } from "@/components/settings/QuickCaptureToke
 import { PageHeader, PageShell, PageTitle } from "@/components/ui/page";
 import { sectionTabClassName } from "@/components/ui/tab";
 import { RAG_ENABLED } from "@/constants/features";
+import { DataPortabilitySection } from "@/components/settings/DataPortabilitySection";
 
 export const Route = createFileRoute("/settings")({
   component: Settings,
@@ -27,7 +28,7 @@ export const Route = createFileRoute("/settings")({
   }),
 });
 
-type Section = "account" | "security" | "integrations";
+type Section = "account" | "security" | "integrations" | "data";
 
 function capitalize(s: string) {
   return s.charAt(0).toUpperCase() + s.slice(1);
@@ -104,6 +105,7 @@ function Settings() {
     { id: "account", label: t("account.title") },
     { id: "security", label: t("security.title") },
     { id: "integrations", label: t("integrations.title") },
+    { id: "data", label: t("data.title") },
   ];
 
   return (
@@ -142,6 +144,7 @@ function Settings() {
               {RAG_ENABLED && <WebhooksSection />}
             </div>
           )}
+          {section === "data" && <DataPortabilitySection />}
         </div>
       </PageShell>
     </>

@@ -10,6 +10,7 @@ import (
 	"io"
 	"mime"
 	"net/http"
+	"net/url"
 	"slices"
 	"strconv"
 	"strings"
@@ -25,19 +26,16 @@ import (
 
 	db "github.com/sikaoshenmi/chronicle/db/sqlc"
 	"github.com/sikaoshenmi/chronicle/internal/capture"
+	"github.com/sikaoshenmi/chronicle/internal/objectstore"
 )
 
 const maxUploadSize = 20 << 20 // 20 MB
 
-// S3Client is the subset of aws s3.Client used by uploads, transcription, and
-// permanent-delete media cleanup.
-type S3Client interface {
-	PutObject(ctx context.Context, input *s3.PutObjectInput, opts ...func(*s3.Options)) (*s3.PutObjectOutput, error)
-	GetObject(ctx context.Context, input *s3.GetObjectInput, opts ...func(*s3.Options)) (*s3.GetObjectOutput, error)
-	DeleteObject(ctx context.Context, input *s3.DeleteObjectInput, opts ...func(*s3.Options)) (*s3.DeleteObjectOutput, error)
-}
-
 type Config struct {
+	BucketName    string
+	PublicBaseURL string
+	// Deprecated compatibility fields for focused tests and older embedders.
+	// Production wiring resolves both R2 and generic S3 into the fields above.
 	R2BucketName      string
 	R2AccountID       string
 	OpenAIKey         string
@@ -47,8 +45,30 @@ type Config struct {
 	VisionEnabled     bool
 }
 
+func (cfg Config) bucketName() string {
+	if cfg.BucketName != "" {
+		return cfg.BucketName
+	}
+	return cfg.R2BucketName
+}
+
+func (cfg Config) publicURL(key string) (string, error) {
+	if cfg.PublicBaseURL != "" {
+		return url.JoinPath(strings.TrimRight(cfg.PublicBaseURL, "/"), key)
+	}
+	if cfg.R2BucketName == "" || cfg.R2AccountID == "" {
+		return "", errors.New("object storage public URL is not configured")
+	}
+	return fmt.Sprintf(
+		"https://%s.%s.r2.cloudflarestorage.com/%s",
+		cfg.R2BucketName,
+		cfg.R2AccountID,
+		key,
+	), nil
+}
+
 type handler struct {
-	s3       S3Client
+	s3       objectstore.Client
 	q        *db.Queries
 	cfg      Config
 	validate func(raw string) (string, error)
@@ -59,7 +79,7 @@ type handler struct {
 // Multipart parsing requires direct *http.Request access, so huma is bypassed here.
 // kick wakes the transcription worker after an upload enqueues a pending job
 // (see StartTranscriptionWorker); pass a no-op when transcription is disabled.
-func Register(r chi.Router, pool *pgxpool.Pool, s3c S3Client, cfg Config, validate func(raw string) (string, error), kick func()) {
+func Register(r chi.Router, pool *pgxpool.Pool, s3c objectstore.Client, cfg Config, validate func(raw string) (string, error), kick func()) {
 	if kick == nil {
 		kick = func() {}
 	}
@@ -110,7 +130,7 @@ func (h *handler) upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.s3 == nil || h.cfg.R2BucketName == "" {
+	if h.s3 == nil || h.cfg.bucketName() == "" {
 		writeErr(w, http.StatusServiceUnavailable, "file upload not configured")
 		return
 	}
@@ -145,12 +165,12 @@ func (h *handler) upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	contentType, mediaType := detectUploadedMedia(data)
+	contentType, mediaType := DetectMedia(data)
 	if mediaType == "" {
 		writeErr(w, http.StatusUnprocessableEntity, "unsupported file type (image or audio only)")
 		return
 	}
-	if declared := classifyMediaType(fh.Header.Get("Content-Type")); declared != "" && declared != mediaType {
+	if declared := ClassifyMediaType(fh.Header.Get("Content-Type")); declared != "" && declared != mediaType {
 		writeErr(w, http.StatusUnprocessableEntity, "file content does not match Content-Type")
 		return
 	}
@@ -316,12 +336,15 @@ func (h *handler) upload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	key := uploadObjectKey(userID, captureID, contentHash, contentType)
-	publicURL := fmt.Sprintf("https://%s.%s.r2.cloudflarestorage.com/%s",
-		h.cfg.R2BucketName, h.cfg.R2AccountID, key)
+	publicURL, err := h.cfg.publicURL(key)
+	if err != nil {
+		writeErr(w, http.StatusServiceUnavailable, "file upload not configured")
+		return
+	}
 	uploadCtx, cancelUpload := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancelUpload()
 	_, err = h.s3.PutObject(uploadCtx, &s3.PutObjectInput{
-		Bucket:      aws.String(h.cfg.R2BucketName),
+		Bucket:      aws.String(h.cfg.bucketName()),
 		Key:         aws.String(key),
 		Body:        bytes.NewReader(data),
 		ContentType: aws.String(contentType),
@@ -483,9 +506,11 @@ func uploadedCaptureResponse(c db.Capture) uploadResponse {
 	return resp
 }
 
-func detectUploadedMedia(data []byte) (string, string) {
+// DetectMedia identifies the canonical content type and Chronicle media type
+// from file bytes. Callers must not trust a client-provided content type.
+func DetectMedia(data []byte) (string, string) {
 	detected := http.DetectContentType(data)
-	if kind := classifyMediaType(detected); kind != "" {
+	if kind := ClassifyMediaType(detected); kind != "" {
 		return detected, kind
 	}
 	if len(data) >= 12 {
@@ -527,7 +552,8 @@ func detectUploadedMedia(data []byte) (string, string) {
 	return "", ""
 }
 
-func classifyMediaType(ct string) string {
+// ClassifyMediaType maps a canonical MIME type to a Chronicle media type.
+func ClassifyMediaType(ct string) string {
 	mt, _, _ := mime.ParseMediaType(ct)
 	if strings.HasPrefix(mt, "image/") {
 		return "image"

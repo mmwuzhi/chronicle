@@ -111,25 +111,48 @@ func (c *Client) Index(userID, captureID string) {
 		return
 	}
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), indexTimeout)
-		defer cancel()
-		body, _ := json.Marshal(map[string]string{"capture_id": captureID})
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/index", bytes.NewReader(body))
-		if err != nil {
-			return
-		}
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("X-User-Id", userID)
-		resp, err := c.http.Do(req)
-		if err != nil {
-			slog.Warn("rag index failed", "captureId", captureID, "err", err)
-			return
-		}
-		resp.Body.Close()
-		if resp.StatusCode >= 300 {
-			slog.Warn("rag index non-2xx", "captureId", captureID, "status", resp.StatusCode)
+		c.index(userID, captureID, true)
+	}()
+}
+
+// IndexBatchWithoutWebhooks schedules one bounded, side-effect-free background
+// worker for archive restores. This keeps a large restore from creating one
+// goroutine and HTTP request burst per capture, while ensuring historical
+// Captures do not replay outbound webhook actions.
+func (c *Client) IndexBatchWithoutWebhooks(userID string, captureIDs []string) {
+	if c == nil || len(captureIDs) == 0 {
+		return
+	}
+	ids := append([]string(nil), captureIDs...)
+	go func() {
+		for _, captureID := range ids {
+			c.index(userID, captureID, false)
 		}
 	}()
+}
+
+func (c *Client) index(userID, captureID string, fireWebhooks bool) {
+	ctx, cancel := context.WithTimeout(context.Background(), indexTimeout)
+	defer cancel()
+	body, _ := json.Marshal(struct {
+		CaptureID    string `json:"capture_id"`
+		FireWebhooks bool   `json:"fire_webhooks"`
+	}{CaptureID: captureID, FireWebhooks: fireWebhooks})
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/index", bytes.NewReader(body))
+	if err != nil {
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-User-Id", userID)
+	resp, err := c.http.Do(req)
+	if err != nil {
+		slog.Warn("rag index failed", "captureId", captureID, "err", err)
+		return
+	}
+	resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		slog.Warn("rag index non-2xx", "captureId", captureID, "status", resp.StatusCode)
+	}
 }
 
 // Find runs the hybrid semantic search. Returns ErrDisabled on a nil client.
