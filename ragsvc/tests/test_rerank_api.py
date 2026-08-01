@@ -100,3 +100,31 @@ def test_invalidate_endpoint_drops_only_requested_user(monkeypatch):
 
     assert app.invalidate(user_id="user-123") == {"status": "invalidated"}
     assert seen == ["user-123"]
+
+
+def test_backfill_continues_after_one_capture_fails(monkeypatch):
+    attempted = []
+
+    monkeypatch.setattr(app.rag, "needs_index", lambda _uid: ["poison", "healthy"])
+    monkeypatch.setattr(app.rag, "orphaned_derived", lambda _uid: [])
+    monkeypatch.setattr(app.rag, "invalidate_corpus", lambda _uid: None)
+    monkeypatch.setattr(app.extract, "backfill", lambda _uid: 0)
+
+    def index_capture(capture_id, _user_id):
+        attempted.append(capture_id)
+        if capture_id == "poison":
+            raise RuntimeError("bad capture")
+        return True
+
+    monkeypatch.setattr(app.rag, "index_capture", index_capture)
+
+    result = app.backfill("user-123")
+
+    assert attempted == ["poison", "healthy"]
+    assert result == {
+        "users": 1,
+        "embedded": 1,
+        "extracted": 0,
+        "cleared": 0,
+        "failures": 1,
+    }

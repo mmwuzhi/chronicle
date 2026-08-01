@@ -1,137 +1,78 @@
 {
   "documents": [
-    {
-      "id": "ramen",
-      "content": "今天午饭吃了拉面，花了 1200 日元",
-      "created_at": "2026-07-10T12:00:00+09:00",
-      "modality": "text"
-    },
-    {
-      "id": "quote",
-      "content": "客户会议决定下周三发送第二版报价",
-      "created_at": "2026-07-11T09:00:00+09:00",
-      "modality": "audio"
-    },
-    {
-      "id": "design",
-      "content": "設計会議で検索結果の説明を確認した",
-      "created_at": "2026-07-12T15:00:00+09:00",
-      "modality": "text"
-    },
-    {
-      "id": "function-words",
-      "content": "我说周五再确认一次",
-      "created_at": "2026-07-13T08:00:00+09:00",
-      "modality": "text"
-    },
-    {
-      "id": "noise",
-      "content": "晚上看了一部老电影",
-      "created_at": "2026-07-14T20:00:00+09:00",
-      "modality": "text"
-    },
-    {
-      "id": "function-words-newer",
-      "content": "我说今天再确认",
-      "created_at": "2026-07-15T08:00:00+09:00",
-      "modality": "text"
-    },
-    {
-      "id": "blue-book",
-      "content": "京都の古書店で青い装丁の本を見つけた",
-      "created_at": "2026-07-16T14:00:00+09:00",
-      "modality": "text"
-    },
-    {
-      "id": "spice-rack",
-      "content": "周末整理了厨房的调料架",
-      "created_at": "2026-07-17T10:00:00+09:00",
-      "modality": "text"
-    }
+    {"id":"ramen","content":"今天午饭吃了拉面，花了 1200 日元","created_at":"2026-07-10T12:00:00+09:00","modality":"text"},
+    {"id":"quote","content":"客户会议决定下周三发送第二版报价","created_at":"2026-07-11T09:00:00+09:00","modality":"audio"},
+    {"id":"design","content":"設計会議で検索結果の説明を確認した","created_at":"2026-07-12T15:00:00+09:00","modality":"text"},
+    {"id":"blue-book","content":"京都の古書店で青い装丁の本を見つけた","created_at":"2026-07-16T14:00:00+09:00","modality":"text"},
+    {"id":"spice-rack","content":"周末整理了厨房的调料架","created_at":"2026-07-17T10:00:00+09:00","modality":"text"},
+    {"id":"long-trip","prefixRepeat":"routine itinerary detail for the summer trip. ","prefixCount":35,"content":"The emergency detail is at the end: locker code 4816 beside Gate 17.","created_at":"2026-07-20T08:00:00+09:00","modality":"text"},
+    {"id":"dentist","content":"Dentist at 9:30 on Tuesday; bring the blue insurance card.","created_at":"2026-07-21T09:30:00+09:00","modality":"text"},
+    {"id":"backup","content":"Nightly incremental backup goes to the encrypted cedar drive.","created_at":"2026-07-22T23:00:00+09:00","modality":"text"},
+    {"id":"recipe","content":"味噌汁には豆腐とわかめを入れ、味噌を二杯加える","created_at":"2026-07-23T18:00:00+09:00","modality":"text"},
+    {"id":"telescope","content":"阳台上的望远镜需要重新校准赤道仪","created_at":"2026-07-24T21:00:00+09:00","modality":"text"},
+    {"id":"function-old","content":"我说周五再确认一次","created_at":"2026-07-13T08:00:00+09:00","modality":"text"},
+    {"id":"function-new","content":"我说今天再确认","created_at":"2026-07-15T08:00:00+09:00","modality":"text"},
+    {"id":"noise","content":"晚上看了一部老电影","created_at":"2026-07-14T20:00:00+09:00","modality":"text"}
   ],
+  "scorePresets": {
+    "ramen":{"vector_scores":{"ramen":0.81,"noise":0.34},"rerank_scores":{"ramen":0.96,"noise":0.01}},
+    "quote":{"vector_scores":{"quote":0.82,"noise":0.33},"rerank_scores":{"quote":0.95,"noise":0.01}},
+    "design":{"vector_scores":{"design":0.79,"noise":0.32},"rerank_scores":{"design":0.94,"noise":0.01}},
+    "book":{"vector_scores":{"blue-book":0.80,"noise":0.34},"rerank_scores":{"blue-book":0.95,"noise":0.01}},
+    "spice":{"vector_scores":{"spice-rack":0.78,"noise":0.35},"rerank_scores":{"spice-rack":0.93,"noise":0.01}},
+    "long":{"vector_scores":{"long-trip":0.84,"noise":0.31},"rerank_scores":{"long-trip":0.97,"noise":0.01}},
+    "dentist":{"vector_scores":{"dentist":0.83,"noise":0.32},"rerank_scores":{"dentist":0.96,"noise":0.01}},
+    "backup":{"vector_scores":{"backup":0.82,"noise":0.33},"rerank_scores":{"backup":0.95,"noise":0.01}},
+    "recipe":{"vector_scores":{"recipe":0.81,"noise":0.34},"rerank_scores":{"recipe":0.94,"noise":0.01}},
+    "telescope":{"vector_scores":{"telescope":0.80,"noise":0.35},"rerank_scores":{"telescope":0.93,"noise":0.01}}
+  },
   "cases": [
-    {
-      "name": "cjk literal plus bm25",
-      "query": "拉面 1200",
-      "relevant": ["ramen"],
-      "expected_prefix": ["ramen"],
-      "excluded": ["noise"],
-      "vector_scores": {"ramen": 0.74, "noise": 0.33},
-      "rerank_scores": {"ramen": 0.96, "noise": 0.02}
-    },
-    {
-      "name": "cross-language semantic paraphrase",
-      "query": "when is the revised quote due",
-      "relevant": ["quote"],
-      "expected_prefix": ["quote"],
-      "excluded": ["noise"],
-      "vector_scores": {"quote": 0.82, "noise": 0.35},
-      "rerank_scores": {"quote": 0.93, "noise": 0.01}
-    },
-    {
-      "name": "japanese literal survives rerank",
-      "query": "設計会議",
-      "relevant": ["design"],
-      "expected_prefix": ["design"],
-      "vector_scores": {"design": 0.68, "quote": 0.34},
-      "rerank_scores": {"design": 0.01, "quote": 0.0}
-    },
-    {
-      "name": "information-poor query stays literal",
-      "query": "我说",
-      "relevant": ["function-words-newer", "function-words"],
-      "expected_prefix": ["function-words-newer", "function-words"],
-      "excluded": ["noise"],
-      "vector_scores": {"function-words": 0.62, "function-words-newer": 0.31, "noise": 0.8},
-      "rerank_scores": {"function-words": 0.2, "function-words-newer": 0.1, "noise": 0.99}
-    },
-    {
-      "name": "strong vector tail survives rerank miss",
-      "query": "blue-bound book in Kyoto",
-      "relevant": ["blue-book"],
-      "expected_prefix": ["blue-book"],
-      "excluded": ["noise"],
-      "vector_scores": {"blue-book": 0.71, "noise": 0.34},
-      "rerank_scores": {"blue-book": 0.01, "noise": 0.0}
-    },
-    {
-      "name": "weak semantic false positive is filtered",
-      "query": "周末计划",
-      "relevant": [],
-      "expected_prefix": [],
-      "expected_empty": true,
-      "excluded": ["spice-rack", "noise"],
-      "vector_scores": {"spice-rack": 0.4, "noise": 0.32},
-      "rerank_scores": {"spice-rack": 0.05, "noise": 0.01}
-    },
-    {
-      "name": "bm25 recalls split query terms without vector help",
-      "query": "客户 报价",
-      "relevant": ["quote"],
-      "expected_prefix": ["quote"],
-      "excluded": ["noise"],
-      "vector_scores": {},
-      "rerank_scores": {"quote": 0.92}
-    },
-    {
-      "name": "reranker outage falls back to vector order",
-      "query": "revised proposal deadline",
-      "relevant": ["quote"],
-      "expected_prefix": ["quote", "noise"],
-      "limit": 2,
-      "rerank_unavailable": true,
-      "vector_scores": {"quote": 0.82, "noise": 0.61},
-      "rerank_scores": {}
-    },
-    {
-      "name": "numeric date routes without retrieval scoring",
-      "query": "2026/7/11",
-      "normalized_date": "2026-07-11",
-      "date_results": ["quote"],
-      "relevant": ["quote"],
-      "expected_prefix": ["quote"],
-      "vector_scores": {},
-      "rerank_scores": {}
-    }
+    {"name":"zh exact ramen","query":"拉面","language":"zh","categories":["exact"],"preset":"ramen","relevant":["ramen"],"expected_prefix":["ramen"]},
+    {"name":"zh exact amount","query":"1200 日元","language":"zh","categories":["exact"],"preset":"ramen","relevant":["ramen"],"expected_prefix":["ramen"]},
+    {"name":"zh exact quote","query":"第二版报价","language":"zh","categories":["exact"],"preset":"quote","relevant":["quote"],"expected_prefix":["quote"]},
+    {"name":"ja exact design","query":"設計会議","language":"ja","categories":["exact"],"preset":"design","relevant":["design"],"expected_prefix":["design"]},
+    {"name":"ja exact book","query":"青い装丁","language":"ja","categories":["exact"],"preset":"book","relevant":["blue-book"],"expected_prefix":["blue-book"]},
+    {"name":"zh exact spice","query":"调料架","language":"zh","categories":["exact"],"preset":"spice","relevant":["spice-rack"],"expected_prefix":["spice-rack"]},
+    {"name":"en exact long-tail fact","query":"locker code 4816","language":"en","categories":["exact","long_chunk"],"preset":"long","relevant":["long-trip"],"expected_prefix":["long-trip"]},
+    {"name":"en exact dentist","query":"Dentist at 9:30","language":"en","categories":["exact"],"preset":"dentist","relevant":["dentist"],"expected_prefix":["dentist"]},
+    {"name":"en exact backup","query":"incremental backup","language":"en","categories":["exact"],"preset":"backup","relevant":["backup"],"expected_prefix":["backup"]},
+    {"name":"ja exact recipe","query":"味噌を二杯","language":"ja","categories":["exact"],"preset":"recipe","relevant":["recipe"],"expected_prefix":["recipe"]},
+
+    {"name":"en quote paraphrase","query":"when is the revised quote due","language":"en","categories":["paraphrase"],"preset":"quote","relevant":["quote"],"expected_prefix":["quote"]},
+    {"name":"zh book paraphrase","query":"京都买到的蓝色封面旧书","language":"zh","categories":["paraphrase"],"preset":"book","relevant":["blue-book"],"expected_prefix":["blue-book"]},
+    {"name":"ja ramen paraphrase","query":"昼食はいくらだった","language":"ja","categories":["paraphrase"],"preset":"ramen","relevant":["ramen"],"expected_prefix":["ramen"]},
+    {"name":"en quote typo","query":"revised qoute due","language":"en","categories":["typo"],"preset":"quote","relevant":["quote"],"expected_prefix":["quote"]},
+    {"name":"en backup typo","query":"incremntal bakcup","language":"en","categories":["typo"],"preset":"backup","relevant":["backup"],"expected_prefix":["backup"]},
+    {"name":"en locker punctuation","query":"locker-code: 4816","language":"en","categories":["punctuation","long_chunk"],"preset":"long","relevant":["long-trip"],"expected_prefix":["long-trip"]},
+    {"name":"en dentist synonym","query":"Tuesday dental appointment insurance","language":"en","categories":["paraphrase"],"preset":"dentist","relevant":["dentist"],"expected_prefix":["dentist"]},
+    {"name":"zh recipe synonym","query":"豆腐海带味噌汤配方","language":"zh","categories":["paraphrase"],"preset":"recipe","relevant":["recipe"],"expected_prefix":["recipe"]},
+    {"name":"ja quote paraphrase","query":"見積もりの第二稿を送る日","language":"ja","categories":["paraphrase"],"preset":"quote","relevant":["quote"],"expected_prefix":["quote"]},
+    {"name":"zh design paraphrase","query":"确认搜索结果如何解释","language":"zh","categories":["paraphrase"],"preset":"design","relevant":["design"],"expected_prefix":["design"]},
+    {"name":"zh long chunk semantic","query":"17号登机口旁储物柜密码","language":"zh","categories":["paraphrase","long_chunk"],"preset":"long","relevant":["long-trip"],"expected_prefix":["long-trip"]},
+    {"name":"en ramen cross language","query":"ramen lunch price","language":"en","categories":["paraphrase"],"preset":"ramen","relevant":["ramen"],"expected_prefix":["ramen"]},
+    {"name":"ja spice cross language","query":"台所のスパイス棚を整理","language":"ja","categories":["paraphrase"],"preset":"spice","relevant":["spice-rack"],"expected_prefix":["spice-rack"]},
+    {"name":"zh backup semantic","query":"加密硬盘上的夜间增量备份","language":"zh","categories":["paraphrase"],"preset":"backup","relevant":["backup"],"expected_prefix":["backup"]},
+    {"name":"en quote second version","query":"send version two of the estimate","language":"en","categories":["paraphrase"],"preset":"quote","relevant":["quote"],"expected_prefix":["quote"]},
+    {"name":"en Kyoto blue book","query":"blue bound book from Kyoto","language":"en","categories":["paraphrase"],"preset":"book","relevant":["blue-book"],"expected_prefix":["blue-book"]},
+    {"name":"ja dentist semantic","query":"火曜日の歯医者は何時","language":"ja","categories":["paraphrase"],"preset":"dentist","relevant":["dentist"],"expected_prefix":["dentist"]},
+    {"name":"en recipe semantic","query":"miso soup tofu seaweed recipe","language":"en","categories":["paraphrase"],"preset":"recipe","relevant":["recipe"],"expected_prefix":["recipe"]},
+    {"name":"zh ramen punctuation","query":"拉面：1200日元！","language":"zh","categories":["punctuation"],"preset":"ramen","relevant":["ramen"],"expected_prefix":["ramen"]},
+    {"name":"zh split terms BM25","query":"客户 报价","language":"zh","categories":["punctuation"],"preset":"quote","relevant":["quote"],"expected_prefix":["quote"]},
+
+    {"name":"numeric date slash","query":"2026/7/11","language":"zh","categories":["date"],"normalized_date":"2026-07-11","date_results":["quote"],"relevant":["quote"],"expected_prefix":["quote"]},
+    {"name":"numeric date dash","query":"2026-07-12","language":"ja","categories":["date"],"normalized_date":"2026-07-12","date_results":["design"],"relevant":["design"],"expected_prefix":["design"]},
+    {"name":"long note date","query":"2026/7/20","language":"en","categories":["date","long_chunk"],"normalized_date":"2026-07-20","date_results":["long-trip"],"relevant":["long-trip"],"expected_prefix":["long-trip"]},
+    {"name":"dentist date","query":"2026-07-21","language":"en","categories":["date"],"normalized_date":"2026-07-21","date_results":["dentist"],"relevant":["dentist"],"expected_prefix":["dentist"]},
+
+    {"name":"weak weekend semantics","query":"周末计划","language":"zh","categories":["weak_semantic"],"relevant":[],"forbidden":["spice-rack","noise"],"expected_empty":true,"vector_scores":{"spice-rack":0.40,"noise":0.32},"rerank_scores":{"spice-rack":0.05,"noise":0.01}},
+    {"name":"weak astronomy semantics","query":"今晚观星活动","language":"zh","categories":["weak_semantic"],"relevant":[],"forbidden":["telescope","noise"],"expected_empty":true,"vector_scores":{"telescope":0.42,"noise":0.31},"rerank_scores":{"telescope":0.04,"noise":0.01}},
+    {"name":"weak movie party semantics","query":"office celebration","language":"en","categories":["weak_semantic"],"relevant":[],"forbidden":["noise"],"expected_empty":true,"vector_scores":{"noise":0.38},"rerank_scores":{"noise":0.02}},
+
+    {"name":"reranker outage quote","query":"revised proposal deadline","language":"en","categories":["degraded"],"relevant":["quote"],"expected_prefix":["quote"],"rerank_unavailable":true,"vector_scores":{"quote":0.82,"noise":0.61}},
+    {"name":"reranker outage book","query":"Kyoto blue book","language":"en","categories":["degraded"],"relevant":["blue-book"],"expected_prefix":["blue-book"],"rerank_unavailable":true,"vector_scores":{"blue-book":0.80,"noise":0.60}},
+    {"name":"embedding outage literal","query":"incremental backup","language":"en","categories":["degraded"],"relevant":["backup"],"expected_prefix":["backup"],"embedding_unavailable":true,"rerank_scores":{"backup":0.95}},
+    {"name":"embedding and reranker outage literal","query":"設計会議","language":"ja","categories":["degraded"],"relevant":["design"],"expected_prefix":["design"],"embedding_unavailable":true,"rerank_unavailable":true},
+    {"name":"analyzer outage does not affect search","query":"豆腐とわかめ","language":"ja","categories":["degraded"],"preset":"recipe","relevant":["recipe"],"expected_prefix":["recipe"],"analyzer_unavailable":true},
+    {"name":"all AI unavailable exact text","query":"第二版报价","language":"zh","categories":["degraded"],"relevant":["quote"],"expected_prefix":["quote"],"embedding_unavailable":true,"rerank_unavailable":true,"analyzer_unavailable":true}
   ]
 }
