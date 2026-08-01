@@ -20,6 +20,7 @@ from __future__ import annotations
 import os
 import sys
 import threading
+import time
 
 import uvicorn
 from fastapi import BackgroundTasks, FastAPI, Header, HTTPException
@@ -33,9 +34,11 @@ import search as search_svc
 import webhook
 
 app = FastAPI(title="Chronicle RAG sidecar", version="0.1.0")
+_BACKFILL_INTERVAL = int(os.getenv("BACKFILL_INTERVAL_SECONDS", "900"))
+_backfill_lock = threading.Lock()
 
 
-def _index_one(capture_id: str, user_id: str) -> None:
+def _index_one(capture_id: str, user_id: str, fire_webhooks: bool = True) -> None:
     """Embed (if enabled) + extract metadata for one capture. Extraction runs
     independently of embedding, so the agent-based metadata still lands when the
     vector channel is off. Best-effort: a failure leaves the capture for the next
@@ -52,7 +55,8 @@ def _index_one(capture_id: str, user_id: str) -> None:
         rag.update_metadata(capture_id, user_id, extract.extract(text), text)
         # Outbound rules fire last, with content + embedding + metadata all ready.
         # fire() never raises; a webhook can't break indexing.
-        webhook.fire(capture_id, user_id)
+        if fire_webhooks:
+            webhook.fire(capture_id, user_id)
     except Exception as e:
         print(f"[index] {capture_id} failed (backfill will retry): {e}", file=sys.stderr)
     finally:
@@ -87,12 +91,14 @@ def invalidate(user_id: str = Header(..., alias="X-User-Id")) -> dict[str, str]:
 
 class IndexIn(BaseModel):
     capture_id: str
+    fire_webhooks: bool = True
 
 
 @app.post("/index", status_code=202)
 def index(body: IndexIn, background: BackgroundTasks,
           user_id: str = Header(..., alias="X-User-Id")) -> dict[str, str]:
-    background.add_task(_index_one, body.capture_id, user_id)
+    background.add_task(
+        _index_one, body.capture_id, user_id, body.fire_webhooks)
     return {"status": "queued"}
 
 
@@ -123,24 +129,58 @@ def backfill(user_id: str | None = Header(default=None, alias="X-User-Id")) -> d
     """Index every capture missing an embedding and (re-)extract metadata below
     the current version. Scoped to one user if X-User-Id is given, else all users
     (operator/cron use). Synchronous — meant for a CLI/cron, not a hot path."""
-    targets = [user_id] if user_id else rag.all_user_ids()
-    embedded = extracted = 0
-    cleared = 0
-    for uid in targets:
-        # needs_index covers all three staleness cases: missing, stale content
-        # hash (edited while down), and previous embedding model.
-        for cid in rag.needs_index(uid):
-            if rag.index_capture(cid, uid):
-                embedded += 1
-        extracted += extract.backfill(uid)
-        # Purge derived rows for captures whose text was cleared while down.
-        for cid in rag.orphaned_derived(uid):
-            rag.clear_derived(cid)
-            cleared += 1
-        # Backfill rewrote this user's embeddings/metadata; drop any cached snapshot.
-        rag.invalidate_corpus(uid)
-    return {"users": len(targets), "embedded": embedded,
-            "extracted": extracted, "cleared": cleared}
+    with _backfill_lock:
+        targets = [user_id] if user_id else rag.all_user_ids()
+        embedded = extracted = 0
+        cleared = 0
+        failures = 0
+        for uid in targets:
+            # needs_index covers all three staleness cases: missing, stale content
+            # hash (edited while down), and previous embedding model.
+            for cid in rag.needs_index(uid):
+                try:
+                    if rag.index_capture(cid, uid):
+                        embedded += 1
+                except Exception as error:
+                    failures += 1
+                    print(f"[backfill] embed {cid} failed: {error}", file=sys.stderr)
+            try:
+                extracted += extract.backfill(uid)
+            except Exception as error:
+                failures += 1
+                print(f"[backfill] extract user {uid} failed: {error}", file=sys.stderr)
+            # Purge derived rows for captures whose text was cleared while down.
+            try:
+                for cid in rag.orphaned_derived(uid):
+                    try:
+                        rag.clear_derived(cid)
+                        cleared += 1
+                    except Exception as error:
+                        failures += 1
+                        print(f"[backfill] clear {cid} failed: {error}", file=sys.stderr)
+            except Exception as error:
+                failures += 1
+                print(f"[backfill] list orphaned user {uid} failed: {error}", file=sys.stderr)
+            # Backfill rewrote this user's embeddings/metadata; drop any cached snapshot.
+            rag.invalidate_corpus(uid)
+        return {"users": len(targets), "embedded": embedded,
+                "extracted": extracted, "cleared": cleared, "failures": failures}
+
+
+def _periodic_backfill() -> None:
+    if _BACKFILL_INTERVAL <= 0:
+        return
+    while True:
+        time.sleep(_BACKFILL_INTERVAL)
+        try:
+            backfill(None)
+        except Exception as error:
+            print(f"[backfill] periodic run failed: {error}", file=sys.stderr)
+
+
+@app.on_event("startup")
+def start_repair_workers() -> None:
+    threading.Thread(target=_periodic_backfill, daemon=True).start()
 
 
 _RERANK_BACKENDS = {"auto", "local", "cross_encoder", "claude", "api", "off"}
