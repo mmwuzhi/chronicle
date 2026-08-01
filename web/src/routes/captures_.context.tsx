@@ -4,14 +4,15 @@ import { useTranslation } from "react-i18next";
 import { useGetCaptureContext } from "@/api";
 import { CaptureContextTimeline } from "@/components/CaptureContextTimeline";
 import { CaptureRelated } from "@/components/CaptureRelated";
+import { MutationToast } from "@/components/mutation-toast";
 import { Nav } from "@/components/nav";
+import { useMutationToast } from "@/hooks/use-mutation-toast";
 import { buttonClassName } from "@/components/ui/button";
 import {
   Meta,
   PageError,
   PageHeader,
   PageShell,
-  PageSubtitle,
   PageTitle,
 } from "@/components/ui/page";
 
@@ -27,6 +28,8 @@ function CaptureContext() {
   const { t: tc } = useTranslation("common");
   const { anchorId } = Route.useSearch();
   const navigate = useNavigate();
+  const { message: mutationMessage, show: showMutationToast } =
+    useMutationToast();
   const query = useGetCaptureContext(
     { anchorId, before: 20, after: 20 },
     { query: { enabled: anchorId.length > 0 } },
@@ -40,15 +43,18 @@ function CaptureContext() {
     <>
       <Nav />
       <PageShell className="max-w-[860px]">
-        <PageHeader>
+        <PageHeader className="pb-3 md:pb-3">
           <Link
             to="/captures"
-            className={buttonClassName({ variant: "ghost", size: "sm" })}
+            className={buttonClassName({
+              variant: "ghost",
+              size: "sm",
+              className: "self-start",
+            })}
           >
             ← {t("title")}
           </Link>
           <PageTitle>{t("context.title")}</PageTitle>
-          <PageSubtitle>{t("context.subtitle")}</PageSubtitle>
         </PageHeader>
         {query.isLoading && <Meta>{tc("loading")}</Meta>}
         {query.error && <PageError>{t("context.failedToLoad")}</PageError>}
@@ -60,8 +66,16 @@ function CaptureContext() {
             hasLater={query.data.hasLater}
           />
         )}
-        {anchorId && <CaptureRelated anchorId={anchorId} />}
+        {anchorId && (
+          <CaptureRelated
+            anchorId={anchorId}
+            onMutationError={() =>
+              showMutationToast(tc("errors.mutationFailed"))
+            }
+          />
+        )}
       </PageShell>
+      <MutationToast message={mutationMessage} />
     </>
   );
 }

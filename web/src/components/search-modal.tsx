@@ -3,6 +3,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import { useFind, useListCapturePage } from "@/api";
 import type { CaptureBody } from "@/api";
+import { captureText } from "@/utils/capture";
 import { fmtDate } from "@/utils/format";
 import { EmptyState, Meta } from "@/components/ui/page";
 
@@ -119,7 +120,7 @@ export function SearchModal({
                     <span className={resultIconClassName}>✦</span>
                     <span className={resultBodyClassName}>
                       <span className={resultTitleClassName}>
-                        {capture.rawText ?? capture.transcript ?? "—"}
+                        {captureText(capture) || "—"}
                       </span>
                       <span className={resultSubClassName}>
                         {fmtDate(capture.createdAt)}

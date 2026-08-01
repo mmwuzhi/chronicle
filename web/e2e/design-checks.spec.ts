@@ -773,7 +773,7 @@ test("search: capture result opens its context", async ({ page }) => {
   await page.getByRole("button", { name: /recall anchor result/i }).click();
 
   await expect(page).toHaveURL(/\/captures\/context\?anchorId=/);
-  await expect(page.getByText("Search match")).toBeVisible();
+  await expect(page.getByText("This Capture")).toBeVisible();
   await expect(page.getByText("Recall anchor result")).toBeVisible();
 });
 

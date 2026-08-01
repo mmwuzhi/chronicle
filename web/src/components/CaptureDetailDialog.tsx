@@ -5,10 +5,12 @@ import {
   type ComponentPropsWithoutRef,
   type ReactNode,
 } from "react";
+import { Link } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import type { CaptureBody } from "@/api";
+import { CaptureRelated } from "@/components/CaptureRelated";
 import { Markdown } from "@/components/Markdown";
-import { Button } from "@/components/ui/button";
+import { Button, buttonClassName } from "@/components/ui/button";
 import {
   Dialog,
   DialogClose,
@@ -22,6 +24,7 @@ import { Meta } from "@/components/ui/page";
 import { useConfirm } from "@/hooks/use-confirm";
 import { fmtListTime, fmtPreciseDateTime } from "@/utils/format";
 import { TODO_TAG, trailingTagToken } from "@/utils/todo";
+import { captureText } from "@/utils/capture";
 import {
   hasActiveTextSelection,
   isInteractiveTarget,
@@ -34,6 +37,7 @@ interface CaptureDetailDialogProps {
   onSaveText: (id: string, text: string) => Promise<unknown>;
   onSaveTranscript: (id: string, transcript: string) => Promise<unknown>;
   onUseTranscript: (capture: CaptureBody, mode: "append" | "replace") => void;
+  onMutationError: () => void;
   attachments?: ReactNode;
 }
 
@@ -44,6 +48,7 @@ export function CaptureDetailDialog({
   onSaveText,
   onSaveTranscript,
   onUseTranscript,
+  onMutationError,
   attachments,
 }: CaptureDetailDialogProps): React.JSX.Element {
   const { t, i18n } = useTranslation("captures");
@@ -52,6 +57,7 @@ export function CaptureDetailDialog({
   const [editingText, setEditingText] = useState(false);
   const [editingTranscript, setEditingTranscript] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [copied, setCopied] = useState(false);
   const [textDraft, setTextDraft] = useState(capture.rawText ?? "");
   const [transcriptDraft, setTranscriptDraft] = useState(
     capture.transcript ?? "",
@@ -164,6 +170,16 @@ export function CaptureDetailDialog({
         `${TODO_TAG} `,
     );
   };
+  const copyCapture = async () => {
+    const content = captureText(capture);
+    if (!content) return;
+    try {
+      await navigator.clipboard.writeText(content);
+      setCopied(true);
+    } catch {
+      onMutationError();
+    }
+  };
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -183,6 +199,24 @@ export function CaptureDetailDialog({
               </Meta>
             )}
           </div>
+          {!editingText && !editingTranscript && (
+            <div className="flex shrink-0 items-center gap-1 max-[520px]:hidden">
+              <Link
+                to="/captures/context"
+                search={{ anchorId: capture.id }}
+                className={buttonClassName({ variant: "ghost", size: "sm" })}
+              >
+                {t("context.open")}
+              </Link>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => void copyCapture()}
+              >
+                {copied ? t("detail.copied") : tc("actions.copy")}
+              </Button>
+            </div>
+          )}
           {editingText && (
             <div className="flex shrink-0 items-center gap-1">
               <Button
@@ -245,6 +279,28 @@ export function CaptureDetailDialog({
 
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 py-5 max-sm:px-4">
           <div className="mx-auto flex w-full max-w-[640px] flex-col gap-5">
+            {!editingText && !editingTranscript && (
+              <div className="hidden items-center gap-1 max-[520px]:flex">
+                <Link
+                  to="/captures/context"
+                  search={{ anchorId: capture.id }}
+                  className={buttonClassName({
+                    variant: "default",
+                    size: "sm",
+                    className: "flex-1",
+                  })}
+                >
+                  {t("context.open")}
+                </Link>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => void copyCapture()}
+                >
+                  {copied ? t("detail.copied") : tc("actions.copy")}
+                </Button>
+              </div>
+            )}
             {capture.mediaType === "image" && capture.mediaUrl && (
               <img
                 src={capture.mediaUrl}
@@ -387,6 +443,20 @@ export function CaptureDetailDialog({
             )}
 
             {attachments}
+
+            <div
+              aria-hidden={editingText || editingTranscript}
+              className={
+                editingText || editingTranscript
+                  ? "invisible pointer-events-none"
+                  : undefined
+              }
+            >
+              <CaptureRelated
+                anchorId={capture.id}
+                onMutationError={onMutationError}
+              />
+            </div>
           </div>
         </div>
       </DialogContent>

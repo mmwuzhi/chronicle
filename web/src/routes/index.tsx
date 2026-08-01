@@ -4,6 +4,7 @@ import { useGetMe, useListCapturePage } from "@/api";
 import type { CaptureBody } from "@/api";
 
 import { Nav } from "@/components/nav";
+import { captureText } from "@/utils/capture";
 import { timeAgo } from "@/utils/format";
 import { buttonClassName } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -87,7 +88,7 @@ function Dashboard() {
                   className="flex cursor-pointer flex-col gap-2 p-4 no-underline transition-[border-color,box-shadow]"
                 >
                   <p className="m-0 line-clamp-2 overflow-hidden text-small leading-[1.55] text-ink">
-                    {c.rawText ?? c.transcript ?? "—"}
+                    {captureText(c) || "—"}
                   </p>
                   <div className="flex items-center gap-2">
                     {c.createdAt && (
