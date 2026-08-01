@@ -320,6 +320,7 @@ export const CaptureCard = memo(function CaptureCard({
             onSaveText={onSaveText}
             onSaveTranscript={onSaveTranscript}
             onUseTranscript={onUseTranscript}
+            onMutationError={onMutationError}
             attachments={
               attachments.length > 0 ? (
                 <CaptureAttachments

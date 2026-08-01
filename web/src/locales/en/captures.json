@@ -27,17 +27,20 @@
   },
   "loadMore": "Load more",
   "openCapture": "Open Capture",
+  "detail": {
+    "copied": "Copied"
+  },
   "longContent": {
     "showMore": "Show more"
   },
   "showScheduled": "Show scheduled",
   "scheduledHint": "Captures with a future reminder are hidden until due. Show them to edit or clear the reminder.",
   "context": {
-    "title": "Capture context",
-    "subtitle": "The captures immediately before and after this memory.",
-    "match": "Search match",
-    "earlier": "Earlier captures are not loaded",
-    "later": "Later captures are not loaded",
+    "title": "Capture timeline",
+    "selected": "This Capture",
+    "open": "View nearby Captures",
+    "earlier": "Earlier",
+    "later": "Later",
     "failedToLoad": "Failed to load capture context"
   },
   "transcript": {
@@ -58,13 +61,20 @@
     "keepVisibleHint": "Notify only — stays in browse instead of hiding until due"
   },
   "related": {
-    "title": "Related",
+    "title": "Connections",
     "linked": "Linked",
-    "suggestions": "Suggestions",
+    "suggestions": "Suggested",
+    "add": "Add link",
+    "done": "Done",
     "link": "Link",
+    "linking": "Linking…",
     "unlink": "Unlink",
-    "none": "Nothing linked yet.",
-    "noSuggestions": "No suggestions.",
+    "searchLabel": "Search Captures to link",
+    "searchPlaceholder": "Search your Captures…",
+    "searching": "Searching…",
+    "searchFailed": "Search could not be loaded.",
+    "noSearchResults": "No unlinked Captures found.",
+    "failedToLoad": "Connections could not be loaded.",
     "todoProgress": "Todos: {{done}}/{{total}} done"
   },
   "trash": {

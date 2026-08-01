@@ -27,17 +27,20 @@
   },
   "loadMore": "加载更多",
   "openCapture": "打开 Capture",
+  "detail": {
+    "copied": "已复制"
+  },
   "longContent": {
     "showMore": "展开"
   },
   "showScheduled": "显示已安排提醒",
   "scheduledHint": "设有未来提醒的 Capture 在到期前会被隐藏。显示它们以编辑或清除提醒。",
   "context": {
-    "title": "Capture 上下文",
-    "subtitle": "查看这条记忆前后紧邻发生的记录。",
-    "match": "搜索命中",
-    "earlier": "更早的 Capture 未加载",
-    "later": "更晚的 Capture 未加载",
+    "title": "Capture 时间线",
+    "selected": "这条 Capture",
+    "open": "查看前后记录",
+    "earlier": "较早",
+    "later": "较晚",
     "failedToLoad": "加载 Capture 上下文失败"
   },
   "transcript": {
@@ -58,13 +61,20 @@
     "keepVisibleHint": "仅通知——保持在浏览列表中，不到点前隐藏"
   },
   "related": {
-    "title": "相关",
+    "title": "关联",
     "linked": "已关联",
-    "suggestions": "相关建议",
+    "suggestions": "建议",
+    "add": "添加关联",
+    "done": "完成",
     "link": "关联",
+    "linking": "关联中…",
     "unlink": "解除关联",
-    "none": "还没有关联任何内容。",
-    "noSuggestions": "暂无建议。",
+    "searchLabel": "搜索要关联的 Capture",
+    "searchPlaceholder": "搜索你的 Capture…",
+    "searching": "搜索中…",
+    "searchFailed": "无法加载搜索结果。",
+    "noSearchResults": "没有找到尚未关联的 Capture。",
+    "failedToLoad": "无法加载 Capture 关联。",
     "todoProgress": "待办 {{done}}/{{total}} 已完成"
   },
   "trash": {

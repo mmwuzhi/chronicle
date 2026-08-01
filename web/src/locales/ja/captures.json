@@ -27,17 +27,20 @@
   },
   "loadMore": "さらに読み込む",
   "openCapture": "Captureを開く",
+  "detail": {
+    "copied": "コピー済み"
+  },
   "longContent": {
     "showMore": "もっと見る"
   },
   "showScheduled": "予約済みを表示",
   "scheduledHint": "将来のリマインダーがあるCaptureは期限まで非表示です。表示してリマインダーを編集・解除できます。",
   "context": {
-    "title": "Captureの文脈",
-    "subtitle": "この記憶の直前と直後のCaptureを表示します。",
-    "match": "検索結果",
-    "earlier": "これより前のCaptureは未読み込みです",
-    "later": "これより後のCaptureは未読み込みです",
+    "title": "Captureタイムライン",
+    "selected": "このCapture",
+    "open": "前後のCaptureを見る",
+    "earlier": "以前",
+    "later": "以後",
     "failedToLoad": "Captureの文脈を読み込めませんでした"
   },
   "transcript": {
@@ -58,13 +61,20 @@
     "keepVisibleHint": "通知のみ — 期限まで隠さずブラウズに表示し続けます"
   },
   "related": {
-    "title": "関連",
+    "title": "リンク",
     "linked": "リンク済み",
-    "suggestions": "おすすめ",
+    "suggestions": "候補",
+    "add": "リンクを追加",
+    "done": "完了",
     "link": "リンク",
+    "linking": "リンク中…",
     "unlink": "リンク解除",
-    "none": "まだ何もリンクされていません。",
-    "noSuggestions": "おすすめはありません。",
+    "searchLabel": "リンクするCaptureを検索",
+    "searchPlaceholder": "Captureを検索…",
+    "searching": "検索中…",
+    "searchFailed": "検索結果を読み込めませんでした。",
+    "noSearchResults": "未リンクのCaptureは見つかりませんでした。",
+    "failedToLoad": "Captureのリンクを読み込めませんでした。",
     "todoProgress": "TODO {{done}}/{{total}} 完了"
   },
   "trash": {

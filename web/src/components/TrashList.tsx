@@ -1,5 +1,6 @@
 import { useTranslation } from "react-i18next";
 import type { CaptureBody } from "@/api";
+import { truncateCaptureText } from "@/utils/capture";
 import { fmtListTime } from "@/utils/format";
 import { Markdown } from "@/components/Markdown";
 import { Button } from "@/components/ui/button";
@@ -7,13 +8,6 @@ import { Card } from "@/components/ui/card";
 import { Meta } from "@/components/ui/page";
 
 const SNIPPET_MAX = 280;
-
-function captureText(capture: CaptureBody): string {
-  const text = capture.rawText || capture.transcript || "";
-  const trimmed = text.trim();
-  if (trimmed.length <= SNIPPET_MAX) return trimmed;
-  return trimmed.slice(0, SNIPPET_MAX).trimEnd() + "…";
-}
 
 interface TrashListProps {
   captures: CaptureBody[];
@@ -33,7 +27,7 @@ export function TrashList({
   return (
     <ul className="m-0 flex list-none flex-col gap-2.5 p-0">
       {captures.map((capture) => {
-        const text = captureText(capture);
+        const text = truncateCaptureText(capture, SNIPPET_MAX);
         return (
           <Card
             asChild
