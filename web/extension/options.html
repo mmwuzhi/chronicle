@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Chronicle Quick Capture settings</title>
+  </head>
+  <body>
+    <main class="options">
+      <div>
+        <h1>Chronicle Quick Capture</h1>
+        <p>
+          Use a create-only Capture Token. The extension cannot read, edit, or
+          delete your Captures.
+        </p>
+      </div>
+      <form id="settings-form" class="actions">
+        <label>
+          Chronicle API URL
+          <input
+            id="api-base-url"
+            type="url"
+            placeholder="https://chronicle.example/api"
+            required
+          />
+        </label>
+        <label>
+          Capture Token
+          <input
+            id="capture-token"
+            type="password"
+            placeholder="chr_cap_…"
+            autocomplete="off"
+            required
+          />
+        </label>
+        <button class="primary" type="submit">Save settings</button>
+      </form>
+      <p id="status" aria-live="polite"></p>
+    </main>
+    <script type="module" src="/src/options.ts"></script>
+  </body>
+</html>

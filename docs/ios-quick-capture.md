@@ -1,109 +1,128 @@
-# iOS quick capture (Action Button)
+# iOS quick capture
 
-Capture straight into Chronicle from your iPhone without installing an app: a
-single [Shortcut](https://support.apple.com/guide/shortcuts/welcome/ios) bound
-to the **Action Button** (or the Share Sheet) accepts typed text or runs on-device
-OCR on an image, then POSTs the resulting text to the API.
+Capture into Chronicle from the iPhone Action Button, Share Sheet, Back Tap,
+Home Screen, or Siri without installing an app. One Shortcut accepts shared
+text, URLs, and images; when launched without input it offers typed text,
+dictation, or on-device OCR.
 
-It authenticates with a **capture token** — a long-lived, revocable credential
-that can *only* create captures. It cannot read, edit, or delete anything, so
-even if the token leaks the blast radius is limited to appending captures to
-your account. Revoke it any time from Settings.
+The Shortcut uses a long-lived, revocable **capture token** that can only create
+Captures. It cannot read, edit, or delete anything.
+
+Chronicle intentionally documents the auditable action recipe instead of
+shipping an opaque signed `.shortcut` binary. Apple-signed exports cannot be
+inspected in CI, so a stale or miswired workflow could otherwise ship without
+review.
 
 ## 1. Create a capture token
 
 1. Open Chronicle on the web and go to **Settings → Integrations**.
-2. Under **Quick capture tokens**, enter a name you'll recognize later (e.g.
-   `iPhone Action Button`) and tap **Generate**.
-3. Copy the token that appears. It starts with `chr_cap_` and is shown **only
-   once** — if you lose it, revoke it and generate a new one.
+2. Under **Quick capture tokens**, enter a recognizable name such as
+   `iPhone Shortcut`, then tap **Generate**.
+3. Copy the token. It starts with `chr_cap_` and is shown only once.
 
-## 2. Build the Shortcut
+## 2. Configure the Shortcut input
 
-In the **Shortcuts** app, create a shortcut named `Chronicle Capture`.
+Create a shortcut named `Chronicle Capture`, open its details, and enable
+**Show in Share Sheet**.
 
-### Action 1 — choose capture mode
+Configure the input action at the top:
 
-Add **Choose from Menu** with two options:
+- Receive only **Text**, **URLs**, and **Images** from the Share Sheet.
+- If there is no input: **Continue**.
 
-- `Type text`
-- `OCR image`
+The Continue setting matters: Share Sheet launches carry `Shortcut Input`,
+while Action Button, Back Tap, Home Screen, and Siri launches continue into the
+manual capture menu.
 
-### Menu option — Type text
+## 3. Normalize the input
 
-Inside `Type text`, add:
+Add this control flow:
 
-1. **Ask for Input**
-   - Input Type: `Text`
-   - Prompt: `Capture`
-2. **Set Variable**
-   - Variable name: `Capture Text`
-   - Value: the **Provided Input** from Ask for Input
-3. **Set Variable**
-   - Variable name: `Capture Source`
-   - Value: `ios_shortcut_text`
+1. **If** `Shortcut Input` has any value:
+   1. **Get Type of** `Shortcut Input`.
+   2. **If** the type contains `public.image`:
+      1. **Extract Text from Image** using `Shortcut Input`.
+      2. **Set Variable** `Capture Text` to the extracted text.
+   3. **Otherwise**:
+      1. **Get Text from Input** using `Shortcut Input`.
+      2. **Set Variable** `Capture Text` to that result.
+   4. **Set Variable** `Capture Source` to `ios_share_sheet`.
+2. **Otherwise**, add **Choose from Menu** with these entries:
+   - `Type text`
+     1. **Ask for Input**, type `Text`, prompt `Capture`.
+     2. Set `Capture Text` to the provided input.
+     3. Set `Capture Source` to `ios_shortcut_text`.
+   - `Dictate`
+     1. **Dictate Text**.
+     2. Set `Capture Text` to the dictated text.
+     3. Set `Capture Source` to `ios_shortcut_voice`.
+   - `OCR image`
+     1. **Select Photos**, images only, one photo.
+     2. **Extract Text from Image** using the selected photo.
+     3. Set `Capture Text` to the extracted text.
+     4. Set `Capture Source` to `ios_shortcut_ocr`.
 
-### Menu option — OCR image
+After the branches, add:
 
-Inside `OCR image`, add:
+1. **If** `Capture Text` does not have any value.
+2. **Stop and Output** `No text found`.
 
-1. **Select Photos**
-   - Select Multiple: off for the simplest flow; on if you want to OCR several
-     screenshots at once.
-   - Media Type: Images
-2. **Extract Text from Image**
-   - Image: the selected photo.
-   - If your iOS version exposes a language option, choose the narrowest useful
-     set, usually Chinese Simplified + English. If no language option is shown,
-     iOS will auto-detect; this is usually good enough for screenshots.
-3. **Set Variable**
-   - Variable name: `Capture Text`
-   - Value: the extracted text.
-4. **Set Variable**
-   - Variable name: `Capture Source`
-   - Value: `ios_shortcut_ocr`
+For multi-image OCR, enable multiple selection, put **Extract Text from Image**
+inside **Repeat with Each**, then combine `Repeat Results` with new lines.
 
-If you enable multi-select, put **Extract Text from Image** inside **Repeat with
-Each** and combine the text with new lines before setting `Capture Text`.
+## 4. Create an operation ID
 
-### Action 2 — skip empty captures
+`POST /captures` accepts an `Idempotency-Key` UUID. Shortcuts does not provide
+a portable UUID action on every supported OS version, so generate a UUID-shaped
+identifier locally:
 
-After the menu, add:
+1. **Current Date**.
+2. **Random Number** between `1` and `1000000000`.
+3. **Text** containing the Current Date and Random Number variables.
+4. **Generate Hash**:
+   - Type: `SHA256`
+   - Input: the Text result
+5. **Replace Text**:
+   - Find:
+     `^(.{8})(.{4})(.{4})(.{4})(.{12}).*$`
+   - Replace with:
+     `$1-$2-$3-$4-$5`
+   - Input: the SHA256 hash
+   - Regular Expression: on
+6. Set `Operation ID` to the Replace Text result.
 
-1. **If**
-   - Condition: `Capture Text` `is` empty
-2. Inside the If branch:
-   - **Show Alert**: `No text found`
-   - **Stop This Shortcut**
+Generate the ID once per Shortcut run and reuse the same value if that run
+contains an explicit retry. It does not deduplicate two separate Shortcut
+launches; rerunning the Shortcut intentionally creates another Capture.
 
-This prevents blank OCR results from hitting the API, which would return `422`.
+## 5. Send the Capture
 
-### Action 3 — Get Contents of URL
-
-After the empty check, add **Get Contents of URL** and configure it as follows:
+Add **Get Contents of URL**:
 
 | Field | Value |
 |---|---|
 | URL | `https://<your-api-host>/captures` |
 | Method | `POST` |
-| Headers | `Authorization` = `Bearer chr_cap_…` (your token) |
-| | `Content-Type` = `application/json` |
-| Request Body | **JSON** |
+| Header | `Authorization` = `Bearer chr_cap_…` |
+| Header | `Content-Type` = `application/json` |
+| Header | `Idempotency-Key` = the `Operation ID` variable |
+| Request Body | `JSON` |
 
-JSON body fields:
+JSON fields:
 
 | Key | Type | Value |
 |---|---|---|
-| `rawText` | Text | the `Capture Text` variable |
+| `rawText` | Text | `Capture Text` |
 | `mediaType` | Text | `text` |
-| `source` | Text | the `Capture Source` variable |
+| `source` | Text | `Capture Source` |
 
-The equivalent request looks like:
+Equivalent request:
 
 ```http
 POST https://<your-api-host>/captures
 Authorization: Bearer chr_cap_79ed…e736
 Content-Type: application/json
+Idempotency-Key: a8463d6d-13cd-94c2-657f-89e2d9e8cc76
 
 {
   "rawText": "groceries: oat milk",
@@ -112,42 +131,56 @@ Content-Type: application/json
 }
 ```
 
-A successful capture returns `200` with the saved capture JSON. `source` is a
-free-form label (lowercase letters, digits, `_`, `:`, `-`) so you can tell where
-a capture came from later — use `ios_shortcut_ocr`, `ios_shortcut_text`, or
-`ios_share_sheet` depending on the entry point.
+Store the **Get Contents of URL** result as `Response`, then:
 
-Optionally add **Show Notification** after the request with `Captured in
-Chronicle`.
+1. **Get Dictionary Value** for key `id` from `Response`.
+2. **If** that value has any value, **Show Notification**
+   `Captured in Chronicle`.
+3. **Otherwise**, **Stop and Output** `Capture failed: Response`.
 
-> Do not send a capture token over plain LAN HTTP. For local phone testing, put
-> the API behind an HTTPS tunnel or a local TLS reverse proxy, use that `https://`
-> capture URL, and revoke the temporary token immediately after testing.
+Checking for the returned Capture ID matters because Shortcuts may expose an
+HTTP error response as output instead of stopping the workflow automatically.
+A network failure still stops before the success notification.
 
-## 3. Bind it
+Do not send a capture token over plain LAN HTTP. For phone-to-local testing,
+use an HTTPS tunnel or local TLS reverse proxy and revoke the temporary token
+afterward.
 
-- **Action Button:** Settings → Action Button → swipe to **Shortcut** → pick
-  this shortcut. One press opens the text/OCR menu.
-- **Share Sheet:** with *Show in Share Sheet* enabled, the shortcut appears when
-  you share text or images from any app. For a dedicated Share Sheet variant,
-  replace **Select Photos** with **Shortcut Input** in the OCR branch.
-- **Back Tap / Home Screen / Siri** also work — say the shortcut's name.
+## 6. Bind and verify
 
-## Security & lifecycle
+- **Action Button:** Settings → Action Button → Shortcut → `Chronicle Capture`.
+- **Share Sheet:** share text, a URL, or an image and select
+  `Chronicle Capture`.
+- **Back Tap / Home Screen / Siri:** bind or invoke the same Shortcut.
 
-- The token is **create-only**. `GET`, `PATCH`, and `DELETE` on captures (and
-  every account route) reject it with `401`.
-- It is stored only as a SHA-256 hash; the raw value lives only on your device.
-- **Revoke** instantly from Settings → Integrations. The next request with a
-  revoked token gets `401`.
-- The token list shows when each token was **last used**, so you can spot and
-  retire stale ones.
+Before relying on it, verify every path:
+
+| Path | Expected result |
+|---|---|
+| Action Button → Type text | One Capture with source `ios_shortcut_text` |
+| Action Button → Dictate | One Capture with source `ios_shortcut_voice` |
+| Action Button → OCR image | One Capture with source `ios_shortcut_ocr` |
+| Share text or URL | One Capture with source `ios_share_sheet` |
+| Share image | OCR text saved with source `ios_share_sheet` |
+| Empty input or empty OCR | `No text found`; no Capture created |
+| Revoked or malformed token | Request fails; no success notification |
+| Offline API | Request fails; no success notification |
+
+## Security and lifecycle
+
+- Capture tokens are create-only. Read, edit, delete, attachment, and account
+  routes reject them.
+- Chronicle stores only a SHA-256 hash of the token.
+- Revoke a token from **Settings → Integrations**. Revocation takes effect on
+  the next request.
+- The token list shows last use so stale devices can be retired.
 
 ## Troubleshooting
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| `401 Unauthorized` | Token wrong, revoked, or missing `Bearer ` prefix | Re-check the header; generate a fresh token if needed |
-| `422 Unprocessable Entity` | `rawText` empty for a `text` capture, or a bad `source` | Make sure `Capture Text` is not empty; keep `source` lowercase |
-| OCR misses Chinese characters | Auto language detection picked the wrong script, or the screenshot is too small | If the action exposes language settings, choose Chinese Simplified + English; otherwise crop/zoom the screenshot before OCR |
-| Nothing happens on Action Button | Shortcut not bound | Settings → Action Button → Shortcut → select it |
+| `401 Unauthorized` | Token is missing, malformed, or revoked | Check the `Bearer ` prefix or generate a new token |
+| `409 Conflict` | The same operation ID was reused with different content | Generate the ID once after input normalization and do not reuse it for another Capture |
+| `422 Unprocessable Entity` | Empty text, invalid source, or malformed operation ID | Check `Capture Text`, source spelling, and the Replace Text expression |
+| Share Sheet path opens the manual menu | Shortcut Input types or Share Sheet surface are not enabled | Recheck the input action in Shortcut details |
+| OCR misses characters | Image is too small or language detection failed | Crop or enlarge the image and restrict OCR languages when the action exposes that option |
