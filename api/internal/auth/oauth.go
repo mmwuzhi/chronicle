@@ -6,6 +6,7 @@ import (
 	"crypto/subtle"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -17,7 +18,6 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/redis/go-redis/v9"
 	"golang.org/x/oauth2"
 
 	db "github.com/sikaoshenmi/chronicle/db/sqlc"
@@ -28,6 +28,8 @@ const (
 	oauthStateTTL          = 10 * time.Minute
 	desktopOAuthHandoffTTL = 2 * time.Minute
 	desktopOAuthClient     = "desktop"
+	oauthStatePurpose      = "oauth_state"
+	desktopHandoffPurpose  = "desktop_oauth_handoff"
 )
 
 type oauthStateData struct {
@@ -82,7 +84,7 @@ func (h *handler) storeOAuthState(ctx context.Context, r *http.Request) (string,
 	if err != nil {
 		return "", err
 	}
-	if err := h.rdb.Set(ctx, "oauth:state:"+state, string(val), oauthStateTTL).Err(); err != nil {
+	if err := h.storeEphemeralState(ctx, oauthStatePurpose, state, val, oauthStateTTL); err != nil {
 		return "", err
 	}
 	return state, nil
@@ -244,12 +246,9 @@ func (h *handler) validateState(ctx context.Context, state string) (*oauthStateD
 	if state == "" {
 		return nil, fmt.Errorf("missing state")
 	}
-	val, err := h.rdb.GetDel(ctx, "oauth:state:"+state).Result()
-	if err == redis.Nil {
-		return nil, fmt.Errorf("state not found or expired")
-	}
+	val, err := h.consumeEphemeralState(ctx, oauthStatePurpose, state)
 	if err != nil {
-		return nil, fmt.Errorf("redis error: %w", err)
+		return nil, err
 	}
 
 	var data oauthStateData
@@ -312,11 +311,6 @@ func (h *handler) finishOAuth(w http.ResponseWriter, r *http.Request, ctx contex
 	}
 
 	if stateData.Client == desktopOAuthClient {
-		if h.rdb == nil {
-			slog.ErrorContext(ctx, "desktop oauth handoff unavailable", "traceId", traceID)
-			http.Error(w, "internal error", http.StatusInternalServerError)
-			return
-		}
 		code, err := randomHex(32)
 		if err != nil {
 			slog.ErrorContext(ctx, "desktop oauth code generation failed", "traceId", traceID, "err", err)
@@ -332,7 +326,13 @@ func (h *handler) finishOAuth(w http.ResponseWriter, r *http.Request, ctx contex
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
 		}
-		if err := h.rdb.Set(ctx, "oauth:desktop:"+code, handoff, desktopOAuthHandoffTTL).Err(); err != nil {
+		if err := h.storeEphemeralState(
+			ctx,
+			desktopHandoffPurpose,
+			code,
+			handoff,
+			desktopOAuthHandoffTTL,
+		); err != nil {
 			slog.ErrorContext(ctx, "desktop oauth handoff store failed", "traceId", traceID, "err", err)
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
@@ -414,13 +414,9 @@ type DesktopOAuthExchangeOutput struct {
 }
 
 func (h *handler) desktopOAuthExchange(ctx context.Context, input *DesktopOAuthExchangeInput) (*DesktopOAuthExchangeOutput, error) {
-	if h.rdb == nil {
-		return nil, huma.Error503ServiceUnavailable("desktop oauth is unavailable")
-	}
 	code := strings.TrimSpace(input.Body.Code)
-	key := "oauth:desktop:" + code
-	encodedHandoff, err := h.rdb.Get(ctx, key).Result()
-	if err == redis.Nil {
+	encodedHandoff, err := h.getEphemeralState(ctx, desktopHandoffPurpose, code)
+	if errors.Is(err, errEphemeralStateNotFound) {
 		return nil, huma.Error401Unauthorized("invalid or expired oauth code")
 	}
 	if err != nil {
@@ -428,25 +424,21 @@ func (h *handler) desktopOAuthExchange(ctx context.Context, input *DesktopOAuthE
 		return nil, huma.Error500InternalServerError("internal error")
 	}
 	var handoff desktopOAuthHandoffData
-	if err := json.Unmarshal([]byte(encodedHandoff), &handoff); err != nil {
+	if err := json.Unmarshal(encodedHandoff, &handoff); err != nil {
 		slog.ErrorContext(ctx, "desktop oauth handoff contained invalid data", "traceId", middleware.GetTraceID(ctx), "err", err)
 		return nil, huma.Error500InternalServerError("internal error")
 	}
 	if !isValidPKCEVerifier(input.Body.CodeVerifier) || !matchesPKCEChallenge(input.Body.CodeVerifier, handoff.CodeChallenge) {
 		return nil, huma.Error401Unauthorized("invalid oauth code verifier")
 	}
-	consumedHandoff, err := h.rdb.GetDel(ctx, key).Result()
-	if err == redis.Nil {
+	err = h.consumeMatchingEphemeralState(ctx, desktopHandoffPurpose, code, encodedHandoff)
+	if errors.Is(err, errEphemeralStateNotFound) {
 		return nil, huma.Error401Unauthorized("invalid or expired oauth code")
 	}
 	if err != nil {
 		slog.ErrorContext(ctx, "desktop oauth handoff consume failed", "traceId", middleware.GetTraceID(ctx), "err", err)
 		return nil, huma.Error500InternalServerError("internal error")
 	}
-	if subtle.ConstantTimeCompare([]byte(encodedHandoff), []byte(consumedHandoff)) != 1 {
-		return nil, huma.Error401Unauthorized("invalid or expired oauth code")
-	}
-
 	userID, err := uuid.Parse(handoff.UserID)
 	if err != nil {
 		slog.ErrorContext(ctx, "desktop oauth handoff contained invalid user", "traceId", middleware.GetTraceID(ctx), "err", err)

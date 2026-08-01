@@ -16,7 +16,7 @@ import (
 const defaultTestDSN = "postgres://chronicle:chronicle@localhost:5432/chronicle_test?sslmode=disable"
 
 // TestCaptureFirstUpgradeFromProductionBaseline exercises the exact release
-// boundary: production is on migration 13, while capture-first adds 14–29.
+// boundary: production is on migration 13, while capture-first adds 14–31.
 // It pins both data conversion and the expand-only compatibility promise.
 func TestCaptureFirstUpgradeFromProductionBaseline(t *testing.T) {
 	dsn := os.Getenv("TEST_DATABASE_URL")
@@ -64,8 +64,8 @@ func TestCaptureFirstUpgradeFromProductionBaseline(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read final migration version: %v", err)
 	}
-	if version != 29 {
-		t.Fatalf("final migration version = %d, want 29", version)
+	if version != 31 {
+		t.Fatalf("final migration version = %d, want 31", version)
 	}
 
 	for _, table := range []string{
@@ -90,6 +90,26 @@ func TestCaptureFirstUpgradeFromProductionBaseline(t *testing.T) {
 	}
 	if !deletionOutboxExists {
 		t.Fatal("capture media deletion outbox was not created")
+	}
+	var archiveImportsExist bool
+	if err := db.QueryRow(
+		"SELECT to_regclass('public.archive_import_operations') IS NOT NULL",
+	).Scan(&archiveImportsExist); err != nil {
+		t.Fatalf("check archive import operations: %v", err)
+	}
+	if !archiveImportsExist {
+		t.Fatal("archive import operations table was not created")
+	}
+	for _, table := range []string{"auth_ephemeral_states", "auth_rate_limits"} {
+		var exists bool
+		if err := db.QueryRow(
+			"SELECT to_regclass('public." + table + "') IS NOT NULL",
+		).Scan(&exists); err != nil {
+			t.Fatalf("check PostgreSQL auth state table %s: %v", table, err)
+		}
+		if !exists {
+			t.Fatalf("PostgreSQL auth state table %s was not created", table)
+		}
 	}
 	for _, column := range []string{"task_id", "classified_as"} {
 		var exists bool

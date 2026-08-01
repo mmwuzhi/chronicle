@@ -22,12 +22,13 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	db "github.com/sikaoshenmi/chronicle/db/sqlc"
+	"github.com/sikaoshenmi/chronicle/internal/objectstore"
 	"github.com/sikaoshenmi/chronicle/internal/ragclient"
 )
 
 type transcriptionWorker struct {
 	q             *db.Queries
-	s3            S3Client
+	s3            objectstore.Client
 	bucket        string
 	apiKey        string
 	apiURL        string
@@ -58,14 +59,14 @@ const (
 // StartTranscriptionWorker launches the background worker and returns a
 // non-blocking kick that wakes it immediately. When transcription is not
 // configured the worker doesn't start and the returned kick is a no-op.
-func StartTranscriptionWorker(ctx context.Context, pool *pgxpool.Pool, s3c S3Client, cfg Config, rag *ragclient.Client) (kick func()) {
-	if s3c == nil || cfg.R2BucketName == "" || cfg.OpenAIKey == "" {
+func StartTranscriptionWorker(ctx context.Context, pool *pgxpool.Pool, s3c objectstore.Client, cfg Config, rag *ragclient.Client) (kick func()) {
+	if s3c == nil || cfg.bucketName() == "" || cfg.OpenAIKey == "" {
 		return func() {}
 	}
 	worker := &transcriptionWorker{
 		q:             db.New(pool),
 		s3:            s3c,
-		bucket:        cfg.R2BucketName,
+		bucket:        cfg.bucketName(),
 		apiKey:        cfg.OpenAIKey,
 		apiURL:        transcriptionEndpoint(cfg.OpenAIBaseURL),
 		model:         cfg.OpenAIModel,

@@ -1,0 +1,21 @@
+{$SITE_ADDRESS:http://localhost} {
+	encode zstd gzip
+
+	handle_path /api/* {
+		reverse_proxy api:8080 {
+			header_up Fly-Client-IP {remote_host}
+			header_up -CF-Connecting-IP
+		}
+	}
+
+	handle_path /media/* {
+		rewrite * /{$OBJECT_STORAGE_BUCKET:chronicle}{path}
+		reverse_proxy minio:9000
+	}
+
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
+}

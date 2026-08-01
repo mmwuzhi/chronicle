@@ -137,7 +137,7 @@ func (h *handler) createWithAttachment(ctx context.Context, input *CaptureWithAt
 	if rawText == "" {
 		return nil, huma.Error422UnprocessableEntity("rawText is required")
 	}
-	source, err := normalizeSource(input.Body.Source)
+	source, err := NormalizeSource(input.Body.Source)
 	if err != nil {
 		return nil, err
 	}

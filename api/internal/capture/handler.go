@@ -219,7 +219,7 @@ func (h *handler) create(ctx context.Context, input *CaptureCreateInput) (*Creat
 	if err != nil {
 		return nil, err
 	}
-	source, err := normalizeSource(input.Body.Source)
+	source, err := NormalizeSource(input.Body.Source)
 	if err != nil {
 		return nil, err
 	}
@@ -557,7 +557,9 @@ func strPtr(s string) *string {
 
 var sourcePattern = regexp.MustCompile(`^[a-z][a-z0-9_:-]{0,63}$`)
 
-func normalizeSource(source string) (string, error) {
+// NormalizeSource validates and defaults the stable source identifier used by
+// every Capture creation path, including archive restore.
+func NormalizeSource(source string) (string, error) {
 	source = strings.TrimSpace(source)
 	if source == "" {
 		return "web", nil

@@ -118,5 +118,25 @@
   "todoFeature": {
     "title": "TODO機能",
     "hint": "TODOのチェックボックス・タブ・進捗を表示"
+  },
+  "data": {
+    "title": "データ",
+    "archive": {
+      "title": "データと移行",
+      "description": "Capture の完全で読みやすいコピーを保存し、任意の Chronicle アカウントに復元できます。",
+      "exportTitle": "アーカイブを書き出す",
+      "exportDescription": "使用中およびゴミ箱の Capture、リンク、外部ファイル参照、文字起こし、Chronicle 管理メディアを含みます。",
+      "export": "アーカイブをダウンロード",
+      "exporting": "アーカイブを準備中…",
+      "exportFailed": "アーカイブを作成できませんでした。もう一度お試しください。",
+      "importTitle": "アーカイブを読み込む",
+      "importDescription": "現在のアカウントに統合します。既存の Capture は上書きせず、競合はコピーとして作成します。",
+      "import": "アーカイブを読み込む",
+      "importing": "検証して読み込み中…",
+      "importConfirm": "このアーカイブを現在のアカウントに統合しますか？既存の Capture は上書きされません。",
+      "importFailed": "アーカイブを読み込めませんでした。",
+      "resultTitle": "読み込み完了",
+      "result": "作成 {{created}}、スキップ {{skipped}}、競合コピー {{forked}}、メディア {{media}}、リンク {{links}}、添付参照 {{attachments}}。"
+    }
   }
 }

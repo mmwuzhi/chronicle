@@ -201,6 +201,7 @@ WHERE id = (
   SELECT id
   FROM captures
   WHERE transcription_status IN ('pending', 'processing')
+    AND transcription_attempts < 2147483647
     AND media_key IS NOT NULL
     AND deleted_at IS NULL
     AND next_transcription_at <= now()
@@ -317,6 +318,7 @@ WHERE id = (
   SELECT id
   FROM captures
   WHERE transcription_status IN ('pending', 'processing', 'failed')
+    AND transcription_attempts < 2147483647
     AND media_key IS NULL
     AND deleted_at IS NULL
     AND next_transcription_at <= now()

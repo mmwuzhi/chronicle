@@ -118,5 +118,25 @@
   "todoFeature": {
     "title": "待办功能",
     "hint": "显示待办勾选框、标签页与进度"
+  },
+  "data": {
+    "title": "数据",
+    "archive": {
+      "title": "数据与迁移",
+      "description": "保存一份完整且可直接阅读的 Capture 副本，并可恢复到任意 Chronicle 账号。",
+      "exportTitle": "导出归档",
+      "exportDescription": "包含当前及废纸篓中的 Capture、关联、外部文件引用、转录和 Chronicle 管理的媒体。",
+      "export": "下载归档",
+      "exporting": "正在准备归档…",
+      "exportFailed": "无法创建归档，请重试。",
+      "importTitle": "导入归档",
+      "importDescription": "归档会合并到当前账号。现有 Capture 不会被覆盖；冲突内容会创建副本。",
+      "import": "导入归档",
+      "importing": "正在校验并导入…",
+      "importConfirm": "要把这个归档合并到当前账号吗？现有 Capture 不会被覆盖。",
+      "importFailed": "无法导入此归档。",
+      "resultTitle": "导入完成",
+      "result": "新建 {{created}}，跳过 {{skipped}}，冲突副本 {{forked}}，媒体 {{media}}，关联 {{links}}，附件引用 {{attachments}}。"
+    }
   }
 }

@@ -277,6 +277,20 @@ func (ns NullTranscriptionStatus) Value() (driver.Value, error) {
 	return string(ns.TranscriptionStatus), nil
 }
 
+type ArchiveImportOperation struct {
+	ID          uuid.UUID          `json:"id"`
+	UserID      uuid.UUID          `json:"user_id"`
+	ArchiveHash string             `json:"archive_hash"`
+	ClaimToken  uuid.UUID          `json:"claim_token"`
+	Status      string             `json:"status"`
+	LeaseUntil  pgtype.Timestamptz `json:"lease_until"`
+	IDMap       []byte             `json:"id_map"`
+	Result      []byte             `json:"result"`
+	LastError   pgtype.Text        `json:"last_error"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	CompletedAt pgtype.Timestamptz `json:"completed_at"`
+}
+
 type ArchivedLogEntry struct {
 	ID          uuid.UUID          `json:"id"`
 	UserID      uuid.UUID          `json:"user_id"`
@@ -337,6 +351,22 @@ type ArchivedWeeklyReport struct {
 	WeekStart pgtype.Date        `json:"week_start"`
 	Data      []byte             `json:"data"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
+type AuthEphemeralState struct {
+	Purpose   string             `json:"purpose"`
+	KeyHash   []byte             `json:"key_hash"`
+	Payload   []byte             `json:"payload"`
+	ExpiresAt pgtype.Timestamptz `json:"expires_at"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
+type AuthRateLimit struct {
+	Scope           string             `json:"scope"`
+	SubjectHash     []byte             `json:"subject_hash"`
+	Attempts        int32              `json:"attempts"`
+	WindowStartedAt pgtype.Timestamptz `json:"window_started_at"`
+	ExpiresAt       pgtype.Timestamptz `json:"expires_at"`
 }
 
 type Capture struct {

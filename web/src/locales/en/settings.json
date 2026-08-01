@@ -118,5 +118,25 @@
   "todoFeature": {
     "title": "Todo feature",
     "hint": "Show the todo checkbox, tab, and progress"
+  },
+  "data": {
+    "title": "Data",
+    "archive": {
+      "title": "Data & portability",
+      "description": "Keep a complete, human-readable copy of your Captures and restore it into any Chronicle account.",
+      "exportTitle": "Export archive",
+      "exportDescription": "Includes active and deleted Captures, links, external file references, transcripts, and Chronicle-managed media.",
+      "export": "Download archive",
+      "exporting": "Preparing archive…",
+      "exportFailed": "The archive could not be created. Try again.",
+      "importTitle": "Import archive",
+      "importDescription": "Import merges data into this account. Existing Captures are never overwritten; conflicts become copies.",
+      "import": "Import archive",
+      "importing": "Validating and importing…",
+      "importConfirm": "Merge this archive into your account? Existing Captures will not be overwritten.",
+      "importFailed": "The archive could not be imported.",
+      "resultTitle": "Import complete",
+      "result": "Created {{created}}, skipped {{skipped}}, conflict copies {{forked}}, media {{media}}, links {{links}}, attachments {{attachments}}."
+    }
   }
 }

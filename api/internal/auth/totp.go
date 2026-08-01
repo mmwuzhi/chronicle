@@ -245,19 +245,14 @@ type MFAVerifyOutput struct {
 func (h *handler) mfaVerify(ctx context.Context, input *MFAVerifyInput) (*MFAVerifyOutput, error) {
 	traceID := middleware.GetTraceID(ctx)
 
-	if h.rdb != nil {
-		r, _ := responseWriter(ctx)
-		ip := clientIP(r)
-		key := "mfa:ip:" + ip
-		count, err := h.rdb.Incr(ctx, key).Result()
-		if err == nil {
-			if count == 1 {
-				h.rdb.Expire(ctx, key, 15*time.Minute)
-			}
-			if count > 5 {
-				return nil, huma.NewError(http.StatusTooManyRequests, "too many attempts, try again later")
-			}
-		}
+	r, _ := responseWriter(ctx)
+	count, err := h.incrementRateLimit(ctx, "mfa_verify_ip", clientIP(r), 15*time.Minute)
+	if err != nil {
+		slog.ErrorContext(ctx, "MFA rate limit failed", "traceId", traceID, "err", err)
+		return nil, huma.Error500InternalServerError("internal error")
+	}
+	if count > 5 {
+		return nil, huma.NewError(http.StatusTooManyRequests, "too many attempts, try again later")
 	}
 
 	userID, err := ParseMFAToken(input.Body.MFAToken, h.secret)

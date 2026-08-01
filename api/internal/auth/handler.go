@@ -41,6 +41,7 @@ type Options struct {
 	TurnstileSecret    string
 	WebAuthnRPID       string
 	WebAuthnRPOrigin   string
+	LegacyRedis        *redis.Client
 }
 
 type handler struct {
@@ -50,14 +51,14 @@ type handler struct {
 	resendKey       string
 	frontendURL     string
 	apiBaseURL      string
-	rdb             *redis.Client
 	googleOAuth     *oauth2.Config
 	githubOAuth     *oauth2.Config
 	turnstileSecret string
 	wan             *webauthn.WebAuthn
+	legacyRedis     *redis.Client
 }
 
-func Register(api huma.API, r chi.Router, pool *pgxpool.Pool, rdb *redis.Client, opts Options) {
+func Register(api huma.API, r chi.Router, pool *pgxpool.Pool, opts Options) {
 	h := &handler{
 		q:               db.New(pool),
 		pool:            pool,
@@ -65,8 +66,8 @@ func Register(api huma.API, r chi.Router, pool *pgxpool.Pool, rdb *redis.Client,
 		resendKey:       opts.ResendAPIKey,
 		frontendURL:     opts.FrontendURL,
 		apiBaseURL:      opts.APIBaseURL,
-		rdb:             rdb,
 		turnstileSecret: opts.TurnstileSecret,
+		legacyRedis:     opts.LegacyRedis,
 	}
 
 	if opts.WebAuthnRPID != "" {
@@ -331,20 +332,15 @@ type RegisterOutput struct {
 func (h *handler) register(ctx context.Context, input *RegisterInput) (*RegisterOutput, error) {
 	traceID := middleware.GetTraceID(ctx)
 
-	// Per-IP registration rate limit: max 3 per hour
-	if h.rdb != nil {
-		r, _ := responseWriter(ctx)
-		ip := clientIP(r)
-		key := "reg:ip:" + ip
-		count, err := h.rdb.Incr(ctx, key).Result()
-		if err == nil {
-			if count == 1 {
-				h.rdb.Expire(ctx, key, time.Hour)
-			}
-			if count > 3 {
-				return nil, huma.NewError(http.StatusTooManyRequests, "too many registrations from this IP, try again later")
-			}
-		}
+	// Per-IP registration rate limit: max 3 per anchored hour.
+	r, _ := responseWriter(ctx)
+	count, err := h.incrementRateLimit(ctx, "registration_ip", clientIP(r), time.Hour)
+	if err != nil {
+		slog.ErrorContext(ctx, "registration rate limit failed", "traceId", traceID, "err", err)
+		return nil, huma.Error500InternalServerError("internal error")
+	}
+	if count > 3 {
+		return nil, huma.NewError(http.StatusTooManyRequests, "too many registrations from this IP, try again later")
 	}
 
 	// Turnstile bot check
@@ -431,9 +427,12 @@ func (h *handler) resendVerification(ctx context.Context, _ *struct{}) (*struct{
 	}
 
 	// Rate-limit: one resend per 60 seconds per user
-	rlKey := "resend-verify:" + userIDStr
-	set, err := h.rdb.SetNX(ctx, rlKey, 1, 60*time.Second).Result()
-	if err == nil && !set {
+	count, err := h.incrementRateLimit(ctx, "resend_verification_user", userIDStr, time.Minute)
+	if err != nil {
+		slog.ErrorContext(ctx, "verification resend rate limit failed", "traceId", traceID, "err", err)
+		return nil, huma.Error500InternalServerError("internal error")
+	}
+	if count > 1 {
 		return nil, huma.NewError(http.StatusTooManyRequests, "please wait before requesting another verification email")
 	}
 
@@ -584,10 +583,7 @@ func clientIP(r *http.Request) string {
 	if r == nil {
 		return "unknown"
 	}
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		return strings.TrimSpace(strings.SplitN(xff, ",", 2)[0])
-	}
-	return r.RemoteAddr
+	return middleware.ClientIP(r)
 }
 
 func verifyTurnstile(ctx context.Context, secret, token string) error {
@@ -630,8 +626,28 @@ type LoginOutput struct {
 
 func (h *handler) login(ctx context.Context, input *LoginInput) (*LoginOutput, error) {
 	traceID := middleware.GetTraceID(ctx)
+	r, _ := responseWriter(ctx)
+	normalizedEmail := strings.ToLower(strings.TrimSpace(input.Body.Email))
+	limits := []struct {
+		scope   string
+		subject string
+		max     int32
+	}{
+		{scope: "password_login_account", subject: normalizedEmail, max: 10},
+		{scope: "password_login_ip", subject: clientIP(r), max: 50},
+	}
+	for _, limit := range limits {
+		count, err := h.incrementRateLimit(ctx, limit.scope, limit.subject, 15*time.Minute)
+		if err != nil {
+			slog.ErrorContext(ctx, "login rate limit failed", "traceId", traceID, "scope", limit.scope, "err", err)
+			return nil, huma.Error500InternalServerError("internal error")
+		}
+		if count > limit.max {
+			return nil, huma.NewError(http.StatusTooManyRequests, "too many login attempts; try again later")
+		}
+	}
 
-	user, err := h.q.GetUserByEmail(ctx, input.Body.Email)
+	user, err := h.q.GetUserByEmail(ctx, normalizedEmail)
 	if err != nil {
 		return nil, huma.Error401Unauthorized("invalid credentials")
 	}
@@ -641,6 +657,11 @@ func (h *handler) login(ctx context.Context, input *LoginInput) (*LoginOutput, e
 	}
 	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash.String), []byte(input.Body.Password)); err != nil {
 		return nil, huma.Error401Unauthorized("invalid credentials")
+	}
+	for _, limit := range limits {
+		if err := h.clearRateLimit(ctx, limit.scope, limit.subject); err != nil {
+			slog.ErrorContext(ctx, "login rate limit reset failed", "traceId", traceID, "scope", limit.scope, "err", err)
+		}
 	}
 
 	if user.TotpEnabled {

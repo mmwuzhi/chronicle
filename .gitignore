@@ -1,6 +1,8 @@
 # env
 .env
 .env.local
+.env.selfhost
+backups/
 
 # Go
 api/tmp/
@@ -10,7 +12,10 @@ api/vendor/
 .pnpm-store/
 web/node_modules/
 web/dist/
+web/extension/dist/
+web/extension/chronicle-extension.zip
 web/.pnpm-store/
+ragsvc/search-live-report.json
 
 # Swift
 .build/

@@ -27,9 +27,9 @@ Instead of forcing users to structure information up front, Chronicle focuses on
 | Backend | Go + chi + huma v2 (OpenAPI-first) |
 | Desktop input | Swift macOS menu bar app |
 | Database | PostgreSQL, sqlc + pgx, goose migrations |
-| Cache / rate limit | Redis (Upstash in prod) |
+| Auth state / security limits | PostgreSQL; general traffic is bounded in-process and may be limited at the edge |
 | Auth | JWT: 15m access token + 30d refresh token, httpOnly cookies |
-| File storage | Cloudflare R2 for image/audio uploads |
+| File storage | S3-compatible object storage; Cloudflare R2 and self-hosted MinIO supported |
 | Email | Resend for verification and password reset |
 | AI | OpenAI `gpt-4o-mini-transcribe` for voice transcription; Gemini/OpenAI-backed polish endpoints |
 | CI/CD | GitHub Actions → Fly.io (API) + Cloudflare Pages (frontend) |
@@ -44,7 +44,7 @@ Type safety flows end-to-end: Go structs → huma generates `/openapi.json` → 
 # 1. Clone and copy env
 git clone https://github.com/mmwuzhi/chronicle
 cd chronicle
-make setup          # copies .env.example → .env, starts postgres + redis, runs migrations
+make setup          # copies .env.example → .env, starts postgres, runs migrations
 
 # 2. Fill in secrets
 #    Edit .env. JWT_SECRET is required; feature integrations are optional for local dev
@@ -59,13 +59,66 @@ Root commands are implemented in `Justfile`; `Makefile` is a compatibility shim,
 Or run services separately:
 
 ```bash
-make dev-data       # postgres + redis only
+make dev-data       # postgres only
 make api            # Go server on :8080 (auto-starts db if needed)
 make web            # Vite dev server on :5173
 make desktop-capture # macOS menu bar quick-capture app
+make rag-eval       # deterministic 43-scenario retrieval-quality gate
 ```
 
 API docs: http://localhost:8080/docs (Swagger UI, auto-generated)
+
+## Data portability
+
+Settings → Data exports a versioned `chronicle-archive/v1` ZIP containing
+human-readable Markdown, complete Capture/link/attachment data, Trash state,
+checksums, and Chronicle-managed media. Import validates the whole archive
+first, never overwrites an existing Capture, and creates a stable conflict copy
+when UUID content differs.
+
+## Browser extension
+
+The Manifest V3 Chrome/Edge extension saves the current page or selected text
+with the existing create-only Capture Token. Failed sends stay in a
+server-and-token-scoped local queue.
+
+```bash
+make extension-test
+make extension-e2e
+make extension-package
+```
+
+Load `web/extension/dist` as an unpacked extension for development, or use
+`web/extension/chronicle-extension.zip`. Store publication is intentionally
+outside this release.
+
+## Self-hosting
+
+The supported self-host stack runs the Web app, API, PostgreSQL, MinIO,
+automatic forward-only migrations, and Caddy behind one public origin.
+
+```bash
+make selfhost-up
+```
+
+The first run creates `.env.selfhost` with mode `0600` and generated database,
+JWT, and MinIO secrets. For an internet-facing deployment, set `SITE_ADDRESS`,
+`PUBLIC_URL`, and `WEBAUTHN_RP_ID` in that file, then run
+`make selfhost-up` again. Caddy obtains HTTPS certificates when
+`SITE_ADDRESS` is a public domain.
+
+Useful operations:
+
+```bash
+make selfhost-logs
+make selfhost-down
+CHRONICLE_ACCESS_TOKEN=<short-lived-access-token> make selfhost-backup
+SELFHOST_RAG=1 make selfhost-up  # after configuring RAG_SERVICE_URL
+```
+
+The backup command writes a PostgreSQL dump, MinIO media copy, and portable
+Chronicle archive under `backups/`. Core capture and full-text search work
+without AI keys or the optional RAG profile.
 
 ## Common Commands
 
@@ -145,6 +198,13 @@ api-check → api-build (GHCR image) → api-deploy (Fly.io + goose migrations)
 web-check → web-deploy (Cloudflare Pages)
 ```
 
+The hosted topology intentionally keeps the static Web app on Cloudflare Pages
+and Chronicle-managed media on R2, while Fly.io runs only the Go API and
+PostgreSQL remains the single consistency boundary. Stateless edge protection
+may sit in front of public API routes, but OAuth, WebAuthn, idempotency, search,
+and Capture writes stay in the Go/PostgreSQL path so self-hosted deployments use
+the same application semantics.
+
 Required GitHub secrets: `FLY_API_TOKEN`, `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `NEON_DATABASE_URL`.
 
 ## Environment Variables
@@ -156,11 +216,12 @@ Key variables:
 | Variable | Required | Description |
 |---|---|---|
 | `DATABASE_URL` | yes | PostgreSQL connection string |
-| `REDIS_URL` | yes | Redis connection string |
 | `JWT_SECRET` | yes | Secret for signing JWTs |
 | `API_BASE_URL` | no | Public API base used for OAuth callback URLs |
 | `FRONTEND_URL` | no | Frontend origin for CORS and email links |
-| `R2_*` | no | Cloudflare R2, needed for image/audio uploads |
+| `OBJECT_STORAGE_*` | no | Generic S3-compatible storage; used by self-hosted MinIO |
+| `R2_*` | no | Backward-compatible Cloudflare R2 configuration |
+| `ARCHIVE_MAX_BYTES` | no | Maximum archive import size; defaults to 2 GiB |
 | `OPENAI_API_KEY` | no | Background transcription for recordings up to five minutes |
 | `OPENAI_BASE_URL` | no | OpenAI-compatible API base; defaults to `https://api.openai.com/v1` |
 | `OPENAI_TRANSCRIPTION_MODEL` | no | Audio transcription model; defaults to `gpt-4o-mini-transcribe` |
@@ -200,6 +261,13 @@ The most important feature is helping users find something they once thought, wr
 AI is used to improve retrieval, review, and memory recall.
 
 Users should never be required to maintain a complex organizational system.
+
+## License
+
+Chronicle is licensed under the [GNU Affero General Public License v3.0](LICENSE).
+If you modify Chronicle and make the modified service available over a network,
+the AGPL requires offering the corresponding source to those users. Third-party
+dependencies remain under their respective licenses.
 
 ## Future Work
 

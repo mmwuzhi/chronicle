@@ -109,7 +109,7 @@ Do not introduce deferred features unless explicitly requested.
 - Backend: Go — chi router, huma v2 (OpenAPI-first), slog structured logging
 - Desktop: Swift macOS menu bar app — quick capture/search/ask panel, browse window, offline local search, desktop stickies, reminder notifications
 - Database: PostgreSQL (Neon in prod, Docker in dev) — sqlc + pgx, goose migrations
-- Cache / rate limit: Redis (Upstash in prod, Docker in dev) — go-redis
+- Auth state / security rate limits: PostgreSQL — one-time OAuth/WebAuthn state is atomically consumed; general API traffic uses a bounded in-process limiter and may have an outer Cloudflare limit
 - Auth: JWT — access token 15 min, refresh token 30 days, httpOnly cookies; email verification/password reset, Google/GitHub OAuth, passkeys, and TOTP MFA
 - File storage: Cloudflare R2 (images + audio)
 - Voice transcription: OpenAI Whisper (optional — app works without it)
@@ -199,6 +199,8 @@ refresh_tokens       id, user_id, token_hash, expires_at, revoked
 oauth_accounts       id, user_id, provider, provider_id, created_at
 passkeys             id, user_id, credential_id, public_key, aaguid, sign_count, name, created_at
 recovery_codes       id, user_id, code_hash, used
+auth_ephemeral_states purpose, hashed key, payload, expiry (atomic OAuth/WebAuthn one-time state)
+auth_rate_limits      scope, hashed subject, attempts, anchored expiry (security-sensitive low-volume limits)
 archived_*           frozen pre-016 tables (tasks, log_entries, time_blocks, …) kept for recovery; never queried
 ```
 
@@ -221,16 +223,16 @@ Run `just --list` or `make help` from the repo root to see all targets.
 
 ```bash
 # First-time local setup
-make setup                        # copies .env.example → .env, starts postgres + redis, runs migrations
+make setup                        # copies .env.example → .env, starts postgres, runs migrations
 # then edit .env to fill in real secrets (R2, JWT, etc.)
 make api                          # run API server
 
 # Daily dev
 make dev                          # full stack via docker compose watch
 make dev-all                      # reload desktop app, then run docker compose watch
-make dev-data                     # just postgres + redis
+make dev-data                     # just postgres
 make down                         # stop all dev containers
-make api                          # API server only — auto-starts postgres + redis if needed
+make api                          # API server only — auto-starts postgres if needed
 make web                          # Vite dev server only (separate terminal)
 make desktop-capture              # Swift macOS menu bar quick-capture app
 
@@ -321,6 +323,7 @@ How changes reach the running dev stack:
 - **Web/desktop identity parity.** The brand accent and the list-timestamp rule are each defined twice and must change together: accent as `--accent` in `web/src/index.css` and `Color.chronicleAccent` in `desktop/Sources/ChronicleDesktop/DesktopTheme.swift` (desktop deliberately does not follow the macOS system accent); the timestamp rule (relative under 7 days, then short date, year when it differs; precise stamp `Jul 4, 2026 · 2:35pm` on hover/tooltip) as `fmtListTime`/`fmtPreciseDateTime` in `web/src/utils/format.ts` and `CaptureTime` in `desktop/Sources/ChronicleDesktop/CaptureRowModel.swift`. The product noun **Capture** is also shared identity and stays `Capture` in every locale; translate the surrounding sentence, never the noun itself.
 - **Desktop localization stays code-native.** English source strings and their Simplified Chinese translations live in `desktop/Sources/ChronicleDesktop/Localization.swift`. New user-facing desktop copy must go through `L(...)` (or `DesktopLocalization.format` for interpolation), add the Chinese entry, and ensure the SwiftUI view observes `DesktopLocalization.shared` so an in-app language switch rerenders it. AppKit-only surfaces must refresh on `.chronicleLanguageChanged`.
 - **Composer retries keep one remote operation identity.** A desktop media/file draft owns one UUID until it is saved or discarded. Send that UUID as the media upload `Idempotency-Key`, the Google Drive `chronicleOperationId`, and the `/captures/with-attachment` `operationId`; retries must reuse it. Never restore a create-then-attach flow with compensating soft-delete: file Capture creation, reminder fields, and attachment reference commit atomically, while ambiguous network/5xx outcomes remain retryable. Never auto-delete the Drive operation file after an API error because an earlier ambiguous attempt may already reference it. Desktop file reads must go through a verified regular-file descriptor and an app-owned staged snapshot; direct media is content-sniffed and capped at 20 MB, other files use Drive resumable upload up to 100 MB. Invalidate cached Drive authority on every Chronicle account/origin boundary and retry one 401 only after reauthorization; if that retry is also rejected, invalidate it again.
+- **Headless quick-capture clients share the create contract, not a runtime.** Browser extensions, Shortcuts, and future native entry points use a create-only capture token, HTTPS outside localhost, a client-generated `Idempotency-Key`, and stable first-party `source` values. A queued client must scope its outbox by API origin and token identity, reuse one operation ID across retries, retry only network/429/5xx failures, and surface terminal failures. Do not build a durable offline queue inside Apple Shortcuts; keep that workflow synchronous and visibly fail when the API is unavailable.
 - **Route files are orchestration only.** They may declare data-fetching hooks, layout structure, and event handlers. Target < 250 lines. Any sub-component longer than 60 lines must live in its own file under `web/src/components/`. Any constant or utility used in more than one file must move to `web/src/constants/` or `web/src/utils/` on the second use.
 - **Coding rules are in [`CODING.md`](./CODING.md).** Read it before writing new code.
 

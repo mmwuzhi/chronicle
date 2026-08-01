@@ -47,6 +47,8 @@ services:
       timeout: 5s
       retries: 5
 
+  # Temporary OAuth/WebAuthn cross-release state bridge. New self-host installs
+  # can omit REDIS_URL and use PostgreSQL directly.
   redis:
     image: redis:7-alpine
     ports:

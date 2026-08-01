@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -10,11 +9,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
-
-	awsconfig "github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/credentials"
-	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
 	"github.com/go-chi/chi/v5"
@@ -25,11 +19,13 @@ import (
 
 	db "github.com/sikaoshenmi/chronicle/db/sqlc"
 	"github.com/sikaoshenmi/chronicle/internal/ai"
+	archiveapi "github.com/sikaoshenmi/chronicle/internal/archive"
 	"github.com/sikaoshenmi/chronicle/internal/auth"
 	"github.com/sikaoshenmi/chronicle/internal/capture"
 	"github.com/sikaoshenmi/chronicle/internal/config"
 	"github.com/sikaoshenmi/chronicle/internal/linkfetch"
 	"github.com/sikaoshenmi/chronicle/internal/middleware"
+	"github.com/sikaoshenmi/chronicle/internal/objectstore"
 	"github.com/sikaoshenmi/chronicle/internal/ragclient"
 	"github.com/sikaoshenmi/chronicle/internal/search"
 	"github.com/sikaoshenmi/chronicle/internal/upload"
@@ -58,17 +54,21 @@ func main() {
 	}
 	slog.Info("database connected")
 
-	redisOpt, err := redis.ParseURL(cfg.RedisURL)
-	if err != nil {
-		slog.Error("invalid redis URL", "err", err)
-		os.Exit(1)
+	var legacyRedis *redis.Client
+	if cfg.LegacyRedisURL != "" {
+		redisOptions, err := redis.ParseURL(cfg.LegacyRedisURL)
+		if err != nil {
+			slog.Error("invalid legacy Redis URL", "err", err)
+			os.Exit(1)
+		}
+		legacyRedis = redis.NewClient(redisOptions)
+		defer legacyRedis.Close()
+		if err := legacyRedis.Ping(ctx).Err(); err != nil {
+			slog.Error("legacy auth-state Redis unavailable", "err", err)
+			os.Exit(1)
+		}
+		slog.Info("legacy auth-state bridge enabled")
 	}
-	rdb := redis.NewClient(redisOpt)
-	if err := rdb.Ping(ctx).Err(); err != nil {
-		slog.Error("redis ping failed", "err", err)
-		os.Exit(1)
-	}
-	slog.Info("redis connected")
 
 	r := chi.NewRouter()
 	r.Use(chiMW.Recoverer)
@@ -84,7 +84,7 @@ func main() {
 	}))
 	r.Use(middleware.TraceID)
 	r.Use(middleware.Logger(logger))
-	r.Use(middleware.RateLimit(rdb, 200, time.Minute, middleware.IPKey))
+	r.Use(middleware.RateLimit(200, time.Minute, middleware.IPKey))
 
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -94,7 +94,7 @@ func main() {
 	api := humachi.New(r, huma.DefaultConfig("Chronicle API", "0.1.0"))
 	api.UseMiddleware(auth.InjectHumaContext)
 
-	auth.Register(api, r, pool, rdb, auth.Options{
+	auth.Register(api, r, pool, auth.Options{
 		JWTSecret:          cfg.JWTSecret,
 		ResendAPIKey:       cfg.ResendAPIKey,
 		FrontendURL:        cfg.FrontendURL,
@@ -106,21 +106,22 @@ func main() {
 		TurnstileSecret:    cfg.TurnstileSecret,
 		WebAuthnRPID:       cfg.WebAuthnRPID,
 		WebAuthnRPOrigin:   cfg.WebAuthnRPOrigin,
+		LegacyRedis:        legacyRedis,
 	})
 
-	// Init R2/S3 client if all credentials are present
-	var s3client upload.S3Client
-	if cfg.R2BucketName != "" && cfg.R2AccountID != "" && cfg.R2AccessKey != "" && cfg.R2SecretKey != "" {
-		awsCfg, err := awsconfig.LoadDefaultConfig(ctx,
-			awsconfig.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(cfg.R2AccessKey, cfg.R2SecretKey, "")),
-			awsconfig.WithRegion("auto"),
-		)
-		if err == nil {
-			s3client = s3.NewFromConfig(awsCfg, func(o *s3.Options) {
-				o.BaseEndpoint = aws.String(fmt.Sprintf("https://%s.r2.cloudflarestorage.com", cfg.R2AccountID))
-			})
-			slog.Info("R2 storage configured")
+	storageSettings, storageEnabled, err := cfg.ResolveObjectStorage()
+	if err != nil {
+		slog.Error("invalid object storage config", "err", err)
+		os.Exit(1)
+	}
+	var s3client objectstore.Client
+	if storageEnabled {
+		s3client, err = objectstore.New(ctx, storageSettings)
+		if err != nil {
+			slog.Error("failed to configure object storage", "err", err)
+			os.Exit(1)
 		}
+		slog.Info("object storage configured", "provider", storageSettings.Provider)
 	}
 
 	rag := ragclient.New(cfg.RAGServiceURL)
@@ -133,8 +134,8 @@ func main() {
 	// only POST /captures (see capture.Register), keeping such tokens create-only.
 	captureCreateMW := middleware.RequireAuthHumaCtx(auth.ValidateTokenOrPAT(cfg.JWTSecret, db.New(pool)))
 	uploadConfig := upload.Config{
-		R2BucketName:      cfg.R2BucketName,
-		R2AccountID:       cfg.R2AccountID,
+		BucketName:        storageSettings.Bucket,
+		PublicBaseURL:     storageSettings.PublicBaseURL,
 		OpenAIKey:         cfg.OpenAIKey,
 		OpenAIBaseURL:     cfg.OpenAIBaseURL,
 		OpenAIModel:       cfg.OpenAITranscriptionModel,
@@ -143,7 +144,7 @@ func main() {
 	}
 	kickTranscription := upload.StartTranscriptionWorker(ctx, pool, s3client, uploadConfig, rag)
 	kickLinkFetch := linkfetch.StartLinkFetchWorker(ctx, pool, cfg.LinkFetchEnabled, rag)
-	kickMediaDeletion := capture.StartMediaDeletionWorker(ctx, pool, s3client, cfg.R2BucketName)
+	kickMediaDeletion := capture.StartMediaDeletionWorker(ctx, pool, s3client, storageSettings.Bucket)
 	if cfg.LinkFetchEnabled {
 		slog.Info("link enrichment enabled")
 	}
@@ -158,6 +159,20 @@ func main() {
 	// sidecar; without it a rule is stored but never fires, which the UI surfaces
 	// rather than 404-ing on a route that vanished with the env.
 	webhook.Register(api, pool, rag, authMW)
+	archiveapi.Register(
+		api,
+		r,
+		pool,
+		s3client,
+		archiveapi.Config{
+			BucketName:    storageSettings.Bucket,
+			PublicBaseURL: storageSettings.PublicBaseURL,
+			MaxBytes:      cfg.ArchiveMaxBytes,
+		},
+		rag,
+		authMW,
+		auth.ValidateToken(cfg.JWTSecret),
+	)
 
 	srv := &http.Server{
 		Addr:         ":" + cfg.Port,

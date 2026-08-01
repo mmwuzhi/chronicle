@@ -1,4 +1,9 @@
 import axios, { type AxiosRequestConfig } from "axios";
+import {
+  expireSessionIfCurrent,
+  refreshAccessToken,
+  SessionChangedDuringRefresh,
+} from "@/lib/auth-refresh";
 import { isSameAccessToken } from "@/lib/auth-session";
 
 export const apiClient = axios.create({
@@ -14,10 +19,6 @@ apiClient.interceptors.request.use((config) => {
   }
   return config;
 });
-
-class SessionChangedDuringRefresh extends Error {}
-
-let refreshing: { token: string; promise: Promise<string> } | null = null;
 
 apiClient.interceptors.response.use(
   (res) => res,
@@ -44,48 +45,28 @@ apiClient.interceptors.response.use(
       return Promise.reject(error);
     }
     try {
-      if (!refreshing || refreshing.token !== requestToken) {
-        const startedWith = localStorage.getItem("access_token");
-        const promise = apiClient
-          .post<{ accessToken: string }>("/auth/refresh")
-          .then((r) => {
-            const token = r.data.accessToken;
-            if (
-              !isSameAccessToken(
-                localStorage.getItem("access_token"),
-                startedWith,
-              )
-            ) {
-              throw new SessionChangedDuringRefresh();
-            }
-            localStorage.setItem("access_token", token);
-            return token;
-          })
-          .finally(() => {
-            if (refreshing?.promise === promise) refreshing = null;
-          });
-        refreshing = { token: requestToken, promise };
-      }
-      const token = await refreshing.promise;
-      if (!isSameAccessToken(localStorage.getItem("access_token"), token)) {
-        throw new SessionChangedDuringRefresh();
-      }
+      const token = await refreshAccessToken(requestToken);
       original.headers.Authorization = `Bearer ${token}`;
       return apiClient(original);
     } catch (refreshError) {
       if (refreshError instanceof SessionChangedDuringRefresh) {
         return Promise.reject(error);
       }
-      if (
-        isSameAccessToken(localStorage.getItem("access_token"), requestToken)
-      ) {
-        localStorage.removeItem("access_token");
-        window.location.href = "/login";
-      }
+      expireSessionIfCurrent(requestToken);
       return Promise.reject(error);
     }
   },
 );
 
-export const api = <T>(config: AxiosRequestConfig): Promise<T> =>
-  apiClient(config).then((res) => res.data);
+export const api = <T>(
+  config: AxiosRequestConfig,
+  options?: AxiosRequestConfig,
+): Promise<T> =>
+  apiClient({
+    ...config,
+    ...options,
+    headers: {
+      ...config.headers,
+      ...options?.headers,
+    },
+  }).then((res) => res.data);
