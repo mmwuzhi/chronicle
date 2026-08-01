@@ -40,7 +40,7 @@ func TestCaptureToken_CanCreateCapture(t *testing.T) {
 	resp := do(t, srv.Client(), http.MethodPost, srv.URL+"/captures", capToken, map[string]any{
 		"mediaType": "text",
 		"rawText":   "captured from the iOS action button",
-		"source":    "ios_action_button",
+		"source":    "ios_shortcut_text",
 	})
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("expected 200, got %d", resp.StatusCode)
@@ -54,8 +54,8 @@ func TestCaptureToken_CanCreateCapture(t *testing.T) {
 	if body.ID == "" {
 		t.Fatal("expected non-empty id")
 	}
-	if body.Source != "ios_action_button" {
-		t.Fatalf("expected source 'ios_action_button', got %q", body.Source)
+	if body.Source != "ios_shortcut_text" {
+		t.Fatalf("expected source 'ios_shortcut_text', got %q", body.Source)
 	}
 }
 

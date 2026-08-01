@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Chronicle Quick Capture</title>
+  </head>
+  <body>
+    <main>
+      <div>
+        <h1>Save to Chronicle</h1>
+        <p>Capture now. Find it later.</p>
+      </div>
+      <div class="actions">
+        <button id="save-page" class="primary">Save this page</button>
+        <button id="save-selection">Save selected text</button>
+        <button id="open-settings">Settings</button>
+      </div>
+      <p id="status" aria-live="polite"></p>
+      <div id="queue-actions" class="queue-actions" hidden>
+        <button id="retry-failed">Retry failed</button>
+        <button id="remove-failed">Remove failed</button>
+        <button id="clear-queue" class="danger">Clear entire queue</button>
+      </div>
+    </main>
+    <script type="module" src="/src/popup.ts"></script>
+  </body>
+</html>
