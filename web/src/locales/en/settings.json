@@ -137,6 +137,46 @@
       "importFailed": "The archive could not be imported.",
       "resultTitle": "Import complete",
       "result": "Created {{created}}, skipped {{skipped}}, conflict copies {{forked}}, media {{media}}, links {{links}}, attachments {{attachments}}."
+    },
+    "markdown": {
+      "title": "Import Markdown & text",
+      "description": "Add one Capture per file. YAML frontmatter can restore titles, dates, tags, aliases, source URLs, and todo state.",
+      "formatHint": "Use UTF-8 .md, .markdown, or .txt (1 MiB per note), or a ZIP of up to 5,000 notes and 32 MiB. Folders only resolve links.",
+      "import": "Import files",
+      "importing": "Reading and importing…",
+      "importConfirm": "Import these files as new Captures? This is additive and will not update existing Captures.",
+      "importFailed": "The files could not be imported.",
+      "resultTitle": "Content import complete",
+      "result": "Created {{created}}, skipped {{skipped}}, links {{links}}, frontmatter applied {{frontmatter}}.",
+      "analysis": "Full-text search is ready. Semantic search and Related Captures are processing in the background.",
+      "replayed": "This retry was already completed; the stored result is shown.",
+      "issueFallback": "{{code}}: {{count}}",
+      "undo": "Move this import to Trash",
+      "undoing": "Moving to Trash…",
+      "undone": "Moved to Trash",
+      "undoConfirm": "Move every Capture created by this import to Trash?",
+      "undoFailed": "This import could not be moved to Trash.",
+      "issues": {
+        "unsupported_file": "Unsupported files skipped: {{count}}",
+        "unresolved_local_asset": "Local assets were not imported: {{count}}",
+        "invalid_utf8": "Non-UTF-8 files skipped: {{count}}",
+        "note_too_large": "Oversized notes skipped: {{count}}",
+        "empty_note": "Empty notes skipped: {{count}}",
+        "malformed_frontmatter": "Malformed frontmatter kept as note text: {{count}}",
+        "frontmatter_too_large": "Oversized frontmatter kept as note text: {{count}}",
+        "unsupported_frontmatter": "Unsupported frontmatter kept as note text: {{count}}",
+        "invalid_tag": "Tags that could not be imported: {{count}}",
+        "normalized_tag": "Tags normalized for Chronicle: {{count}}",
+        "invalid_created_time": "Invalid creation dates replaced with import time: {{count}}",
+        "conflicting_created_time": "Conflicting creation dates resolved by field precedence: {{count}}",
+        "invalid_source_url": "Invalid source URLs ignored: {{count}}",
+        "invalid_completed_state": "Invalid todo states ignored: {{count}}",
+        "invalid_frontmatter_field": "Unsupported frontmatter values preserved as text: {{count}}",
+        "frontmatter_value_limit": "Oversized frontmatter lists were limited and preserved: {{count}}",
+        "ignored_frontmatter_fields": "Unrecognized frontmatter fields preserved as text: {{count}}",
+        "ambiguous_link": "Ambiguous note links left unresolved: {{count}}",
+        "unresolved_link": "Missing note links left unresolved: {{count}}"
+      }
     }
   }
 }

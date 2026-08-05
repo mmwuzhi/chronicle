@@ -16,7 +16,7 @@ import (
 const defaultTestDSN = "postgres://chronicle:chronicle@localhost:5432/chronicle_test?sslmode=disable"
 
 // TestCaptureFirstUpgradeFromProductionBaseline exercises the exact release
-// boundary: production is on migration 13, while capture-first adds 14–31.
+// boundary: production is on migration 13, while capture-first adds 14–32.
 // It pins both data conversion and the expand-only compatibility promise.
 func TestCaptureFirstUpgradeFromProductionBaseline(t *testing.T) {
 	dsn := os.Getenv("TEST_DATABASE_URL")
@@ -64,8 +64,8 @@ func TestCaptureFirstUpgradeFromProductionBaseline(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read final migration version: %v", err)
 	}
-	if version != 31 {
-		t.Fatalf("final migration version = %d, want 31", version)
+	if version != 32 {
+		t.Fatalf("final migration version = %d, want 32", version)
 	}
 
 	for _, table := range []string{
@@ -99,6 +99,15 @@ func TestCaptureFirstUpgradeFromProductionBaseline(t *testing.T) {
 	}
 	if !archiveImportsExist {
 		t.Fatal("archive import operations table was not created")
+	}
+	var markdownImportsExist bool
+	if err := db.QueryRow(
+		"SELECT to_regclass('public.markdown_import_operations') IS NOT NULL",
+	).Scan(&markdownImportsExist); err != nil {
+		t.Fatalf("check markdown import operations: %v", err)
+	}
+	if !markdownImportsExist {
+		t.Fatal("markdown import operations table was not created")
 	}
 	for _, table := range []string{"auth_ephemeral_states", "auth_rate_limits"} {
 		var exists bool

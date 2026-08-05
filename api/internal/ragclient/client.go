@@ -115,20 +115,30 @@ func (c *Client) Index(userID, captureID string) {
 	}()
 }
 
-// IndexBatchWithoutWebhooks schedules one bounded, side-effect-free background
-// worker for archive restores. This keeps a large restore from creating one
-// goroutine and HTTP request burst per capture, while ensuring historical
-// Captures do not replay outbound webhook actions.
+// IndexBatchWithoutWebhooks asks the sidecar to enqueue one deduplicated user
+// backfill. The capture IDs are only used to avoid an empty request: the sidecar
+// discovers missing work durably from Postgres, so a restart or a full in-memory
+// queue is healed by its periodic backfill without replaying webhooks.
 func (c *Client) IndexBatchWithoutWebhooks(userID string, captureIDs []string) {
 	if c == nil || len(captureIDs) == 0 {
 		return
 	}
-	ids := append([]string(nil), captureIDs...)
-	go func() {
-		for _, captureID := range ids {
-			c.index(userID, captureID, false)
-		}
-	}()
+	ctx, cancel := context.WithTimeout(context.Background(), invalidateTimeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/backfill-queue", nil)
+	if err != nil {
+		return
+	}
+	req.Header.Set("X-User-Id", userID)
+	resp, err := c.http.Do(req)
+	if err != nil {
+		slog.Warn("rag backfill enqueue failed", "err", err)
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		slog.Warn("rag backfill enqueue non-2xx", "status", resp.StatusCode)
+	}
 }
 
 func (c *Client) index(userID, captureID string, fireWebhooks bool) {

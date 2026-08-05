@@ -48,3 +48,23 @@ func TestParseTodoTag_FirstOccurrenceWins(t *testing.T) {
 		t.Fatalf("got %+v, want %+v", got, want)
 	}
 }
+
+func TestApplyImportedTodoState(t *testing.T) {
+	for _, testCase := range []struct {
+		name string
+		text string
+		done bool
+		want string
+	}{
+		{name: "open appended", text: "buy milk", want: "buy milk\n\n#todo"},
+		{name: "done appended", text: "buy milk", done: true, want: "buy milk\n\n#todo(done)"},
+		{name: "bare upgraded", text: "buy milk #todo", done: true, want: "buy milk #todo(done)"},
+		{name: "text wins over open metadata", text: "buy milk #todo(done)", want: "buy milk #todo(done)"},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			if got := ApplyImportedTodoState(testCase.text, testCase.done); got != testCase.want {
+				t.Fatalf("got %q, want %q", got, testCase.want)
+			}
+		})
+	}
+}

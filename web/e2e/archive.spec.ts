@@ -32,3 +32,41 @@ test("settings exports and merge-imports a complete archive", async ({
     page.getByText(/Created 0, skipped [1-9]\d*, conflict copies 0, media 0,/),
   ).toBeVisible();
 });
+
+test("settings imports Markdown content and can move the batch to Trash", async ({
+  page,
+  isMobile,
+}) => {
+  test.skip(isMobile, "one desktop content-import flow is sufficient");
+
+  await page.goto("/settings", { waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: "Data", exact: true }).click();
+  const markdownFile = {
+    name: "京都-e2e-import.md",
+    mimeType: "text/markdown",
+    buffer: Buffer.from(`---
+title: E2E imported memory
+tags: [portable]
+---
+Remember the vermilion bridge.`),
+  };
+  await page.getByLabel("Import Markdown & text").setInputFiles(markdownFile);
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByRole("button", { name: "Import files" }).click();
+
+  await expect(page.getByText("Content import complete")).toBeVisible({
+    timeout: 30_000,
+  });
+  await expect(page.getByText(/Created 1, skipped 0, links 0/)).toBeVisible();
+
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByRole("button", { name: "Move this import to Trash" }).click();
+  await expect(
+    page.getByRole("button", { name: "Moved to Trash" }),
+  ).toBeDisabled();
+
+  await page.getByLabel("Import Markdown & text").setInputFiles(markdownFile);
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByRole("button", { name: "Import files" }).click();
+  await expect(page.getByText(/Created 1, skipped 0, links 0/)).toBeVisible();
+});

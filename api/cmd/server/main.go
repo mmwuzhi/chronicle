@@ -23,6 +23,7 @@ import (
 	"github.com/sikaoshenmi/chronicle/internal/auth"
 	"github.com/sikaoshenmi/chronicle/internal/capture"
 	"github.com/sikaoshenmi/chronicle/internal/config"
+	"github.com/sikaoshenmi/chronicle/internal/importer"
 	"github.com/sikaoshenmi/chronicle/internal/linkfetch"
 	"github.com/sikaoshenmi/chronicle/internal/middleware"
 	"github.com/sikaoshenmi/chronicle/internal/objectstore"
@@ -77,9 +78,12 @@ func main() {
 		allowedOrigins = append(allowedOrigins, cfg.FrontendURL)
 	}
 	r.Use(cors.Handler(cors.Options{
-		AllowedOrigins:   allowedOrigins,
-		AllowedMethods:   []string{"GET", "POST", "PATCH", "DELETE", "OPTIONS"},
-		AllowedHeaders:   []string{"Authorization", "Content-Type", "Idempotency-Key"},
+		AllowedOrigins: allowedOrigins,
+		AllowedMethods: []string{"GET", "POST", "PATCH", "DELETE", "OPTIONS"},
+		AllowedHeaders: []string{
+			"Authorization", "Content-Type", "Idempotency-Key",
+			"X-Import-Filename", "X-Import-Time-Zone",
+		},
 		AllowCredentials: true,
 	}))
 	r.Use(middleware.TraceID)
@@ -169,6 +173,15 @@ func main() {
 			PublicBaseURL: storageSettings.PublicBaseURL,
 			MaxBytes:      cfg.ArchiveMaxBytes,
 		},
+		rag,
+		authMW,
+		auth.ValidateToken(cfg.JWTSecret),
+	)
+	importer.Register(
+		api,
+		r,
+		pool,
+		importer.Config{MaxBytes: cfg.ArchiveMaxBytes},
 		rag,
 		authMW,
 		auth.ValidateToken(cfg.JWTSecret),
