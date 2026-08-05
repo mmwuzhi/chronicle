@@ -396,6 +396,35 @@ export interface MFAVerifyOutputBody {
   accessToken: string;
 }
 
+export interface MarkdownImportIssue {
+  code: string;
+  count: number;
+  /** @nullable */
+  examples: string[] | null;
+}
+
+export interface MarkdownImportResult {
+  /** A URL to the JSON Schema for this object. */
+  readonly $schema?: string;
+  analysisQueued: boolean;
+  created: number;
+  /** @nullable */
+  createdCaptureIds: string[] | null;
+  frontmatterApplied: number;
+  /** @nullable */
+  issues: MarkdownImportIssue[] | null;
+  links: number;
+  operationId: string;
+  replayed: boolean;
+  skipped: number;
+}
+
+export interface MarkdownImportUndoResult {
+  /** A URL to the JSON Schema for this object. */
+  readonly $schema?: string;
+  trashed: number;
+}
+
 export interface OAuthAccountInfo {
   id: string;
   provider: string;
@@ -834,7 +863,7 @@ export const getExportArchiveQueryKey = () => {
     }
 
 
-export const getExportArchiveQueryOptions = <TData = Awaited<ReturnType<typeof exportArchive>>, TError = ErrorModel>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof exportArchive>>, TError, TData>>, request?: SecondParameter<typeof api>}
+export const getExportArchiveQueryOptions = <TData = Awaited<ReturnType<typeof exportArchive>>, TError = unknown>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof exportArchive>>, TError, TData>>, request?: SecondParameter<typeof api>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
@@ -853,10 +882,10 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 }
 
 export type ExportArchiveQueryResult = NonNullable<Awaited<ReturnType<typeof exportArchive>>>
-export type ExportArchiveQueryError = ErrorModel
+export type ExportArchiveQueryError = unknown
 
 
-export function useExportArchive<TData = Awaited<ReturnType<typeof exportArchive>>, TError = ErrorModel>(
+export function useExportArchive<TData = Awaited<ReturnType<typeof exportArchive>>, TError = unknown>(
   options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof exportArchive>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof exportArchive>>,
@@ -866,7 +895,7 @@ export function useExportArchive<TData = Awaited<ReturnType<typeof exportArchive
       >, request?: SecondParameter<typeof api>}
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useExportArchive<TData = Awaited<ReturnType<typeof exportArchive>>, TError = ErrorModel>(
+export function useExportArchive<TData = Awaited<ReturnType<typeof exportArchive>>, TError = unknown>(
   options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof exportArchive>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof exportArchive>>,
@@ -876,7 +905,7 @@ export function useExportArchive<TData = Awaited<ReturnType<typeof exportArchive
       >, request?: SecondParameter<typeof api>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useExportArchive<TData = Awaited<ReturnType<typeof exportArchive>>, TError = ErrorModel>(
+export function useExportArchive<TData = Awaited<ReturnType<typeof exportArchive>>, TError = unknown>(
   options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof exportArchive>>, TError, TData>>, request?: SecondParameter<typeof api>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
@@ -884,7 +913,7 @@ export function useExportArchive<TData = Awaited<ReturnType<typeof exportArchive
  * @summary Export a complete Chronicle archive
  */
 
-export function useExportArchive<TData = Awaited<ReturnType<typeof exportArchive>>, TError = ErrorModel>(
+export function useExportArchive<TData = Awaited<ReturnType<typeof exportArchive>>, TError = unknown>(
   options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof exportArchive>>, TError, TData>>, request?: SecondParameter<typeof api>}
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
@@ -4134,6 +4163,132 @@ export function useFind<TData = Awaited<ReturnType<typeof find>>, TError = Error
 
 
 
+
+/**
+ * @summary Import Markdown or text files as Captures
+ */
+export const importMarkdown = (
+    importMarkdownBody: Blob,
+ options?: SecondParameter<typeof api>,signal?: AbortSignal
+) => {
+
+
+      return api<MarkdownImportResult>(
+      {url: `/imports/markdown`, method: 'POST',
+      headers: {'Content-Type': 'application/octet-stream', },
+      data: importMarkdownBody, signal
+    },
+      options);
+    }
+
+
+
+export const getImportMarkdownMutationOptions = <TError = unknown,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof importMarkdown>>, TError,{data: Blob}, TContext>, request?: SecondParameter<typeof api>}
+): UseMutationOptions<Awaited<ReturnType<typeof importMarkdown>>, TError,{data: Blob}, TContext> => {
+
+const mutationKey = ['importMarkdown'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof importMarkdown>>, {data: Blob}> = (props) => {
+          const {data} = props ?? {};
+
+          return  importMarkdown(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ImportMarkdownMutationResult = NonNullable<Awaited<ReturnType<typeof importMarkdown>>>
+    export type ImportMarkdownMutationBody = Blob
+    export type ImportMarkdownMutationError = unknown
+
+    /**
+ * @summary Import Markdown or text files as Captures
+ */
+export const useImportMarkdown = <TError = unknown,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof importMarkdown>>, TError,{data: Blob}, TContext>, request?: SecondParameter<typeof api>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof importMarkdown>>,
+        TError,
+        {data: Blob},
+        TContext
+      > => {
+      return useMutation(getImportMarkdownMutationOptions(options), queryClient);
+    }
+
+/**
+ * @summary Move Captures from a Markdown import to Trash
+ */
+export const undoMarkdownImport = (
+    operationId: string,
+ options?: SecondParameter<typeof api>,signal?: AbortSignal
+) => {
+
+
+      return api<MarkdownImportUndoResult>(
+      {url: `/imports/markdown/${operationId}/undo`, method: 'POST', signal
+    },
+      options);
+    }
+
+
+
+export const getUndoMarkdownImportMutationOptions = <TError = ErrorModel,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof undoMarkdownImport>>, TError,{operationId: string}, TContext>, request?: SecondParameter<typeof api>}
+): UseMutationOptions<Awaited<ReturnType<typeof undoMarkdownImport>>, TError,{operationId: string}, TContext> => {
+
+const mutationKey = ['undoMarkdownImport'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof undoMarkdownImport>>, {operationId: string}> = (props) => {
+          const {operationId} = props ?? {};
+
+          return  undoMarkdownImport(operationId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UndoMarkdownImportMutationResult = NonNullable<Awaited<ReturnType<typeof undoMarkdownImport>>>
+
+    export type UndoMarkdownImportMutationError = ErrorModel
+
+    /**
+ * @summary Move Captures from a Markdown import to Trash
+ */
+export const useUndoMarkdownImport = <TError = ErrorModel,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof undoMarkdownImport>>, TError,{operationId: string}, TContext>, request?: SecondParameter<typeof api>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof undoMarkdownImport>>,
+        TError,
+        {operationId: string},
+        TContext
+      > => {
+      return useMutation(getUndoMarkdownImportMutationOptions(options), queryClient);
+    }
 
 /**
  * @summary List reminders that have come due

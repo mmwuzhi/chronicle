@@ -387,7 +387,7 @@ jobs:
         run: |
           version="$(goose -dir db/migrations postgres "$DATABASE_URL" version 2>&1 | awk '{print $NF}')"
           case "$version" in
-            13|1[4-9]|2[0-9]|3[01]) ;;
+            13|1[4-9]|2[0-9]|3[0-2]) ;;
             *) echo "Unexpected production schema version: $version"; exit 1 ;;
           esac
           echo "schema_version=$version" >> "$GITHUB_OUTPUT"
@@ -513,16 +513,16 @@ jobs:
         run: |
           version="$(goose -dir db/migrations postgres "$DATABASE_URL" version 2>&1 | awk '{print $NF}')"
 
-          # Migrations 14–31 are expand-only and covered by the production
+          # Migrations 14–32 are expand-only and covered by the production
           # compatibility test, so the previous API remains the safest
           # recovery target even after a forward migration.
-          if [ "$version" != "${{ steps.preflight.outputs.schema_version }}" ] && [ "$version" != "31" ]; then
+          if [ "$version" != "${{ steps.preflight.outputs.schema_version }}" ] && [ "$version" != "32" ]; then
             goose -dir db/migrations postgres "$DATABASE_URL" up || true
             version="$(goose -dir db/migrations postgres "$DATABASE_URL" version 2>&1 | awk '{print $NF}')"
           fi
 
           case "$version" in
-            13|1[4-9]|2[0-9]|3[01])
+            13|1[4-9]|2[0-9]|3[0-2])
             echo "api_image=${{ steps.preflight.outputs.previous_api_image }}" >> "$GITHUB_OUTPUT"
             echo "pages_mode=previous" >> "$GITHUB_OUTPUT"
               ;;

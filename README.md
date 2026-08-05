@@ -76,6 +76,22 @@ checksums, and Chronicle-managed media. Import validates the whole archive
 first, never overwrites an existing Capture, and creates a stable conflict copy
 when UUID content differs.
 
+The same screen also supports additive content import from one `.md`,
+`.markdown`, or `.txt` file, or a ZIP containing up to 5,000 notes and 10,000
+total entries (32 MiB compressed and expanded). Text must be UTF-8 and each note
+must be at most 1 MiB. Each file becomes one Capture. YAML frontmatter can
+supply `title`, `createdAt`/`created_at`/
+`created`, `tags`, `aliases`, `source_url`/`source`, and `completed`/
+`completed?`; explicit Markdown and wiki links between imported notes become
+Capture links. Unsupported frontmatter is reported and preserved in the
+Capture instead of being discarded. Full-text search is available when the
+import commits, while semantic analysis continues in the bounded background
+backfill queue. Network retries reuse the same operation identity; choosing the
+file again starts a new additive import. The result can be undone by moving the
+Captures created by that import to Trash. Local assets are reported but are not
+imported in this version. Protective limits reject more than 20,000 note-link
+references or 10,000 resolved Capture links in one batch.
+
 ## Browser extension
 
 The Manifest V3 Chrome/Edge extension saves the current page or selected text

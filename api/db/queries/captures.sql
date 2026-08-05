@@ -302,6 +302,10 @@ SET transcription_status = 'pending',
     next_transcription_at = now()
 WHERE media_key IS NULL
   AND deleted_at IS NULL
+  -- Bulk content imports intentionally skip automatic external fan-out. A
+  -- later user edit still goes through reconcileLinkFetch and may enqueue the
+  -- single Capture normally.
+  AND source <> 'markdown_import'
   AND transcript IS NULL
   AND transcription_status = 'none'
   AND raw_text ~* 'https?://';

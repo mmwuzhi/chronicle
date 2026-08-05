@@ -137,6 +137,46 @@
       "importFailed": "アーカイブを読み込めませんでした。",
       "resultTitle": "読み込み完了",
       "result": "作成 {{created}}、スキップ {{skipped}}、競合コピー {{forked}}、メディア {{media}}、リンク {{links}}、添付参照 {{attachments}}。"
+    },
+    "markdown": {
+      "title": "Markdown とテキストを読み込む",
+      "description": "1 ファイルにつき 1 件の Capture を追加します。YAML frontmatter からタイトル、日時、タグ、別名、URL、TODO 状態を復元します。",
+      "formatHint": "UTF-8 の .md、.markdown、.txt（1 件 1 MiB）、または最大 5,000 件・32 MiB の ZIP を選択してください。フォルダはリンク解決専用です。",
+      "import": "ファイルを読み込む",
+      "importing": "読み込み中…",
+      "importConfirm": "これらを新しい Capture として追加しますか？既存の Capture は更新されません。",
+      "importFailed": "ファイルを読み込めませんでした。",
+      "resultTitle": "コンテンツの読み込み完了",
+      "result": "作成 {{created}}、スキップ {{skipped}}、リンク {{links}}、frontmatter 適用 {{frontmatter}}。",
+      "analysis": "全文検索は利用できます。セマンティック検索と Related Captures はバックグラウンドで処理中です。",
+      "replayed": "この再試行は完了済みのため、保存された結果を表示しています。",
+      "issueFallback": "{{code}}: {{count}}",
+      "undo": "この読み込みをゴミ箱へ移動",
+      "undoing": "ゴミ箱へ移動中…",
+      "undone": "ゴミ箱へ移動しました",
+      "undoConfirm": "この読み込みで作成した Capture をすべてゴミ箱へ移動しますか？",
+      "undoFailed": "読み込みをゴミ箱へ移動できませんでした。",
+      "issues": {
+        "unsupported_file": "未対応ファイルをスキップ：{{count}}",
+        "unresolved_local_asset": "ローカル添付を読み込めませんでした：{{count}}",
+        "invalid_utf8": "UTF-8 ではないファイルをスキップ：{{count}}",
+        "note_too_large": "サイズ超過のノートをスキップ：{{count}}",
+        "empty_note": "空のノートをスキップ：{{count}}",
+        "malformed_frontmatter": "不正な frontmatter を本文として保持：{{count}}",
+        "frontmatter_too_large": "大きすぎる frontmatter を本文として保持：{{count}}",
+        "unsupported_frontmatter": "未対応の frontmatter を本文として保持：{{count}}",
+        "invalid_tag": "読み込めないタグ：{{count}}",
+        "normalized_tag": "Chronicle 用に正規化したタグ：{{count}}",
+        "invalid_created_time": "不正な作成日時を読み込み日時に置換：{{count}}",
+        "conflicting_created_time": "競合する作成日時を優先順位で解決：{{count}}",
+        "invalid_source_url": "不正なソース URL を無視：{{count}}",
+        "invalid_completed_state": "不正な TODO 状態を無視：{{count}}",
+        "invalid_frontmatter_field": "未対応の frontmatter 値を本文として保持：{{count}}",
+        "frontmatter_value_limit": "大きすぎる frontmatter リストを制限し原文を保持：{{count}}",
+        "ignored_frontmatter_fields": "未認識の frontmatter フィールドを本文として保持：{{count}}",
+        "ambiguous_link": "曖昧なノートリンクを未解決のまま保持：{{count}}",
+        "unresolved_link": "見つからないノートリンクを未解決のまま保持：{{count}}"
+      }
     }
   }
 }

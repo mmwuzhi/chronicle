@@ -40,6 +40,12 @@ visible from any single file. Setup and commands live in the root `Justfile`.
   page's readable text in `transcript`. Structural twin of the transcription
   worker; shares the `transcription_status` queue, partitioned by
   `media_key IS NULL`. Gated by `LINK_FETCH_ENABLED`; no external API key.
+- `internal/archive` — lossless Chronicle archive export/restore, including
+  media and derived state. `internal/importer` — additive `.md`/`.txt`/ZIP
+  content import: safe YAML frontmatter parsing, explicit note-link recovery,
+  idempotent batch records, and Trash-based undo. These are distinct product
+  contracts; content import must not pretend an external note is a Chronicle
+  backup.
 - `internal/ai` — `POST /ai/polish`: optional LLM text enrichment.
 - `internal/user` — `/users/me`: profile, password change, linked OAuth
   account management.

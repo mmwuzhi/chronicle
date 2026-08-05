@@ -2,6 +2,7 @@ package capture
 
 import (
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -63,6 +64,32 @@ func doneDateStamp(d string) pgtype.Timestamptz {
 // grammar itself stays private to this package.
 func DeriveTodoStamps(text string, now time.Time) (todoAt, doneAt pgtype.Timestamptz) {
 	return createTodoStamps(parseTodoTag(text), now)
+}
+
+// ApplyImportedTodoState translates an external note's explicit todo state
+// into Chronicle's one source of truth: the #todo token in raw text. Existing
+// text wins over incomplete metadata, except that a completed external todo may
+// upgrade a bare #todo token to #todo(done).
+func ApplyImportedTodoState(text string, done bool) string {
+	tag := parseTodoTag(text)
+	if !tag.present {
+		token := "#todo"
+		if done {
+			token = "#todo(done)"
+		}
+		if strings.TrimSpace(text) == "" {
+			return token
+		}
+		return strings.TrimRight(text, " \t\r\n") + "\n\n" + token
+	}
+	if !done || tag.done {
+		return text
+	}
+	indices := todoTagRe.FindStringSubmatchIndex(text)
+	if len(indices) < 4 || indices[2] < 0 {
+		return text
+	}
+	return text[:indices[2]] + "#todo(done)" + text[indices[3]:]
 }
 
 // createTodoStamps derives a fresh capture's todo_at/done_at from its parsed

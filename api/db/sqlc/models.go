@@ -490,6 +490,21 @@ type LogEntry struct {
 	TimeBlockID pgtype.UUID        `json:"time_block_id"`
 }
 
+type MarkdownImportOperation struct {
+	ID                uuid.UUID          `json:"id"`
+	UserID            uuid.UUID          `json:"user_id"`
+	InputHash         string             `json:"input_hash"`
+	ClaimToken        uuid.UUID          `json:"claim_token"`
+	Status            string             `json:"status"`
+	LeaseUntil        pgtype.Timestamptz `json:"lease_until"`
+	Result            []byte             `json:"result"`
+	CreatedCaptureIds []uuid.UUID        `json:"created_capture_ids"`
+	LastError         pgtype.Text        `json:"last_error"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	CompletedAt       pgtype.Timestamptz `json:"completed_at"`
+	UndoneAt          pgtype.Timestamptz `json:"undone_at"`
+}
+
 type OauthAccount struct {
 	ID         uuid.UUID          `json:"id"`
 	UserID     uuid.UUID          `json:"user_id"`

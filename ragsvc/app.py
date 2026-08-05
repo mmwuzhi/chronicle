@@ -9,6 +9,7 @@ Endpoints:
   GET  /health                 liveness
   POST /warmup                 preheat reranker + embedding (fire-and-forget)
   POST /index   {capture_id}   embed + extract one capture (called by Go on write)
+  POST /backfill-queue         enqueue one deduplicated user repair pass
   GET  /find?q=&limit=         hybrid search → ranked captures
   POST /ask     {question}     query-time cluster analysis → {answer, sources}
   POST /backfill               index/extract everything missing (one user, or all)
@@ -18,6 +19,7 @@ Endpoints:
 from __future__ import annotations
 
 import os
+import queue
 import sys
 import threading
 import time
@@ -35,7 +37,12 @@ import webhook
 
 app = FastAPI(title="Chronicle RAG sidecar", version="0.1.0")
 _BACKFILL_INTERVAL = int(os.getenv("BACKFILL_INTERVAL_SECONDS", "900"))
+_BACKFILL_CHUNK_SIZE = 50
 _backfill_lock = threading.Lock()
+_backfill_queue: queue.Queue[str] = queue.Queue(maxsize=64)
+_backfill_states: dict[str, str] = {}
+_backfill_dirty: set[str] = set()
+_backfill_pending_lock = threading.Lock()
 
 
 def _index_one(capture_id: str, user_id: str, fire_webhooks: bool = True) -> None:
@@ -167,19 +174,110 @@ def backfill(user_id: str | None = Header(default=None, alias="X-User-Id")) -> d
                 "extracted": extracted, "cleared": cleared, "failures": failures}
 
 
+@app.post("/backfill-queue", status_code=202)
+def queue_backfill(user_id: str = Header(..., alias="X-User-Id")) -> dict[str, str]:
+    """Queue one bounded, deduplicated repair pass for a user.
+
+    Imported captures are discovered from Postgres rather than carried in the
+    in-memory job, and the periodic all-user pass remains the durable fallback.
+    """
+    with _backfill_pending_lock:
+        state = _backfill_states.get(user_id)
+        if state == "queued":
+            return {"status": "already_queued"}
+        if state == "running":
+            _backfill_dirty.add(user_id)
+            return {"status": "queued_again"}
+        _backfill_states[user_id] = "queued"
+        try:
+            _backfill_queue.put_nowait(user_id)
+        except queue.Full:
+            _backfill_states.pop(user_id, None)
+            return {"status": "periodic"}
+    return {"status": "queued"}
+
+
+def _backfill_user_chunk(user_id: str, limit: int = _BACKFILL_CHUNK_SIZE) -> bool:
+    """Process a fair slice of one user's repair work.
+
+    Returns whether the snapshot contained more work than this slice. Failures
+    are left for the periodic repair pass instead of causing a tight retry loop.
+    """
+    with _backfill_lock:
+        index_targets = rag.needs_index(user_id)
+        extract_targets = rag.needs_extract(user_id, extract.EXTRACT_V)
+        orphaned_targets = rag.orphaned_derived(user_id)
+        has_more = any(len(items) > limit for items in (
+            index_targets, extract_targets, orphaned_targets
+        ))
+        for capture_id in index_targets[:limit]:
+            try:
+                rag.index_capture(capture_id, user_id)
+            except Exception as error:
+                print(f"[backfill] embed {capture_id} failed: {error}", file=sys.stderr)
+        for row in extract_targets[:limit]:
+            try:
+                content = row["content"]
+                if content.strip():
+                    rag.update_metadata(
+                        row["id"], user_id, extract.extract(content), content
+                    )
+            except Exception as error:
+                print(f"[backfill] extract {row.get('id')} failed: {error}", file=sys.stderr)
+        for capture_id in orphaned_targets[:limit]:
+            try:
+                rag.clear_derived(capture_id)
+            except Exception as error:
+                print(f"[backfill] clear {capture_id} failed: {error}", file=sys.stderr)
+        rag.invalidate_corpus(user_id)
+        return has_more
+
+
+def _run_one_backfill_job() -> None:
+    user_id = _backfill_queue.get()
+    has_more = False
+    try:
+        with _backfill_pending_lock:
+            _backfill_states[user_id] = "running"
+        has_more = _backfill_user_chunk(user_id)
+    finally:
+        with _backfill_pending_lock:
+            should_requeue = has_more or user_id in _backfill_dirty
+            _backfill_dirty.discard(user_id)
+            if should_requeue:
+                try:
+                    _backfill_queue.put_nowait(user_id)
+                    _backfill_states[user_id] = "queued"
+                except queue.Full:
+                    _backfill_states.pop(user_id, None)
+            else:
+                _backfill_states.pop(user_id, None)
+        _backfill_queue.task_done()
+
+
+def _queued_backfill_worker() -> None:
+    while True:
+        try:
+            _run_one_backfill_job()
+        except Exception as error:
+            print(f"[backfill] queued run failed: {error}", file=sys.stderr)
+
+
 def _periodic_backfill() -> None:
     if _BACKFILL_INTERVAL <= 0:
         return
     while True:
         time.sleep(_BACKFILL_INTERVAL)
         try:
-            backfill(None)
+            for user_id in rag.all_user_ids():
+                queue_backfill(user_id=user_id)
         except Exception as error:
             print(f"[backfill] periodic run failed: {error}", file=sys.stderr)
 
 
 @app.on_event("startup")
 def start_repair_workers() -> None:
+    threading.Thread(target=_queued_backfill_worker, daemon=True).start()
     threading.Thread(target=_periodic_backfill, daemon=True).start()
 
 

@@ -7,6 +7,7 @@ import { Card } from "@/components/ui/card";
 import { FieldError, FieldLabel, Input } from "@/components/ui/field";
 import { Meta } from "@/components/ui/page";
 import { apiFetch } from "@/lib/apiFetch";
+import { MarkdownImportSection } from "@/components/settings/MarkdownImportSection";
 
 const maxBufferedArchiveBytes = 256 * 1024 * 1024;
 
@@ -188,6 +189,8 @@ export function DataPortabilitySection(): React.JSX.Element {
             <FieldError>{t("data.archive.exportFailed")}</FieldError>
           )}
         </div>
+
+        <MarkdownImportSection />
 
         <div className="flex flex-col gap-2 border-t border-hairline pt-4">
           <FieldLabel htmlFor="archive-file">

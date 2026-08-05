@@ -137,6 +137,46 @@
       "importFailed": "无法导入此归档。",
       "resultTitle": "导入完成",
       "result": "新建 {{created}}，跳过 {{skipped}}，冲突副本 {{forked}}，媒体 {{media}}，关联 {{links}}，附件引用 {{attachments}}。"
+    },
+    "markdown": {
+      "title": "导入 Markdown 与文本",
+      "description": "每个文件创建一个 Capture。YAML frontmatter 可恢复标题、时间、标签、别名、来源网址和待办状态。",
+      "formatHint": "使用 UTF-8 的 .md、.markdown、.txt（单篇 1 MiB），或最多 5,000 篇、32 MiB 的 ZIP；目录只用于解析关联。",
+      "import": "导入文件",
+      "importing": "正在读取并导入…",
+      "importConfirm": "要把这些文件作为新 Capture 导入吗？此操作只会追加，不会更新现有 Capture。",
+      "importFailed": "无法导入这些文件。",
+      "resultTitle": "内容导入完成",
+      "result": "新建 {{created}}，跳过 {{skipped}}，关联 {{links}}，应用 frontmatter {{frontmatter}}。",
+      "analysis": "全文搜索已可用；语义搜索与 Related Captures 正在后台生成。",
+      "replayed": "这次重试此前已经完成，当前显示的是已保存结果。",
+      "issueFallback": "{{code}}：{{count}}",
+      "undo": "把本次导入移到废纸篓",
+      "undoing": "正在移到废纸篓…",
+      "undone": "已移到废纸篓",
+      "undoConfirm": "要把本次导入创建的所有 Capture 移到废纸篓吗？",
+      "undoFailed": "无法撤销本次导入。",
+      "issues": {
+        "unsupported_file": "已跳过不支持的文件：{{count}}",
+        "unresolved_local_asset": "未导入的本地附件：{{count}}",
+        "invalid_utf8": "已跳过非 UTF-8 文件：{{count}}",
+        "note_too_large": "已跳过过大的笔记：{{count}}",
+        "empty_note": "已跳过空笔记：{{count}}",
+        "malformed_frontmatter": "格式错误的 frontmatter 已作为正文保留：{{count}}",
+        "frontmatter_too_large": "过大的 frontmatter 已作为正文保留：{{count}}",
+        "unsupported_frontmatter": "不支持的 frontmatter 已作为正文保留：{{count}}",
+        "invalid_tag": "无法导入的标签：{{count}}",
+        "normalized_tag": "已为 Chronicle 规范化的标签：{{count}}",
+        "invalid_created_time": "无效创建时间已改用导入时间：{{count}}",
+        "conflicting_created_time": "冲突创建时间已按字段优先级处理：{{count}}",
+        "invalid_source_url": "已忽略无效来源网址：{{count}}",
+        "invalid_completed_state": "已忽略无效待办状态：{{count}}",
+        "invalid_frontmatter_field": "不支持的 frontmatter 值已作为正文保留：{{count}}",
+        "frontmatter_value_limit": "过长的 frontmatter 列表已限制并保留原文：{{count}}",
+        "ignored_frontmatter_fields": "未识别的 frontmatter 字段已作为正文保留：{{count}}",
+        "ambiguous_link": "无法确定目标的笔记关联：{{count}}",
+        "unresolved_link": "找不到目标的笔记关联：{{count}}"
+      }
     }
   }
 }

@@ -102,6 +102,87 @@ def test_invalidate_endpoint_drops_only_requested_user(monkeypatch):
     assert seen == ["user-123"]
 
 
+def test_backfill_queue_is_bounded_and_deduplicated(monkeypatch):
+    import queue
+
+    seen = []
+    monkeypatch.setattr(app, "_backfill_queue", queue.Queue(maxsize=1))
+    monkeypatch.setattr(app, "_backfill_states", {})
+    monkeypatch.setattr(app, "_backfill_dirty", set())
+    monkeypatch.setattr(
+        app, "_backfill_user_chunk",
+        lambda user_id: seen.append(user_id) or False,
+    )
+
+    first = app.queue_backfill(user_id="user-123")
+    duplicate = app.queue_backfill(user_id="user-123")
+    overflow = app.queue_backfill(user_id="user-456")
+    app._run_one_backfill_job()
+
+    assert first == {"status": "queued"}
+    assert duplicate == {"status": "already_queued"}
+    assert overflow == {"status": "periodic"}
+    assert seen == ["user-123"]
+
+
+def test_backfill_queue_requeues_dirty_running_user(monkeypatch):
+    import queue
+
+    monkeypatch.setattr(app, "_backfill_queue", queue.Queue(maxsize=2))
+    monkeypatch.setattr(app, "_backfill_states", {})
+    monkeypatch.setattr(app, "_backfill_dirty", set())
+    statuses = []
+
+    def first_chunk(user_id):
+        statuses.append(app.queue_backfill(user_id=user_id))
+        return False
+
+    monkeypatch.setattr(app, "_backfill_user_chunk", first_chunk)
+    assert app.queue_backfill(user_id="user-123") == {"status": "queued"}
+    app._run_one_backfill_job()
+
+    assert statuses == [{"status": "queued_again"}]
+    assert app._backfill_states == {"user-123": "queued"}
+
+
+def test_backfill_queue_requeues_large_user_behind_other_users(monkeypatch):
+    import queue
+
+    monkeypatch.setattr(app, "_backfill_queue", queue.Queue(maxsize=3))
+    monkeypatch.setattr(app, "_backfill_states", {})
+    monkeypatch.setattr(app, "_backfill_dirty", set())
+    monkeypatch.setattr(app, "_backfill_user_chunk", lambda user_id: user_id == "large")
+    app.queue_backfill(user_id="large")
+    app.queue_backfill(user_id="small")
+
+    app._run_one_backfill_job()
+
+    assert app._backfill_queue.get_nowait() == "small"
+    assert app._backfill_queue.get_nowait() == "large"
+
+
+def test_backfill_queue_cleans_state_after_chunk_failure(monkeypatch):
+    import queue
+
+    monkeypatch.setattr(app, "_backfill_queue", queue.Queue(maxsize=2))
+    monkeypatch.setattr(app, "_backfill_states", {})
+    monkeypatch.setattr(app, "_backfill_dirty", set())
+    monkeypatch.setattr(
+        app, "_backfill_user_chunk",
+        lambda _user_id: (_ for _ in ()).throw(RuntimeError("temporary")),
+    )
+    app.queue_backfill(user_id="user-123")
+
+    try:
+        app._run_one_backfill_job()
+    except RuntimeError:
+        pass
+    else:
+        raise AssertionError("chunk failure did not propagate to worker guard")
+
+    assert app._backfill_states == {}
+
+
 def test_backfill_continues_after_one_capture_fails(monkeypatch):
     attempted = []
 
