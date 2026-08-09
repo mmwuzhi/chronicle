@@ -1,101 +1,102 @@
-# Chronicle Desktop — agent notes
+# Chronicle Desktop
 
-Read the root `CLAUDE.md` first. `README.md` here covers the user-facing
-behavior (controls, search layers, offline queue). This file records the
-target split, the invariants, and the gotchas.
+The macOS app has a platform-free Core target and an AppKit/SwiftUI shell.
+`README.md` describes user-facing behavior; this file records architectural
+boundaries that span source files.
 
-## Two targets — where code goes
+## Target map
 
-- `Sources/ChronicleDesktopCore/` — platform-free logic, unit-tested by
-  `Tests/ChronicleDesktopCoreTests/`. Capture payload + API client
-  (`Capture.swift`), auth + token refresh (`Auth.swift`,
-  `AuthedTransport.swift`), offline sync orchestration
-  (`CaptureSyncCoordinator.swift`), legacy queue (`CaptureQueue.swift`), local
-  SQLite store (`LocalCaptureStore.swift`), on-device semantic search
-  (`LocalEmbedder.swift`, `LocalSemanticSearch.swift` — local Ollama
-  `bge-m3`), server recall client (`Recall.swift` — `/find` + `/ask`),
-  reminders (`Reminder.swift`), webhooks (`Webhook.swift`), hotkey model
-  (`HotKey.swift`, `DoubleTapDetector.swift`), row merge/sort
-  (`RowMerge.swift`), todo grammar/display derivation (`TodoTag.swift`),
-  pure layout/focus math (`PanelLayout.swift`,
-  `QuickPanelFocusState.swift`), paths (`Paths.swift`).
-- `Sources/ChronicleDesktop/` — AppKit/SwiftUI shell: menu bar
-  (`AppDelegate`), quick panel (`QuickCapturePanelController`,
-  `PanelContentView`), main window (`MainView` — browse/search/ask shell,
-  with chrome in `MainWindowChrome.swift` and the trash pane in
-  `MainTrashPane.swift`), detail view, pinned stickies (`PinnedSticky*`),
-  settings, hotkey wiring, reminder notifications, E2E hooks
-  (`E2ERunner`).
+- `Sources/ChronicleDesktopCore/`: payloads and API clients (`Capture`,
+  `CaptureMedia`, `CaptureShare`, `Recall`, `Reminder`, `Webhook`), authenticated
+  transport/session state (`APIEndpoint`, `Auth`, `AuthedTransport`,
+  `SessionMonitor`, `UserIdentity`), offline persistence/sync (`LocalCaptureStore`,
+  `CaptureQueue`, `CaptureSyncCoordinator`, `CaptureSyncGate`), safe file and
+  Drive transport (`SecureCaptureFile`, `GoogleDrive`), local semantic search,
+  todo grammar, row merge/sort, path, hotkey, focus, and layout logic
+- `Sources/ChronicleDesktop/`: AppKit/SwiftUI wiring for the menu bar, quick panel,
+  browse/search/ask window, Capture detail, review and Trash panes, media/file
+  UI, Google Drive authorization, share sheet, Shared Copies settings, pinned
+  stickies, reminders, localization, settings, and E2E hooks
+- `Tests/ChronicleDesktopCoreTests/`: platform-free unit tests
+- `Tests/ChronicleDesktopE2ETests/`: real-app and UI-facing behavior tests
 
-**Rule:** if a function doesn't touch AppKit/SwiftUI, it belongs in Core,
-where it can be unit-tested. The app target is UI and wiring only.
+If logic does not touch AppKit or SwiftUI, it belongs in Core so it is testable.
 
-## Local store = queue + cache
+## Local data and synchronization
 
-`LocalCaptureStore` (SQLite at
-`~/Library/Application Support/Chronicle/chronicle-local.sqlite3`) plays two
-roles: rows without a `server_id` are the offline retry queue; all rows form
-the corpus for offline browse and search. Legacy `classified_as` column is
-still in the schema (constant `'unclassified'`, skipped on read) — drop it
-only when the cache schema next changes for another reason (`TODO.md`).
+- `LocalCaptureStore` is both the offline retry queue and local browse/search
+  cache. Rows without `server_id` are pending remote creation. The legacy
+  `classified_as` cache column is compatibility-only and ignored on read. Drop
+  it only when another cache-schema change already requires a migration.
+- Older offline payloads must replay against a newer API. Preserve the previous
+  create shape for at least one release when changing it.
+- Remote writes for one local Capture are serialized through
+  `CaptureSyncCoordinator`: deduplicate create POSTs, coalesce drains, and
+  re-read dirty state after each PATCH so in-flight edits become the next
+  revision.
+- Server/auth failure never blanks already displayed local results. Ambiguous
+  save failures remain queued and retryable.
+- Keyword, local Ollama semantic, and server `/find` layers are independent and
+  merged only by Capture ID. Never compare scores across vector spaces. Merge a
+  server evidence snippet into a matching local row without replacing editable
+  local text.
 
-## Invariants
+## Credential and file boundaries
 
-- **Offline queue payloads replay against a newer API after updates.** When
-  the create payload changes, the API must keep accepting the previous shape
-  for at least one release (this is why the API still accepts the deprecated
-  `classifiedAs` field).
-- **Search layers are independent, merged by capture id.** Keyword substring
-  (local), on-device semantic (local Ollama), and server `/find` never
-  depend on each other; local and server embeddings are different vector
-  spaces — dedup by id only, never compare scores across layers. When a later
-  server result duplicates a local row, merge its evidence snippet into the
-  local row instead of discarding the evidence or replacing editable raw text.
-- **Offline-first error handling:** a server or auth error must never blank
-  already-shown local results; save failures fall back to the queue, not to
-  an error dialog.
-- **Serialize remote writes per local capture.** Immediate save, session
-  refresh, manual retry, and optimistic edits may request the same remote write
-  concurrently. Route every create/update drain through
-  `CaptureSyncCoordinator`: it deduplicates create POSTs, coalesces update-drain
-  requests, and re-reads a dirty row after each PATCH so an in-flight re-edit is
-  sent as the next revision.
-- **Bearer credentials require a secure API endpoint.** Remote API URLs must
-  use HTTPS; plain HTTP is allowed only for loopback development hosts. Keep
-  validation centralized in `ChronicleAPIEndpoint` so settings, environment
-  overrides, and stored sessions cannot diverge. Changing scheme, host, or
-  effective port clears the old bearer token and refresh cookie; never carry a
-  credential across API origins.
-- **Refresh results are scoped to their starting credential snapshot.** A
-  sign-in, sign-out, or server change can finish while an older refresh is in
-  flight; discard that stale success or 401 instead of overwriting or clearing
-  the newer session. MainActor session callbacks must act on the monitor's
-  current converged health, not a state value captured before they were queued.
+- `ChronicleAPIEndpoint` requires HTTPS except for loopback. An effective origin
+  change clears bearer and refresh credentials; credentials never cross API
+  origins.
+- Refresh results are scoped to their starting credential snapshot. A stale
+  success or 401 cannot overwrite or clear a newer sign-in/session. Only an
+  explicit refresh 401 marks `SessionMonitor` expired; network and 5xx failures
+  leave health unknown/current.
+- Main-actor session callbacks read `SessionMonitor`'s current converged health;
+  never act on a state value captured before a newer sign-in or refresh finished.
+- Password and OAuth sign-in both preserve the TOTP/recovery-code second step.
+  Desktop OAuth custom callbacks carry only a short-lived, single-use code.
+  Exchange it with the original PKCE verifier; access and MFA tokens must never
+  appear directly in the custom callback URL.
+- `UserIdentity` establishes the server-issued account boundary for on-device
+  state. Invalidate cached Drive authority on every Chronicle account or origin
+  change.
+- Capture file reads go through `SecureCaptureFile`: verify a regular-file
+  descriptor and copy into an app-owned staged snapshot. Do not upload directly
+  from an unverified user-controlled path.
+- One media/file draft owns one operation UUID until saved or discarded. Reuse
+  it for direct upload `Idempotency-Key`, Drive `chronicleOperationId`, and
+  atomic `/captures/with-attachment` creation. Do not compensate ambiguous
+  outcomes by deleting the Drive file or soft-deleting a possibly created
+  Capture.
+- Direct media is content-sniffed and capped at 20 MB. Other files use Drive
+  resumable upload up to 100 MB. Retry one Drive 401 only after reauthorization;
+  if rejected again, invalidate authority again.
 
-## Gotchas
+## Sharing boundary
 
-- **Single screen + macOS Spaces:** panel/window placement uses
-  `.moveToActiveSpace`. A "window jumps back to another screen" report is a
-  Spaces problem, not a multi-display problem — don't add multi-display
-  logic for it.
-- E2E: `bash scripts/e2e.sh` builds the real `.app` and runs
-  `ChronicleDesktopE2ETests` against the binary (via
-  `CHRONICLE_DESKTOP_E2E_APP_PATH`, driven through `E2ERunner`). UI changes
-  to the panel or main window usually need a matching e2e update.
-- `MainView` caches its merged browse list in `browseRows`; any new mutation
-  of `fragments`/`localRows`/`signedIn`/`offline` must call
-  `rebuildBrowseRows()`, or the list goes stale.
-- **`.onAppear`-driven pagination needs a `LazyVStack`.** In a non-lazy
-  container every row's `onAppear` fires the moment it's added, so "load more
-  when the last row appears" (`maybeLoadMore`) degenerates into chain-loading
-  every page, with all rows — each hosting a native NSTextView — permanently
-  mounted. This was the main-window scroll/sidebar/drag stutter root cause;
-  don't diagnose that class of jank as a material/rendering cost first.
-- The sticky's `NSHostingView` must keep `sizingOptions = []`: its controller
-  owns the panel frame (persisted, height-fitted via `onHeight`). Default
-  sizing options let a SwiftUI ideal size — e.g. an NSTextView body's
-  unwrapped single-line width — resize the window, and `windowDidResize`
-  then persists the blown-out frame.
-- Desktop password and OAuth sign-in both support the server's TOTP/recovery-code
-  second step. OAuth keeps the MFA token behind the existing PKCE-protected
-  one-time exchange; never place it directly in the custom callback URL.
+- `CaptureShare` models owner-authenticated list/create/revoke operations; the
+  app share sheet and Shared Copies settings use that client.
+- The owner explicitly approves an immutable, non-empty raw-text snapshot.
+  Media, attachments, transcript, related Captures, and context remain private.
+- A replacement share revokes the previous link. Trashing the source Capture
+  permanently revokes its active share; restore never reactivates it.
+
+## UI invariants and gotchas
+
+- All user-facing copy goes through `L(...)` or
+  `DesktopLocalization.format`, includes a Simplified Chinese entry, and
+  observes language changes. AppKit-only surfaces refresh on
+  `.chronicleLanguageChanged`. The noun **Capture** is never translated.
+- Desktop brand accent is `Color.chronicleAccent` in `DesktopTheme.swift`; Web
+  defines the pair as `--accent`. Desktop list timestamps are `CaptureTime` in
+  `CaptureRowModel.swift`; Web defines the paired formatting helpers. Change
+  each pair together.
+- `MainView` mutations of `fragments`, `localRows`, `signedIn`, or `offline`
+  must rebuild `browseRows`.
+- `.onAppear` pagination requires `LazyVStack`; a non-lazy container mounts all
+  rows and chain-loads every page.
+- A sticky's `NSHostingView` keeps `sizingOptions = []`; its controller owns and
+  persists the fitted window frame.
+- Panel/window placement uses `.moveToActiveSpace`; do not misdiagnose macOS
+  Spaces movement as a multi-display layout bug.
+- `scripts/e2e.sh` builds the real app and drives `E2ERunner`; panel or main
+  window behavior changes generally require matching E2E coverage.

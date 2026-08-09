@@ -1,56 +1,18 @@
-# Chronicle Web — agent notes
+# Chronicle Web workspace
 
-Read the root `CLAUDE.md` first (stack, commands, route-file size rules).
-`README.md` here covers human setup. This file maps `src/` and records the
-client-side behaviors that are not visible from any single file.
+`web/` is one pnpm workspace with two browser runtimes:
 
-## Layout
+- `src/`: the Vite React/TanStack application; read `src/CLAUDE.md`
+- `extension/`: the Manifest V3 quick-capture extension; read
+  `extension/CLAUDE.md`
 
-- `routes/` — TanStack Router file-based routes; orchestration only (data
-  hooks, layout composition, event wiring). `routeTree.gen.ts` is generated
-  by the Vite plugin — never edit.
-- `api/` — orval codegen from the running API's `/openapi.json` — never edit;
-  regenerate with `make orval`.
-- `components/` — shared components, flat. `components/settings/` holds
-  settings sections; `components/ui/` is reserved for extracted Radix-based
-  primitives (currently empty — Radix is used inline so far).
-- `hooks/` — shared React hooks (`use-mutation-toast`, `use-todo-enabled`).
-- `lib/` — non-React helpers (see auth lifecycle below).
-- `utils/` — pure functions, unit-tested with vitest colocated `*.test.ts`.
-- `i18n.ts` + `locales/{en,ja,zh}/` — namespaces: `auth`, `captures`,
-  `common`, `dashboard`, `settings`. Every user-visible string goes through
-  i18n; every new key must be added to all three languages.
+Do not apply React application, i18n, TanStack, or orval assumptions to the
+extension. Do not apply Chrome service-worker, permission, or durable-outbox
+assumptions to the React application.
 
-## Auth lifecycle (client side)
+The root `pnpm-lock.yaml` covers both packages. The live scripts are in
+`package.json` and `extension/package.json`; root `Justfile` recipes include
+Web development plus extension test, package, and E2E entry points.
 
-- Access token lives in localStorage (`access_token`); the refresh token is
-  an httpOnly cookie (`withCredentials` on the axios instance).
-- `lib/axios.ts` — `apiClient` (axios instance) and `api` (the orval
-  mutator). Request interceptor attaches the Bearer header. Response
-  interceptor does a single-flight refresh on 401 (`/auth/refresh`), retries
-  the original request once, and on refresh failure clears the token and
-  hard-redirects to `/login`.
-- `lib/initAuth.ts` — runs before first render: if the stored token is
-  missing or expired, attempts one cookie refresh so the app doesn't boot
-  into a guaranteed 401.
-- `lib/apiFetch.ts` — bare `fetch` with the same Bearer header, for flows
-  that don't fit orval hooks (WebAuthn/passkey ceremonies, MFA setup,
-  account management calls in settings).
-- `lib/cloudDrive/` — provider-neutral external attachment client;
-  `googleDrive.ts` is the first provider. Keep the interface
-  provider-neutral — schema/API names must not be Google-specific (see
-  `TODO.md`, external file references).
-
-## Gotchas
-
-- `/captures/upload` is not in the OpenAPI spec (the API mounts it outside
-  huma), so there is no generated hook for it — call it manually.
-- The composer has one Attach entry; the destination is routed, never asked:
-  transcribable media (image/audio under the direct-upload cap) goes to
-  Chronicle's R2 + OCR/Whisper, everything else to the user's cloud drive as
-  an external reference. `DIRECT_UPLOAD_MAX_BYTES` in `CaptureComposer.tsx`
-  mirrors `maxUploadSize` in `api/internal/upload/handler.go` — change them
-  together.
-- Route files target < 250 lines; any sub-component over 60 lines moves to
-  `components/`. `web/src/constants/` doesn't exist yet — create it on the
-  second use of a shared constant, per the root convention.
+`dist/`, `extension/dist/`, extension ZIPs, `node_modules/`, and
+`src/routeTree.gen.ts` are generated artifacts, not architecture sources.

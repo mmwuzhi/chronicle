@@ -1,334 +1,112 @@
 # Chronicle
 
-Capture anything.
-Find it later.
-
-Chronicle is a capture-first personal memory system.
-
-The primary purpose of Chronicle is helping users find information they have already captured.
-
-Capture First means:
-
-- Record first.
-- Organize later.
-- Retrieve when needed.
-
-Everything starts as a capture.
-
-Search and retrieval are more important than automatic organization.
-
-AI should enhance retrieval and recall, not replace them.
-
-Users should never need to decide:
-
-- Is this a note?
-- Is this a task?
-- Is this a project?
-- Is this a context?
-
-Users only need to decide:
-
-- I want to remember this.
-
-Everything starts as a Capture.
-
-Core loop:
-
-Capture
-↓
-Store
-↓
-Retrieve
-↓
-Understand (optional)
-
-Search and retrieval are more important than automatic organization.
-
-AI should enhance memory retrieval, not replace it.
-
-## Product Guardrails
-
-Chronicle should reduce maintenance, not create maintenance.
-
-Prefer:
-
-- capture
-- search
-- retrieval
-- memory recall
-- review
-- related captures
-
-Avoid:
-
-- complex project management
-- workflow automation
-- deep hierarchies
-- mandatory categorization
-- manual organization requirements
-
-When uncertain:
-
-Choose the simpler solution.
-
-## Current Priorities
-
-P0
-
-- Fast capture
-- Full-text search
-- Embeddings
-- Hybrid retrieval
-
-P1
-
-- Related captures
-- Memory retrieval
-- Review
-
-P2
-
-- AI summaries
-- Context discovery
-- Forget suggestions
-
-Deferred
-
-- MCP
-- Plugin systems
-- Graph view
-- Advanced analyzers
-- Agent workflows
-- E2EE
-
-Do not introduce deferred features unless explicitly requested.
-
-## Tech Stack
-
-- Frontend: Vite + TanStack Router + TanStack Query, Radix UI primitives, Recharts, React Hook Form + Zod
-- Backend: Go — chi router, huma v2 (OpenAPI-first), slog structured logging
-- Desktop: Swift macOS menu bar app — quick capture/search/ask panel, browse window, offline local search, desktop stickies, reminder notifications
-- Database: PostgreSQL (Neon in prod, Docker in dev) — sqlc + pgx, goose migrations
-- Auth state / security rate limits: PostgreSQL — one-time OAuth/WebAuthn state is atomically consumed; general API traffic uses a bounded in-process limiter and may have an outer Cloudflare limit
-- Auth: JWT — access token 15 min, refresh token 30 days, httpOnly cookies; email verification/password reset, Google/GitHub OAuth, passkeys, and TOTP MFA
-- File storage: Cloudflare R2 (images + audio)
-- Voice transcription: OpenAI Whisper (optional — app works without it)
-- AI polish: Gemini/OpenAI-backed enrichment endpoints (optional — app works without it)
-- Email: Resend for verification and password reset (optional locally)
-- Bot protection: Cloudflare Turnstile on registration when configured
-- E2E type safety: huma → `/openapi.json` → orval codegen → typed TanStack Query hooks
-- CI/CD: GitHub Actions → Fly.io (API) + Cloudflare Pages (frontend)
-
-## Key Paths
-
-- `api/` — Go backend
-- `api/cmd/server/main.go` — entry point
-- `api/internal/middleware/` — trace ID injection, auth guard, rate limiter, request logger
-- `api/internal/config/config.go` — envconfig struct; process exits on invalid env at startup
-- `api/db/migrations/` — goose SQL migration files, never edit by hand
-- `api/db/queries/` — sqlc `.sql` query files (source of truth for DB queries)
-- `api/db/sqlc/` — generated Go code from sqlc, never edit by hand
-- `desktop/` — Swift macOS menu bar quick-capture app
-- `desktop/Sources/ChronicleDesktopCore/` — testable capture payload, API client, queue, path helpers, and on-device offline semantic search (local Ollama embedder + SQLite vector cache)
-- `desktop/Sources/ChronicleDesktop/` — AppKit menu bar UI, global hotkey, quick panel, main window, capture detail windows, pinned stickies, reminder notifications, settings
-- `web/` — Vite frontend
-- `web/src/api/` — orval-generated TanStack Query hooks, never edit by hand
-- `web/src/routes/` — TanStack Router file-based routes
-- `web/src/components/` — shared components; `ui/` for Radix primitives, `settings/` for settings sections
-- `web/src/constants/` — shared constants (none yet; create on the second use of a constant)
-- `web/src/utils/` — shared pure utilities (e.g. `format.ts`)
-- `web/src/lib/` — non-React helpers (axios client, authenticated fetch)
-- `TODO.md` — deferred work; the oversized-route-file gate is cleared (all routes are back under 250 lines)
-- `.env.example` — all required env vars
-
-## Conceptual Model
-
-Current database tables reflect historical implementation details.
-
-Conceptually:
-
-Capture is the primary object.
-
-Everything else is derived from captures.
-
-Examples:
-
-Capture
-↓
-Task (actionable capture)
-
-Capture
-↓
-Context (group of related captures)
-
-Capture
-↓
-Review
-
-Capture
-↓
-Summary
-
-Capture
-↓
-Analyzer
-
-Do not assume the current schema represents the final product model.
-
-## Data Model
-
-Current implementation (post migration 016, which collapsed the old
-projects/tasks/time_blocks/log_entries productivity model into captures, and
-024, which replaced the classification enum with the todo facet):
-
-```
-users                id, email, password_hash, created_at, email_verified, email_verify_token, password_reset_token, password_reset_expires, totp_secret, totp_enabled
-captures             id, user_id, raw_text, media_url, media_key, media_type, source, created_at, deleted_at,
-                     transcript + transcription_* (Whisper/OCR pipeline; also holds link-fetched page text),
-                     audio_duration_sec, link_url (link enrichment; 026),
-                     remind_at, remind_hide (time-based recall),
-                     todo_at, done_at (todo facet; CHECK done_at IS NULL OR todo_at IS NOT NULL)
-capture_links        a_id, b_id, user_id, created_at  (undirected, a_id < b_id)
-capture_attachments  external file references (Google Drive etc.)
-capture_embeddings   per-chunk vector (RAG index; one row per (capture, chunk_idx) since 027, max-over-chunks at read)
-capture_metadata     per-capture extracted JSONB (RAG index)
-capture_tokens       create-only personal access tokens (iOS Shortcut / quick capture)
-capture_webhooks     keyword/semantic outbound webhooks
-rag_config           per-user RAG settings
-refresh_tokens       id, user_id, token_hash, expires_at, revoked
-oauth_accounts       id, user_id, provider, provider_id, created_at
-passkeys             id, user_id, credential_id, public_key, aaguid, sign_count, name, created_at
-recovery_codes       id, user_id, code_hash, used
-auth_ephemeral_states purpose, hashed key, payload, expiry (atomic OAuth/WebAuthn one-time state)
-auth_rate_limits      scope, hashed subject, attempts, anchored expiry (security-sensitive low-volume limits)
-archived_*           frozen pre-016 tables (tasks, log_entries, time_blocks, …) kept for recovery; never queried
-```
-
-Notes:
-
-- captures are the conceptual center of the system; all long-term value originates from them.
-- **The todo facet is not a classification, and the `#todo` text tag is its only entry point** (migration 025). A capture is a todo iff its raw text carries the standalone `#todo` token; completion is a parameter of the tag — `#todo(done)` / `#todo(done:YYYY-MM-DD)` — never a separate tag. Text is the source of truth: `todo_at`/`done_at` are derived on every save (parser + grammar in `api/internal/capture/todotag.go`) and only index the browse filter; `todo_at` records first entry and is never written into the text. Typing the tag flags, deleting the word unflags, editing the parameter completes — there is no todo endpoint and no todo button/checkbox; reading surfaces render a chip and capture composers offer a `#` suggestion. The tag grammar is defined three times — Go (`todoTagRe` in `todotag.go`), web (`TODO_TAG_RE` in `web/src/utils/todo.ts`), and desktop (`CaptureTodoTag` in `desktop/Sources/ChronicleDesktopCore/TodoTag.swift`) — and all three consume `shared/fixtures/todo-tag.json` parity cases and must change together. Capture time never asks what something is.
-- **Classification values are behavior switches.** The old classified_as enum (task/idea/routine/log) was dropped in 024 because only "actionable" ever gated behavior. Add a new facet column only together with the behavior that needs it, never ahead of it.
-- **Link enrichment reuses the transcript modality** (migration 026, `LINK_FETCH_ENABLED`, off by default). A text capture whose raw text contains a URL (grammar: `FirstURL` in `api/internal/capture/linkurl.go`, the single definition) has the page's readable text fetched into `transcript`, so it becomes findable by content — `transcript` already feeds the FTS index and the RAG embedding, so no search/embedding change is needed. Text is the source of truth (like the #todo tag): `reconcileLinkFetch` runs on create and on every raw_text edit — adding or changing the URL (re)enqueues a fetch, an unchanged URL is a no-op (never re-fetches), and editing the URL out clears the link-derived transcript (`ClearCaptureLinkFetch`). Scheduling reuses the `transcription_status` machine: a **link job is a capture with `media_key IS NULL`**, a media transcription has one, and the two workers partition the shared queue by that column (`ClaimPendingLinkFetch` vs `ClaimPendingTranscription`). The fetcher (`api/internal/linkfetch`) is SSRF-guarded (refuses private/loopback/link-local/metadata addresses, re-checked on every redirect hop), caps body size, and only accepts HTML. `link_url` is internal — it is not exposed on `CaptureBody`, and the web shows the transcript block for media captures only.
-- User labels live in the text itself (`#tag` + full-text/semantic search), not in schema.
-- A lightweight "project" = a pinned anchor capture + capture_links; progress ("n/m done") is derived at read time from the linked captures, never stored.
-- existing tables are implementation details, not product direction.
-
-Soft delete only — `captures` has `deleted_at`. Never issue a hard DELETE on user data. The one carve-out is the trash's explicit **permanent delete / empty trash**: a deliberate, trash-only user action on already-soft-deleted captures (the macOS "Recently Deleted" model), for content the user truly wants gone. Everything else stays soft.
-
-## Common Commands
-
-Most things are implemented in `Justfile`; `Makefile` is a compatibility shim.
-Run `just --list` or `make help` from the repo root to see all targets.
-
-```bash
-# First-time local setup
-make setup                        # copies .env.example → .env, starts postgres, runs migrations
-# then edit .env to fill in real secrets (R2, JWT, etc.)
-make api                          # run API server
-
-# Daily dev
-make dev                          # full stack via docker compose watch
-make dev-all                      # reload desktop app, then run docker compose watch
-make dev-data                     # just postgres
-make down                         # stop all dev containers
-make api                          # API server only — auto-starts postgres if needed
-make web                          # Vite dev server only (separate terminal)
-make desktop-capture              # Swift macOS menu bar quick-capture app
-
-# Codegen
-make sqlc                         # regenerate api/db/sqlc/ from db/queries/*.sql
-make orval                        # regenerate web/src/api/ from API's OpenAPI spec
-                                  # (API server must be running)
-
-# Go backend (run from api/)
-go test -p 1 ./...                # all tests (serial: packages share TEST_DATABASE_URL)
-go vet ./...                      # vet
-
-# Migrations
-make migrate                      # apply pending migrations
-make migrate-new name=add_foo     # create a new migration file
-
-# Frontend (run from web/)
-pnpm build                        # production build
-pnpm typecheck                    # tsc --noEmit
-pnpm test                         # vitest
-
-# Desktop (run from desktop/)
-swift test                        # Swift core tests
-swift build                       # compile the menu bar app
-
-# RAG sidecar (run from ragsvc/)
-python -m pytest                  # Python tests (use python -m so top-level imports resolve)
-```
-
-How changes reach the running dev stack:
-
-- The api container is image-baked (`build: ./api`): a code change reaches it
-  only while a `docker compose watch` session (`make dev`) is running to
-  rebuild it, or via a manual `docker compose up -d --build api`. When in
-  doubt, compare the image's `Created` time (`docker inspect`) with the source
-  file's mtime.
-- The web container bind-mounts `./web` and runs Vite — changes hot-reload,
-  no rebuild ever.
-- Migrations are never auto-applied to the dev DB (nothing runs goose at API
-  startup): apply with `make migrate`. Tests are unaffected — `testutil`
-  migrates the separate `chronicle_test` DB on every run.
-- API liveness probe: `GET /health` → 200 `{"status":"ok"}` (mind the path —
-  it is not `/healthz`; probing the wrong path and concluding "server down"
-  has happened twice now). `GET /users/me` → 401 also proves routing + auth
-  middleware are up.
-- ragsvc tests need the project venv: run `.venv/bin/python -m pytest` from
-  `ragsvc/` (a bare system python won't have pytest).
-
-## Conventions
-
-- **All DB queries live in `api/db/queries/*.sql`.** sqlc generates the Go code. Never write raw SQL in Go files.
-- **All route input/output types are defined on the huma route.** huma auto-generates the OpenAPI spec. Swagger UI is at `/docs`.
-- **Every log line from the API includes `traceId`.** Get it from context — never generate a new one mid-request.
-- **Soft delete only.** Set `deleted_at = now()`. Never run a hard DELETE on user data tables. Sole exception: the trash's explicit permanent-delete / empty-trash on already-trashed captures (deliberate user action; FK `ON DELETE CASCADE` clears derived rows, R2 media purged best-effort).
-- **Rate limiting runs before auth.** Per-IP for public routes, per-user for authenticated routes.
-- **Never edit generated files.** `api/db/sqlc/` and `web/src/api/` are codegen output. Run `sqlc generate` or `pnpm orval` instead.
-- **Prefix huma handler I/O types with the resource name.** huma uses a global schema registry — `CreateInput` in two packages collides. Use `ProjectCreateInput`, `TaskCreateInput`, etc.
-- **Run `/check` before every `git push`.** Steps in order:
-
-  ```bash
-  # API
-  cd api
-  go fmt ./...                    # format — run first
-  go vet ./...                    # vet — fix all issues
-  staticcheck ./...               # linter
-  go test -p 1 ./...              # tests must pass (serial: packages share TEST_DATABASE_URL)
-
-  # Frontend
-  cd web
-  pnpm format                     # Prettier
-  pnpm lint                       # ESLint — errors block push, warnings are acceptable
-  pnpm typecheck                  # no errors allowed
-  pnpm test                       # vitest must pass
-  pnpm build                      # catches module resolution errors tsc misses
-
-  # Desktop
-  cd ../desktop
-  swift test                      # core tests must pass
-  swift build                     # app must compile
-
-  # RAG sidecar (run from ragsvc/)
-  cd ../ragsvc
-  python -m pytest                # Python tests must pass (use python -m, not bare pytest)
-  ```
-
-  Fix every failure before pushing. CI runs these same steps exactly.
-
-- **Web/desktop identity parity.** The brand accent and the list-timestamp rule are each defined twice and must change together: accent as `--accent` in `web/src/index.css` and `Color.chronicleAccent` in `desktop/Sources/ChronicleDesktop/DesktopTheme.swift` (desktop deliberately does not follow the macOS system accent); the timestamp rule (relative under 7 days, then short date, year when it differs; precise stamp `Jul 4, 2026 · 2:35pm` on hover/tooltip) as `fmtListTime`/`fmtPreciseDateTime` in `web/src/utils/format.ts` and `CaptureTime` in `desktop/Sources/ChronicleDesktop/CaptureRowModel.swift`. The product noun **Capture** is also shared identity and stays `Capture` in every locale; translate the surrounding sentence, never the noun itself.
-- **Desktop localization stays code-native.** English source strings and their Simplified Chinese translations live in `desktop/Sources/ChronicleDesktop/Localization.swift`. New user-facing desktop copy must go through `L(...)` (or `DesktopLocalization.format` for interpolation), add the Chinese entry, and ensure the SwiftUI view observes `DesktopLocalization.shared` so an in-app language switch rerenders it. AppKit-only surfaces must refresh on `.chronicleLanguageChanged`.
-- **Composer retries keep one remote operation identity.** A desktop media/file draft owns one UUID until it is saved or discarded. Send that UUID as the media upload `Idempotency-Key`, the Google Drive `chronicleOperationId`, and the `/captures/with-attachment` `operationId`; retries must reuse it. Never restore a create-then-attach flow with compensating soft-delete: file Capture creation, reminder fields, and attachment reference commit atomically, while ambiguous network/5xx outcomes remain retryable. Never auto-delete the Drive operation file after an API error because an earlier ambiguous attempt may already reference it. Desktop file reads must go through a verified regular-file descriptor and an app-owned staged snapshot; direct media is content-sniffed and capped at 20 MB, other files use Drive resumable upload up to 100 MB. Invalidate cached Drive authority on every Chronicle account/origin boundary and retry one 401 only after reauthorization; if that retry is also rejected, invalidate it again.
-- **Headless quick-capture clients share the create contract, not a runtime.** Browser extensions, Shortcuts, and future native entry points use a create-only capture token, HTTPS outside localhost, a client-generated `Idempotency-Key`, and stable first-party `source` values. A queued client must scope its outbox by API origin and token identity, reuse one operation ID across retries, retry only network/429/5xx failures, and surface terminal failures. Do not build a durable offline queue inside Apple Shortcuts; keep that workflow synchronous and visibly fail when the API is unavailable.
-- **Route files are orchestration only.** They may declare data-fetching hooks, layout structure, and event handlers. Target < 250 lines. Any sub-component longer than 60 lines must live in its own file under `web/src/components/`. Any constant or utility used in more than one file must move to `web/src/constants/` or `web/src/utils/` on the second use.
-- **Coding rules are in [`CODING.md`](./CODING.md).** Read it before writing new code.
-
-## Environment
-
-Copy `.env.example` to `.env`. The API reads env vars through `api/internal/config/config.go` using envconfig — process exits immediately if any required variable is missing or invalid. No silent fallbacks.
-
-Feature integrations are optional unless the code path is used: R2 enables uploads, Resend enables email verification/reset, OAuth vars enable Google/GitHub auth, Turnstile vars enable registration bot checks, WebAuthn vars configure passkeys, and OpenAI/Gemini keys enable AI features.
+Capture anything. Find it later.
+
+Chronicle is a capture-first personal memory system. Its primary job is helping
+people retrieve information they have already captured.
+
+## Product direction
+
+The core loop is Capture → Store → Retrieve → Understand (optional). Record
+first, organize later, retrieve when needed. Search and recall matter more than
+automatic organization; AI enhances them but never replaces them.
+
+Prefer fast capture, search, retrieval, memory recall, review, and related
+Captures. Avoid complex project management, workflow automation, deep
+hierarchies, mandatory categorization, and other maintenance. When uncertain,
+choose the simpler solution.
+
+Priorities:
+
+- P0: fast capture, full-text search, embeddings, hybrid retrieval
+- P1: related Captures, memory retrieval, review
+- P2: AI summaries, context discovery, forget suggestions
+- Deferred: MCP, plugin systems, graph view, advanced analyzers, agent
+  workflows, and E2EE; do not introduce these unless explicitly requested
+
+## Repository routing
+
+- `api/`: Go API with chi, huma v2, slog, PostgreSQL, sqlc, and goose
+- `web/src/`: Vite React app with TanStack Router/Query, Radix primitives, i18n,
+  and orval-generated API bindings
+- `web/extension/`: Manifest V3 browser-extension workspace
+- `desktop/`: Swift macOS menu-bar and browse app with an offline local store
+- `ragsvc/`: optional Python FastAPI retrieval sidecar
+- `shared/`: cross-runtime fixtures and contracts
+
+Each runtime has a nested `CLAUDE.md` with its local architecture and
+invariants. Claude Code discovers nested files when it enters their subtree.
+Codex launched at the repository root must explicitly read every `CLAUDE.md`
+along the target path; a Codex session launched inside a subtree receives the
+same files through sibling `AGENTS.md` symlinks. Use `Justfile`, package scripts,
+`.env.example`, and `.github/workflows/` as the live sources for commands,
+configuration, and CI.
+
+The supported self-host stack uses PostgreSQL plus MinIO. Hosted deployments
+may use Neon and Cloudflare R2. The API presents both R2 compatibility settings
+and generic S3-compatible object storage through one internal interface.
+
+## Domain invariants
+
+- Capture is the primary object. Tasks, contexts, review, summaries, and other
+  views are derived facets or relationships, not competing primary objects.
+- User labels live in Capture text (`#tag`) and retrieval, not a label schema. A
+  lightweight project is a pinned anchor Capture plus `capture_links`; progress
+  is derived from linked Captures.
+- The todo facet is text-driven. A Capture is a todo only when `raw_text`
+  contains the standalone `#todo` token; completion is `#todo(done)` or
+  `#todo(done:YYYY-MM-DD)`. `todo_at` and `done_at` are derived indexes. The Go,
+  Web, and Desktop grammars all consume `shared/fixtures/todo-tag.json` and must
+  change together. Migration 024 retained `classified_as` as compatibility-only
+  storage; it is not product behavior. Capture time never asks for a type. Add a
+  facet only together with the behavior that needs it, not as speculative
+  classification storage.
+- Link enrichment treats the first URL in text as the source of truth, stores
+  fetched readable content in the transcript modality, and never exposes the
+  internal `link_url`. The fetcher is SSRF-guarded and the link/media workers
+  partition their shared queue by whether `media_key` is null.
+- Capture content is soft-deleted by default. Only an explicit action inside
+  Trash may permanently delete already-trashed Capture content. This lifecycle
+  rule does not prohibit deleting ephemeral auth state, credentials,
+  relationships, or an explicitly deleted account.
+- Search must remain useful without optional AI or object storage. Hybrid search
+  falls back to PostgreSQL full-text search when the RAG sidecar is unavailable;
+  optional integrations must fail without taking core capture/retrieval down.
+
+## Capture sharing contract
+
+This is the current repository contract; do not infer production deployment
+status from it.
+
+- A share is an explicit, revocable, immutable snapshot of non-empty
+  `raw_text`, not live access to a Capture.
+- Media, attachments, transcript, related Captures, and surrounding context
+  remain private.
+- The URL fragment carries the share secret; clients send it to the API with
+  the `Share` authorization scheme. Missing, invalid, expired, and revoked
+  shares expose the same not-found surface.
+- A new share replaces the Capture's active link. Moving the source Capture to
+  Trash permanently revokes its share; restoring it never reactivates that link.
+
+## Cross-runtime contracts
+
+- Queued quick-capture clients use a create-only capture token, HTTPS except on
+  loopback, a client-generated `Idempotency-Key`, a stable first-party `source`,
+  and one operation identity across retries. Scope durable queues by API origin
+  and credential identity; retry only network, 429, and 5xx failures, and expose
+  terminal failures. Apple Shortcuts remains synchronous and has no durable
+  offline queue.
+- Desktop media/file drafts keep one UUID until saved or discarded. That UUID
+  is shared by direct upload, Drive upload metadata, and atomic
+  Capture-with-attachment creation. Ambiguous outcomes remain retryable.
+- API credentials never cross an origin or account boundary. Async refresh
+  results are scoped to the credential snapshot that started them, so a stale
+  success or 401 cannot overwrite or clear a newer session.
+- The product noun **Capture** is unchanged in every locale. Web/Desktop brand
+  accent and list-time formatting are paired definitions and must change
+  together; their exact paths live in the runtime instructions.
+
+## Coding-rule boundary
+
+Before modifying, generating, or reviewing code, read `CODING.md`. Skip it for
+pure reading, explanation, planning, and repository navigation.
