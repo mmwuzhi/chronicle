@@ -17,15 +17,32 @@ struct CaptureRowModelTests {
         #expect(session.isCurrent(session.snapshot()))
     }
 
-    @Test("sign-out keeps the normal Chronicle menu bar glyph")
-    func signedOutSessionKeepsNormalStatusItemGlyph() {
+    @Test("menu bar badge represents pending sync work, not account state")
+    func statusItemBadgeTracksPendingWork() {
         let signedIn = SessionStatus(signedOut: false, pending: 0)
-        let signedOut = SessionStatus(signedOut: true, pending: 4)
+        let signedOut = SessionStatus(signedOut: true, pending: 0)
+        let signedInWithBacklog = SessionStatus(signedOut: false, pending: 4)
+        let signedOutWithBacklog = SessionStatus(signedOut: true, pending: 4)
 
         #expect(signedIn.statusItemSymbolName == "tray.and.arrow.down.fill")
         #expect(signedOut.statusItemSymbolName == signedIn.statusItemSymbolName)
-        #expect(signedIn.statusItemTitle.isEmpty)
-        #expect(!signedOut.statusItemTitle.isEmpty)
+        #expect(signedInWithBacklog.statusItemSymbolName == "tray.badge")
+        #expect(signedOutWithBacklog.statusItemSymbolName == "tray.badge")
+        #expect(signedIn.menuAction == nil)
+        #expect(signedOut.menuAction == .signIn)
+        #expect(signedInWithBacklog.menuAction == .retrySync)
+        #expect(signedOutWithBacklog.menuAction == .signIn)
+    }
+
+    @Test("quick capture save result preserves failures for inline display")
+    func quickCaptureSaveResultKeepsFailureMessage() {
+        let saved = QuickCaptureSaveResult.saved
+        let failed = QuickCaptureSaveResult.failed("disk full")
+
+        #expect(saved.shouldDismiss)
+        #expect(saved.errorMessage == nil)
+        #expect(!failed.shouldDismiss)
+        #expect(failed.errorMessage == "disk full")
     }
 
     @Test("stale refresh results cannot replace or clear a newer session")

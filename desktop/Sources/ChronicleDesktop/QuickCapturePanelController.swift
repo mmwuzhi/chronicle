@@ -32,12 +32,15 @@ final class QuickCapturePanel: NSPanel {
 @MainActor
 final class QuickCapturePanelController: NSWindowController, NSWindowDelegate {
     private let clients: CaptureClients
-    private let onSubmit: (String, Date?, Bool) -> Void
+    private let onSubmit: (String, Date?, Bool) -> QuickCaptureSaveResult
     private let focusRestorer = QuickCaptureFocusRestorer()
     private var hostingView: NSHostingView<PanelContentView>!
     private var isExplicitlyHiding = false
 
-    init(clients: CaptureClients, onSubmit: @escaping (String, Date?, Bool) -> Void) {
+    init(
+        clients: CaptureClients,
+        onSubmit: @escaping (String, Date?, Bool) -> QuickCaptureSaveResult
+    ) {
         self.clients = clients
         self.onSubmit = onSubmit
 
@@ -63,7 +66,10 @@ final class QuickCapturePanelController: NSWindowController, NSWindowDelegate {
 
         let root = PanelContentView(
             clients: clients,
-            onSubmit: { [weak self] text, remindAt, keepVisible in self?.onSubmit(text, remindAt, keepVisible) },
+            onSubmit: { [weak self] text, remindAt, keepVisible in
+                self?.onSubmit(text, remindAt, keepVisible)
+                    ?? .failed(L("We couldn't save this Capture. Try again."))
+            },
             onClose: { [weak self] in self?.hide(restoringPreviousFocus: true) },
             onHeightChange: { [weak self] height in self?.resize(to: height) },
             onCancelHandlerChange: { [weak panel] handler in panel?.onCancel = handler },

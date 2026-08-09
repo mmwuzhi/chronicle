@@ -18,8 +18,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let captureSession = CaptureSession()
     private var verifiedSessionScope: LocalCaptureScope?
     private var identityVerificationTask: Task<Void, Never>?
-    private var statusItemFlashActive = false
-    private var statusItemFlashGeneration = 0
+    private var statusItemFeedbackActive = false
+    private var statusItemFeedbackGeneration = 0
     private lazy var captureSyncCoordinator = CaptureSyncCoordinator(store: localStore)
     // Offline semantic search over the local cache via a local Ollama. Lazy so it
     // can reference localStore; degrades to keyword search when Ollama is absent.
@@ -55,6 +55,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             clients: clients,
             onSubmit: { [weak self] text, remindAt, keepVisible in
                 self?.saveCapture(text, remindAt: remindAt, keepVisible: keepVisible)
+                    ?? .failed(L("We couldn't save this Capture. Try again."))
             },
         )
         detailWindowController = CaptureDetailWindowController(clients: clients)
@@ -214,10 +215,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // actor. Read the converged state now instead of acting on a stale value
         // captured before a newer login completed.
         let health = sessionMonitor.health
-        // A session transition supersedes any transient save message whose copy
-        // may now be stale (for example, "sign in to sync" after a fresh login).
-        statusItemFlashGeneration &+= 1
-        statusItemFlashActive = false
+        // A session transition supersedes transient save feedback so the icon
+        // immediately reflects whether any local work is still waiting to sync.
+        statusItemFeedbackGeneration &+= 1
+        statusItemFeedbackActive = false
         if health == .expired {
             settingsModel?.handleSessionExpired()
         }
@@ -231,9 +232,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func updateStatusItemAppearance() {
         guard let button = statusItem?.button else { return }
         let status = currentSessionStatus()
-        button.image = statusItemImage(named: status.statusItemSymbolName)
-        if !statusItemFlashActive {
-            button.title = status.statusItemTitle
+        button.title = ""
+        button.imagePosition = .imageOnly
+        if !statusItemFeedbackActive {
+            button.image = statusItemImage(named: status.statusItemSymbolName)
         }
         if status.signedOut {
             let n = status.pending
@@ -245,13 +247,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     n
                 )
                 : L("Chronicle — signed out · sign in to sync")
+        } else if status.pending > 0 {
+            button.toolTip = DesktopLocalization.shared.format(
+                status.pending == 1
+                    ? "Chronicle · %d Capture waiting to sync"
+                    : "Chronicle · %d Captures waiting to sync",
+                status.pending
+            )
         } else {
             button.toolTip = "Chronicle"
         }
+        button.setAccessibilityLabel(button.toolTip)
+        installStatusItemMenu(for: status)
     }
 
     private func statusItemImage(named name: String) -> NSImage? {
         let icon = NSImage(systemSymbolName: name, accessibilityDescription: "Chronicle")
+            ?? NSImage(
+                systemSymbolName: "tray.and.arrow.down.fill",
+                accessibilityDescription: "Chronicle"
+            )
         icon?.isTemplate = true
         return icon
     }
@@ -341,19 +356,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func installStatusItem() {
-        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         // Reflect whatever the launch refresh has already resolved (or the neutral
         // default until it does), then track every session change from here on.
         updateStatusItemAppearance()
-
-        installStatusItemMenu()
     }
 
-    private func installStatusItemMenu() {
+    private func installStatusItemMenu(for status: SessionStatus) {
         let menu = NSMenu()
         menu.addItem(NSMenuItem(title: L("Quick Capture"), action: #selector(showQuickCaptureAction), keyEquivalent: ""))
         menu.addItem(NSMenuItem(title: L("Open Chronicle"), action: #selector(showMainAction), keyEquivalent: ""))
         menu.addItem(.separator())
+        switch status.menuAction {
+        case .signIn:
+            let title = status.pending > 0
+                ? DesktopLocalization.shared.format(
+                    status.pending == 1
+                        ? "Sign in and sync %d Capture…"
+                        : "Sign in and sync %d Captures…",
+                    status.pending
+                )
+                : L("Sign In…")
+            menu.addItem(NSMenuItem(
+                title: title,
+                action: #selector(showSignInAction),
+                keyEquivalent: ""
+            ))
+        case .retrySync:
+            menu.addItem(NSMenuItem(
+                title: DesktopLocalization.shared.format("Retry Sync (%d)", status.pending),
+                action: #selector(retryPendingCapturesAction),
+                keyEquivalent: ""
+            ))
+        case nil:
+            break
+        }
         menu.addItem(NSMenuItem(title: L("Settings…"), action: #selector(showSettingsAction), keyEquivalent: ","))
         menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: L("Quit Chronicle"), action: #selector(quitAction), keyEquivalent: "q"))
@@ -415,12 +452,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         mainWindowController.show(mode: .browse)
         NotificationCenter.default.post(name: .chronicleFocusMainCapture, object: nil)
     }
+    @objc private func showSignInAction() { showSignIn() }
+    @objc private func retryPendingCapturesAction() {
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let result = await retrySummary()
+            if result.remaining == 0, result.status == .completed {
+                showStatusItemSuccess()
+            } else {
+                updateStatusItemAppearance()
+            }
+        }
+    }
     @objc private func showSettingsAction() { showSettings() }
     @objc private func quitAction() { NSApp.terminate(nil) }
 
     @objc private func languageChanged() {
         installApplicationMenu()
-        installStatusItemMenu()
         updateStatusItemAppearance()
     }
 
@@ -544,10 +592,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return await syncPendingCaptures(using: client)
     }
 
-    private func saveCapture(_ text: String, remindAt: Date?, keepVisible: Bool) {
+    private func saveCapture(
+        _ text: String,
+        remindAt: Date?,
+        keepVisible: Bool
+    ) -> QuickCaptureSaveResult {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
-            return
+            return .failed(L("We couldn't save this Capture. Try again."))
         }
 
         var payload = CapturePayload(rawText: trimmed)
@@ -558,18 +610,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             payload.remindHide = false
         }
 
-        let hasLiveClient = makeClient() != nil
         do {
             _ = try createCaptureAndScheduleSync(payload, postChange: true)
-            guard hasLiveClient else {
-                showNotification(title: L("Saved locally — sign in to sync"), body: trimmed)
-                return
-            }
-
-            showNotification(title: L("Capture saved"), body: trimmed)
+            showStatusItemSuccess()
+            return .saved
         } catch {
-            showNotification(title: L("Capture failed"), body: error.localizedDescription)
-            return
+            return .failed(L("We couldn't save this Capture. Try again."))
         }
     }
 
@@ -751,14 +797,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             CaptureEvents.postChanged()
             if notifySuccess {
                 await MainActor.run {
-                    self.showNotification(title: L("Capture synced"), body: record.payload.rawText)
+                    self.showStatusItemSuccess()
                 }
             }
             return true
         case .failed:
             if notifySuccess {
                 await MainActor.run {
-                    self.showNotification(title: L("Capture saved locally"), body: L("Sync will retry later."))
+                    self.updateStatusItemAppearance()
                 }
             }
             return false
@@ -829,16 +875,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return config
     }
 
-    // A quiet status-item title flash for capture feedback. No sound — the old
-    // NSSound.beep() on every capture was removed (it was jarring on each save).
-    private func showNotification(title: String, body _: String) {
-        statusItemFlashGeneration &+= 1
-        let generation = statusItemFlashGeneration
-        statusItemFlashActive = true
-        statusItem.button?.title = "  \(title)"
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
-            guard self?.statusItemFlashGeneration == generation else { return }
-            self?.statusItemFlashActive = false
+    // Capture is a high-frequency keyboard action, so feedback replaces the icon
+    // in place without animation, sound, or a variable-width status-item title.
+    private func showStatusItemSuccess() {
+        statusItemFeedbackGeneration &+= 1
+        let generation = statusItemFeedbackGeneration
+        statusItemFeedbackActive = true
+        statusItem.button?.title = ""
+        statusItem.button?.image = statusItemImage(named: "checkmark.circle.fill")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
+            guard self?.statusItemFeedbackGeneration == generation else { return }
+            self?.statusItemFeedbackActive = false
             self?.updateStatusItemAppearance()
         }
     }

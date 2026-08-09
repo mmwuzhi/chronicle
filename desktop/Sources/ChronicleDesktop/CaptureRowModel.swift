@@ -118,6 +118,25 @@ enum CaptureClientError: Error {
     case requiresSignIn
 }
 
+enum QuickCaptureSaveResult: Equatable {
+    case saved
+    case failed(String)
+
+    var shouldDismiss: Bool {
+        self == .saved
+    }
+
+    var errorMessage: String? {
+        guard case .failed(let message) = self else { return nil }
+        return message
+    }
+}
+
+enum SessionStatusAction: Equatable {
+    case signIn
+    case retrySync
+}
+
 /// What the menu-bar tooltip needs to render: whether the server session is
 /// known-expired, and how many local captures are waiting to sync.
 /// `signedOut` is deliberately only true on a *proven* 401 — an offline app stays
@@ -126,12 +145,16 @@ struct SessionStatus: Equatable {
     var signedOut: Bool = false
     var pending: Int = 0
 
-    /// Account state must not make the app look broken in the menu bar.
-    var statusItemSymbolName: String { "tray.and.arrow.down.fill" }
+    /// Only actionable sync work changes the glyph. Account state belongs in the
+    /// menu and tooltip, while the badge stays inside the icon's fixed footprint.
+    var statusItemSymbolName: String {
+        pending > 0 ? "tray.badge" : "tray.and.arrow.down.fill"
+    }
 
-    /// A quiet persistent dot keeps an expired session visible without turning
-    /// the app's normal icon into a warning glyph.
-    var statusItemTitle: String { signedOut ? "  •" : "" }
+    var menuAction: SessionStatusAction? {
+        if signedOut { return .signIn }
+        return pending > 0 ? .retrySync : nil
+    }
 }
 
 /// Refresh results are valid only for the credential snapshot that launched

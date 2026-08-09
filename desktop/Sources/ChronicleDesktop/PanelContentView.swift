@@ -11,7 +11,7 @@ struct PanelContentView: View {
     let clients: CaptureClients
     @ObservedObject private var localization = DesktopLocalization.shared
     // text, reminder time (nil = none), keepVisible (notify-only: stay in browse).
-    let onSubmit: (String, Date?, Bool) -> Void
+    let onSubmit: (String, Date?, Bool) -> QuickCaptureSaveResult
     let onClose: () -> Void
     let onHeightChange: (CGFloat) -> Void
     let onCancelHandlerChange: (@escaping () -> Void) -> Void
@@ -43,7 +43,15 @@ struct PanelContentView: View {
 
     private var text: String { texts[mode] ?? "" }
     private var textBinding: Binding<String> {
-        Binding(get: { texts[mode] ?? "" }, set: { texts[mode] = $0 })
+        Binding(
+            get: { texts[mode] ?? "" },
+            set: {
+                texts[mode] = $0
+                if mode == .capture {
+                    error = ""
+                }
+            }
+        )
     }
     private var offersTodoSuggestion: Bool {
         mode == .capture && CaptureTodoTag.offersSuggestion(for: text)
@@ -299,10 +307,20 @@ struct PanelContentView: View {
         switch mode {
         case .capture:
             guard !q.isEmpty else { return }
-            onSubmit(q, remindOn ? remindAt : nil, remindOn ? remindKeepVisible : false)
+            let result = onSubmit(
+                q,
+                remindOn ? remindAt : nil,
+                remindOn ? remindKeepVisible : false
+            )
+            guard result.shouldDismiss else {
+                error = result.errorMessage ?? L("We couldn't save this Capture. Try again.")
+                focused = true
+                return
+            }
             texts[.capture] = ""
             remindOn = false
             remindKeepVisible = false
+            error = ""
             onClose()
         case .search:
             guard !q.isEmpty else {
