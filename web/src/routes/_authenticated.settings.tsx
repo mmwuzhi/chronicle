@@ -1,12 +1,7 @@
-import {
-  createFileRoute,
-  useNavigate,
-  useSearch,
-} from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
 import { z } from "zod";
 import { Nav } from "@/components/nav";
-import { useGetMe } from "@/api";
 import { useTranslation } from "react-i18next";
 import { useQueryClient } from "@tanstack/react-query";
 import { AccountSection } from "@/components/settings/AccountSection";
@@ -19,8 +14,9 @@ import { PageHeader, PageShell, PageTitle } from "@/components/ui/page";
 import { sectionTabClassName } from "@/components/ui/tab";
 import { RAG_ENABLED } from "@/constants/features";
 import { DataPortabilitySection } from "@/components/settings/DataPortabilitySection";
+import { SharedCopiesSection } from "@/components/settings/SharedCopiesSection";
 
-export const Route = createFileRoute("/settings")({
+export const Route = createFileRoute("/_authenticated/settings")({
   component: Settings,
   validateSearch: z.object({
     oauth_linked: z.string().optional(),
@@ -62,8 +58,7 @@ function SecuritySection() {
 
 function Settings() {
   const { t } = useTranslation("settings");
-  const navigate = useNavigate();
-  const search = useSearch({ from: "/settings" });
+  const search = Route.useSearch();
   const queryClient = useQueryClient();
   const [section, setSection] = useState<Section>("account");
   const [toast, setToast] = useState<string | null>(() => {
@@ -74,8 +69,6 @@ function Settings() {
     if (search.oauth_error) return t("account.linkError");
     return null;
   });
-
-  const { error } = useGetMe();
 
   useEffect(() => {
     if (search.oauth_linked) {
@@ -92,14 +85,6 @@ function Settings() {
       return () => clearTimeout(timer);
     }
   }, [toast]);
-
-  if (error) {
-    const status = (error as { status?: number }).status;
-    if (status === 401) {
-      navigate({ to: "/login" });
-      return null;
-    }
-  }
 
   const tabs: { id: Section; label: string }[] = [
     { id: "account", label: t("account.title") },
@@ -144,7 +129,12 @@ function Settings() {
               {RAG_ENABLED && <WebhooksSection />}
             </div>
           )}
-          {section === "data" && <DataPortabilitySection />}
+          {section === "data" && (
+            <div className="flex flex-col gap-5">
+              <SharedCopiesSection />
+              <DataPortabilitySection />
+            </div>
+          )}
         </div>
       </PageShell>
     </>

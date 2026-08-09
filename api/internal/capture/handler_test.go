@@ -41,6 +41,10 @@ func newServerOpts(t *testing.T, linkFetch bool) (*httptest.Server, *pgxpool.Poo
 }
 
 func newServerOptsWithRAG(t *testing.T, linkFetch bool, ragURL string) (*httptest.Server, *pgxpool.Pool) {
+	return newServerOptsWithRAGAndFrontend(t, linkFetch, ragURL, "http://localhost:5173")
+}
+
+func newServerOptsWithRAGAndFrontend(t *testing.T, linkFetch bool, ragURL, frontendURL string) (*httptest.Server, *pgxpool.Pool) {
 	t.Helper()
 	pool := testutil.NewPool(t)
 	testutil.Truncate(t, pool, "captures", "users")
@@ -65,7 +69,7 @@ func newServerOptsWithRAG(t *testing.T, linkFetch bool, ragURL string) (*httptes
 	createMW := middleware.RequireAuthHumaCtx(auth.ValidateTokenOrPAT(testutil.TestJWTSecret, db.New(pool)))
 	// No background workers run in tests; durable media-deletion tombstones stay
 	// queued until a worker is explicitly exercised by its focused tests.
-	capture.Register(api, pool, ragclient.New(ragURL), authMW, createMW, nil, linkFetch, nil, nil)
+	capture.Register(api, pool, ragclient.New(ragURL), frontendURL, authMW, createMW, nil, linkFetch, nil, nil)
 
 	srv := httptest.NewServer(r)
 	t.Cleanup(srv.Close)

@@ -33,6 +33,7 @@ final class CaptureClients {
     let session: CaptureSession
     let recall: () -> RecallAPIClient?
     let webhook: () -> WebhookAPIClient?
+    let share: () -> (any CaptureShareClient)?
     let openSignIn: () -> Void
     // Persist a new capture locally and schedule any available background sync.
     // Throws only when the local write fails; signed-out/offline creation succeeds.
@@ -69,6 +70,7 @@ final class CaptureClients {
         session: CaptureSession = CaptureSession(),
         recall: @escaping () -> RecallAPIClient?,
         webhook: @escaping () -> WebhookAPIClient?,
+        share: @escaping () -> (any CaptureShareClient)? = { nil },
         openSignIn: @escaping () -> Void,
         createCapture: @escaping (CapturePayload) throws -> RowItem = { _ in
             throw CaptureClientError.creationUnavailable
@@ -93,6 +95,7 @@ final class CaptureClients {
         self.session = session
         self.recall = recall
         self.webhook = webhook
+        self.share = share
         self.openSignIn = openSignIn
         self.createCapture = createCapture
         self.uploadMedia = uploadMedia

@@ -220,6 +220,52 @@ export interface CaptureRemindInputBody {
   hide?: boolean;
 }
 
+export interface CaptureShareBody {
+  /** A URL to the JSON Schema for this object. */
+  readonly $schema?: string;
+  captureId: string;
+  capturedAt: string;
+  createdAt: string;
+  /** @nullable */
+  expiresAt: string | null;
+  id: string;
+  /** Bearer secret placed in the URL fragment; returned only to the authenticated owner */
+  secret: string;
+  snapshotRawText: string;
+  /** Canonical public Web URL, including the fragment secret; returned only to the authenticated owner */
+  url: string;
+}
+
+export type CaptureShareCreateInputBodyExpiresIn = typeof CaptureShareCreateInputBodyExpiresIn[keyof typeof CaptureShareCreateInputBodyExpiresIn];
+
+
+export const CaptureShareCreateInputBodyExpiresIn = {
+  '1d': '1d',
+  '7d': '7d',
+  '30d': '30d',
+  never: 'never',
+} as const;
+
+export interface CaptureShareCreateInputBody {
+  /** A URL to the JSON Schema for this object. */
+  readonly $schema?: string;
+  expiresIn: CaptureShareCreateInputBodyExpiresIn;
+  /**
+     * Exact Capture text previewed and explicitly approved by the owner
+     * @minLength 1
+     */
+  snapshotRawText: string;
+}
+
+export interface CaptureSharePageBody {
+  /** A URL to the JSON Schema for this object. */
+  readonly $schema?: string;
+  /** @nullable */
+  items: CaptureShareBody[] | null;
+  /** @nullable */
+  nextCursor: string | null;
+}
+
 export interface CaptureTokenCreateInputBody {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
@@ -507,6 +553,15 @@ export interface PolishOutputBody {
   polished: string;
 }
 
+export interface PublicCaptureShareBody {
+  /** A URL to the JSON Schema for this object. */
+  readonly $schema?: string;
+  capturedAt: string;
+  /** @nullable */
+  expiresAt: string | null;
+  snapshotRawText: string;
+}
+
 export interface RefreshOutputBody {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
@@ -767,6 +822,19 @@ export type ReviewTodayParams = {
  * @maximum 720
  */
 timezoneOffsetMinutes?: number;
+};
+
+export type ListCaptureSharesParams = {
+/**
+ * Optional exact Capture filter used by the share dialog
+ */
+captureId?: string;
+cursor?: string;
+/**
+ * @minimum 1
+ * @maximum 100
+ */
+limit?: number;
 };
 
 type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
@@ -4009,6 +4077,71 @@ export const useRestoreCapture = <TError = ErrorModel,
     }
 
 /**
+ * @summary Create or replace a read-only Capture snapshot
+ */
+export const createCaptureShare = (
+    id: string,
+    captureShareCreateInputBody: NonReadonly<CaptureShareCreateInputBody>,
+ options?: SecondParameter<typeof api>,signal?: AbortSignal
+) => {
+
+
+      return api<CaptureShareBody>(
+      {url: `/captures/${id}/shares`, method: 'POST',
+      headers: {'Content-Type': 'application/json', },
+      data: captureShareCreateInputBody, signal
+    },
+      options);
+    }
+
+
+
+export const getCreateCaptureShareMutationOptions = <TError = ErrorModel,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createCaptureShare>>, TError,{id: string;data: NonReadonly<CaptureShareCreateInputBody>}, TContext>, request?: SecondParameter<typeof api>}
+): UseMutationOptions<Awaited<ReturnType<typeof createCaptureShare>>, TError,{id: string;data: NonReadonly<CaptureShareCreateInputBody>}, TContext> => {
+
+const mutationKey = ['createCaptureShare'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createCaptureShare>>, {id: string;data: NonReadonly<CaptureShareCreateInputBody>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  createCaptureShare(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateCaptureShareMutationResult = NonNullable<Awaited<ReturnType<typeof createCaptureShare>>>
+    export type CreateCaptureShareMutationBody = NonReadonly<CaptureShareCreateInputBody>
+    export type CreateCaptureShareMutationError = ErrorModel
+
+    /**
+ * @summary Create or replace a read-only Capture snapshot
+ */
+export const useCreateCaptureShare = <TError = ErrorModel,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createCaptureShare>>, TError,{id: string;data: NonReadonly<CaptureShareCreateInputBody>}, TContext>, request?: SecondParameter<typeof api>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof createCaptureShare>>,
+        TError,
+        {id: string;data: NonReadonly<CaptureShareCreateInputBody>},
+        TContext
+      > => {
+      return useMutation(getCreateCaptureShareMutationOptions(options), queryClient);
+    }
+
+/**
  * @summary Retry audio or image transcription
  */
 export const retryCaptureTranscription = (
@@ -4165,6 +4298,7 @@ export function useFind<TData = Awaited<ReturnType<typeof find>>, TError = Error
 
 
 /**
+ * Accepts one UTF-8 .md/.markdown/.txt file (1 MiB), or a ZIP with up to 5,000 notes and 10,000 entries (32 MiB compressed and expanded).
  * @summary Import Markdown or text files as Captures
  */
 export const importMarkdown = (
@@ -4289,6 +4423,99 @@ export const useUndoMarkdownImport = <TError = ErrorModel,
       > => {
       return useMutation(getUndoMarkdownImportMutationOptions(options), queryClient);
     }
+
+/**
+ * @summary Read an active shared Capture snapshot
+ */
+export const getPublicCaptureShare = (
+    id: string,
+ options?: SecondParameter<typeof api>,signal?: AbortSignal
+) => {
+
+
+      return api<PublicCaptureShareBody>(
+      {url: `/public/shares/${id}`, method: 'GET', signal
+    },
+      options);
+    }
+
+
+
+
+export const getGetPublicCaptureShareQueryKey = (id: string,) => {
+    return [
+    `/public/shares/${id}`
+    ] as const;
+    }
+
+
+export const getGetPublicCaptureShareQueryOptions = <TData = Awaited<ReturnType<typeof getPublicCaptureShare>>, TError = ErrorModel>(id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getPublicCaptureShare>>, TError, TData>>, request?: SecondParameter<typeof api>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetPublicCaptureShareQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getPublicCaptureShare>>> = ({ signal }) => getPublicCaptureShare(id, requestOptions, signal);
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getPublicCaptureShare>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetPublicCaptureShareQueryResult = NonNullable<Awaited<ReturnType<typeof getPublicCaptureShare>>>
+export type GetPublicCaptureShareQueryError = ErrorModel
+
+
+export function useGetPublicCaptureShare<TData = Awaited<ReturnType<typeof getPublicCaptureShare>>, TError = ErrorModel>(
+ id: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getPublicCaptureShare>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getPublicCaptureShare>>,
+          TError,
+          Awaited<ReturnType<typeof getPublicCaptureShare>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof api>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetPublicCaptureShare<TData = Awaited<ReturnType<typeof getPublicCaptureShare>>, TError = ErrorModel>(
+ id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getPublicCaptureShare>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getPublicCaptureShare>>,
+          TError,
+          Awaited<ReturnType<typeof getPublicCaptureShare>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof api>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetPublicCaptureShare<TData = Awaited<ReturnType<typeof getPublicCaptureShare>>, TError = ErrorModel>(
+ id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getPublicCaptureShare>>, TError, TData>>, request?: SecondParameter<typeof api>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Read an active shared Capture snapshot
+ */
+
+export function useGetPublicCaptureShare<TData = Awaited<ReturnType<typeof getPublicCaptureShare>>, TError = ErrorModel>(
+ id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getPublicCaptureShare>>, TError, TData>>, request?: SecondParameter<typeof api>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetPublicCaptureShareQueryOptions(id,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
 
 /**
  * @summary List reminders that have come due
@@ -4570,6 +4797,235 @@ export function useReviewToday<TData = Awaited<ReturnType<typeof reviewToday>>, 
 
 
 
+
+/**
+ * @summary List active Capture shares
+ */
+export const listCaptureShares = (
+    params?: ListCaptureSharesParams,
+ options?: SecondParameter<typeof api>,signal?: AbortSignal
+) => {
+
+
+      return api<CaptureSharePageBody>(
+      {url: `/shares`, method: 'GET',
+        params, signal
+    },
+      options);
+    }
+
+
+
+
+export const getListCaptureSharesInfiniteQueryKey = (params?: ListCaptureSharesParams,) => {
+    return [
+    'infinite', `/shares`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+export const getListCaptureSharesQueryKey = (params?: ListCaptureSharesParams,) => {
+    return [
+    `/shares`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListCaptureSharesInfiniteQueryOptions = <TData = InfiniteData<Awaited<ReturnType<typeof listCaptureShares>>, ListCaptureSharesParams['cursor']>, TError = ErrorModel>(params?: ListCaptureSharesParams, options?: { query?:Partial<UseInfiniteQueryOptions<Awaited<ReturnType<typeof listCaptureShares>>, TError, TData, QueryKey, ListCaptureSharesParams['cursor']>>, request?: SecondParameter<typeof api>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListCaptureSharesInfiniteQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listCaptureShares>>, QueryKey, ListCaptureSharesParams['cursor']> = ({ signal, pageParam }) => listCaptureShares({...params, 'cursor': pageParam || params?.['cursor']}, requestOptions, signal);
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseInfiniteQueryOptions<Awaited<ReturnType<typeof listCaptureShares>>, TError, TData, QueryKey, ListCaptureSharesParams['cursor']> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListCaptureSharesInfiniteQueryResult = NonNullable<Awaited<ReturnType<typeof listCaptureShares>>>
+export type ListCaptureSharesInfiniteQueryError = ErrorModel
+
+
+export function useListCaptureSharesInfinite<TData = InfiniteData<Awaited<ReturnType<typeof listCaptureShares>>, ListCaptureSharesParams['cursor']>, TError = ErrorModel>(
+ params: undefined |  ListCaptureSharesParams, options: { query:Partial<UseInfiniteQueryOptions<Awaited<ReturnType<typeof listCaptureShares>>, TError, TData, QueryKey, ListCaptureSharesParams['cursor']>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listCaptureShares>>,
+          TError,
+          Awaited<ReturnType<typeof listCaptureShares>>, QueryKey
+        > , 'initialData'
+      >, request?: SecondParameter<typeof api>}
+ , queryClient?: QueryClient
+  ):  DefinedUseInfiniteQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListCaptureSharesInfinite<TData = InfiniteData<Awaited<ReturnType<typeof listCaptureShares>>, ListCaptureSharesParams['cursor']>, TError = ErrorModel>(
+ params?: ListCaptureSharesParams, options?: { query?:Partial<UseInfiniteQueryOptions<Awaited<ReturnType<typeof listCaptureShares>>, TError, TData, QueryKey, ListCaptureSharesParams['cursor']>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listCaptureShares>>,
+          TError,
+          Awaited<ReturnType<typeof listCaptureShares>>, QueryKey
+        > , 'initialData'
+      >, request?: SecondParameter<typeof api>}
+ , queryClient?: QueryClient
+  ):  UseInfiniteQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListCaptureSharesInfinite<TData = InfiniteData<Awaited<ReturnType<typeof listCaptureShares>>, ListCaptureSharesParams['cursor']>, TError = ErrorModel>(
+ params?: ListCaptureSharesParams, options?: { query?:Partial<UseInfiniteQueryOptions<Awaited<ReturnType<typeof listCaptureShares>>, TError, TData, QueryKey, ListCaptureSharesParams['cursor']>>, request?: SecondParameter<typeof api>}
+ , queryClient?: QueryClient
+  ):  UseInfiniteQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary List active Capture shares
+ */
+
+export function useListCaptureSharesInfinite<TData = InfiniteData<Awaited<ReturnType<typeof listCaptureShares>>, ListCaptureSharesParams['cursor']>, TError = ErrorModel>(
+ params?: ListCaptureSharesParams, options?: { query?:Partial<UseInfiniteQueryOptions<Awaited<ReturnType<typeof listCaptureShares>>, TError, TData, QueryKey, ListCaptureSharesParams['cursor']>>, request?: SecondParameter<typeof api>}
+ , queryClient?: QueryClient
+ ):  UseInfiniteQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getListCaptureSharesInfiniteQueryOptions(params,options)
+
+  const query = useInfiniteQuery(queryOptions, queryClient) as  UseInfiniteQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+export const getListCaptureSharesQueryOptions = <TData = Awaited<ReturnType<typeof listCaptureShares>>, TError = ErrorModel>(params?: ListCaptureSharesParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listCaptureShares>>, TError, TData>>, request?: SecondParameter<typeof api>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListCaptureSharesQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listCaptureShares>>> = ({ signal }) => listCaptureShares(params, requestOptions, signal);
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listCaptureShares>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListCaptureSharesQueryResult = NonNullable<Awaited<ReturnType<typeof listCaptureShares>>>
+export type ListCaptureSharesQueryError = ErrorModel
+
+
+export function useListCaptureShares<TData = Awaited<ReturnType<typeof listCaptureShares>>, TError = ErrorModel>(
+ params: undefined |  ListCaptureSharesParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listCaptureShares>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listCaptureShares>>,
+          TError,
+          Awaited<ReturnType<typeof listCaptureShares>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof api>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListCaptureShares<TData = Awaited<ReturnType<typeof listCaptureShares>>, TError = ErrorModel>(
+ params?: ListCaptureSharesParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listCaptureShares>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listCaptureShares>>,
+          TError,
+          Awaited<ReturnType<typeof listCaptureShares>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof api>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListCaptureShares<TData = Awaited<ReturnType<typeof listCaptureShares>>, TError = ErrorModel>(
+ params?: ListCaptureSharesParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listCaptureShares>>, TError, TData>>, request?: SecondParameter<typeof api>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary List active Capture shares
+ */
+
+export function useListCaptureShares<TData = Awaited<ReturnType<typeof listCaptureShares>>, TError = ErrorModel>(
+ params?: ListCaptureSharesParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listCaptureShares>>, TError, TData>>, request?: SecondParameter<typeof api>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getListCaptureSharesQueryOptions(params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+/**
+ * @summary Revoke a Capture share
+ */
+export const revokeCaptureShare = (
+    id: string,
+ options?: SecondParameter<typeof api>,signal?: AbortSignal
+) => {
+
+
+      return api<void>(
+      {url: `/shares/${id}`, method: 'DELETE', signal
+    },
+      options);
+    }
+
+
+
+export const getRevokeCaptureShareMutationOptions = <TError = ErrorModel,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof revokeCaptureShare>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof api>}
+): UseMutationOptions<Awaited<ReturnType<typeof revokeCaptureShare>>, TError,{id: string}, TContext> => {
+
+const mutationKey = ['revokeCaptureShare'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof revokeCaptureShare>>, {id: string}> = (props) => {
+          const {id} = props ?? {};
+
+          return  revokeCaptureShare(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RevokeCaptureShareMutationResult = NonNullable<Awaited<ReturnType<typeof revokeCaptureShare>>>
+
+    export type RevokeCaptureShareMutationError = ErrorModel
+
+    /**
+ * @summary Revoke a Capture share
+ */
+export const useRevokeCaptureShare = <TError = ErrorModel,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof revokeCaptureShare>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof api>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof revokeCaptureShare>>,
+        TError,
+        {id: string},
+        TContext
+      > => {
+      return useMutation(getRevokeCaptureShareMutationOptions(options), queryClient);
+    }
 
 /**
  * @summary Permanently delete every trashed capture

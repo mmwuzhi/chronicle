@@ -5,6 +5,7 @@ import { useTranslation } from "react-i18next";
 import { AuthPanel, AuthShell } from "@/components/ui/auth-shell";
 import { Button } from "@/components/ui/button";
 import { FieldError, Input } from "@/components/ui/field";
+import { completeSignIn } from "@/lib/post-auth-redirect";
 
 export const Route = createFileRoute("/auth/mfa")({
   validateSearch: z.object({ mfa_token: z.string().default("") }),
@@ -64,8 +65,7 @@ function MFAVerify() {
         return;
       }
       const { accessToken } = await res.json();
-      localStorage.setItem("access_token", accessToken);
-      navigate({ to: "/captures" });
+      completeSignIn(accessToken);
     } finally {
       setVerifying(false);
     }

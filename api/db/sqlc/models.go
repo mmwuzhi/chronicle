@@ -446,6 +446,18 @@ type CaptureMetadatum struct {
 	SourceHash pgtype.Text        `json:"source_hash"`
 }
 
+type CaptureShare struct {
+	ID              uuid.UUID          `json:"id"`
+	UserID          uuid.UUID          `json:"user_id"`
+	CaptureID       uuid.UUID          `json:"capture_id"`
+	Secret          string             `json:"secret"`
+	SnapshotRawText string             `json:"snapshot_raw_text"`
+	CapturedAt      pgtype.Timestamptz `json:"captured_at"`
+	ExpiresAt       pgtype.Timestamptz `json:"expires_at"`
+	RevokedAt       pgtype.Timestamptz `json:"revoked_at"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+}
+
 type CaptureToken struct {
 	ID         uuid.UUID          `json:"id"`
 	UserID     uuid.UUID          `json:"user_id"`

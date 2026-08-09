@@ -30,6 +30,30 @@
   "detail": {
     "copied": "コピー済み"
   },
+  "share": {
+    "action": "共有",
+    "title": "読み取り専用コピーを共有",
+    "description": "リンクを知っている人は、サインインせずにこのコピーを表示できます。",
+    "preview": "相手に表示される内容",
+    "textOnly": "Captureの本文だけが含まれます。メディア、文字起こし、ファイル、リマインダー、リンクは非公開のままです。",
+    "expiry": "リンクの有効期限",
+    "expiry1d": "1日後",
+    "expiry7d": "7日後",
+    "expiry30d": "30日後",
+    "expiryNever": "無期限",
+    "neverWarning": "このリンクは取り消すまで有効です。",
+    "replacesExisting": "新しいリンクを作成すると、このCaptureの以前のリンクは無効になります。",
+    "create": "リンクを作成",
+    "creating": "作成中…",
+    "link": "共有リンク",
+    "copied": "コピー済み",
+    "done": "完了",
+    "failed": "共有リンクを作成またはコピーできませんでした。もう一度お試しください。",
+    "sharedTitle": "共有されたCapture",
+    "readOnly": "読み取り専用コピー",
+    "availableUntil": "{{time}}まで有効",
+    "loading": "読み込み中…"
+  },
   "longContent": {
     "showMore": "もっと見る"
   },

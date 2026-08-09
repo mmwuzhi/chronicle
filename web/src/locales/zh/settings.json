@@ -121,6 +121,22 @@
   },
   "data": {
     "title": "数据",
+    "shares": {
+      "title": "已分享的副本",
+      "description": "查看和撤销你分享过的只读 Capture 副本。",
+      "empty": "目前没有已分享的 Capture 副本。",
+      "expires": "有效至 {{time}}",
+      "expired": "已过期",
+      "noExpiry": "永不过期",
+      "copy": "复制链接",
+      "copied": "已复制",
+      "revoke": "撤销",
+      "revokeTitle": "撤销此链接？",
+      "revokeDescription": "之后访问该链接只会看到标准的页面不存在提示。",
+      "loadFailed": "无法加载已分享的副本。",
+      "loadMore": "加载更多",
+      "actionFailed": "无法更新该分享副本，请重试。"
+    },
     "archive": {
       "title": "数据与迁移",
       "description": "保存一份完整且可直接阅读的 Capture 副本，并可恢复到任意 Chronicle 账号。",

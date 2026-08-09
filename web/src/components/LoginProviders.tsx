@@ -1,8 +1,8 @@
-import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button, buttonClassName } from "@/components/ui/button";
 import { FieldError } from "@/components/ui/field";
+import { completeSignIn } from "@/lib/post-auth-redirect";
 
 function GoogleIcon() {
   return (
@@ -46,7 +46,6 @@ function GitHubIcon() {
 // OpenAPI spec) and owns its own failure state.
 export function LoginProviders() {
   const { t } = useTranslation("auth");
-  const navigate = useNavigate();
   const [passkeyError, setPasskeyError] = useState(false);
   const apiBase = import.meta.env.VITE_API_URL ?? "/api";
 
@@ -75,8 +74,7 @@ export function LoginProviders() {
         return;
       }
       const { accessToken } = await finishRes.json();
-      localStorage.setItem("access_token", accessToken);
-      navigate({ to: "/" });
+      completeSignIn(accessToken);
     } catch {
       // user cancelled
     }

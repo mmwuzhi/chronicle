@@ -16,7 +16,7 @@ import {
   PageTitle,
 } from "@/components/ui/page";
 
-export const Route = createFileRoute("/captures_/context")({
+export const Route = createFileRoute("/_authenticated/captures_/context")({
   validateSearch: (search: Record<string, unknown>) => ({
     anchorId: typeof search.anchorId === "string" ? search.anchorId : "",
   }),

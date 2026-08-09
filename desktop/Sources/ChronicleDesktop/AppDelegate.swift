@@ -269,6 +269,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 return config.isUsable
                     ? WebhookAPIClient(config: config, refresher: self.authRefresher) : nil
             },
+            share: { [weak self] in
+                guard let self, let config = self.verifiedConfig() else { return nil }
+                return config.isUsable
+                    ? CaptureShareAPIClient(config: config, refresher: self.authRefresher) : nil
+            },
             openSignIn: { [weak self] in self?.showSignIn() },
             createCapture: { [unowned self] payload in
                 RowItem(try self.createCaptureAndScheduleSync(payload, postChange: false))

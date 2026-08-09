@@ -18,6 +18,7 @@ final class CaptureDetailModel: ObservableObject {
     @Published private(set) var canGoBack = false
     @Published var editDraft: CaptureEditDraft?
     @Published var loadingEdit = false
+    @Published var loadingShare = false
 
     private var history: [RowItem] = []
     private let clients: CaptureClients
@@ -75,6 +76,52 @@ final class CaptureDetailModel: ObservableObject {
 
     func updateEditDraft(_ text: String) {
         editDraft?.text = text
+    }
+
+    func prepareForSharing() async -> Bool {
+        guard clients.share() != nil else {
+            clients.openSignIn()
+            return false
+        }
+        guard capture.synced, !capture.dirty else {
+            error = L("Sync this Capture before sharing.")
+            return false
+        }
+
+        let id = capture.id
+        let generation = clients.session.snapshot()
+        if capture.editableRawText == nil {
+            guard let client = clients.recall() else {
+                clients.openSignIn()
+                return false
+            }
+            loadingShare = true
+            defer {
+                if clients.session.isCurrent(generation), capture.id == id {
+                    loadingShare = false
+                }
+            }
+            do {
+                let fullCapture = try await client.capture(id: id)
+                guard !Task.isCancelled, clients.session.isCurrent(generation),
+                      capture.id == id else { return false }
+                capture = RowItem(fullCapture)
+            } catch {
+                guard !Task.isCancelled, clients.session.isCurrent(generation),
+                      capture.id == id else { return false }
+                self.error = describeCaptureShareError(error)
+                return false
+            }
+        }
+
+        guard let text = capture.editableRawText,
+              !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else {
+            error = L("Only text Captures can be shared.")
+            return false
+        }
+        error = ""
+        return true
     }
 
     func cancelEditing() {
@@ -289,6 +336,7 @@ final class CaptureDetailModel: ObservableObject {
         canGoBack = false
         loading = false
         loadingEdit = false
+        loadingShare = false
         editDraft = nil
         error = ""
     }
@@ -297,9 +345,11 @@ final class CaptureDetailModel: ObservableObject {
 struct CaptureDetailView: View {
     @ObservedObject var model: CaptureDetailModel
     @ObservedObject private var localization = DesktopLocalization.shared
+    let clients: CaptureClients
     var onCopy: (String) -> Void
 
     @State private var showPicker = false
+    @State private var showingShare = false
     // Bumped on .chroniclePinsChanged to re-read model.isPinned for the pin button.
     @State private var pinTick = 0
 
@@ -314,7 +364,7 @@ struct CaptureDetailView: View {
                 }
                 Text(L("Capture")).font(.headline)
                 Spacer()
-                if model.loadingEdit {
+                if model.loadingEdit || model.loadingShare {
                     ProgressView().controlSize(.small)
                 }
                 Button { model.togglePin() } label: {
@@ -324,6 +374,18 @@ struct CaptureDetailView: View {
                 .buttonStyle(.borderless).font(.caption)
                 .foregroundStyle(model.isPinned ? Color.chronicleAccent : .secondary)
                 .help(model.isPinned ? L("Unpin from desktop") : L("Pin to desktop"))
+                Button {
+                    Task {
+                        if await model.prepareForSharing() {
+                            showingShare = true
+                        }
+                    }
+                } label: {
+                    Label(L("Share"), systemImage: "square.and.arrow.up")
+                }
+                .buttonStyle(.borderless).font(.caption).foregroundStyle(.secondary)
+                .disabled(model.loadingShare || model.editDraft != nil)
+                .help(model.editDraft == nil ? L("Share a read-only copy") : L("Save before sharing"))
                 Button { onCopy(model.capture.content) } label: {
                     Label(L("Copy"), systemImage: "doc.on.doc")
                 }
@@ -384,6 +446,9 @@ struct CaptureDetailView: View {
         .onAppear { model.reload() }
         .onReceive(NotificationCenter.default.publisher(for: .chroniclePinsChanged)) { _ in
             pinTick &+= 1
+        }
+        .sheet(isPresented: $showingShare) {
+            CaptureShareSheet(capture: model.capture, clients: clients, onCopy: onCopy)
         }
     }
 
@@ -513,7 +578,7 @@ final class CaptureDetailWindowController: NSObject, NSWindowDelegate {
             return
         }
         let model = CaptureDetailModel(capture: row, clients: clients)
-        let view = CaptureDetailView(model: model, onCopy: Self.copy)
+        let view = CaptureDetailView(model: model, clients: clients, onCopy: Self.copy)
         let w = makeWindow(title: Self.title(for: row))
         w.delegate = self
         w.contentView = NSHostingView(rootView: view.tint(.chronicleAccent))

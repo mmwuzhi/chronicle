@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import {
@@ -25,12 +25,13 @@ import {
   PageTitle,
 } from "@/components/ui/page";
 
-export const Route = createFileRoute("/review")({ component: Review });
+export const Route = createFileRoute("/_authenticated/review")({
+  component: Review,
+});
 
 function Review() {
   const { t } = useTranslation("captures");
   const { t: tc } = useTranslation("common");
-  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const confirm = useConfirm();
   const mutationToast = useMutationToast();
@@ -93,10 +94,6 @@ function Review() {
   };
 
   if (reviewQuery.error) {
-    if (reviewQuery.error.status === 401) {
-      void navigate({ to: "/login" });
-      return null;
-    }
     return <PageError>{t("failedToLoad")}</PageError>;
   }
 

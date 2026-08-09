@@ -121,6 +121,22 @@
   },
   "data": {
     "title": "データ",
+    "shares": {
+      "title": "共有したコピー",
+      "description": "共有した読み取り専用のCaptureコピーを確認し、取り消せます。",
+      "empty": "共有中のCaptureコピーはありません。",
+      "expires": "{{time}}に期限切れ",
+      "expired": "期限切れ",
+      "noExpiry": "有効期限なし",
+      "copy": "リンクをコピー",
+      "copied": "コピー済み",
+      "revoke": "取り消す",
+      "revokeTitle": "このリンクを取り消しますか？",
+      "revokeDescription": "このリンクを開くと、通常のページが見つからない画面が表示されます。",
+      "loadFailed": "共有したコピーを読み込めませんでした。",
+      "loadMore": "さらに読み込む",
+      "actionFailed": "共有したコピーを更新できませんでした。もう一度お試しください。"
+    },
     "archive": {
       "title": "データと移行",
       "description": "Capture の完全で読みやすいコピーを保存し、任意の Chronicle アカウントに復元できます。",

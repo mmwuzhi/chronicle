@@ -11,7 +11,7 @@ import { Card } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/field";
 import { Meta, PageHeader, PageShell, PageTitle } from "@/components/ui/page";
 
-export const Route = createFileRoute("/ask")({ component: Ask });
+export const Route = createFileRoute("/_authenticated/ask")({ component: Ask });
 
 function SourceCard({ source }: { source: AskSource }): React.JSX.Element {
   const navigate = useNavigate();

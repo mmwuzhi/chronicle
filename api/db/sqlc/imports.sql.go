@@ -206,12 +206,21 @@ func (q *Queries) MarkMarkdownImportUndone(ctx context.Context, arg MarkMarkdown
 }
 
 const softDeleteMarkdownImportCaptures = `-- name: SoftDeleteMarkdownImportCaptures :many
-UPDATE captures
-SET deleted_at = now()
-WHERE user_id = $1::uuid
-  AND id = ANY($2::uuid[])
-  AND deleted_at IS NULL
-RETURNING id
+WITH deleted AS (
+  UPDATE captures
+  SET deleted_at = now()
+  WHERE user_id = $1::uuid
+    AND id = ANY($2::uuid[])
+    AND deleted_at IS NULL
+  RETURNING id
+), revoked AS (
+  UPDATE capture_shares
+  SET revoked_at = now()
+  WHERE user_id = $1::uuid
+    AND capture_id IN (SELECT id FROM deleted)
+    AND revoked_at IS NULL
+)
+SELECT id FROM deleted
 `
 
 type SoftDeleteMarkdownImportCapturesParams struct {

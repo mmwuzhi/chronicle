@@ -10,38 +10,25 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as VerifyEmailRouteImport } from './routes/verify-email'
-import { Route as TrashRouteImport } from './routes/trash'
-import { Route as SettingsRouteImport } from './routes/settings'
-import { Route as ReviewRouteImport } from './routes/review'
 import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as RegisterRouteImport } from './routes/register'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
-import { Route as CapturesRouteImport } from './routes/captures'
-import { Route as AskRouteImport } from './routes/ask'
+import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as CapturesContextRouteImport } from './routes/captures_.context'
+import { Route as SShareIdRouteImport } from './routes/s.$shareId'
 import { Route as AuthMfaRouteImport } from './routes/auth.mfa'
 import { Route as AuthCallbackRouteImport } from './routes/auth.callback'
+import { Route as AuthenticatedTrashRouteImport } from './routes/_authenticated.trash'
+import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated.settings'
+import { Route as AuthenticatedReviewRouteImport } from './routes/_authenticated.review'
+import { Route as AuthenticatedCapturesRouteImport } from './routes/_authenticated.captures'
+import { Route as AuthenticatedAskRouteImport } from './routes/_authenticated.ask'
+import { Route as AuthenticatedCapturesContextRouteImport } from './routes/_authenticated.captures_.context'
 
 const VerifyEmailRoute = VerifyEmailRouteImport.update({
   id: '/verify-email',
   path: '/verify-email',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const TrashRoute = TrashRouteImport.update({
-  id: '/trash',
-  path: '/trash',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const SettingsRoute = SettingsRouteImport.update({
-  id: '/settings',
-  path: '/settings',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ReviewRoute = ReviewRouteImport.update({
-  id: '/review',
-  path: '/review',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ResetPasswordRoute = ResetPasswordRouteImport.update({
@@ -64,14 +51,8 @@ const ForgotPasswordRoute = ForgotPasswordRouteImport.update({
   path: '/forgot-password',
   getParentRoute: () => rootRouteImport,
 } as any)
-const CapturesRoute = CapturesRouteImport.update({
-  id: '/captures',
-  path: '/captures',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AskRoute = AskRouteImport.update({
-  id: '/ask',
-  path: '/ask',
+const AuthenticatedRoute = AuthenticatedRouteImport.update({
+  id: '/_authenticated',
   getParentRoute: () => rootRouteImport,
 } as any)
 const IndexRoute = IndexRouteImport.update({
@@ -79,9 +60,9 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const CapturesContextRoute = CapturesContextRouteImport.update({
-  id: '/captures_/context',
-  path: '/captures/context',
+const SShareIdRoute = SShareIdRouteImport.update({
+  id: '/s/$shareId',
+  path: '/s/$shareId',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthMfaRoute = AuthMfaRouteImport.update({
@@ -94,122 +75,157 @@ const AuthCallbackRoute = AuthCallbackRouteImport.update({
   path: '/auth/callback',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthenticatedTrashRoute = AuthenticatedTrashRouteImport.update({
+  id: '/trash',
+  path: '/trash',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
+const AuthenticatedSettingsRoute = AuthenticatedSettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
+const AuthenticatedReviewRoute = AuthenticatedReviewRouteImport.update({
+  id: '/review',
+  path: '/review',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
+const AuthenticatedCapturesRoute = AuthenticatedCapturesRouteImport.update({
+  id: '/captures',
+  path: '/captures',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
+const AuthenticatedAskRoute = AuthenticatedAskRouteImport.update({
+  id: '/ask',
+  path: '/ask',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
+const AuthenticatedCapturesContextRoute =
+  AuthenticatedCapturesContextRouteImport.update({
+    id: '/captures_/context',
+    path: '/captures/context',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
-  '/ask': typeof AskRoute
-  '/captures': typeof CapturesRoute
   '/forgot-password': typeof ForgotPasswordRoute
   '/login': typeof LoginRoute
   '/register': typeof RegisterRoute
   '/reset-password': typeof ResetPasswordRoute
-  '/review': typeof ReviewRoute
-  '/settings': typeof SettingsRoute
-  '/trash': typeof TrashRoute
   '/verify-email': typeof VerifyEmailRoute
+  '/ask': typeof AuthenticatedAskRoute
+  '/captures': typeof AuthenticatedCapturesRoute
+  '/review': typeof AuthenticatedReviewRoute
+  '/settings': typeof AuthenticatedSettingsRoute
+  '/trash': typeof AuthenticatedTrashRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/auth/mfa': typeof AuthMfaRoute
-  '/captures/context': typeof CapturesContextRoute
+  '/s/$shareId': typeof SShareIdRoute
+  '/captures/context': typeof AuthenticatedCapturesContextRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
-  '/ask': typeof AskRoute
-  '/captures': typeof CapturesRoute
   '/forgot-password': typeof ForgotPasswordRoute
   '/login': typeof LoginRoute
   '/register': typeof RegisterRoute
   '/reset-password': typeof ResetPasswordRoute
-  '/review': typeof ReviewRoute
-  '/settings': typeof SettingsRoute
-  '/trash': typeof TrashRoute
   '/verify-email': typeof VerifyEmailRoute
+  '/ask': typeof AuthenticatedAskRoute
+  '/captures': typeof AuthenticatedCapturesRoute
+  '/review': typeof AuthenticatedReviewRoute
+  '/settings': typeof AuthenticatedSettingsRoute
+  '/trash': typeof AuthenticatedTrashRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/auth/mfa': typeof AuthMfaRoute
-  '/captures/context': typeof CapturesContextRoute
+  '/s/$shareId': typeof SShareIdRoute
+  '/captures/context': typeof AuthenticatedCapturesContextRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
-  '/ask': typeof AskRoute
-  '/captures': typeof CapturesRoute
+  '/_authenticated': typeof AuthenticatedRouteWithChildren
   '/forgot-password': typeof ForgotPasswordRoute
   '/login': typeof LoginRoute
   '/register': typeof RegisterRoute
   '/reset-password': typeof ResetPasswordRoute
-  '/review': typeof ReviewRoute
-  '/settings': typeof SettingsRoute
-  '/trash': typeof TrashRoute
   '/verify-email': typeof VerifyEmailRoute
+  '/_authenticated/ask': typeof AuthenticatedAskRoute
+  '/_authenticated/captures': typeof AuthenticatedCapturesRoute
+  '/_authenticated/review': typeof AuthenticatedReviewRoute
+  '/_authenticated/settings': typeof AuthenticatedSettingsRoute
+  '/_authenticated/trash': typeof AuthenticatedTrashRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/auth/mfa': typeof AuthMfaRoute
-  '/captures_/context': typeof CapturesContextRoute
+  '/s/$shareId': typeof SShareIdRoute
+  '/_authenticated/captures_/context': typeof AuthenticatedCapturesContextRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
-    | '/ask'
-    | '/captures'
     | '/forgot-password'
     | '/login'
     | '/register'
     | '/reset-password'
+    | '/verify-email'
+    | '/ask'
+    | '/captures'
     | '/review'
     | '/settings'
     | '/trash'
-    | '/verify-email'
     | '/auth/callback'
     | '/auth/mfa'
+    | '/s/$shareId'
     | '/captures/context'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
-    | '/ask'
-    | '/captures'
     | '/forgot-password'
     | '/login'
     | '/register'
     | '/reset-password'
+    | '/verify-email'
+    | '/ask'
+    | '/captures'
     | '/review'
     | '/settings'
     | '/trash'
-    | '/verify-email'
     | '/auth/callback'
     | '/auth/mfa'
+    | '/s/$shareId'
     | '/captures/context'
   id:
     | '__root__'
     | '/'
-    | '/ask'
-    | '/captures'
+    | '/_authenticated'
     | '/forgot-password'
     | '/login'
     | '/register'
     | '/reset-password'
-    | '/review'
-    | '/settings'
-    | '/trash'
     | '/verify-email'
+    | '/_authenticated/ask'
+    | '/_authenticated/captures'
+    | '/_authenticated/review'
+    | '/_authenticated/settings'
+    | '/_authenticated/trash'
     | '/auth/callback'
     | '/auth/mfa'
-    | '/captures_/context'
+    | '/s/$shareId'
+    | '/_authenticated/captures_/context'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
-  AskRoute: typeof AskRoute
-  CapturesRoute: typeof CapturesRoute
+  AuthenticatedRoute: typeof AuthenticatedRouteWithChildren
   ForgotPasswordRoute: typeof ForgotPasswordRoute
   LoginRoute: typeof LoginRoute
   RegisterRoute: typeof RegisterRoute
   ResetPasswordRoute: typeof ResetPasswordRoute
-  ReviewRoute: typeof ReviewRoute
-  SettingsRoute: typeof SettingsRoute
-  TrashRoute: typeof TrashRoute
   VerifyEmailRoute: typeof VerifyEmailRoute
   AuthCallbackRoute: typeof AuthCallbackRoute
   AuthMfaRoute: typeof AuthMfaRoute
-  CapturesContextRoute: typeof CapturesContextRoute
+  SShareIdRoute: typeof SShareIdRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -219,27 +235,6 @@ declare module '@tanstack/react-router' {
       path: '/verify-email'
       fullPath: '/verify-email'
       preLoaderRoute: typeof VerifyEmailRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/trash': {
-      id: '/trash'
-      path: '/trash'
-      fullPath: '/trash'
-      preLoaderRoute: typeof TrashRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/settings': {
-      id: '/settings'
-      path: '/settings'
-      fullPath: '/settings'
-      preLoaderRoute: typeof SettingsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/review': {
-      id: '/review'
-      path: '/review'
-      fullPath: '/review'
-      preLoaderRoute: typeof ReviewRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/reset-password': {
@@ -270,18 +265,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ForgotPasswordRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/captures': {
-      id: '/captures'
-      path: '/captures'
-      fullPath: '/captures'
-      preLoaderRoute: typeof CapturesRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/ask': {
-      id: '/ask'
-      path: '/ask'
-      fullPath: '/ask'
-      preLoaderRoute: typeof AskRouteImport
+    '/_authenticated': {
+      id: '/_authenticated'
+      path: ''
+      fullPath: '/'
+      preLoaderRoute: typeof AuthenticatedRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/': {
@@ -291,11 +279,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/captures_/context': {
-      id: '/captures_/context'
-      path: '/captures/context'
-      fullPath: '/captures/context'
-      preLoaderRoute: typeof CapturesContextRouteImport
+    '/s/$shareId': {
+      id: '/s/$shareId'
+      path: '/s/$shareId'
+      fullPath: '/s/$shareId'
+      preLoaderRoute: typeof SShareIdRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/auth/mfa': {
@@ -312,24 +300,84 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthCallbackRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_authenticated/trash': {
+      id: '/_authenticated/trash'
+      path: '/trash'
+      fullPath: '/trash'
+      preLoaderRoute: typeof AuthenticatedTrashRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/settings': {
+      id: '/_authenticated/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof AuthenticatedSettingsRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/review': {
+      id: '/_authenticated/review'
+      path: '/review'
+      fullPath: '/review'
+      preLoaderRoute: typeof AuthenticatedReviewRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/captures': {
+      id: '/_authenticated/captures'
+      path: '/captures'
+      fullPath: '/captures'
+      preLoaderRoute: typeof AuthenticatedCapturesRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/ask': {
+      id: '/_authenticated/ask'
+      path: '/ask'
+      fullPath: '/ask'
+      preLoaderRoute: typeof AuthenticatedAskRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/captures_/context': {
+      id: '/_authenticated/captures_/context'
+      path: '/captures/context'
+      fullPath: '/captures/context'
+      preLoaderRoute: typeof AuthenticatedCapturesContextRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
   }
 }
 
+interface AuthenticatedRouteChildren {
+  AuthenticatedAskRoute: typeof AuthenticatedAskRoute
+  AuthenticatedCapturesRoute: typeof AuthenticatedCapturesRoute
+  AuthenticatedReviewRoute: typeof AuthenticatedReviewRoute
+  AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRoute
+  AuthenticatedTrashRoute: typeof AuthenticatedTrashRoute
+  AuthenticatedCapturesContextRoute: typeof AuthenticatedCapturesContextRoute
+}
+
+const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
+  AuthenticatedAskRoute: AuthenticatedAskRoute,
+  AuthenticatedCapturesRoute: AuthenticatedCapturesRoute,
+  AuthenticatedReviewRoute: AuthenticatedReviewRoute,
+  AuthenticatedSettingsRoute: AuthenticatedSettingsRoute,
+  AuthenticatedTrashRoute: AuthenticatedTrashRoute,
+  AuthenticatedCapturesContextRoute: AuthenticatedCapturesContextRoute,
+}
+
+const AuthenticatedRouteWithChildren = AuthenticatedRoute._addFileChildren(
+  AuthenticatedRouteChildren,
+)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
-  AskRoute: AskRoute,
-  CapturesRoute: CapturesRoute,
+  AuthenticatedRoute: AuthenticatedRouteWithChildren,
   ForgotPasswordRoute: ForgotPasswordRoute,
   LoginRoute: LoginRoute,
   RegisterRoute: RegisterRoute,
   ResetPasswordRoute: ResetPasswordRoute,
-  ReviewRoute: ReviewRoute,
-  SettingsRoute: SettingsRoute,
-  TrashRoute: TrashRoute,
   VerifyEmailRoute: VerifyEmailRoute,
   AuthCallbackRoute: AuthCallbackRoute,
   AuthMfaRoute: AuthMfaRoute,
-  CapturesContextRoute: CapturesContextRoute,
+  SShareIdRoute: SShareIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

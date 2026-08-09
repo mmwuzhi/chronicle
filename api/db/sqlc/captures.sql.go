@@ -499,10 +499,21 @@ func (q *Queries) CreateUploadedCapture(ctx context.Context, arg CreateUploadedC
 }
 
 const deleteCapture = `-- name: DeleteCapture :one
-UPDATE captures
-SET deleted_at = now()
-WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL
-RETURNING id
+WITH deleted AS (
+  UPDATE captures
+  SET deleted_at = now()
+  WHERE captures.id = $1
+    AND captures.user_id = $2
+    AND captures.deleted_at IS NULL
+  RETURNING captures.id
+), revoked AS (
+  UPDATE capture_shares
+  SET revoked_at = now()
+  WHERE capture_id IN (SELECT id FROM deleted)
+    AND user_id = $2
+    AND revoked_at IS NULL
+)
+SELECT deleted.id FROM deleted
 `
 
 type DeleteCaptureParams struct {
@@ -510,8 +521,9 @@ type DeleteCaptureParams struct {
 	UserID uuid.UUID `json:"user_id"`
 }
 
-// Soft delete (project convention: never hard-DELETE user data). Idempotent —
-// a second delete of the same id matches no row (deleted_at already set) and
+// Soft delete (project convention: never hard-DELETE user data). Revoke every
+// active public snapshot in the same statement, so restoring the Capture can
+// never make an old link public again. A second delete matches no row and
 // returns pgx.ErrNoRows, which the handler maps to 404.
 func (q *Queries) DeleteCapture(ctx context.Context, arg DeleteCaptureParams) (uuid.UUID, error) {
 	row := q.db.QueryRow(ctx, deleteCapture, arg.ID, arg.UserID)

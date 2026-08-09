@@ -153,7 +153,7 @@ func main() {
 		slog.Info("link enrichment enabled")
 	}
 	upload.Register(r, pool, s3client, uploadConfig, auth.ValidateToken(cfg.JWTSecret), kickTranscription)
-	capture.Register(api, pool, rag, authMW, captureCreateMW, kickTranscription, cfg.LinkFetchEnabled, kickLinkFetch, kickMediaDeletion)
+	capture.Register(api, pool, rag, cfg.FrontendURL, authMW, captureCreateMW, kickTranscription, cfg.LinkFetchEnabled, kickLinkFetch, kickMediaDeletion)
 	user.Register(api, pool, authMW, kickMediaDeletion)
 	ai.Register(api, cfg.GeminiKey, authMW)
 	search.Register(api, pool, rag, authMW)
