@@ -1,90 +1,95 @@
-# Chronicle API — agent notes
+# Chronicle API
 
-Read the root `CLAUDE.md` first (stack, commands, data model, conventions).
-This file maps what lives where inside `api/` and records rules that are not
-visible from any single file. Setup and commands live in the root `Justfile`.
+The Go API is the authenticated system boundary and PostgreSQL is the source of
+truth. Setup, generation, migration, and verification commands live in the root
+`Justfile`; environment fields live in `internal/config` and `.env.example`.
 
 ## Package map
 
-- `cmd/server` — entry point: config load, PostgreSQL wiring, middleware
-  order, and every package's `Register(...)` call. New route packages get
-  mounted here.
-- `internal/config` — envconfig struct; startup fails fast on invalid env.
-  A feature is "enabled" iff its env vars are set (R2, Resend, OAuth,
-  Turnstile, WebAuthn, OpenAI/Gemini, `RAG_SERVICE_URL`).
-- `internal/middleware` — trace ID injection, JWT auth guard, rate limiter,
-  request logger.
-- `internal/auth` — the whole identity surface: email+password register/login,
-  refresh-token rotation, email verify/reset, Google/GitHub OAuth
-  (`oauth.go`), passkeys (`passkey.go`), TOTP MFA + recovery codes
-  (`totp.go`), JWT mint/verify (`token.go`), create-only capture tokens
-  (`capture_token.go`).
-- `internal/capture` — the core resource, split by sub-domain: `handler.go`
-  (Register + CRUD + shared helpers), `todotag.go` (#todo tag grammar; create
-  and update derive todo_at/done_at from the text), `remind.go` (reminders),
-  `trash.go` (soft delete, trash, R2 media purge), `attachments.go` (external
-  file references), `links.go` (explicit links + semantic suggestions),
-  `pagination.go` (cursor logic). New endpoints go in the matching sub-domain
-  file.
-- `internal/search` — `/find` (hybrid recall) and `/ask` (query-time answer).
-  `/find` degrades to keyword FTS when the sidecar is down — search must
-  never go dark. `/ask` requires the sidecar.
-- `internal/ragclient` — HTTP client for the Python sidecar (`ragsvc/`). A
-  nil/disabled client (no `RAG_SERVICE_URL`) makes every call a no-op or
-  `ErrDisabled`; every caller must keep working without it.
-- `internal/upload` — `POST /captures/upload`: multipart media upload to R2
-  (20 MB cap) plus the async Whisper/OCR transcription worker
-  (`transcription_worker.go`).
-- `internal/linkfetch` — the async link-enrichment worker: fetches URLs found
-  in text captures (SSRF-guarded, HTML-only, size-capped) and stores the
-  page's readable text in `transcript`. Structural twin of the transcription
-  worker; shares the `transcription_status` queue, partitioned by
-  `media_key IS NULL`. Gated by `LINK_FETCH_ENABLED`; no external API key.
-- `internal/archive` — lossless Chronicle archive export/restore, including
-  media and derived state. `internal/importer` — additive `.md`/`.txt`/ZIP
-  content import: safe YAML frontmatter parsing, explicit note-link recovery,
-  idempotent batch records, and Trash-based undo. These are distinct product
-  contracts; content import must not pretend an external note is a Chronicle
-  backup.
-- `internal/ai` — `POST /ai/polish`: optional LLM text enrichment.
-- `internal/user` — `/users/me`: profile, password change, linked OAuth
-  account management.
-- `internal/webhook` — CRUD for capture-webhook rules. Go owns the rules
-  table; ragsvc owns matching + delivery. Workflow automation kept at
-  explicit user request — do not extend beyond CRUD.
-- `testutil` — `NewPool(t)`: connects to the test DB (default
-  `postgres://chronicle:chronicle@localhost:5432/chronicle_test`, override
-  with `TEST_DATABASE_URL`), applies all goose migrations, auto-closes. All
-  DB tests share this one database — hence `go test -p 1 ./...`.
+- `cmd/server`: configuration, PostgreSQL/object-store wiring, middleware
+  order, background workers, and every package's `Register(...)` call
+- `internal/config`: fail-fast envconfig plus generic S3/R2 object-storage
+  resolution
+- `internal/objectstore`: the S3-compatible client shared by upload, archive,
+  and media deletion; R2 and self-hosted MinIO are provider configurations
+- `internal/middleware`: trace IDs, request logging, JWT auth, and bounded rate
+  limiting
+- `internal/auth`: password/email flows, refresh rotation, Google/GitHub OAuth,
+  passkeys, TOTP/recovery codes, create-only Capture tokens, and atomically
+  consumed PostgreSQL OAuth/WebAuthn state
+- `internal/capture`: Capture CRUD plus todo derivation, reminders, review,
+  Trash, attachment references, explicit/semantic links, link URL parsing,
+  sharing, pagination, and the durable media-deletion outbox worker
+- `internal/upload`: multipart direct-media upload and Whisper/OCR worker
+- `internal/linkfetch`: SSRF-guarded readable-page fetch worker
+- `internal/search`: `/find` hybrid recall and `/ask` query-time answers
+- `internal/ragclient`: optional, user-scoped HTTP client for `ragsvc/`
+- `internal/archive`: lossless Chronicle archive export/import with durable
+  operation identity
+- `internal/importer`: additive Markdown/text/ZIP import and Trash-based undo,
+  also backed by durable operation identity
+- `internal/ai`: optional text-polish endpoint
+- `internal/user`: profile, password, linked-account, and account lifecycle
+- `internal/webhook`: user-managed outbound Capture-webhook rules
+- `testutil`: migrated shared PostgreSQL test pool
 
-## Auth boundaries
+## Authentication and exposure boundaries
 
-- `POST /captures` runs behind `createMW`, which accepts a normal JWT **or** a
-  long-lived create-only capture token (iOS Shortcut / desktop quick
-  capture). Every other capture route uses `authMW` (JWT only). Never attach
-  `createMW` to a route that can read or modify data.
-- The RAG sidecar has no auth of its own. This API authenticates the user and
-  forwards a trusted `X-User-Id` header; the sidecar must only be reachable
-  from the API (localhost / private network).
+- `POST /captures` alone uses `createMW`, accepting either a normal JWT or a
+  create-only Capture token. A Capture token must never reach read, update,
+  delete, settings, sharing, or other account routes.
+- Ordinary Capture and account routes require JWT auth. Rate limiting runs
+  before auth: public surfaces are IP-scoped and authenticated surfaces become
+  user-scoped after identity is known.
+- `GET /public/shares/{id}` is intentionally unauthenticated at the account
+  layer, but requires `Authorization: Share <secret>`. UUID, secret, expiry, and
+  revocation failures all return the same 404 surface.
+- The RAG sidecar has no independent auth. The API authenticates the user and
+  forwards trusted `X-User-Id`; the sidecar must remain on localhost or a
+  private network.
 
-## Cross-cutting behaviors
+## Capture lifecycle
 
-- On capture write, the API calls the sidecar's `/index` to embed + extract.
-  Indexing is best-effort: a capture write must not fail because the sidecar
-  is down (same policy as R2 media purge on permanent delete).
-- Capture visibility mutations that do not run `/index` (trash, restore,
-  permanent delete, empty trash) must call the sidecar's `/invalidate` for the
-  affected user. Otherwise its per-user corpus cache can serve stale rows until
-  the TTL expires. Invalidation is still best-effort; the database mutation is
-  the source of truth.
-- `/captures/upload` bypasses huma (multipart needs the raw `*http.Request`),
-  so it is absent from `/openapi.json` and has no orval hook — the web client
-  calls it manually. An optional `text` form field becomes the capture's
-  raw_text; like every save path it goes through the #todo derivation
-  (`capture.DeriveTodoStamps`).
-- `CaptureCreateInput` still accepts a deprecated, ignored `classifiedAs`
-  field so queued desktop offline captures from pre-todo-facet builds replay
-  cleanly. Removal timing is tracked in `TODO.md`. General rule: when
-  changing the create contract, keep the previous shape accepted for at
-  least one release, because desktop offline queues replay old payloads
-  after updates.
+- All save paths derive `todo_at`/`done_at` from `raw_text` using
+  `capture/todotag.go`. The deprecated ignored `classifiedAs` create field stays
+  accepted so older Desktop offline queues can replay. Contract changes must
+  preserve at least one release of queued-client compatibility.
+- Link detection has one grammar: `capture/linkurl.go`. Create and text edits
+  reconcile the first URL. Changed URLs enqueue link fetch; unchanged URLs do
+  not refetch; removing the URL clears only link-derived transcript state.
+- Link and media transcription jobs share `transcription_status` but are
+  partitioned by `media_key IS NULL`. Link fetches re-check SSRF restrictions on
+  every redirect, accept only HTML, and cap response size.
+- Direct upload accepts transcribable media up to the configured limit. It is a
+  raw multipart route outside huma/OpenAPI; direct clients use the established
+  upload helper and a stable `Idempotency-Key`.
+- Normal Capture deletion is soft. Permanent delete and empty Trash operate only
+  on already-trashed Captures. Object keys enter the durable
+  `capture_media_deletions` outbox transactionally; the worker retries deletion
+  against the configured object store.
+- Review is a time-based retrieval view over Captures, not a second content
+  model.
+
+## Sharing contract
+
+- A share stores the exact non-empty `snapshotRawText` approved by the owner and
+  the source Capture timestamp. It never serializes media, attachments,
+  transcript, relationships, or context.
+- Secrets are random bearer capabilities returned only to the owner and placed
+  in the Web URL fragment. Compare decoded secrets in constant time.
+- Creating a share locks the source Capture and revokes its previous active
+  share in the same transaction. Trashing a Capture revokes active shares;
+  restore does not reverse revocation.
+- Owner list/create/revoke operations remain JWT-authenticated and user-scoped.
+
+## Imports, indexing, and optional services
+
+- Chronicle archive restore is lossless replacement/recovery; Markdown import
+  is additive content ingestion. Do not blur the contracts. Both persist
+  operation identity so retries after ambiguous outcomes are safe.
+- Capture writes index/extract best-effort. `/find` falls back to PostgreSQL FTS
+  if RAG is disabled or unavailable; `/ask` requires the sidecar.
+- Visibility mutations that do not re-index (Trash, restore, permanent delete,
+  empty Trash) invalidate the user's RAG corpus cache best-effort.
+- Webhook delivery and object removal are side effects. Their failures must not
+  roll back a committed Capture mutation; durable repair/outbox paths own retry.
