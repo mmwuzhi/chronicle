@@ -298,6 +298,9 @@ final class DesktopLocalization: ObservableObject {
 
         "Quick Capture": "Quick Capture",
         "Open Chronicle": "打开 Chronicle",
+        "Sign in and sync %d Capture…": "登录并同步 %d 条 Capture…",
+        "Sign in and sync %d Captures…": "登录并同步 %d 条 Capture…",
+        "Retry Sync (%d)": "重试同步（%d）",
         "Settings…": "设置…",
         "Quit Chronicle": "退出 Chronicle",
         "Redo": "重做",
@@ -330,15 +333,12 @@ final class DesktopLocalization: ObservableObject {
         "%dm": "%d 分钟前",
         "%dh": "%d 小时前",
         "%dd": "%d 天前",
-        "Saved locally — sign in to sync": "已保存到本地——登录后同步",
-        "Capture saved": "Capture 已保存",
         "Capture failed": "Capture 失败",
-        "Capture synced": "Capture 已同步",
-        "Capture saved locally": "Capture 已保存到本地",
-        "Sync will retry later.": "稍后会重试同步。",
         "Chronicle — signed out · %d capture waiting to sync": "Chronicle · 已退出登录 · %d 条 Capture 等待同步",
         "Chronicle — signed out · %d captures waiting to sync": "Chronicle · 已退出登录 · %d 条 Capture 等待同步",
         "Chronicle — signed out · sign in to sync": "Chronicle — 已退出登录 · 登录后同步",
+        "Chronicle · %d Capture waiting to sync": "Chronicle · %d 条 Capture 等待同步",
+        "Chronicle · %d Captures waiting to sync": "Chronicle · %d 条 Capture 等待同步",
     ]
 }
 
