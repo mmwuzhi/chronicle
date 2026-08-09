@@ -1,4 +1,4 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod/v3";
@@ -17,6 +17,7 @@ import {
   FieldLabel,
   Input,
 } from "@/components/ui/field";
+import { completeSignIn } from "@/lib/post-auth-redirect";
 
 export const Route = createFileRoute("/reset-password")({
   validateSearch: z.object({ token: z.string().default("") }),
@@ -33,12 +34,10 @@ const resetPassword = (token: string, password: string) =>
 function ResetPassword() {
   const { t } = useTranslation("auth");
   const { token } = Route.useSearch();
-  const navigate = useNavigate();
   const mutation = useMutation({
     mutationFn: (password: string) => resetPassword(token, password),
     onSuccess: (data) => {
-      localStorage.setItem("access_token", data.accessToken);
-      navigate({ to: "/" });
+      completeSignIn(data.accessToken);
     },
   });
 

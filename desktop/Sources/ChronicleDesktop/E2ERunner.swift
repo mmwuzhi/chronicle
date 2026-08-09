@@ -43,6 +43,8 @@ struct E2ERunner {
             }
         case "reminders-sync":
             await delegate.syncServerReminders(using: try reminderClient())
+        case "share-flow":
+            try await runShareFlow()
         default:
             throw E2EError.unsupportedMode(environment["CHRONICLE_DESKTOP_E2E_MODE"] ?? "")
         }
@@ -65,6 +67,31 @@ struct E2ERunner {
 
     private func reminderClient() throws -> ReminderAPIClient {
         ReminderAPIClient(config: try config())
+    }
+
+    private func runShareFlow() async throws {
+        let captureID = try required("CHRONICLE_DESKTOP_E2E_SHARE_CAPTURE_ID")
+        let snapshotRawText = try required("CHRONICLE_DESKTOP_E2E_CAPTURE_TEXT")
+        let outputPath = try required("CHRONICLE_DESKTOP_E2E_SHARE_URL_PATH")
+        let client = CaptureShareAPIClient(config: try config())
+        let before = try await client.list(cursor: nil, limit: 50, captureID: nil)
+        guard before.items.isEmpty else { throw E2EError.shareFlowFailed }
+        let created = try await client.create(
+            captureID: captureID,
+            expiresIn: .thirtyDays,
+            snapshotRawText: snapshotRawText
+        )
+        let restored = try await client.list(cursor: nil, limit: 50, captureID: captureID)
+        guard restored.items.contains(where: { $0.id == created.id && $0.url == created.url }) else {
+            throw E2EError.shareFlowFailed
+        }
+        let outputURL = URL(fileURLWithPath: outputPath)
+        try FileManager.default.createDirectory(
+            at: outputURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try created.url.write(to: outputURL, atomically: true, encoding: .utf8)
+        try await client.revoke(id: created.id)
     }
 
     private func config() throws -> ChronicleConfig {
@@ -94,6 +121,7 @@ private enum E2EError: Error, Equatable {
     case invalidDate(String)
     case invalidURL(String)
     case missingEnv(String)
+    case shareFlowFailed
     case syncFailed
     case unsupportedMode(String)
 }

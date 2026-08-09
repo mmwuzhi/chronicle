@@ -445,13 +445,25 @@ SET link_url = NULL,
 WHERE id = $1 AND media_key IS NULL AND deleted_at IS NULL;
 
 -- name: DeleteCapture :one
--- Soft delete (project convention: never hard-DELETE user data). Idempotent —
--- a second delete of the same id matches no row (deleted_at already set) and
+-- Soft delete (project convention: never hard-DELETE user data). Revoke every
+-- active public snapshot in the same statement, so restoring the Capture can
+-- never make an old link public again. A second delete matches no row and
 -- returns pgx.ErrNoRows, which the handler maps to 404.
-UPDATE captures
-SET deleted_at = now()
-WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL
-RETURNING id;
+WITH deleted AS (
+  UPDATE captures
+  SET deleted_at = now()
+  WHERE captures.id = sqlc.arg('id')
+    AND captures.user_id = sqlc.arg('user_id')
+    AND captures.deleted_at IS NULL
+  RETURNING captures.id
+), revoked AS (
+  UPDATE capture_shares
+  SET revoked_at = now()
+  WHERE capture_id IN (SELECT id FROM deleted)
+    AND user_id = sqlc.arg('user_id')
+    AND revoked_at IS NULL
+)
+SELECT deleted.id FROM deleted;
 
 -- name: ListTrashedCaptures :many
 -- Soft-deleted captures, for the trash view. Most-recently-deleted first.

@@ -1,9 +1,9 @@
-import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { AuthPanel, AuthShell } from "@/components/ui/auth-shell";
 import { Button } from "@/components/ui/button";
 import { FieldError, Input } from "@/components/ui/field";
+import { completeSignIn } from "@/lib/post-auth-redirect";
 
 // Second step of password sign-in when the account has TOTP enabled: exchanges
 // the short-lived mfaToken plus the user's code for a real session. Plain fetch,
@@ -16,7 +16,6 @@ export function LoginMfaStep({
   onBack: () => void;
 }) {
   const { t } = useTranslation("auth");
-  const navigate = useNavigate();
   const [code, setCode] = useState("");
   const [error, setError] = useState("");
   const [verifying, setVerifying] = useState(false);
@@ -38,8 +37,7 @@ export function LoginMfaStep({
         return;
       }
       const { accessToken } = await res.json();
-      localStorage.setItem("access_token", accessToken);
-      navigate({ to: "/" });
+      completeSignIn(accessToken);
     } finally {
       setVerifying(false);
     }

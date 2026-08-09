@@ -1,4 +1,5 @@
 import { isSameAccessToken } from "@/lib/auth-session";
+import { redirectToSignIn } from "@/lib/post-auth-redirect";
 
 export class SessionChangedDuringRefresh extends Error {}
 
@@ -48,5 +49,5 @@ export function expireSessionIfCurrent(requestToken: string): void {
     return;
   }
   localStorage.removeItem("access_token");
-  window.location.href = "/login";
+  redirectToSignIn();
 }

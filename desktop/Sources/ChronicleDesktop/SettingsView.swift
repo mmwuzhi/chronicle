@@ -31,6 +31,8 @@ struct SettingsView: View {
                 Divider()
                 retryQueueSection
                 Divider()
+                SharedCopiesSettingsSection(clients: model.clients)
+                Divider()
                 WebhooksSection(clients: model.clients)
 
                 if let status = model.status {

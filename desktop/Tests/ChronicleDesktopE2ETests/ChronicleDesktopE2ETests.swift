@@ -133,6 +133,46 @@ final class ChronicleDesktopE2ETests: XCTestCase {
         XCTAssertNotNil(dueRequest.queryItems["until"])
     }
 
+    func testShareFlowCreatesRestoresAndRevokesThroughTheRealApp() throws {
+        let server = try FakeChronicleServer()
+        try server.start()
+        defer { server.stop() }
+        let outputURL = temporaryShareURL()
+
+        try runApp(
+            mode: "share-flow",
+            dbURL: temporaryDatabaseURL(),
+            apiURL: server.baseURL,
+            token: "share-token",
+            text: "Shared through the desktop app",
+            shareCaptureID: server.shareCaptureID,
+            shareURLPath: outputURL
+        )
+
+        let requests = server.requests
+        XCTAssertEqual(
+            requests.filter { $0.method == "GET" && $0.path == "/shares" }.count,
+            2
+        )
+        let created = try XCTUnwrap(requests.first {
+            $0.method == "POST" && $0.path == "/captures/\(server.shareCaptureID)/shares"
+        })
+        XCTAssertEqual(created.headers["authorization"], "Bearer share-token")
+        XCTAssertEqual(created.jsonBody?["expiresIn"] as? String, "30d")
+        XCTAssertEqual(
+            created.jsonBody?["snapshotRawText"] as? String,
+            "Shared through the desktop app"
+        )
+        let revoked = try XCTUnwrap(requests.first {
+            $0.method == "DELETE" && $0.path == "/shares/\(server.shareID)"
+        })
+        XCTAssertEqual(revoked.headers["authorization"], "Bearer share-token")
+        XCTAssertEqual(
+            try String(contentsOf: outputURL, encoding: .utf8),
+            server.shareURL
+        )
+    }
+
     private func runApp(
         mode: String,
         dbURL: URL,
@@ -141,6 +181,8 @@ final class ChronicleDesktopE2ETests: XCTestCase {
         text: String = "e2e capture",
         remindAt: String? = nil,
         notificationCountURL: URL? = nil,
+        shareCaptureID: String? = nil,
+        shareURLPath: URL? = nil,
         file: StaticString = #filePath,
         line: UInt = #line
     ) throws {
@@ -164,6 +206,12 @@ final class ChronicleDesktopE2ETests: XCTestCase {
         }
         if let notificationCountURL {
             environment["CHRONICLE_DESKTOP_E2E_CAPTURE_CHANGE_COUNT_PATH"] = notificationCountURL.path
+        }
+        if let shareCaptureID {
+            environment["CHRONICLE_DESKTOP_E2E_SHARE_CAPTURE_ID"] = shareCaptureID
+        }
+        if let shareURLPath {
+            environment["CHRONICLE_DESKTOP_E2E_SHARE_URL_PATH"] = shareURLPath.path
         }
         process.environment = environment
 
@@ -197,12 +245,19 @@ final class ChronicleDesktopE2ETests: XCTestCase {
 
 private final class FakeChronicleServer: @unchecked Sendable {
     var createdCaptureID = "server-capture"
+    let shareCaptureID = "share-capture-1"
+    let shareID = "share-e2e-1"
     var pendingReminders: [[String: Any]] = []
     var dueReminders: [[String: Any]] = []
 
     private let listener: NWListener
     private let lock = NSLock()
     private var storedRequests: [HTTPRequest] = []
+    private var shareCreated = false
+
+    var shareURL: String {
+        "https://chronicle.example/s/\(shareID)#share-secret-1"
+    }
 
     init() throws {
         listener = try NWListener(using: .tcp, on: .any)
@@ -287,6 +342,22 @@ private final class FakeChronicleServer: @unchecked Sendable {
                 body = try JSONSerialization.data(
                     withJSONObject: filteredDueReminders(for: request))
                 status = "200 OK"
+            case ("GET", "/shares"):
+                body = try JSONSerialization.data(
+                    withJSONObject: [
+                        "items": shareCreated ? [captureShareJSON()] : [],
+                        "nextCursor": NSNull(),
+                    ]
+                )
+                status = "200 OK"
+            case ("POST", "/captures/\(shareCaptureID)/shares"):
+                shareCreated = true
+                body = try JSONSerialization.data(withJSONObject: captureShareJSON())
+                status = "200 OK"
+            case ("DELETE", "/shares/\(shareID)"):
+                shareCreated = false
+                body = Data()
+                status = "204 No Content"
             default:
                 body = Data("{}".utf8)
                 status = "404 Not Found"
@@ -305,6 +376,19 @@ private final class FakeChronicleServer: @unchecked Sendable {
         connection.send(content: response, completion: .contentProcessed { _ in
             connection.cancel()
         })
+    }
+
+    private func captureShareJSON() -> [String: Any] {
+        [
+            "id": shareID,
+            "captureId": shareCaptureID,
+            "snapshotRawText": "Shared through the desktop app",
+            "capturedAt": "2026-08-09T10:00:00Z",
+            "expiresAt": "2026-09-08T10:00:00Z",
+            "createdAt": "2026-08-09T11:00:00Z",
+            "secret": "share-secret-1",
+            "url": shareURL,
+        ]
     }
 
     private func filteredDueReminders(for request: HTTPRequest) -> [[String: Any]] {
@@ -413,6 +497,12 @@ private func temporaryNotificationCountURL() -> URL {
     FileManager.default.temporaryDirectory
         .appending(path: UUID().uuidString)
         .appending(path: "capture-change-count.txt")
+}
+
+private func temporaryShareURL() -> URL {
+    FileManager.default.temporaryDirectory
+        .appending(path: UUID().uuidString)
+        .appending(path: "share-url.txt")
 }
 
 private func notificationCount(at url: URL) throws -> Int {

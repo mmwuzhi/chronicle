@@ -9,6 +9,7 @@ import { Link } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import type { CaptureBody } from "@/api";
 import { CaptureRelated } from "@/components/CaptureRelated";
+import { CaptureShareDialog } from "@/components/CaptureShareDialog";
 import { Markdown } from "@/components/Markdown";
 import { Button, buttonClassName } from "@/components/ui/button";
 import {
@@ -215,6 +216,9 @@ export function CaptureDetailDialog({
               >
                 {copied ? t("detail.copied") : tc("actions.copy")}
               </Button>
+              {capture.rawText?.trim() && (
+                <CaptureShareDialog capture={capture} />
+              )}
             </div>
           )}
           {editingText && (
@@ -299,6 +303,13 @@ export function CaptureDetailDialog({
                 >
                   {copied ? t("detail.copied") : tc("actions.copy")}
                 </Button>
+                {capture.rawText?.trim() && (
+                  <CaptureShareDialog
+                    capture={capture}
+                    triggerVariant="default"
+                    triggerClassName="flex-1"
+                  />
+                )}
               </div>
             )}
             {capture.mediaType === "image" && capture.mediaUrl && (

@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
@@ -38,12 +38,13 @@ import {
   PageTitle,
 } from "@/components/ui/page";
 
-export const Route = createFileRoute("/captures")({ component: Captures });
+export const Route = createFileRoute("/_authenticated/captures")({
+  component: Captures,
+});
 
 function Captures() {
   const { t } = useTranslation("captures");
   const { t: tc } = useTranslation("common");
-  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const confirm = useConfirm();
   const { message: mutationMessage, show: showMutationToast } =
@@ -173,10 +174,6 @@ function Captures() {
   );
 
   if (captureQuery.error) {
-    if (captureQuery.error.status === 401) {
-      void navigate({ to: "/login" });
-      return null;
-    }
     return <PageError>{t("failedToLoad")}</PageError>;
   }
 

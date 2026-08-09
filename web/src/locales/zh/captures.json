@@ -30,6 +30,30 @@
   "detail": {
     "copied": "已复制"
   },
+  "share": {
+    "action": "分享",
+    "title": "分享只读副本",
+    "description": "任何拿到链接的人都能查看这份副本，无需登录。",
+    "preview": "别人将看到",
+    "textOnly": "仅包含 Capture 正文。媒体、转写、文件、提醒和关联内容仍为私密。",
+    "expiry": "链接有效期",
+    "expiry1d": "1 天",
+    "expiry7d": "7 天",
+    "expiry30d": "30 天",
+    "expiryNever": "永不过期",
+    "neverWarning": "此链接会一直有效，直到你主动撤销。",
+    "replacesExisting": "创建新链接会撤销此 Capture 之前的链接。",
+    "create": "创建链接",
+    "creating": "创建中…",
+    "link": "分享链接",
+    "copied": "已复制",
+    "done": "完成",
+    "failed": "无法创建或复制分享链接，请重试。",
+    "sharedTitle": "共享的 Capture",
+    "readOnly": "只读副本",
+    "availableUntil": "有效至 {{time}}",
+    "loading": "加载中…"
+  },
   "longContent": {
     "showMore": "展开"
   },

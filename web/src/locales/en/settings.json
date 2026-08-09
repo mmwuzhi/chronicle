@@ -121,6 +121,22 @@
   },
   "data": {
     "title": "Data",
+    "shares": {
+      "title": "Shared copies",
+      "description": "Review and revoke the read-only Capture copies you have shared.",
+      "empty": "No Capture copies are shared.",
+      "expires": "Expires {{time}}",
+      "expired": "Expired",
+      "noExpiry": "No expiration",
+      "copy": "Copy link",
+      "copied": "Copied",
+      "revoke": "Revoke",
+      "revokeTitle": "Revoke this link?",
+      "revokeDescription": "Anyone using the link will see a standard page not found response.",
+      "loadFailed": "Shared copies could not be loaded.",
+      "loadMore": "Load more",
+      "actionFailed": "That shared copy could not be updated. Try again."
+    },
     "archive": {
       "title": "Data & portability",
       "description": "Keep a complete, human-readable copy of your Captures and restore it into any Chronicle account.",

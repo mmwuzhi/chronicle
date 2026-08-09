@@ -8,8 +8,10 @@ import { rehypeTodoChip } from "@/utils/rehype-todo-chip";
 // every capture in the loaded feed.
 export const Markdown = memo(function Markdown({
   children,
+  publicSafe = false,
 }: {
   children: string;
+  publicSafe?: boolean;
 }) {
   if (!children) return null;
   return (
@@ -17,6 +19,18 @@ export const Markdown = memo(function Markdown({
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         rehypePlugins={[rehypeTodoChip]}
+        components={
+          publicSafe
+            ? {
+                img: () => null,
+                a: ({ children: linkChildren, ...props }) => (
+                  <a {...props} target="_blank" rel="noreferrer noopener">
+                    {linkChildren}
+                  </a>
+                ),
+              }
+            : undefined
+        }
       >
         {children}
       </ReactMarkdown>

@@ -16,7 +16,8 @@ import (
 const defaultTestDSN = "postgres://chronicle:chronicle@localhost:5432/chronicle_test?sslmode=disable"
 
 // TestCaptureFirstUpgradeFromProductionBaseline exercises the exact release
-// boundary: production is on migration 13, while capture-first adds 14–32.
+// boundary: production is on migration 13, while capture-first adds every
+// subsequent migration through the current schema.
 // It pins both data conversion and the expand-only compatibility promise.
 func TestCaptureFirstUpgradeFromProductionBaseline(t *testing.T) {
 	dsn := os.Getenv("TEST_DATABASE_URL")
@@ -64,8 +65,8 @@ func TestCaptureFirstUpgradeFromProductionBaseline(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read final migration version: %v", err)
 	}
-	if version != 32 {
-		t.Fatalf("final migration version = %d, want 32", version)
+	if version != 20260809084919 {
+		t.Fatalf("final migration version = %d, want 20260809084919", version)
 	}
 
 	for _, table := range []string{
@@ -108,6 +109,28 @@ func TestCaptureFirstUpgradeFromProductionBaseline(t *testing.T) {
 	}
 	if !markdownImportsExist {
 		t.Fatal("markdown import operations table was not created")
+	}
+	var captureSharesExist bool
+	if err := db.QueryRow(
+		"SELECT to_regclass('public.capture_shares') IS NOT NULL",
+	).Scan(&captureSharesExist); err != nil {
+		t.Fatalf("check capture shares: %v", err)
+	}
+	if !captureSharesExist {
+		t.Fatal("capture shares table was not created")
+	}
+	var shareSecretRequired bool
+	if err := db.QueryRow(`
+		SELECT is_nullable = 'NO'
+		FROM information_schema.columns
+		WHERE table_schema = 'public'
+		  AND table_name = 'capture_shares'
+		  AND column_name = 'secret'
+	`).Scan(&shareSecretRequired); err != nil {
+		t.Fatalf("check capture share secret: %v", err)
+	}
+	if !shareSecretRequired {
+		t.Fatal("capture share secret was not made required")
 	}
 	for _, table := range []string{"auth_ephemeral_states", "auth_rate_limits"} {
 		var exists bool

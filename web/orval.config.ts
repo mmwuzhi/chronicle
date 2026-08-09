@@ -3,7 +3,7 @@ import { defineConfig } from "orval";
 export default defineConfig({
   chronicle: {
     input: {
-      target: "http://localhost:8080/openapi.json",
+      target: process.env.ORVAL_API_URL ?? "http://localhost:8080/openapi.json",
     },
     output: {
       target: "./src/api/index.ts",
@@ -16,6 +16,12 @@ export default defineConfig({
         },
         operations: {
           "list-capture-page": {
+            query: {
+              useInfinite: true,
+              useInfiniteQueryParam: "cursor",
+            },
+          },
+          "list-capture-shares": {
             query: {
               useInfinite: true,
               useInfiniteQueryParam: "cursor",

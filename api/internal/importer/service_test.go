@@ -93,6 +93,21 @@ Read [[B]].`,
 	if !replayed.Replayed || replayed.OperationID != operationID.String() {
 		t.Fatalf("replay result = %+v", replayed)
 	}
+	sharedCaptureID, err := uuid.Parse(result.CreatedCaptureIDs[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	shareID := uuid.New()
+	if _, err := pool.Exec(context.Background(), `
+		INSERT INTO capture_shares (
+			id, user_id, capture_id, secret, snapshot_raw_text, captured_at, expires_at
+		)
+		SELECT $1, user_id, id, $3, raw_text, created_at, NULL
+		FROM captures
+		WHERE id = $2
+	`, shareID, sharedCaptureID, strings.Repeat("s", 43)); err != nil {
+		t.Fatalf("create imported Capture share: %v", err)
+	}
 
 	undone, err := service.Undo(context.Background(), user.ID, operationID)
 	if err != nil {
@@ -115,6 +130,17 @@ Read [[B]].`,
 		if !capture.DeletedAt.Valid {
 			t.Fatalf("capture %s was not moved to Trash", captureID)
 		}
+	}
+	var revoked bool
+	if err := pool.QueryRow(
+		context.Background(),
+		"SELECT revoked_at IS NOT NULL FROM capture_shares WHERE id = $1",
+		shareID,
+	).Scan(&revoked); err != nil {
+		t.Fatalf("read imported Capture share: %v", err)
+	}
+	if !revoked {
+		t.Fatal("undoing a Markdown import did not permanently revoke its Capture share")
 	}
 	secondUndo, err := service.Undo(context.Background(), user.ID, operationID)
 	if err != nil || secondUndo.Trashed != 0 {

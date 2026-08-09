@@ -1,4 +1,4 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -15,6 +15,7 @@ import {
   FieldLabel,
   Input,
 } from "@/components/ui/field";
+import { completeSignIn } from "@/lib/post-auth-redirect";
 
 export const Route = createFileRoute("/login")({
   component: Login,
@@ -28,7 +29,6 @@ type FormData = z.infer<typeof schema>;
 
 function Login() {
   const { t } = useTranslation("auth");
-  const navigate = useNavigate();
   const [mfaToken, setMfaToken] = useState<string | null>(null);
 
   const login = useLogin({
@@ -44,8 +44,7 @@ function Login() {
           return;
         }
         if (res.accessToken) {
-          localStorage.setItem("access_token", res.accessToken);
-          navigate({ to: "/" });
+          completeSignIn(res.accessToken);
         }
       },
     },

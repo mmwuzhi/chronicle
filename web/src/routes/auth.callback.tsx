@@ -1,8 +1,9 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { z } from "zod/v3";
 import { useTranslation } from "react-i18next";
 import { AuthShell } from "@/components/ui/auth-shell";
+import { completeSignIn } from "@/lib/post-auth-redirect";
 
 export const Route = createFileRoute("/auth/callback")({
   validateSearch: z.object({ access_token: z.string().default("") }),
@@ -12,14 +13,11 @@ export const Route = createFileRoute("/auth/callback")({
 function OAuthCallback() {
   const { t } = useTranslation("auth");
   const { access_token } = Route.useSearch();
-  const navigate = useNavigate();
-
   useEffect(() => {
     if (access_token) {
-      localStorage.setItem("access_token", access_token);
-      navigate({ to: "/captures" });
+      completeSignIn(access_token);
     }
-  }, [access_token, navigate]);
+  }, [access_token]);
 
   return (
     <AuthShell>

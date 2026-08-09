@@ -41,6 +41,10 @@
   "or": "or",
   "signIn": "Sign in",
   "createAccount": "Create account",
+  "notFound": {
+    "title": "Page not found",
+    "returnHome": "Return home"
+  },
   "search": {
     "placeholder": "Search…",
     "captures": "Captures",

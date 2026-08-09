@@ -27,9 +27,10 @@ import (
 // cursor pagination in pagination.go.
 
 type handler struct {
-	q    *db.Queries
-	pool *pgxpool.Pool
-	rag  *ragclient.Client
+	q           *db.Queries
+	pool        *pgxpool.Pool
+	rag         *ragclient.Client
+	frontendURL string
 	// kickMediaDeletion wakes the durable R2 deletion worker after an explicit
 	// permanent delete writes its tombstone.
 	kickMediaDeletion func()
@@ -59,7 +60,7 @@ type objectDeleter interface {
 // linkFetchEnabled + kickLinkFetch wire link enrichment: when enabled, creating
 // a text capture that contains a URL enqueues a background fetch and wakes the
 // link-fetch worker; pass false / nil when link fetch is disabled.
-func Register(api huma.API, pool *pgxpool.Pool, rag *ragclient.Client, authMW, createMW func(huma.Context, func(huma.Context)), kickTranscription func(), linkFetchEnabled bool, kickLinkFetch func(), kickMediaDeletion func()) {
+func Register(api huma.API, pool *pgxpool.Pool, rag *ragclient.Client, frontendURL string, authMW, createMW func(huma.Context, func(huma.Context)), kickTranscription func(), linkFetchEnabled bool, kickLinkFetch func(), kickMediaDeletion func()) {
 	if kickTranscription == nil {
 		kickTranscription = func() {}
 	}
@@ -73,6 +74,7 @@ func Register(api huma.API, pool *pgxpool.Pool, rag *ragclient.Client, authMW, c
 		q:                 db.New(pool),
 		pool:              pool,
 		rag:               rag,
+		frontendURL:       strings.TrimRight(frontendURL, "/"),
 		kickMediaDeletion: kickMediaDeletion,
 		kickTranscription: kickTranscription,
 		linkFetchEnabled:  linkFetchEnabled,
@@ -115,6 +117,16 @@ func Register(api huma.API, pool *pgxpool.Pool, rag *ragclient.Client, authMW, c
 	huma.Register(api, op("add-capture-link", http.MethodPost, "/captures/{id}/links", "Link this capture to another"), h.addLink)
 	huma.Register(api, op("remove-capture-link", http.MethodDelete, "/captures/{id}/links/{targetId}", "Remove a link between two captures"), h.removeLink)
 	huma.Register(api, op("related-captures", http.MethodGet, "/captures/{id}/related", "Semantic suggestions related to this capture"), h.related)
+	huma.Register(api, op("create-capture-share", http.MethodPost, "/captures/{id}/shares", "Create or replace a read-only Capture snapshot"), h.createShare)
+	huma.Register(api, op("list-capture-shares", http.MethodGet, "/shares", "List active Capture shares"), h.listShares)
+	huma.Register(api, op("revoke-capture-share", http.MethodDelete, "/shares/{id}", "Revoke a Capture share"), h.revokeShare)
+	huma.Register(api, huma.Operation{
+		OperationID: "get-public-capture-share",
+		Method:      http.MethodGet,
+		Path:        "/public/shares/{id}",
+		Summary:     "Read an active shared Capture snapshot",
+		Tags:        []string{"shares"},
+	}, h.getPublicShare)
 }
 
 // --- shared types ---

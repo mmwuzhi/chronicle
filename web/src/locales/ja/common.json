@@ -41,6 +41,10 @@
   "or": "または",
   "signIn": "ログイン",
   "createAccount": "アカウント作成",
+  "notFound": {
+    "title": "ページが見つかりません",
+    "returnHome": "ホームに戻る"
+  },
   "search": {
     "placeholder": "検索…",
     "captures": "Capture",

@@ -83,6 +83,210 @@ test("captures: current capture-first controls are visible", async ({
   await expect(page.getByRole("button", { name: /^log$/i })).toHaveCount(0);
 });
 
+test("sharing: an existing link is restored in the Capture dialog", async ({
+  page,
+}) => {
+  const captureID = "00000000-0000-4000-8000-000000000101";
+  const shareID = "00000000-0000-4000-8000-000000000102";
+  const sharedCapture = capture(
+    captureID,
+    "Persistent share state",
+    "2026-06-06T10:00:00Z",
+  );
+  let revoked = false;
+  await page.route("**/api/captures/page**", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ items: [sharedCapture], nextCursor: null }),
+    }),
+  );
+  await page.route("**/api/shares**", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        items: revoked
+          ? []
+          : [
+              {
+                id: shareID,
+                captureId: captureID,
+                snapshotRawText: "Original shared snapshot",
+                capturedAt: sharedCapture.createdAt,
+                createdAt: "2026-06-07T10:00:00Z",
+                expiresAt: "2099-06-14T10:00:00Z",
+                secret: "persistent-secret",
+                url: `https://chronicle.example/s/${shareID}#persistent-secret`,
+              },
+            ],
+        nextCursor: null,
+      }),
+    }),
+  );
+  await page.route(`**/api/shares/${shareID}`, (route) => {
+    revoked = true;
+    return route.fulfill({ status: 204 });
+  });
+
+  await goto(page, "/captures");
+  await page.getByRole("button", { name: "Open Capture" }).click();
+  await page
+    .getByRole("dialog", { name: "Capture" })
+    .getByRole("button", { name: "Share" })
+    .click();
+
+  const shareDialog = page.getByRole("dialog", {
+    name: "Share a read-only copy",
+  });
+  await expect(shareDialog.getByLabel("Share link")).toHaveValue(
+    `https://chronicle.example/s/${shareID}#persistent-secret`,
+  );
+  await expect(shareDialog.getByText("Original shared snapshot")).toBeVisible();
+  await expect(shareDialog.getByText(sharedCapture.rawText)).toHaveCount(0);
+  await expect(
+    shareDialog.getByRole("button", { name: "Revoke" }),
+  ).toBeVisible();
+
+  await shareDialog.getByRole("button", { name: "Revoke" }).click();
+  await page
+    .getByRole("dialog", { name: "Revoke this link?" })
+    .getByRole("button", { name: "Revoke" })
+    .click();
+  await expect(
+    shareDialog.getByRole("button", { name: "Create link" }),
+  ).toBeVisible();
+});
+
+test("sharing: a new link uses the selected expiry and copies the canonical URL", async ({
+  page,
+}) => {
+  const captureID = "00000000-0000-4000-8000-000000000104";
+  const shareID = "00000000-0000-4000-8000-000000000105";
+  const canonicalURL = `https://chronicle.example/s/${shareID}#new-secret`;
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: async (text: string) => {
+          document.documentElement.dataset.clipboardText = text;
+        },
+      },
+    });
+  });
+  await page.route("**/api/captures/page**", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        items: [capture(captureID, "New shared text", "2026-06-06T10:00:00Z")],
+        nextCursor: null,
+      }),
+    }),
+  );
+  await page.route("**/api/shares**", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ items: [], nextCursor: null }),
+    }),
+  );
+  await page.route(`**/api/captures/${captureID}/shares`, async (route) => {
+    expect(route.request().postDataJSON()).toEqual({
+      expiresIn: "30d",
+      snapshotRawText: "New shared text",
+    });
+    return route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        id: shareID,
+        captureId: captureID,
+        snapshotRawText: "New shared text",
+        capturedAt: "2026-06-06T10:00:00Z",
+        createdAt: "2026-06-07T10:00:00Z",
+        expiresAt: "2099-07-07T10:00:00Z",
+        secret: "new-secret",
+        url: canonicalURL,
+      }),
+    });
+  });
+
+  await goto(page, "/captures");
+  await page.getByRole("button", { name: "Open Capture" }).click();
+  await page
+    .getByRole("dialog", { name: "Capture" })
+    .getByRole("button", { name: "Share" })
+    .click();
+
+  const shareDialog = page.getByRole("dialog", {
+    name: "Share a read-only copy",
+  });
+  await shareDialog.getByLabel("Link expires").selectOption("30d");
+  await shareDialog.getByRole("button", { name: "Create link" }).click();
+  await expect(shareDialog.getByLabel("Share link")).toHaveValue(canonicalURL);
+  await shareDialog.getByRole("button", { name: "Copy", exact: true }).click();
+  await expect(page.locator("html")).toHaveAttribute(
+    "data-clipboard-text",
+    canonicalURL,
+  );
+});
+
+test("sharing: the public page is content-first, secret-bound, and copies its text", async ({
+  page,
+}) => {
+  const shareID = "00000000-0000-4000-8000-000000000103";
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: async (text: string) => {
+          document.documentElement.dataset.clipboardText = text;
+        },
+      },
+    });
+  });
+  await page.route(`**/api/public/shares/${shareID}`, (route) => {
+    if (route.request().headers().authorization !== "Share persistent-secret") {
+      return route.fulfill({
+        status: 404,
+        contentType: "application/json",
+        body: "{}",
+      });
+    }
+    return route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        snapshotRawText: "Public copy content",
+        capturedAt: "2026-06-06T10:00:00Z",
+        expiresAt: "2099-06-14T10:00:00Z",
+      }),
+    });
+  });
+
+  await goto(page, `/s/${shareID}#persistent-secret`);
+
+  await expect(page.getByText("Public copy content")).toBeVisible();
+  await expect(page.getByText("Read-only copy")).toHaveCount(0);
+  await expect(page.getByText(/Available until/)).toHaveCount(0);
+  const copyText = page.getByRole("button", { name: "Copy", exact: true });
+  await expect(copyText).toBeVisible();
+  await copyText.click();
+  await expect(page.getByRole("button", { name: "Copied" })).toBeVisible();
+  await expect(page.locator("html")).toHaveAttribute(
+    "data-clipboard-text",
+    "Public copy content",
+  );
+
+  await page.evaluate(() => {
+    window.location.hash = "invalid-secret";
+  });
+  await expect(
+    page.getByRole("heading", { name: "Page not found" }),
+  ).toBeVisible();
+});
+
 test("captures: wide cards form a natural-height ordered masonry", async ({
   page,
   isMobile,

@@ -1,4 +1,4 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
@@ -23,12 +23,13 @@ import {
   PageTitle,
 } from "@/components/ui/page";
 
-export const Route = createFileRoute("/trash")({ component: Trash });
+export const Route = createFileRoute("/_authenticated/trash")({
+  component: Trash,
+});
 
 function Trash() {
   const { t } = useTranslation("captures");
   const { t: tc } = useTranslation("common");
-  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const confirm = useConfirm();
   const [restoringId, setRestoringId] = useState<string | null>(null);
@@ -67,10 +68,6 @@ function Trash() {
   });
 
   if (query.error) {
-    if (query.error.status === 401) {
-      void navigate({ to: "/login" });
-      return null;
-    }
     return <PageError>{t("trash.failedToLoad")}</PageError>;
   }
 

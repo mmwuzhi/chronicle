@@ -30,6 +30,30 @@
   "detail": {
     "copied": "Copied"
   },
+  "share": {
+    "action": "Share",
+    "title": "Share a read-only copy",
+    "description": "Anyone with the link can view this copy without signing in.",
+    "preview": "Others will see",
+    "textOnly": "Only the Capture text is included. Media, transcripts, files, reminders, and Connections stay private.",
+    "expiry": "Link expires",
+    "expiry1d": "In 1 day",
+    "expiry7d": "In 7 days",
+    "expiry30d": "In 30 days",
+    "expiryNever": "Never",
+    "neverWarning": "This link stays available until you revoke it.",
+    "replacesExisting": "Creating a link revokes the previous link for this Capture.",
+    "create": "Create link",
+    "creating": "Creating…",
+    "link": "Share link",
+    "copied": "Copied",
+    "done": "Done",
+    "failed": "The share link could not be created or copied. Try again.",
+    "sharedTitle": "Shared Capture",
+    "readOnly": "Read-only copy",
+    "availableUntil": "Available until {{time}}",
+    "loading": "Loading…"
+  },
   "longContent": {
     "showMore": "Show more"
   },
