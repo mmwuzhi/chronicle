@@ -45,6 +45,57 @@ func TestRecallQueriesPostBoundedExclusionsInBody(t *testing.T) {
 	}
 }
 
+func TestRecallQueriesRetryLegacyGETOnMethodMismatch(t *testing.T) {
+	t.Helper()
+	type request struct {
+		method string
+		path   string
+		query  string
+		limit  string
+	}
+	var requests []request
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests = append(requests, request{
+			method: r.Method, path: r.URL.Path,
+			query: r.URL.Query().Get("q") + r.URL.Query().Get("id"),
+			limit: r.URL.Query().Get("limit"),
+		})
+		if r.Method == http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte("[]"))
+	}))
+	defer srv.Close()
+
+	client := New(srv.URL)
+	if _, err := client.Find(
+		context.Background(), "user", "old sidecar", 10, []string{"one", "two"},
+	); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.Related(
+		context.Background(), "user", "anchor", 5, []string{"one"},
+	); err != nil {
+		t.Fatal(err)
+	}
+	want := []request{
+		{method: http.MethodPost, path: "/find"},
+		{method: http.MethodGet, path: "/find", query: "old sidecar", limit: "12"},
+		{method: http.MethodPost, path: "/related"},
+		{method: http.MethodGet, path: "/related", query: "anchor", limit: "6"},
+	}
+	if len(requests) != len(want) {
+		t.Fatalf("requests = %+v", requests)
+	}
+	for index := range want {
+		if requests[index] != want[index] {
+			t.Fatalf("request %d = %+v, want %+v", index, requests[index], want[index])
+		}
+	}
+}
+
 func TestInvalidateCallsScopedSidecarEndpoint(t *testing.T) {
 	t.Helper()
 	var gotMethod, gotPath, gotUser string

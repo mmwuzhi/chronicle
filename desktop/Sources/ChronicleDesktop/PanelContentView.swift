@@ -408,13 +408,16 @@ struct PanelContentView: View {
         activeSearchQuery = query
         let client = clients.recall()
         let localLiteral = clients.localSearch(query)
+        let allCachedDismissedIDs = clients.cachedFindDismissedIDs(query)
         let cachedDismissedIDs = includeDismissed
-            ? Set<String>() : (client?.cachedFindDismissedIDs(q: query) ?? [])
+            ? Set<String>() : allCachedDismissedIDs
         // Online, retain unsynced captures and dirty server-backed captures whose
         // local text is newer than the server fragment.
-        hits = client == nil ? localLiteral : RowMerge.localRecallSupplement(
-            localLiteral, id: \.id, synced: \.synced, dirty: \.dirty,
-            excludedIDs: cachedDismissedIDs)
+        hits = client == nil
+            ? localLiteral.filter { !cachedDismissedIDs.contains($0.id) }
+            : RowMerge.localRecallSupplement(
+                localLiteral, id: \.id, synced: \.synced, dirty: \.dirty,
+                excludedIDs: cachedDismissedIDs)
         searched = true
         // 2) On-device semantic recall runs even signed out. Online, server-ranked
         //    results lead and this layer only contributes unsynced local captures.
@@ -427,8 +430,11 @@ struct PanelContentView: View {
                     let res = try await client.find(q: query, includeDismissed: true)
                     guard !Task.isCancelled, clients.session.isCurrent(generation) else { return }
                     let serverRows = res.items.map(RowItem.init)
-                    hiddenCount = res.hiddenCount ?? serverRows.filter(\.dismissed).count
-                    let dismissedIDs = Set(serverRows.filter(\.dismissed).map(\.id))
+                    let dismissedIDs = clients.cachedFindDismissedIDs(query).union(
+                        serverRows.filter(\.dismissed).map(\.id))
+                    hiddenCount = max(
+                        res.hiddenCount ?? serverRows.filter(\.dismissed).count,
+                        dismissedIDs.count)
                     let excludedIDs = includeDismissed ? Set<String>() : dismissedIDs
                     let visibleServerRows = includeDismissed
                         ? serverRows : serverRows.filter { !$0.dismissed }
@@ -442,14 +448,17 @@ struct PanelContentView: View {
                     degraded = res.degraded
                 } catch {
                     // Keep local results; a server/auth error must not blank them.
-                    let allDismissedIDs = client.cachedFindDismissedIDs(q: query)
+                    let allDismissedIDs = clients.cachedFindDismissedIDs(query)
                     let excludedIDs = includeDismissed ? Set<String>() : allDismissedIDs
                     hits = localLiteral.filter { !excludedIDs.contains($0.id) }
                     mergeHits(semantic.filter { !excludedIDs.contains($0.id) })
                     hiddenCount = allDismissedIDs.count
                 }
             } else {
-                mergeHits(semantic)
+                let excludedIDs = includeDismissed ? Set<String>() : allCachedDismissedIDs
+                hits = localLiteral.filter { !excludedIDs.contains($0.id) }
+                mergeHits(semantic.filter { !excludedIDs.contains($0.id) })
+                hiddenCount = allCachedDismissedIDs.count
             }
             if clients.session.isCurrent(generation) { busy = false }
         }

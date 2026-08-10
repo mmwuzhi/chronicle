@@ -129,8 +129,9 @@ type findBody struct {
 		Content   string `json:"content"`
 		Dismissed bool   `json:"dismissed"`
 	} `json:"items"`
-	Degraded    bool `json:"degraded"`
-	HiddenCount int  `json:"hiddenCount"`
+	Degraded                bool `json:"degraded"`
+	HiddenCount             int  `json:"hiddenCount"`
+	DismissalsAuthoritative bool `json:"dismissalsAuthoritative"`
 }
 
 func decodeFind(t *testing.T, response *http.Response) findBody {
@@ -221,7 +222,7 @@ func TestFindDismissalHidesRestoresAndNormalizesExactQuery(t *testing.T) {
 	}
 
 	hidden := decodeFind(t, findRequest(t, server, token, "foo bar"))
-	if len(hidden.Items) != 0 || hidden.HiddenCount != 1 {
+	if len(hidden.Items) != 0 || hidden.HiddenCount != 1 || !hidden.DismissalsAuthoritative {
 		t.Fatalf("expected one hidden result, got %+v", hidden)
 	}
 

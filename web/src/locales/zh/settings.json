@@ -152,7 +152,7 @@
       "importConfirm": "要把这个归档合并到当前账号吗？现有 Capture 不会被覆盖。",
       "importFailed": "无法导入此归档。",
       "resultTitle": "导入完成",
-      "result": "新建 {{created}}，跳过 {{skipped}}，冲突副本 {{forked}}，媒体 {{media}}，关联 {{links}}，附件引用 {{attachments}}。"
+      "result": "新建 {{created}}，跳过 {{skipped}}，冲突副本 {{forked}}，媒体 {{media}}，关联 {{links}}，附件引用 {{attachments}}，检索偏好 {{retrievalDismissals}}。"
     },
     "markdown": {
       "title": "导入 Markdown 与文本",

@@ -58,6 +58,36 @@ SELECT * FROM retrieval_dismissals
 WHERE user_id = sqlc.arg('user_id')
 ORDER BY created_at, surface, query_hash, anchor_id, target_id;
 
+-- name: ListArchiveSearchDismissalsPage :many
+SELECT * FROM retrieval_dismissals
+WHERE user_id = sqlc.arg('user_id')
+  AND surface = 'search'
+  AND (
+    sqlc.narg('after_created_at')::timestamptz IS NULL
+    OR (created_at, query_hash, target_id) > (
+      sqlc.narg('after_created_at')::timestamptz,
+      sqlc.arg('after_query_hash')::bytea,
+      sqlc.arg('after_target_id')::uuid
+    )
+  )
+ORDER BY created_at, query_hash, target_id
+LIMIT sqlc.arg('page_size');
+
+-- name: ListArchiveRelatedDismissalsPage :many
+SELECT * FROM retrieval_dismissals
+WHERE user_id = sqlc.arg('user_id')
+  AND surface = 'related'
+  AND (
+    sqlc.narg('after_created_at')::timestamptz IS NULL
+    OR (created_at, anchor_id, target_id) > (
+      sqlc.narg('after_created_at')::timestamptz,
+      sqlc.arg('after_anchor_id')::uuid,
+      sqlc.arg('after_target_id')::uuid
+    )
+  )
+ORDER BY created_at, anchor_id, target_id
+LIMIT sqlc.arg('page_size');
+
 -- name: GetCaptureOwner :one
 SELECT id, user_id FROM captures
 WHERE id = sqlc.arg('id')::uuid;
@@ -105,7 +135,8 @@ VALUES (
   sqlc.arg('user_id')::uuid,
   sqlc.arg('created_at')::timestamptz
 )
-ON CONFLICT (a_id, b_id) DO NOTHING
+ON CONFLICT (a_id, b_id) DO UPDATE
+SET created_at = GREATEST(capture_links.created_at, EXCLUDED.created_at)
 RETURNING *;
 
 -- name: InsertArchiveCaptureAttachment :one
@@ -142,7 +173,9 @@ WHERE EXISTS (
   WHERE id = sqlc.arg('target_id')::uuid AND user_id = sqlc.arg('user_id')::uuid
 )
 ON CONFLICT (user_id, query_hash, target_id) WHERE surface = 'search'
-DO UPDATE SET query_text = EXCLUDED.query_text, created_at = EXCLUDED.created_at;
+DO UPDATE SET
+  query_text = EXCLUDED.query_text,
+  created_at = GREATEST(retrieval_dismissals.created_at, EXCLUDED.created_at);
 
 -- name: InsertArchiveRelatedDismissal :execrows
 INSERT INTO retrieval_dismissals (
@@ -160,7 +193,48 @@ AND EXISTS (
   WHERE id = sqlc.arg('target_id')::uuid AND user_id = sqlc.arg('user_id')::uuid
 )
 ON CONFLICT (user_id, anchor_id, target_id) WHERE surface = 'related'
-DO UPDATE SET created_at = EXCLUDED.created_at;
+DO UPDATE SET created_at = GREATEST(retrieval_dismissals.created_at, EXCLUDED.created_at);
+
+-- name: GetArchiveCapturePairState :one
+SELECT
+  (
+    SELECT created_at FROM capture_links
+    WHERE user_id = sqlc.arg('user_id')::uuid
+      AND a_id = LEAST(sqlc.arg('x')::uuid, sqlc.arg('y')::uuid)
+      AND b_id = GREATEST(sqlc.arg('x')::uuid, sqlc.arg('y')::uuid)
+  )::timestamptz AS link_created_at,
+  (
+    SELECT max(created_at) FROM retrieval_dismissals
+    WHERE user_id = sqlc.arg('user_id')::uuid
+      AND surface = 'related'
+      AND (
+        (anchor_id = sqlc.arg('x')::uuid AND target_id = sqlc.arg('y')::uuid)
+        OR (anchor_id = sqlc.arg('y')::uuid AND target_id = sqlc.arg('x')::uuid)
+      )
+  )::timestamptz AS dismissal_created_at;
+
+-- name: InsertArchiveRelatedDismissalPair :execrows
+INSERT INTO retrieval_dismissals (
+  user_id, surface, anchor_id, target_id, created_at
+)
+SELECT
+  sqlc.arg('user_id')::uuid, 'related', pair.anchor_id, pair.target_id,
+  sqlc.arg('created_at')::timestamptz
+FROM (
+  VALUES
+    (sqlc.arg('x')::uuid, sqlc.arg('y')::uuid),
+    (sqlc.arg('y')::uuid, sqlc.arg('x')::uuid)
+) AS pair(anchor_id, target_id)
+WHERE EXISTS (
+  SELECT 1 FROM captures
+  WHERE id = pair.anchor_id AND user_id = sqlc.arg('user_id')::uuid
+)
+AND EXISTS (
+  SELECT 1 FROM captures
+  WHERE id = pair.target_id AND user_id = sqlc.arg('user_id')::uuid
+)
+ON CONFLICT (user_id, anchor_id, target_id) WHERE surface = 'related'
+DO UPDATE SET created_at = GREATEST(retrieval_dismissals.created_at, EXCLUDED.created_at);
 
 -- name: ClaimArchiveImportOperation :one
 WITH expired AS (

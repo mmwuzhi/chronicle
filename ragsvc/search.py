@@ -362,7 +362,7 @@ def related(
     limit = max(1, min(limit, 50))
     query, cands = rag.related_candidates(
         user_id, capture_id, limit=max(30, limit),
-        excluded_ids=excluded_ids or set())
+        excluded_ids=excluded_ids or set(), query_chars=RERANK_QUERY_CHARS)
     if not query or not cands:
         return []
     query = query[:RERANK_QUERY_CHARS]

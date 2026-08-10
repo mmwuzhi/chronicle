@@ -266,19 +266,67 @@ func (s *Service) writeExport(
 		checksums[attachmentsPath] = attachmentSum
 
 		dismissalSum, err := addZipGenerated(writer, dismissalsPath, func(output io.Writer) error {
-			rows, listErr := q.ListArchiveRetrievalDismissals(ctx, userID)
-			if listErr != nil {
-				return listErr
-			}
 			encoder := json.NewEncoder(output)
-			for _, row := range rows {
-				counts.Dismissals++
-				if counts.Dismissals > maxArchiveRecords {
-					return &ImportError{Status: 413, Title: "account has too many retrieval preferences to export"}
+			var afterCreatedAt pgtype.Timestamptz
+			var afterQueryHash []byte
+			var afterTargetID uuid.UUID
+			for {
+				page, listErr := q.ListArchiveSearchDismissalsPage(
+					ctx, db.ListArchiveSearchDismissalsPageParams{
+						UserID: userID, AfterCreatedAt: afterCreatedAt,
+						AfterQueryHash: afterQueryHash, AfterTargetID: afterTargetID,
+						PageSize: archivePageSize,
+					})
+				if listErr != nil {
+					return listErr
 				}
-				if err := encoder.Encode(retrievalDismissalRecord(row)); err != nil {
-					return err
+				for _, row := range page {
+					counts.Dismissals++
+					if counts.Dismissals > maxArchiveRecords {
+						return &ImportError{Status: 413, Title: "account has too many retrieval preferences to export"}
+					}
+					if err := encoder.Encode(retrievalDismissalRecord(row)); err != nil {
+						return err
+					}
 				}
+				if len(page) < archivePageSize {
+					break
+				}
+				last := page[len(page)-1]
+				afterCreatedAt = last.CreatedAt
+				afterQueryHash = last.QueryHash
+				afterTargetID = last.TargetID
+			}
+
+			afterCreatedAt = pgtype.Timestamptz{}
+			var afterAnchorID uuid.UUID
+			afterTargetID = uuid.Nil
+			for {
+				page, listErr := q.ListArchiveRelatedDismissalsPage(
+					ctx, db.ListArchiveRelatedDismissalsPageParams{
+						UserID: userID, AfterCreatedAt: afterCreatedAt,
+						AfterAnchorID: afterAnchorID, AfterTargetID: afterTargetID,
+						PageSize: archivePageSize,
+					})
+				if listErr != nil {
+					return listErr
+				}
+				for _, row := range page {
+					counts.Dismissals++
+					if counts.Dismissals > maxArchiveRecords {
+						return &ImportError{Status: 413, Title: "account has too many retrieval preferences to export"}
+					}
+					if err := encoder.Encode(retrievalDismissalRecord(row)); err != nil {
+						return err
+					}
+				}
+				if len(page) < archivePageSize {
+					break
+				}
+				last := page[len(page)-1]
+				afterCreatedAt = last.CreatedAt
+				afterAnchorID = last.AnchorID.Bytes
+				afterTargetID = last.TargetID
 			}
 			return nil
 		})

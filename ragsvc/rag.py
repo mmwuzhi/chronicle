@@ -372,9 +372,49 @@ def _stored_query_vec(row: dict) -> np.ndarray | None:
     return (mat / norms).mean(axis=0)
 
 
+def _representative_anchor_text(
+    row: dict, query_vector: np.ndarray, max_chars: int | None = None,
+) -> str:
+    """Order stored anchor chunks by closeness to the capture-wide vector.
+
+    Related rerankers have a bounded query budget. Feeding the document prefix
+    makes a long intro overwrite the capture's actual subject, so put the most
+    representative embedded chunks first and let the shared rerank boundary
+    apply its normal character cap.
+    """
+    chunks = row.get("chunks") or []
+    texts = row.get("chunk_texts") or []
+    ranked: list[tuple[float, str]] = []
+    query_norm = np.linalg.norm(query_vector) or 1.0
+    for encoded, text in zip(chunks, texts):
+        if not encoded or not text:
+            continue
+        vector = np.frombuffer(encoded, dtype=np.float32)
+        if len(vector) != len(query_vector):
+            continue
+        score = float(np.dot(vector, query_vector) /
+                      ((np.linalg.norm(vector) or 1.0) * query_norm))
+        ranked.append((score, text))
+    if not ranked:
+        text = row["content"]
+        return text if max_chars is None else text[:max_chars]
+    ranked.sort(key=lambda item: item[0], reverse=True)
+    if max_chars is None:
+        return "\n".join(text for _score, text in ranked)
+    output = ""
+    for _score, text in ranked:
+        separator = "\n" if output else ""
+        remaining = max_chars - len(output) - len(separator)
+        if remaining <= 0:
+            break
+        output += separator + text[:remaining]
+    return output
+
+
 def related_candidates(
     user_id: str, capture_id: str, limit: int = 30,
     excluded_ids: set[str] | None = None,
+    query_chars: int | None = None,
 ) -> tuple[str, list[dict]]:
     """Wide semantic candidates for ONE capture's Related surface: score the
     user's other captures against this capture's meaning (max cosine over their
@@ -416,7 +456,7 @@ def related_candidates(
                     "rerank_text": best_text[i] or metas[i]["content"]})
         if len(out) >= limit:
             break
-    return own["content"], out
+    return _representative_anchor_text(own, qv, query_chars), out
 
 
 # Vector floor for wide recall (a fallback only; literal hits ignore it).

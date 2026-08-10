@@ -208,21 +208,23 @@ func (s *Service) Import(
 			if parseErr != nil {
 				return parseErr
 			}
-			if _, insertErr := q.InsertArchiveCaptureLink(ctx, db.InsertArchiveCaptureLinkParams{
-				X:         idMap[sourceA],
-				Y:         idMap[sourceB],
-				UserID:    userID,
-				CreatedAt: createdAt,
-			}); insertErr == nil {
-				result.Links++
-			} else if !errors.Is(insertErr, pgx.ErrNoRows) {
+			applied, insertErr := restoreArchiveLink(
+				ctx, q, userID, idMap[sourceA], idMap[sourceB], createdAt,
+			)
+			if insertErr != nil && !errors.Is(insertErr, pgx.ErrNoRows) {
 				return insertErr
+			}
+			if applied {
+				result.Links++
 			}
 			return nil
 		}); insertErr != nil {
 			return insertErr
 		}
 		if data.manifest.FormatVersion >= 2 {
+			if lockErr := q.LockSearchDismissals(ctx, userID); lockErr != nil {
+				return lockErr
+			}
 			if insertErr := forEachNDJSON(data.files[dismissalsPath], func(record RetrievalDismissalRecord) error {
 				targetID := idMap[uuid.MustParse(record.TargetID)]
 				createdAt, parseErr := parseTimestamp(record.CreatedAt)
@@ -238,10 +240,18 @@ func (s *Service) Import(
 						QueryText: *record.Query, TargetID: targetID, CreatedAt: createdAt,
 					})
 				case "related":
-					rows, insertErr = q.InsertArchiveRelatedDismissal(ctx, db.InsertArchiveRelatedDismissalParams{
-						UserID: userID, AnchorID: idMap[uuid.MustParse(*record.AnchorID)],
-						TargetID: targetID, CreatedAt: createdAt,
-					})
+					anchorID := idMap[uuid.MustParse(*record.AnchorID)]
+					// Version 2 stores both directions. Restore each undirected pair once.
+					if anchorID.String() > targetID.String() {
+						return nil
+					}
+					var applied bool
+					applied, rows, insertErr = restoreArchiveRelatedDismissal(
+						ctx, q, userID, anchorID, targetID, createdAt,
+					)
+					if !applied {
+						rows = 0
+					}
 				}
 				if insertErr != nil {
 					return insertErr
@@ -250,6 +260,11 @@ func (s *Service) Import(
 				return nil
 			}); insertErr != nil {
 				return insertErr
+			}
+			if pruneErr := q.PruneSearchDismissals(ctx, db.PruneSearchDismissalsParams{
+				UserID: userID, KeepLimit: retrieval.MaxSearchDismissalsPerUser,
+			}); pruneErr != nil {
+				return pruneErr
 			}
 		}
 		resultBytes, marshalErr := json.Marshal(result)
@@ -299,6 +314,69 @@ func (s *Service) Import(
 	}
 	s.rag.IndexBatchWithoutWebhooks(userID.String(), indexIDs)
 	return result, nil
+}
+
+func restoreArchiveLink(
+	ctx context.Context,
+	q *db.Queries,
+	userID, first, second uuid.UUID,
+	createdAt pgtype.Timestamptz,
+) (bool, error) {
+	if err := q.LockCapturePair(ctx, db.LockCapturePairParams{
+		UserID: userID, X: first, Y: second,
+	}); err != nil {
+		return false, err
+	}
+	state, err := q.GetArchiveCapturePairState(ctx, db.GetArchiveCapturePairStateParams{
+		UserID: userID, X: first, Y: second,
+	})
+	if err != nil {
+		return false, err
+	}
+	if state.DismissalCreatedAt.Valid && state.DismissalCreatedAt.Time.After(createdAt.Time) {
+		return false, nil
+	}
+	if err := q.RemoveRelatedDismissal(ctx, db.RemoveRelatedDismissalParams{
+		UserID: userID, AnchorID: first, TargetID: second,
+	}); err != nil {
+		return false, err
+	}
+	_, err = q.InsertArchiveCaptureLink(ctx, db.InsertArchiveCaptureLinkParams{
+		X: first, Y: second, UserID: userID, CreatedAt: createdAt,
+	})
+	return err == nil, err
+}
+
+func restoreArchiveRelatedDismissal(
+	ctx context.Context,
+	q *db.Queries,
+	userID, first, second uuid.UUID,
+	createdAt pgtype.Timestamptz,
+) (bool, int64, error) {
+	if err := q.LockCapturePair(ctx, db.LockCapturePairParams{
+		UserID: userID, X: first, Y: second,
+	}); err != nil {
+		return false, 0, err
+	}
+	state, err := q.GetArchiveCapturePairState(ctx, db.GetArchiveCapturePairStateParams{
+		UserID: userID, X: first, Y: second,
+	})
+	if err != nil {
+		return false, 0, err
+	}
+	if state.LinkCreatedAt.Valid && state.LinkCreatedAt.Time.After(createdAt.Time) {
+		return false, 0, nil
+	}
+	if err := q.RemoveCaptureLink(ctx, db.RemoveCaptureLinkParams{
+		UserID: userID, X: first, Y: second,
+	}); err != nil {
+		return false, 0, err
+	}
+	rows, err := q.InsertArchiveRelatedDismissalPair(
+		ctx, db.InsertArchiveRelatedDismissalPairParams{
+			UserID: userID, X: first, Y: second, CreatedAt: createdAt,
+		})
+	return err == nil, rows, err
 }
 
 func (s *Service) completedImportResult(

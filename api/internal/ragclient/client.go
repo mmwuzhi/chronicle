@@ -15,6 +15,8 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
+	"strconv"
 	"time"
 )
 
@@ -185,6 +187,26 @@ func (c *Client) Find(ctx context.Context, userID, query string, limit int, excl
 	if err != nil {
 		return nil, err
 	}
+	if resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusMethodNotAllowed {
+		resp.Body.Close()
+		compatURL, urlErr := url.Parse(c.baseURL + "/find")
+		if urlErr != nil {
+			return nil, urlErr
+		}
+		values := compatURL.Query()
+		values.Set("q", query)
+		values.Set("limit", strconv.Itoa(min(50, limit+len(excludedIDs))))
+		compatURL.RawQuery = values.Encode()
+		req, err = http.NewRequestWithContext(ctx, http.MethodGet, compatURL.String(), nil)
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("X-User-Id", userID)
+		resp, err = c.http.Do(req)
+		if err != nil {
+			return nil, err
+		}
+	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 300 {
 		return nil, fmt.Errorf("rag find status %d", resp.StatusCode)
@@ -218,6 +240,26 @@ func (c *Client) Related(ctx context.Context, userID, captureID string, limit in
 	resp, err := c.http.Do(req)
 	if err != nil {
 		return nil, err
+	}
+	if resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusMethodNotAllowed {
+		resp.Body.Close()
+		compatURL, urlErr := url.Parse(c.baseURL + "/related")
+		if urlErr != nil {
+			return nil, urlErr
+		}
+		values := compatURL.Query()
+		values.Set("id", captureID)
+		values.Set("limit", strconv.Itoa(min(50, limit+len(excludedIDs))))
+		compatURL.RawQuery = values.Encode()
+		req, err = http.NewRequestWithContext(ctx, http.MethodGet, compatURL.String(), nil)
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("X-User-Id", userID)
+		resp, err = c.http.Do(req)
+		if err != nil {
+			return nil, err
+		}
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 300 {

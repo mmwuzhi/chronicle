@@ -50,6 +50,7 @@ final class CaptureClients {
     let isPinned: (String) -> Bool
     // Offline-first local store access — always available, no login required.
     let localSearch: (String) -> [RowItem]
+    let cachedFindDismissedIDs: (String) -> Set<String>
     // On-device semantic recall over the local cache (local Ollama). Returns []
     // when the embedder is unavailable, so callers merge it on top of localSearch.
     let localSemanticSearch: (String) async -> [RowItem]
@@ -86,6 +87,7 @@ final class CaptureClients {
         togglePin: @escaping (RowItem) -> Void = { _ in },
         isPinned: @escaping (String) -> Bool = { _ in false },
         localSearch: @escaping (String) -> [RowItem],
+        cachedFindDismissedIDs: @escaping (String) -> Set<String> = { _ in [] },
         localSemanticSearch: @escaping (String) async -> [RowItem] = { _ in [] },
         localRecent: @escaping (Int) -> [RowItem],
         localDelete: @escaping (String) -> Void,
@@ -105,6 +107,7 @@ final class CaptureClients {
         self.togglePin = togglePin
         self.isPinned = isPinned
         self.localSearch = localSearch
+        self.cachedFindDismissedIDs = cachedFindDismissedIDs
         self.localSemanticSearch = localSemanticSearch
         self.localRecent = localRecent
         self.localDelete = localDelete

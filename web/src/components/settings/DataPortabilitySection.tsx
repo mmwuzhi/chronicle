@@ -63,6 +63,7 @@ function ResultSummary({
           media: result.media,
           links: result.links,
           attachments: result.attachments,
+          retrievalDismissals: result.retrievalDismissals,
         })}
       </Meta>
       {(result.warnings ?? []).map((warning) => (

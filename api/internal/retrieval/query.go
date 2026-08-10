@@ -10,6 +10,11 @@ import (
 	"golang.org/x/text/unicode/norm"
 )
 
+const (
+	MaxSearchDismissalsPerUser = 1000
+	MaxSearchQueryRunes        = 200
+)
+
 func NormalizeQuery(query string) string {
 	return strings.Join(strings.Fields(strings.ToLower(norm.NFKC.String(query))), " ")
 }

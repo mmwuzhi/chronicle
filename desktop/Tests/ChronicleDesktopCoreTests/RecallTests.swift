@@ -10,7 +10,7 @@ private let testConfig = ChronicleConfig(
 
 @Test
 func findRequestBuildsGETWithBearerAndQuery() throws {
-    let client = RecallAPIClient(config: testConfig)
+    let client = RecallAPIClient(config: testConfig, scope: .testing)
 
     let request = client.makeFindRequest(q: "ramen 1200", limit: 5)
 
@@ -27,7 +27,7 @@ func findRequestBuildsGETWithBearerAndQuery() throws {
 
 @Test
 func findRequestCanIncludeDismissedResults() throws {
-    let client = RecallAPIClient(config: testConfig)
+    let client = RecallAPIClient(config: testConfig, scope: .testing)
     let request = client.makeFindRequest(q: "ramen", includeDismissed: true)
     let url = try #require(request.url)
     let components = try #require(URLComponents(url: url, resolvingAgainstBaseURL: false))
@@ -37,7 +37,7 @@ func findRequestCanIncludeDismissedResults() throws {
 
 @Test
 func findDismissalRequestsUseExactQueryAndExpectedMethods() throws {
-    let client = RecallAPIClient(config: testConfig)
+    let client = RecallAPIClient(config: testConfig, scope: .testing)
     let id = "d2ebedc1-c6b2-40f4-a789-8e48064252a1"
     let dismiss = client.makeSetFindResultDismissedRequest(
         q: "ramen lunch", targetId: id, dismissed: true)
@@ -58,15 +58,15 @@ func searchDismissalCachePersistsExactQueryFeedbackByAccount() throws {
     let defaults = try #require(UserDefaults(suiteName: suite))
     defer { defaults.removePersistentDomain(forName: suite) }
     let id = "d2ebedc1-c6b2-40f4-a789-8e48064252a1"
-    let cache = SearchDismissalCache(config: testConfig, defaults: defaults)
+    let cache = SearchDismissalCache(defaults: defaults)
 
-    cache.set(query: "ＦＯＯ\u{3000}BAR", targetId: id, dismissed: true)
-    #expect(SearchDismissalCache(config: testConfig, defaults: defaults)
-        .ids(query: "foo bar") == Set([id]))
+    cache.set(query: "ＦＯＯ\u{3000}BAR", targetId: id, dismissed: true, scope: .testing)
+    #expect(SearchDismissalCache(defaults: defaults)
+        .ids(query: "foo bar", scope: .testing) == Set([id]))
 
-    let otherAccount = ChronicleConfig(apiURL: testConfig.apiURL, token: "other-token")
-    #expect(SearchDismissalCache(config: otherAccount, defaults: defaults)
-        .ids(query: "foo bar").isEmpty)
+    let otherAccount = LocalCaptureScope(apiURL: testConfig.apiURL, userID: "other-user")!
+    #expect(SearchDismissalCache(defaults: defaults)
+        .ids(query: "foo bar", scope: otherAccount).isEmpty)
 
     let firstJWT = ChronicleConfig(
         apiURL: testConfig.apiURL,
@@ -76,22 +76,56 @@ func searchDismissalCachePersistsExactQueryFeedbackByAccount() throws {
         apiURL: testConfig.apiURL,
         token: "eyJhbGciOiJub25lIn0.eyJzdWIiOiJ1c2VyLTEifQ.second",
     )
-    SearchDismissalCache(config: firstJWT, defaults: defaults)
-        .set(query: "stable", targetId: id, dismissed: true)
-    #expect(SearchDismissalCache(config: refreshedJWT, defaults: defaults)
-        .ids(query: "stable") == Set([id]))
+    let verifiedScope = LocalCaptureScope(apiURL: testConfig.apiURL, userID: "user-1")!
+    let firstClient = RecallAPIClient(
+        config: firstJWT, scope: verifiedScope, dismissalCache: cache)
+    let refreshedClient = RecallAPIClient(
+        config: refreshedJWT, scope: verifiedScope, dismissalCache: cache)
+    cache.set(query: "stable", targetId: id, dismissed: true, scope: verifiedScope)
+    #expect(firstClient.cachedFindDismissedIDs(q: "stable") == Set([id]))
+    #expect(refreshedClient.cachedFindDismissedIDs(q: "stable") == Set([id]))
 
     cache.replaceIfComplete(
         query: "foo bar",
-        response: FindResponse(items: [], degraded: false, hiddenCount: 1))
-    #expect(cache.ids(query: "foo bar") == Set([id]))
-    cache.set(query: "foo bar", targetId: id, dismissed: false)
-    #expect(cache.ids(query: "foo bar").isEmpty)
+        response: FindResponse(
+            items: [], degraded: false, hiddenCount: 1,
+            dismissalsAuthoritative: true),
+        scope: .testing)
+    #expect(cache.ids(query: "foo bar", scope: .testing) == Set([id]))
+    cache.set(query: "foo bar", targetId: id, dismissed: false, scope: .testing)
+    #expect(cache.ids(query: "foo bar", scope: .testing).isEmpty)
+}
+
+@Test
+func searchDismissalCacheKeepsPreferencesAcrossEmptyAndDegradedSearches() throws {
+    let suite = "chronicle.search-dismissal-retention-test.\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let cache = SearchDismissalCache(defaults: defaults)
+    let id = "d2ebedc1-c6b2-40f4-a789-8e48064252a1"
+    cache.set(query: "important", targetId: id, dismissed: true, scope: .testing)
+
+    for index in 0..<250 {
+        cache.replaceIfComplete(
+            query: "empty \(index)",
+            response: FindResponse(
+                items: [], degraded: false, hiddenCount: 0,
+                dismissalsAuthoritative: true),
+            scope: .testing)
+    }
+    cache.replaceIfComplete(
+        query: "important",
+        response: FindResponse(
+            items: [], degraded: true, hiddenCount: 0,
+            dismissalsAuthoritative: false),
+        scope: .testing)
+
+    #expect(cache.ids(query: "important", scope: .testing) == Set([id]))
 }
 
 @Test
 func askRequestBuildsPOSTWithBearerAndBody() throws {
-    let client = RecallAPIClient(config: testConfig)
+    let client = RecallAPIClient(config: testConfig, scope: .testing)
 
     let request = try client.makeAskRequest(question: "what did I spend on food?")
 
@@ -107,7 +141,7 @@ func askRequestBuildsPOSTWithBearerAndBody() throws {
 
 @Test
 func reviewTodayRequestBuildsGETWithBearerAndTimezone() throws {
-    let client = RecallAPIClient(config: testConfig)
+    let client = RecallAPIClient(config: testConfig, scope: .testing)
 
     let request = client.makeReviewTodayRequest(timezoneOffsetMinutes: -540)
 
@@ -147,7 +181,7 @@ func decodesReviewTodayBuckets() throws {
 
 @Test
 func relatedRequestBuildsGETWithBearerAndLimit() throws {
-    let client = RecallAPIClient(config: testConfig)
+    let client = RecallAPIClient(config: testConfig, scope: .testing)
 
     let request = client.makeRelatedRequest(
         id: "d2ebedc1-c6b2-40f4-a789-8e48064252a1", limit: 8)
@@ -164,7 +198,7 @@ func relatedRequestBuildsGETWithBearerAndLimit() throws {
 
 @Test
 func relatedDismissalRequestBuildsPUTWithBearer() throws {
-    let client = RecallAPIClient(config: testConfig)
+    let client = RecallAPIClient(config: testConfig, scope: .testing)
     let id = "d2ebedc1-c6b2-40f4-a789-8e48064252a1"
     let target = "11111111-1111-1111-1111-111111111111"
     let request = client.makeDismissRelatedRequest(id: id, targetId: target)
@@ -203,13 +237,14 @@ func decodesFindResponse() throws {
           {"id":"d2ebedc1-c6b2-40f4-a789-8e48064252a1","content":"alpha capture",
            "snippet":"…matched evidence…",
            "createdAt":"2026-06-06T16:33:27+09:00","modality":"text","score":0.87,"lexical":true}
-        ],"degraded":true,"hiddenCount":2}
+        ],"degraded":true,"hiddenCount":2,"dismissalsAuthoritative":true}
         """.utf8)
 
     let decoded = try JSONDecoder().decode(FindResponse.self, from: json)
 
     #expect(decoded.degraded == true)
     #expect(decoded.hiddenCount == 2)
+    #expect(decoded.dismissalsAuthoritative == true)
     #expect(decoded.items.count == 1)
     let item = try #require(decoded.items.first)
     #expect(item.id == "d2ebedc1-c6b2-40f4-a789-8e48064252a1")

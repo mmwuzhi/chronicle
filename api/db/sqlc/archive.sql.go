@@ -156,6 +156,43 @@ func (q *Queries) FailArchiveImportOperation(ctx context.Context, arg FailArchiv
 	return result.RowsAffected(), nil
 }
 
+const getArchiveCapturePairState = `-- name: GetArchiveCapturePairState :one
+SELECT
+  (
+    SELECT created_at FROM capture_links
+    WHERE user_id = $1::uuid
+      AND a_id = LEAST($2::uuid, $3::uuid)
+      AND b_id = GREATEST($2::uuid, $3::uuid)
+  )::timestamptz AS link_created_at,
+  (
+    SELECT max(created_at) FROM retrieval_dismissals
+    WHERE user_id = $1::uuid
+      AND surface = 'related'
+      AND (
+        (anchor_id = $2::uuid AND target_id = $3::uuid)
+        OR (anchor_id = $3::uuid AND target_id = $2::uuid)
+      )
+  )::timestamptz AS dismissal_created_at
+`
+
+type GetArchiveCapturePairStateParams struct {
+	UserID uuid.UUID `json:"user_id"`
+	X      uuid.UUID `json:"x"`
+	Y      uuid.UUID `json:"y"`
+}
+
+type GetArchiveCapturePairStateRow struct {
+	LinkCreatedAt      pgtype.Timestamptz `json:"link_created_at"`
+	DismissalCreatedAt pgtype.Timestamptz `json:"dismissal_created_at"`
+}
+
+func (q *Queries) GetArchiveCapturePairState(ctx context.Context, arg GetArchiveCapturePairStateParams) (GetArchiveCapturePairStateRow, error) {
+	row := q.db.QueryRow(ctx, getArchiveCapturePairState, arg.UserID, arg.X, arg.Y)
+	var i GetArchiveCapturePairStateRow
+	err := row.Scan(&i.LinkCreatedAt, &i.DismissalCreatedAt)
+	return i, err
+}
+
 const getArchiveImportOperation = `-- name: GetArchiveImportOperation :one
 SELECT id, user_id, archive_hash, claim_token, status, lease_until, id_map, result, last_error, created_at, completed_at FROM archive_import_operations
 WHERE id = $1::uuid
@@ -387,7 +424,8 @@ VALUES (
   $3::uuid,
   $4::timestamptz
 )
-ON CONFLICT (a_id, b_id) DO NOTHING
+ON CONFLICT (a_id, b_id) DO UPDATE
+SET created_at = GREATEST(capture_links.created_at, EXCLUDED.created_at)
 RETURNING a_id, b_id, user_id, created_at
 `
 
@@ -431,7 +469,7 @@ AND EXISTS (
   WHERE id = $3::uuid AND user_id = $1::uuid
 )
 ON CONFLICT (user_id, anchor_id, target_id) WHERE surface = 'related'
-DO UPDATE SET created_at = EXCLUDED.created_at
+DO UPDATE SET created_at = GREATEST(retrieval_dismissals.created_at, EXCLUDED.created_at)
 `
 
 type InsertArchiveRelatedDismissalParams struct {
@@ -454,6 +492,50 @@ func (q *Queries) InsertArchiveRelatedDismissal(ctx context.Context, arg InsertA
 	return result.RowsAffected(), nil
 }
 
+const insertArchiveRelatedDismissalPair = `-- name: InsertArchiveRelatedDismissalPair :execrows
+INSERT INTO retrieval_dismissals (
+  user_id, surface, anchor_id, target_id, created_at
+)
+SELECT
+  $1::uuid, 'related', pair.anchor_id, pair.target_id,
+  $2::timestamptz
+FROM (
+  VALUES
+    ($3::uuid, $4::uuid),
+    ($4::uuid, $3::uuid)
+) AS pair(anchor_id, target_id)
+WHERE EXISTS (
+  SELECT 1 FROM captures
+  WHERE id = pair.anchor_id AND user_id = $1::uuid
+)
+AND EXISTS (
+  SELECT 1 FROM captures
+  WHERE id = pair.target_id AND user_id = $1::uuid
+)
+ON CONFLICT (user_id, anchor_id, target_id) WHERE surface = 'related'
+DO UPDATE SET created_at = GREATEST(retrieval_dismissals.created_at, EXCLUDED.created_at)
+`
+
+type InsertArchiveRelatedDismissalPairParams struct {
+	UserID    uuid.UUID          `json:"user_id"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	X         uuid.UUID          `json:"x"`
+	Y         uuid.UUID          `json:"y"`
+}
+
+func (q *Queries) InsertArchiveRelatedDismissalPair(ctx context.Context, arg InsertArchiveRelatedDismissalPairParams) (int64, error) {
+	result, err := q.db.Exec(ctx, insertArchiveRelatedDismissalPair,
+		arg.UserID,
+		arg.CreatedAt,
+		arg.X,
+		arg.Y,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const insertArchiveSearchDismissal = `-- name: InsertArchiveSearchDismissal :execrows
 INSERT INTO retrieval_dismissals (
   user_id, surface, query_hash, query_text, target_id, created_at
@@ -467,7 +549,9 @@ WHERE EXISTS (
   WHERE id = $4::uuid AND user_id = $1::uuid
 )
 ON CONFLICT (user_id, query_hash, target_id) WHERE surface = 'search'
-DO UPDATE SET query_text = EXCLUDED.query_text, created_at = EXCLUDED.created_at
+DO UPDATE SET
+  query_text = EXCLUDED.query_text,
+  created_at = GREATEST(retrieval_dismissals.created_at, EXCLUDED.created_at)
 `
 
 type InsertArchiveSearchDismissalParams struct {
@@ -793,6 +877,64 @@ func (q *Queries) ListArchiveCapturesPage(ctx context.Context, arg ListArchiveCa
 	return items, nil
 }
 
+const listArchiveRelatedDismissalsPage = `-- name: ListArchiveRelatedDismissalsPage :many
+SELECT user_id, surface, query_hash, anchor_id, target_id, created_at, query_text FROM retrieval_dismissals
+WHERE user_id = $1
+  AND surface = 'related'
+  AND (
+    $2::timestamptz IS NULL
+    OR (created_at, anchor_id, target_id) > (
+      $2::timestamptz,
+      $3::uuid,
+      $4::uuid
+    )
+  )
+ORDER BY created_at, anchor_id, target_id
+LIMIT $5
+`
+
+type ListArchiveRelatedDismissalsPageParams struct {
+	UserID         uuid.UUID          `json:"user_id"`
+	AfterCreatedAt pgtype.Timestamptz `json:"after_created_at"`
+	AfterAnchorID  uuid.UUID          `json:"after_anchor_id"`
+	AfterTargetID  uuid.UUID          `json:"after_target_id"`
+	PageSize       int32              `json:"page_size"`
+}
+
+func (q *Queries) ListArchiveRelatedDismissalsPage(ctx context.Context, arg ListArchiveRelatedDismissalsPageParams) ([]RetrievalDismissal, error) {
+	rows, err := q.db.Query(ctx, listArchiveRelatedDismissalsPage,
+		arg.UserID,
+		arg.AfterCreatedAt,
+		arg.AfterAnchorID,
+		arg.AfterTargetID,
+		arg.PageSize,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []RetrievalDismissal
+	for rows.Next() {
+		var i RetrievalDismissal
+		if err := rows.Scan(
+			&i.UserID,
+			&i.Surface,
+			&i.QueryHash,
+			&i.AnchorID,
+			&i.TargetID,
+			&i.CreatedAt,
+			&i.QueryText,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listArchiveRetrievalDismissals = `-- name: ListArchiveRetrievalDismissals :many
 SELECT user_id, surface, query_hash, anchor_id, target_id, created_at, query_text FROM retrieval_dismissals
 WHERE user_id = $1
@@ -801,6 +943,64 @@ ORDER BY created_at, surface, query_hash, anchor_id, target_id
 
 func (q *Queries) ListArchiveRetrievalDismissals(ctx context.Context, userID uuid.UUID) ([]RetrievalDismissal, error) {
 	rows, err := q.db.Query(ctx, listArchiveRetrievalDismissals, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []RetrievalDismissal
+	for rows.Next() {
+		var i RetrievalDismissal
+		if err := rows.Scan(
+			&i.UserID,
+			&i.Surface,
+			&i.QueryHash,
+			&i.AnchorID,
+			&i.TargetID,
+			&i.CreatedAt,
+			&i.QueryText,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listArchiveSearchDismissalsPage = `-- name: ListArchiveSearchDismissalsPage :many
+SELECT user_id, surface, query_hash, anchor_id, target_id, created_at, query_text FROM retrieval_dismissals
+WHERE user_id = $1
+  AND surface = 'search'
+  AND (
+    $2::timestamptz IS NULL
+    OR (created_at, query_hash, target_id) > (
+      $2::timestamptz,
+      $3::bytea,
+      $4::uuid
+    )
+  )
+ORDER BY created_at, query_hash, target_id
+LIMIT $5
+`
+
+type ListArchiveSearchDismissalsPageParams struct {
+	UserID         uuid.UUID          `json:"user_id"`
+	AfterCreatedAt pgtype.Timestamptz `json:"after_created_at"`
+	AfterQueryHash []byte             `json:"after_query_hash"`
+	AfterTargetID  uuid.UUID          `json:"after_target_id"`
+	PageSize       int32              `json:"page_size"`
+}
+
+func (q *Queries) ListArchiveSearchDismissalsPage(ctx context.Context, arg ListArchiveSearchDismissalsPageParams) ([]RetrievalDismissal, error) {
+	rows, err := q.db.Query(ctx, listArchiveSearchDismissalsPage,
+		arg.UserID,
+		arg.AfterCreatedAt,
+		arg.AfterQueryHash,
+		arg.AfterTargetID,
+		arg.PageSize,
+	)
 	if err != nil {
 		return nil, err
 	}
