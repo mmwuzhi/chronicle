@@ -230,15 +230,20 @@ def test_related_degraded_mode_keeps_only_strong_vectors(monkeypatch):
 def test_related_passes_exclusions_before_candidate_window(monkeypatch):
     seen = {}
 
-    def candidates(_user, _anchor, limit, excluded_ids):
+    def candidates(_user, _anchor, limit, excluded_ids, query_chars):
         seen["limit"] = limit
         seen["excluded"] = excluded_ids
+        seen["query_chars"] = query_chars
         return "anchor", []
 
     monkeypatch.setattr(rag, "related_candidates", candidates)
     search.related("user", "anchor", limit=5, excluded_ids={f"id-{i}" for i in range(31)})
 
-    assert seen == {"limit": 30, "excluded": {f"id-{i}" for i in range(31)}}
+    assert seen == {
+        "limit": 30,
+        "excluded": {f"id-{i}" for i in range(31)},
+        "query_chars": search.RERANK_QUERY_CHARS,
+    }
 
 
 def test_every_rerank_backend_receives_bounded_query(monkeypatch):
@@ -278,6 +283,32 @@ def test_related_candidates_rerank_the_best_matching_chunk(monkeypatch):
 
     assert candidates[0]["id"] == "candidate"
     assert candidates[0]["rerank_text"] == "the matching passage near the end"
+
+
+def test_related_candidates_put_representative_anchor_chunk_first(monkeypatch):
+    intro = np.array([0.0, 1.0], dtype=np.float32)
+    subject = np.array([1.0, 0.0], dtype=np.float32)
+    rows = [
+        {"id": "anchor", "content": "unrelated intro then actual subject",
+         "created_at": "2026-01-01", "modality": "text", "model": "model",
+         "chunks": [intro.tobytes(), subject.tobytes()],
+         "chunk_texts": ["unrelated intro", "actual subject near the end"]},
+        {"id": "candidate", "content": "actual subject", "created_at": "2026-01-02",
+         "modality": "text"},
+    ]
+    snapshot = rag._Snapshot(rows=rows, model="model", built_at=0.0)
+    monkeypatch.setattr(rag, "EMBED_ENABLED", True)
+    monkeypatch.setattr(rag, "_snapshot", lambda _user_id: snapshot)
+    monkeypatch.setattr(rag, "_stored_query_vec", lambda _row: subject)
+    monkeypatch.setattr(
+        rag, "_capture_max_sims",
+        lambda _snapshot, _query: (
+            np.array([1.0, 0.82]), ["anchor evidence", "actual subject"]),
+    )
+
+    query, _candidates = rag.related_candidates("user", "anchor")
+
+    assert query.startswith("actual subject near the end")
 
 
 def test_renumber_maps_positions_to_uuids():

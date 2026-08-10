@@ -52,15 +52,12 @@ type FindInput struct {
 
 type FindOutput struct {
 	Body struct {
-		Items       []RecallItem `json:"items"`
-		Degraded    bool         `json:"degraded" doc:"true when the semantic sidecar was unavailable and keyword FTS was used"`
-		HiddenCount int          `json:"hiddenCount" doc:"Number of live results hidden for this exact normalized query"`
+		Items                   []RecallItem `json:"items"`
+		Degraded                bool         `json:"degraded" doc:"true when the semantic sidecar was unavailable and keyword FTS was used"`
+		HiddenCount             int          `json:"hiddenCount" doc:"Number of live results hidden for this exact normalized query"`
+		DismissalsAuthoritative bool         `json:"dismissalsAuthoritative" doc:"false when retrieval preferences could not be read completely"`
 	}
 }
-
-const (
-	maxSearchDismissalsPerUser = 1000
-)
 
 func normalizedSearchQuery(query string) string {
 	return retrieval.NormalizeQuery(query)
@@ -82,6 +79,7 @@ func (h *recallHandler) find(ctx context.Context, input *FindInput) (*FindOutput
 
 	out := &FindOutput{}
 	out.Body.Items = []RecallItem{}
+	out.Body.DismissalsAuthoritative = true
 	dismissedIDs, dismissErr := h.q.ListSearchDismissedIDs(ctx, db.ListSearchDismissedIDsParams{
 		UserID: uid, QueryHash: searchQueryHash(uid, query),
 	})
@@ -91,6 +89,7 @@ func (h *recallHandler) find(ctx context.Context, input *FindInput) (*FindOutput
 		slog.WarnContext(ctx, "search dismissals unavailable",
 			"traceId", middleware.GetTraceID(ctx), "err", dismissErr)
 		dismissedIDs = nil
+		out.Body.DismissalsAuthoritative = false
 	}
 	out.Body.HiddenCount = len(dismissedIDs)
 	excluded := make([]string, 0, len(dismissedIDs))
@@ -106,6 +105,7 @@ func (h *recallHandler) find(ctx context.Context, input *FindInput) (*FindOutput
 			slog.WarnContext(ctx, "search dismissal recovery unavailable",
 				"traceId", middleware.GetTraceID(ctx), "err", dismissErr)
 			dismissedRows = nil
+			out.Body.DismissalsAuthoritative = false
 		}
 	}
 
@@ -221,7 +221,7 @@ func (h *recallHandler) addFindDismissal(ctx context.Context, input *FindDismiss
 			return err
 		}
 		return q.PruneSearchDismissals(ctx, db.PruneSearchDismissalsParams{
-			UserID: uid, KeepLimit: maxSearchDismissalsPerUser,
+			UserID: uid, KeepLimit: retrieval.MaxSearchDismissalsPerUser,
 		})
 	})
 	if err != nil {

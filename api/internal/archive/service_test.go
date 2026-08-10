@@ -19,6 +19,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	db "github.com/sikaoshenmi/chronicle/db/sqlc"
@@ -188,6 +189,7 @@ func TestArchiveRoundTripMergePreservesTrashMediaLinksAndAttachments(t *testing.
 	createdAt := time.Date(2026, 7, 20, 9, 30, 0, 0, time.UTC)
 	textID := uuid.New()
 	mediaID := uuid.New()
+	relatedID := uuid.New()
 
 	if _, err := q.InsertArchiveCapture(
 		context.Background(),
@@ -215,6 +217,14 @@ func TestArchiveRoundTripMergePreservesTrashMediaLinksAndAttachments(t *testing.
 	mediaParams.DeletedAt = pgtype.Timestamptz{Time: createdAt.Add(time.Hour), Valid: true}
 	if _, err := q.InsertArchiveCapture(context.Background(), mediaParams); err != nil {
 		t.Fatalf("insert media capture: %v", err)
+	}
+	if _, err := q.InsertArchiveCapture(
+		context.Background(),
+		archiveCaptureParamsForTest(
+			relatedID, sourceUser, "unrelated reference", createdAt.Add(90*time.Second),
+		),
+	); err != nil {
+		t.Fatalf("insert related capture: %v", err)
 	}
 	if _, err := q.InsertArchiveCaptureLink(context.Background(), db.InsertArchiveCaptureLinkParams{
 		X: textID, Y: mediaID, UserID: sourceUser,
@@ -247,7 +257,7 @@ func TestArchiveRoundTripMergePreservesTrashMediaLinksAndAttachments(t *testing.
 		t.Fatalf("insert search preference: %v", err)
 	}
 	if err := q.AddRelatedDismissal(context.Background(), db.AddRelatedDismissalParams{
-		UserID: sourceUser, AnchorID: textID, TargetID: mediaID,
+		UserID: sourceUser, AnchorID: textID, TargetID: relatedID,
 	}); err != nil {
 		t.Fatalf("insert related preference: %v", err)
 	}
@@ -280,7 +290,7 @@ func TestArchiveRoundTripMergePreservesTrashMediaLinksAndAttachments(t *testing.
 	if err != nil {
 		t.Fatalf("import: %v", err)
 	}
-	if result.Created != 2 || result.Forked != 2 || result.Skipped != 0 {
+	if result.Created != 3 || result.Forked != 3 || result.Skipped != 0 {
 		t.Fatalf("unexpected merge result: %+v", result)
 	}
 	if result.Media != 1 || result.Links != 1 || result.Attachments != 1 || result.Dismissals != 3 {
@@ -291,8 +301,8 @@ func TestArchiveRoundTripMergePreservesTrashMediaLinksAndAttachments(t *testing.
 	if err != nil {
 		t.Fatalf("list restored captures: %v", err)
 	}
-	if len(restored) != 2 {
-		t.Fatalf("restored %d captures, want 2", len(restored))
+	if len(restored) != 3 {
+		t.Fatalf("restored %d captures, want 3", len(restored))
 	}
 	var restoredMedia db.Capture
 	for _, capture := range restored {
@@ -372,7 +382,7 @@ func TestArchiveRoundTripMergePreservesTrashMediaLinksAndAttachments(t *testing.
 	if err != nil {
 		t.Fatalf("list after replay: %v", err)
 	}
-	if len(afterReplay) != 2 {
+	if len(afterReplay) != 3 {
 		t.Fatalf("idempotent replay created duplicates: %d captures", len(afterReplay))
 	}
 
@@ -386,14 +396,14 @@ func TestArchiveRoundTripMergePreservesTrashMediaLinksAndAttachments(t *testing.
 	if err != nil {
 		t.Fatalf("new-operation import: %v", err)
 	}
-	if newOperationResult.Created != 0 || newOperationResult.Skipped != 2 {
+	if newOperationResult.Created != 0 || newOperationResult.Skipped != 3 {
 		t.Fatalf("same archive with a new operation was not skipped: %+v", newOperationResult)
 	}
 	afterNewOperation, err := q.ListArchiveCaptures(context.Background(), targetUser)
 	if err != nil {
 		t.Fatalf("list after new operation: %v", err)
 	}
-	if len(afterNewOperation) != 2 {
+	if len(afterNewOperation) != 3 {
 		t.Fatalf("new operation created duplicate captures: %d", len(afterNewOperation))
 	}
 
@@ -407,7 +417,7 @@ func TestArchiveRoundTripMergePreservesTrashMediaLinksAndAttachments(t *testing.
 	if err != nil {
 		t.Fatalf("same-user import: %v", err)
 	}
-	if sameUserResult.Skipped != 2 || sameUserResult.Created != 0 {
+	if sameUserResult.Skipped != 3 || sameUserResult.Created != 0 {
 		t.Fatalf("identical captures were not skipped: %+v", sameUserResult)
 	}
 }
@@ -650,6 +660,260 @@ func TestArchiveExportPaginatesEqualTimestampsWithoutDroppingCaptures(t *testing
 	defer data.reader.Close()
 	if data.manifest.Counts.Captures != archivePageSize+1 {
 		t.Fatalf("exported %d captures, want %d", data.manifest.Counts.Captures, archivePageSize+1)
+	}
+}
+
+func TestArchiveExportPaginatesRetrievalPreferences(t *testing.T) {
+	pool := testutil.NewPool(t)
+	testutil.Truncate(t, pool, "captures", "users")
+	q := db.New(pool)
+	userID := createArchiveUser(t, q, "archive-preference-pages@test.com")
+	targetID := uuid.New()
+	createdAt := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	if _, err := q.InsertArchiveCapture(
+		context.Background(),
+		archiveCaptureParamsForTest(targetID, userID, "preference target", createdAt),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(context.Background(), `
+		INSERT INTO retrieval_dismissals (
+			user_id, surface, query_hash, query_text, target_id, created_at
+		)
+		SELECT $1, 'search', convert_to(format('query-%s', value), 'UTF8'),
+			format('query-%s', value), $2, $3
+		FROM generate_series(1, $4::integer) AS value`,
+		userID, targetID, createdAt, archivePageSize+1,
+	); err != nil {
+		t.Fatalf("insert preferences: %v", err)
+	}
+
+	service := NewService(pool, nil, Config{MaxBytes: 32 << 20}, nil)
+	exported, err := service.Export(context.Background(), userID)
+	if err != nil {
+		t.Fatalf("export: %v", err)
+	}
+	defer os.Remove(exported.Path)
+	data, err := readArchive(exported.Path, 32<<20)
+	if err != nil {
+		t.Fatalf("read exported archive: %v", err)
+	}
+	defer data.reader.Close()
+	if data.manifest.Counts.Dismissals != archivePageSize+1 {
+		t.Fatalf(
+			"exported %d preferences, want %d",
+			data.manifest.Counts.Dismissals, archivePageSize+1,
+		)
+	}
+}
+
+func TestArchiveExportRejectsContradictoryOrAsymmetricRelatedPreferences(t *testing.T) {
+	for _, testCase := range []struct {
+		name     string
+		withLink bool
+		want     string
+	}{
+		{name: "asymmetric", want: "missing its matching reverse record"},
+		{name: "contradictory", withLink: true, want: "both linked and dismissed"},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			pool := testutil.NewPool(t)
+			testutil.Truncate(t, pool, "captures", "users")
+			q := db.New(pool)
+			userID := createArchiveUser(t, q, "archive-"+testCase.name+"@test.com")
+			first, second := uuid.New(), uuid.New()
+			createdAt := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+			for _, id := range []uuid.UUID{first, second} {
+				if _, err := q.InsertArchiveCapture(
+					context.Background(),
+					archiveCaptureParamsForTest(id, userID, "pair", createdAt),
+				); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if testCase.withLink {
+				if _, err := q.InsertArchiveCaptureLink(
+					context.Background(), db.InsertArchiveCaptureLinkParams{
+						X: first, Y: second, UserID: userID,
+						CreatedAt: pgtype.Timestamptz{Time: createdAt, Valid: true},
+					},
+				); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if _, err := q.InsertArchiveRelatedDismissal(
+				context.Background(), db.InsertArchiveRelatedDismissalParams{
+					UserID: userID, AnchorID: first, TargetID: second,
+					CreatedAt: pgtype.Timestamptz{Time: createdAt, Valid: true},
+				},
+			); err != nil {
+				t.Fatal(err)
+			}
+
+			service := NewService(pool, nil, Config{MaxBytes: 32 << 20}, nil)
+			_, err := service.Export(context.Background(), userID)
+			if err == nil || !strings.Contains(err.Error(), testCase.want) {
+				t.Fatalf("export error = %v, want %q", err, testCase.want)
+			}
+		})
+	}
+}
+
+func TestArchiveImportPrunesMergedSearchPreferencesToRuntimeLimit(t *testing.T) {
+	pool := testutil.NewPool(t)
+	testutil.Truncate(t, pool, "captures", "users")
+	q := db.New(pool)
+	sourceUser := createArchiveUser(t, q, "archive-prune-source@test.com")
+	targetUser := createArchiveUser(t, q, "archive-prune-target@test.com")
+	createdAt := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	sourceTarget, existingTarget := uuid.New(), uuid.New()
+	if _, err := q.InsertArchiveCapture(
+		context.Background(),
+		archiveCaptureParamsForTest(sourceTarget, sourceUser, "source target", createdAt),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := q.InsertArchiveCapture(
+		context.Background(),
+		archiveCaptureParamsForTest(existingTarget, targetUser, "existing target", createdAt),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(context.Background(), `
+		INSERT INTO retrieval_dismissals (
+			user_id, surface, query_hash, query_text, target_id, created_at
+		)
+		SELECT $1, 'search', convert_to(format('source-%s', value), 'UTF8'),
+			format('source-%s', value), $2, $3::timestamptz + value * interval '1 second'
+		FROM generate_series(1, 10) AS value`,
+		sourceUser, sourceTarget, createdAt,
+	); err != nil {
+		t.Fatalf("insert source preferences: %v", err)
+	}
+	if _, err := pool.Exec(context.Background(), `
+		INSERT INTO retrieval_dismissals (
+			user_id, surface, query_hash, query_text, target_id, created_at
+		)
+		SELECT $1, 'search', convert_to(format('existing-%s', value), 'UTF8'),
+			format('existing-%s', value), $2, $3::timestamptz + value * interval '1 second'
+		FROM generate_series(1, 999) AS value`,
+		targetUser, existingTarget, createdAt,
+	); err != nil {
+		t.Fatalf("insert existing preferences: %v", err)
+	}
+
+	service := NewService(pool, nil, Config{MaxBytes: 32 << 20}, nil)
+	exported, err := service.Export(context.Background(), sourceUser)
+	if err != nil {
+		t.Fatalf("export: %v", err)
+	}
+	defer os.Remove(exported.Path)
+	if _, err := service.Import(
+		context.Background(), targetUser, uuid.New(), exported.Path,
+		fileSHA256(t, exported.Path),
+	); err != nil {
+		t.Fatalf("import: %v", err)
+	}
+	var count int
+	if err := pool.QueryRow(context.Background(), `
+		SELECT count(*) FROM retrieval_dismissals
+		WHERE user_id = $1 AND surface = 'search'`, targetUser).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count != retrieval.MaxSearchDismissalsPerUser {
+		t.Fatalf("search preferences after import = %d", count)
+	}
+}
+
+func TestArchiveRelationshipRestoreKeepsNewestPairState(t *testing.T) {
+	pool := testutil.NewPool(t)
+	testutil.Truncate(t, pool, "captures", "users")
+	q := db.New(pool)
+	userID := createArchiveUser(t, q, "archive-pair-state@test.com")
+	first, second := uuid.New(), uuid.New()
+	base := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	for _, id := range []uuid.UUID{first, second} {
+		if _, err := q.InsertArchiveCapture(
+			context.Background(), archiveCaptureParamsForTest(id, userID, "pair", base),
+		); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := q.InsertArchiveCaptureLink(
+		context.Background(), db.InsertArchiveCaptureLinkParams{
+			X: first, Y: second, UserID: userID,
+			CreatedAt: pgtype.Timestamptz{Time: base.Add(2 * time.Hour), Valid: true},
+		},
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	applyDismissal := func(at time.Time) (bool, int64) {
+		t.Helper()
+		var applied bool
+		var rows int64
+		err := pgx.BeginFunc(context.Background(), pool, func(tx pgx.Tx) error {
+			var err error
+			applied, rows, err = restoreArchiveRelatedDismissal(
+				context.Background(), q.WithTx(tx), userID, first, second,
+				pgtype.Timestamptz{Time: at, Valid: true},
+			)
+			return err
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return applied, rows
+	}
+	if applied, rows := applyDismissal(base.Add(time.Hour)); applied || rows != 0 {
+		t.Fatalf("older dismissal applied=%v rows=%d", applied, rows)
+	}
+	if applied, rows := applyDismissal(base.Add(3 * time.Hour)); !applied || rows != 2 {
+		t.Fatalf("newer dismissal applied=%v rows=%d", applied, rows)
+	}
+
+	applyLink := func(at time.Time) bool {
+		t.Helper()
+		var applied bool
+		err := pgx.BeginFunc(context.Background(), pool, func(tx pgx.Tx) error {
+			var err error
+			applied, err = restoreArchiveLink(
+				context.Background(), q.WithTx(tx), userID, first, second,
+				pgtype.Timestamptz{Time: at, Valid: true},
+			)
+			return err
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return applied
+	}
+	if applyLink(base.Add(2 * time.Hour)) {
+		t.Fatal("older link replaced a newer dismissal")
+	}
+	if !applyLink(base.Add(4 * time.Hour)) {
+		t.Fatal("newer link did not replace the older dismissal")
+	}
+
+	var links, dismissals int
+	if err := pool.QueryRow(context.Background(), `
+		SELECT count(*) FROM capture_links
+		WHERE user_id = $1 AND a_id = LEAST($2::uuid, $3::uuid)
+		  AND b_id = GREATEST($2::uuid, $3::uuid)`,
+		userID, first, second,
+	).Scan(&links); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.QueryRow(context.Background(), `
+		SELECT count(*) FROM retrieval_dismissals
+		WHERE user_id = $1 AND surface = 'related'
+		  AND anchor_id IN ($2, $3) AND target_id IN ($2, $3)`,
+		userID, first, second,
+	).Scan(&dismissals); err != nil {
+		t.Fatal(err)
+	}
+	if links != 1 || dismissals != 0 {
+		t.Fatalf("final pair state links=%d dismissals=%d", links, dismissals)
 	}
 }
 

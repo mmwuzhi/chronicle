@@ -152,7 +152,7 @@
       "importConfirm": "このアーカイブを現在のアカウントに統合しますか？既存の Capture は上書きされません。",
       "importFailed": "アーカイブを読み込めませんでした。",
       "resultTitle": "読み込み完了",
-      "result": "作成 {{created}}、スキップ {{skipped}}、競合コピー {{forked}}、メディア {{media}}、リンク {{links}}、添付参照 {{attachments}}。"
+      "result": "作成 {{created}}、スキップ {{skipped}}、競合コピー {{forked}}、メディア {{media}}、リンク {{links}}、添付参照 {{attachments}}、検索設定 {{retrievalDismissals}}。"
     },
     "markdown": {
       "title": "Markdown とテキストを読み込む",

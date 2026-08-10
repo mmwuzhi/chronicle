@@ -343,32 +343,44 @@ func validateArchiveRecords(data *archiveData) error {
 		return errors.New("manifest attachment count does not match archive data")
 	}
 	if data.manifest.FormatVersion >= 2 {
-		if err := validateRetrievalDismissals(data, captureIDs); err != nil {
+		if err := validateRetrievalDismissals(data, captureIDs, linkKeys); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func validateRetrievalDismissals(data *archiveData, captureIDs map[string]struct{}) error {
+func validateRetrievalDismissals(
+	data *archiveData,
+	captureIDs map[string]struct{},
+	linkKeys map[string]struct{},
+) error {
 	seen := make(map[string]struct{}, data.manifest.Counts.Dismissals)
+	related := make(map[string]time.Time, data.manifest.Counts.Dismissals)
 	count := 0
+	searchCount := 0
 	err := forEachNDJSON(data.files[dismissalsPath], func(record RetrievalDismissalRecord) error {
 		count++
 		if _, exists := captureIDs[record.TargetID]; !exists {
 			return fmt.Errorf("retrieval preference references unknown target %s", record.TargetID)
 		}
-		if _, err := time.Parse(time.RFC3339Nano, record.CreatedAt); err != nil {
+		createdAt, err := time.Parse(time.RFC3339Nano, record.CreatedAt)
+		if err != nil {
 			return errors.New("retrieval preference createdAt is invalid")
 		}
 		var key string
 		switch record.Surface {
 		case "search":
+			searchCount++
+			if searchCount > retrieval.MaxSearchDismissalsPerUser {
+				return errors.New("archive contains too many search retrieval preferences")
+			}
 			if record.Query == nil || record.AnchorID != nil {
 				return errors.New("search retrieval preference has invalid shape")
 			}
 			normalized := retrieval.NormalizeQuery(*record.Query)
-			if normalized == "" || normalized != *record.Query {
+			if normalized == "" || normalized != *record.Query ||
+				len([]rune(normalized)) > retrieval.MaxSearchQueryRunes {
 				return errors.New("search retrieval preference has invalid normalized query")
 			}
 			key = "search:" + normalized + ":" + record.TargetID
@@ -380,6 +392,15 @@ func validateRetrievalDismissals(data *archiveData, captureIDs map[string]struct
 				return fmt.Errorf("retrieval preference references unknown anchor %s", *record.AnchorID)
 			}
 			key = "related:" + *record.AnchorID + ":" + record.TargetID
+			pairKey := *record.AnchorID + ":" + record.TargetID
+			related[pairKey] = createdAt
+			undirectedKey := pairKey
+			if record.TargetID < *record.AnchorID {
+				undirectedKey = record.TargetID + ":" + *record.AnchorID
+			}
+			if _, linked := linkKeys[undirectedKey]; linked {
+				return fmt.Errorf("capture pair %q is both linked and dismissed", undirectedKey)
+			}
 		default:
 			return fmt.Errorf("retrieval preference has invalid surface %q", record.Surface)
 		}
@@ -394,6 +415,14 @@ func validateRetrievalDismissals(data *archiveData, captureIDs map[string]struct
 	}
 	if count != data.manifest.Counts.Dismissals {
 		return errors.New("manifest retrieval preference count does not match archive data")
+	}
+	for key, createdAt := range related {
+		parts := strings.Split(key, ":")
+		reverse := parts[1] + ":" + parts[0]
+		reverseCreatedAt, ok := related[reverse]
+		if !ok || !createdAt.Equal(reverseCreatedAt) {
+			return fmt.Errorf("related retrieval preference %q is missing its matching reverse record", key)
+		}
 	}
 	return nil
 }

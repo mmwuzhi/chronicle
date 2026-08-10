@@ -152,7 +152,7 @@
       "importConfirm": "Merge this archive into your account? Existing Captures will not be overwritten.",
       "importFailed": "The archive could not be imported.",
       "resultTitle": "Import complete",
-      "result": "Created {{created}}, skipped {{skipped}}, conflict copies {{forked}}, media {{media}}, links {{links}}, attachments {{attachments}}."
+      "result": "Created {{created}}, skipped {{skipped}}, conflict copies {{forked}}, media {{media}}, links {{links}}, attachments {{attachments}}, retrieval preferences {{retrievalDismissals}}."
     },
     "markdown": {
       "title": "Import Markdown & text",

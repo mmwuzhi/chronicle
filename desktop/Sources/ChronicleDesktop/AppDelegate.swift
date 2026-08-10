@@ -15,6 +15,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var hotKeyController: HotKeyController?
     private let settings = SettingsStore()
     private let localStore = LocalCaptureStore(fileURL: ChronicleDesktopPaths.defaultLocalDatabaseURL())
+    private let searchDismissals = SearchDismissalCache()
     private let captureSession = CaptureSession()
     private var verifiedSessionScope: LocalCaptureScope?
     private var identityVerificationTask: Task<Void, Never>?
@@ -275,9 +276,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         CaptureClients(
             session: captureSession,
             recall: { [weak self] in
-                guard let self, let config = self.verifiedConfig() else { return nil }
+                guard let self, let config = self.verifiedConfig(),
+                      let scope = self.verifiedSessionScope
+                else { return nil }
                 return config.isUsable
-                    ? RecallAPIClient(config: config, refresher: self.authRefresher) : nil
+                    ? RecallAPIClient(
+                        config: config, scope: scope, refresher: self.authRefresher,
+                        dismissalCache: self.searchDismissals
+                    ) : nil
             },
             webhook: { [weak self] in
                 guard let self, let config = self.verifiedConfig() else { return nil }
@@ -312,6 +318,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             isPinned: { [weak self] id in self?.pinnedStickyController?.isPinned(id) ?? false },
             localSearch: { [localStore] q in
                 (try? localStore.search(q))?.map(RowItem.init) ?? []
+            },
+            cachedFindDismissedIDs: { [localStore, searchDismissals] q in
+                searchDismissals.ids(query: q, scope: localStore.scope)
             },
             localSemanticSearch: { [localSemantic] q in
                 (await localSemantic.search(q))?.map(RowItem.init) ?? []

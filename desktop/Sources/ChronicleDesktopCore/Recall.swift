@@ -36,88 +36,92 @@ public struct FindResponse: Codable, Equatable, Sendable {
     public let items: [RecallItem]
     public let degraded: Bool
     public let hiddenCount: Int?
+    public let dismissalsAuthoritative: Bool?
 
-    public init(items: [RecallItem], degraded: Bool, hiddenCount: Int? = nil) {
+    public init(
+        items: [RecallItem], degraded: Bool, hiddenCount: Int? = nil,
+        dismissalsAuthoritative: Bool? = nil
+    ) {
         self.items = items
         self.degraded = degraded
         self.hiddenCount = hiddenCount
+        self.dismissalsAuthoritative = dismissalsAuthoritative
     }
 }
 
-final class SearchDismissalCache: @unchecked Sendable {
+public final class SearchDismissalCache: @unchecked Sendable {
     private static let lock = NSLock()
     private static let maxQueries = 200
     private let defaults: UserDefaults
-    private let entriesKey: String
-    private let orderKey: String
 
-    init(config: ChronicleConfig, defaults: UserDefaults = .standard) {
+    public init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
-        let origin = LocalCaptureScope.origin(of: config.apiURL) ?? config.apiURL.absoluteString
-        let scope = origin + "\u{0}" + Self.accountIdentity(token: config.token)
-        let digest = SHA256.hash(data: Data(scope.utf8)).map { String(format: "%02x", $0) }.joined()
-        entriesKey = "chronicle.searchDismissals.entries.\(digest)"
-        orderKey = "chronicle.searchDismissals.order.\(digest)"
     }
 
-    private static func accountIdentity(token: String) -> String {
-        let parts = token.split(separator: ".", omittingEmptySubsequences: false)
-        if parts.count == 3 {
-            var payload = String(parts[1])
-                .replacingOccurrences(of: "-", with: "+")
-                .replacingOccurrences(of: "_", with: "/")
-            payload += String(repeating: "=", count: (4 - payload.count % 4) % 4)
-            if let data = Data(base64Encoded: payload),
-               let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-               let subject = object["sub"] as? String,
-               !subject.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            {
-                return "user:" + subject
-            }
-        }
-        let digest = SHA256.hash(data: Data(token.utf8))
-            .map { String(format: "%02x", $0) }.joined()
-        return "credential:" + digest
-    }
-
-    func ids(query: String) -> Set<String> {
+    public func ids(query: String, scope: LocalCaptureScope?) -> Set<String> {
+        guard let scope else { return [] }
         let key = queryKey(query)
+        let keys = storageKeys(scope: scope)
         return Self.lock.withLock {
-            let entries = defaults.dictionary(forKey: entriesKey) as? [String: [String]] ?? [:]
+            let entries = defaults.dictionary(forKey: keys.entries) as? [String: [String]] ?? [:]
             return Set(entries[key] ?? [])
         }
     }
 
-    func set(query: String, targetId: String, dismissed: Bool) {
-        update(query: query) { ids in
+    public func set(
+        query: String, targetId: String, dismissed: Bool, scope: LocalCaptureScope
+    ) {
+        update(query: query, scope: scope) { ids in
             if dismissed { ids.insert(targetId) } else { ids.remove(targetId) }
         }
     }
 
-    func replaceIfComplete(query: String, response: FindResponse) {
+    public func replaceIfComplete(
+        query: String, response: FindResponse, scope: LocalCaptureScope
+    ) {
         let ids = Set(response.items.filter { $0.dismissed == true }.map(\.id))
         // A complete recovery response contains one preview for each hidden ID.
-        // If the server could only return a count, preserve the last good cache.
-        guard response.hiddenCount == nil || response.hiddenCount == ids.count else { return }
-        update(query: query) { $0 = ids }
+        // If preferences degraded or the server only returned a count, preserve
+        // the last good cache instead of treating a partial response as truth.
+        guard response.dismissalsAuthoritative == true,
+              response.hiddenCount == nil || response.hiddenCount == ids.count
+        else { return }
+        update(query: query, scope: scope) { $0 = ids }
     }
 
-    private func update(query: String, mutate: (inout Set<String>) -> Void) {
+    private func update(
+        query: String, scope: LocalCaptureScope,
+        mutate: (inout Set<String>) -> Void
+    ) {
         let key = queryKey(query)
+        let keys = storageKeys(scope: scope)
         Self.lock.withLock {
-            var entries = defaults.dictionary(forKey: entriesKey) as? [String: [String]] ?? [:]
-            var order = defaults.stringArray(forKey: orderKey) ?? []
+            var entries = defaults.dictionary(forKey: keys.entries) as? [String: [String]] ?? [:]
+            var order = defaults.stringArray(forKey: keys.order) ?? []
             var ids = Set(entries[key] ?? [])
             mutate(&ids)
-            entries[key] = ids.sorted()
             order.removeAll { $0 == key }
-            order.append(key)
+            if ids.isEmpty {
+                entries.removeValue(forKey: key)
+            } else {
+                entries[key] = ids.sorted()
+                order.append(key)
+            }
             while order.count > Self.maxQueries {
                 entries.removeValue(forKey: order.removeFirst())
             }
-            defaults.set(entries, forKey: entriesKey)
-            defaults.set(order, forKey: orderKey)
+            defaults.set(entries, forKey: keys.entries)
+            defaults.set(order, forKey: keys.order)
         }
+    }
+
+    private func storageKeys(scope: LocalCaptureScope) -> (entries: String, order: String) {
+        let digest = SHA256.hash(data: Data(scope.persistenceKey.utf8))
+            .map { String(format: "%02x", $0) }.joined()
+        return (
+            "chronicle.searchDismissals.entries.\(digest)",
+            "chronicle.searchDismissals.order.\(digest)"
+        )
     }
 
     private func queryKey(_ query: String) -> String {
@@ -304,15 +308,18 @@ public final class RecallAPIClient: @unchecked Sendable {
     private let session: URLSession
     private let refresher: AuthRefresher?
     private let dismissalCache: SearchDismissalCache
+    private let scope: LocalCaptureScope
 
     public init(
-        config: ChronicleConfig, session: URLSession = .shared,
-        refresher: AuthRefresher? = nil
+        config: ChronicleConfig, scope: LocalCaptureScope,
+        session: URLSession = .shared, refresher: AuthRefresher? = nil,
+        dismissalCache: SearchDismissalCache = SearchDismissalCache()
     ) {
         self.config = config
+        self.scope = scope
         self.session = session
         self.refresher = refresher
-        self.dismissalCache = SearchDismissalCache(config: config)
+        self.dismissalCache = dismissalCache
     }
 
     public func makeFindRequest(
@@ -344,7 +351,7 @@ public final class RecallAPIClient: @unchecked Sendable {
         try Self.validate(response)
         let result = try JSONDecoder().decode(FindResponse.self, from: data)
         if includeDismissed {
-            dismissalCache.replaceIfComplete(query: q, response: result)
+            dismissalCache.replaceIfComplete(query: q, response: result, scope: scope)
         }
         return result
     }
@@ -369,14 +376,14 @@ public final class RecallAPIClient: @unchecked Sendable {
         let (_, response) = try await AuthedTransport.send(
             request, session: session, refresher: refresher)
         try Self.validate(response)
-        dismissalCache.set(query: q, targetId: targetId, dismissed: dismissed)
+        dismissalCache.set(query: q, targetId: targetId, dismissed: dismissed, scope: scope)
     }
 
     /// Exact-query preferences last confirmed by this account. Search views use
-    /// these only when an online request fails, so local fallback does not
-    /// immediately reintroduce a result the user explicitly hid.
+    /// them for local supplements and offline fallback so a partial or failed
+    /// server request cannot immediately reintroduce an explicitly hidden result.
     public func cachedFindDismissedIDs(q: String) -> Set<String> {
-        dismissalCache.ids(query: q)
+        dismissalCache.ids(query: q, scope: scope)
     }
 
     public func makeAskRequest(question: String) throws -> URLRequest {

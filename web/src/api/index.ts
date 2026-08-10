@@ -391,7 +391,9 @@ export interface FindOutputBody {
   readonly $schema?: string;
   /** true when the semantic sidecar was unavailable and keyword FTS was used */
   degraded: boolean;
-  /** Number of matching candidates hidden by explicit feedback */
+  /** false when retrieval preferences could not be read completely */
+  dismissalsAuthoritative: boolean;
+  /** Number of live results hidden for this exact normalized query */
   hiddenCount: number;
   /** @nullable */
   items: RecallItem[] | null;
@@ -413,6 +415,7 @@ export interface ImportResult {
   forked: number;
   links: number;
   media: number;
+  retrievalDismissals: number;
   skipped: number;
   /** @nullable */
   warnings: string[] | null;
