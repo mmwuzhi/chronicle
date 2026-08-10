@@ -204,6 +204,7 @@ final class SettingsModel: ObservableObject {
     }
 
     func presentSignIn() {
+        password = ""
         authError = nil
         isSignInPresented = true
     }
@@ -216,6 +217,7 @@ final class SettingsModel: ObservableObject {
         webAuthenticationSession = nil
         isAuthenticating = false
         pendingMFA = nil
+        password = ""
         mfaCode = ""
         authError = nil
         isSignInPresented = false
@@ -395,6 +397,7 @@ final class SettingsModel: ObservableObject {
         webAuthenticationSession = nil
         isAuthenticating = false
         pendingMFA = nil
+        password = ""
         mfaCode = ""
     }
 }

@@ -302,6 +302,63 @@ struct MainWindowNavigationTests {
         #expect(!staleFinishAccepted)
     }
 
+    @Test("password sign-in accepts only Roman input sources")
+    func passwordSignInUsesRomanInputSources() async throws {
+        let settingsModel = SettingsModel(
+            settings: SettingsStore(defaults: UserDefaults(suiteName: UUID().uuidString)!),
+            localStore: tempStore(),
+            clients: CaptureClients(
+                recall: { nil },
+                webhook: { nil },
+                openSignIn: {},
+                localSearch: { _ in [] },
+                localRecent: { _ in [] },
+                localDelete: { _ in },
+            ),
+            onSaveShortcut: { _ in },
+            onSignInChanged: {},
+            retry: { CaptureSyncSummary() },
+        )
+        let host = NSHostingView(rootView: SignInSheet(model: settingsModel))
+        host.frame = NSRect(x: 0, y: 0, width: 390, height: 520)
+        host.layoutSubtreeIfNeeded()
+        await Task.yield()
+        host.layoutSubtreeIfNeeded()
+
+        let passwordField: RomanOnlySecureTextField = try #require(
+            host.firstDescendant(ofType: RomanOnlySecureTextField.self)
+        )
+        #expect((passwordField.cell as? NSTextFieldCell)?.allowedInputSourceLocales == [
+            NSAllRomanInputSourcesLocaleIdentifier,
+        ])
+    }
+
+    @Test("cancelling sign-in clears secret input")
+    func cancellingSignInClearsSecretInput() {
+        let settingsModel = SettingsModel(
+            settings: SettingsStore(defaults: UserDefaults(suiteName: UUID().uuidString)!),
+            localStore: tempStore(),
+            clients: CaptureClients(
+                recall: { nil },
+                webhook: { nil },
+                openSignIn: {},
+                localSearch: { _ in [] },
+                localRecent: { _ in [] },
+                localDelete: { _ in },
+            ),
+            onSaveShortcut: { _ in },
+            onSignInChanged: {},
+            retry: { CaptureSyncSummary() },
+        )
+        settingsModel.email = "remember@example.com"
+        settingsModel.password = "must-not-survive-dismissal"
+
+        settingsModel.cancelSignIn()
+
+        #expect(settingsModel.email == "remember@example.com")
+        #expect(settingsModel.password.isEmpty)
+    }
+
     @Test("MFA challenge advances and can return to primary sign-in")
     func mfaChallengeControlsSignInStep() {
         let defaults = UserDefaults(suiteName: UUID().uuidString)!

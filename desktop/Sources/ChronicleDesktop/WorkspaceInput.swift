@@ -32,7 +32,11 @@ struct WorkspaceField: View {
             }
             Group {
                 if secure {
-                    SecureField(prompt, text: $text)
+                    RomanOnlySecureField(
+                        prompt: prompt,
+                        text: $text,
+                        onSubmit: onSubmit,
+                    )
                 } else {
                     TextField(prompt, text: $text)
                 }
@@ -49,6 +53,71 @@ struct WorkspaceField: View {
         )
         .onSubmit(onSubmit)
         .disabled(disabled)
+    }
+}
+
+/// AppKit exposes the input-source restriction that SwiftUI's `SecureField`
+/// does not. Passwords accept Roman input sources only, so a currently active
+/// CJK IME switches to direct input instead of opening a candidate window.
+final class RomanOnlySecureTextField: NSSecureTextField {
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        (cell as? NSTextFieldCell)?.allowedInputSourceLocales = [
+            NSAllRomanInputSourcesLocaleIdentifier,
+        ]
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        (cell as? NSTextFieldCell)?.allowedInputSourceLocales = [
+            NSAllRomanInputSourcesLocaleIdentifier,
+        ]
+    }
+}
+
+private struct RomanOnlySecureField: NSViewRepresentable {
+    let prompt: String
+    @Binding var text: String
+    let onSubmit: () -> Void
+
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+    func makeNSView(context: Context) -> RomanOnlySecureTextField {
+        let field = RomanOnlySecureTextField(frame: .zero)
+        field.delegate = context.coordinator
+        field.target = context.coordinator
+        field.action = #selector(Coordinator.submit)
+        field.isBezeled = false
+        field.drawsBackground = false
+        field.focusRingType = .none
+        field.font = .systemFont(ofSize: 13)
+        field.placeholderString = prompt
+        field.stringValue = text
+        return field
+    }
+
+    func updateNSView(_ field: RomanOnlySecureTextField, context: Context) {
+        context.coordinator.parent = self
+        if field.stringValue != text { field.stringValue = text }
+        if field.placeholderString != prompt { field.placeholderString = prompt }
+    }
+
+    @MainActor
+    final class Coordinator: NSObject, NSTextFieldDelegate {
+        var parent: RomanOnlySecureField
+
+        init(_ parent: RomanOnlySecureField) {
+            self.parent = parent
+        }
+
+        func controlTextDidChange(_ notification: Notification) {
+            guard let field = notification.object as? NSSecureTextField else { return }
+            parent.text = field.stringValue
+        }
+
+        @objc func submit() {
+            parent.onSubmit()
+        }
     }
 }
 
