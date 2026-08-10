@@ -6,6 +6,23 @@ import ChronicleDesktopCore
 @MainActor
 @Suite("Capture row text ownership")
 struct CaptureRowModelTests {
+    @Test("hidden-result controls increase the quick-panel results height")
+    func panelHeightIncludesRecoveryControls() {
+        let plainEmpty = panelResultsHeight(
+            busy: false, needsSignIn: false, hasError: false,
+            isSearch: true, searched: true, hitCount: 0,
+            recentLoaded: false, recentCount: 0, degraded: false,
+            hiddenCount: 0, hasAnswer: false)
+        let recoverableEmpty = panelResultsHeight(
+            busy: false, needsSignIn: false, hasError: false,
+            isSearch: true, searched: true, hitCount: 0,
+            recentLoaded: false, recentCount: 0, degraded: true,
+            hiddenCount: 2, hasAnswer: false)
+
+        #expect(plainEmpty == 40)
+        #expect(recoverableEmpty == 82)
+    }
+
     @Test("session generation invalidates every captured async snapshot")
     func captureSessionGenerationInvalidatesSnapshots() {
         let session = CaptureSession()

@@ -131,7 +131,9 @@ def rank_case(
     rerank_scores = evaluated.get("rerank_scores", {})
     by_id = {document["id"]: document for document in documents}
 
-    def on_date(_user_id: str, date: str, limit: int) -> list[dict]:
+    def on_date(
+        _user_id: str, date: str, limit: int, _excluded_ids: set[str] | None = None,
+    ) -> list[dict]:
         if date != evaluated.get("normalized_date"):
             return []
         return [

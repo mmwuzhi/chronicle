@@ -3,6 +3,35 @@ import Combine
 import SwiftUI
 import ChronicleDesktopCore
 
+func panelResultsHeight(
+    busy: Bool,
+    needsSignIn: Bool,
+    hasError: Bool,
+    isSearch: Bool,
+    searched: Bool,
+    hitCount: Int,
+    recentLoaded: Bool,
+    recentCount: Int,
+    degraded: Bool,
+    hiddenCount: Int,
+    hasAnswer: Bool,
+) -> CGFloat {
+    if busy || needsSignIn || hasError { return 52 }
+    let emptyCaptionHeight: CGFloat = 40
+    let searchControlsHeight: CGFloat = isSearch && searched
+        ? (degraded ? 18 : 0) + (hiddenCount > 0 ? 24 : 0)
+        : 0
+    if isSearch && searched && hitCount == 0 {
+        return min(emptyCaptionHeight + searchControlsHeight, 320)
+    }
+    if isSearch && !searched && recentLoaded && recentCount == 0 {
+        return emptyCaptionHeight
+    }
+    let rowCount = searched ? hitCount : recentCount
+    let body = CGFloat(rowCount) * 48 + (hasAnswer ? 120 : 0)
+    return min(max(body + searchControlsHeight + 20, 52), 320)
+}
+
 // The double-tap-Control quick panel, Claude-desktop style (ported from rag3):
 // one input row up top, a pill toolbar (mode + send hint) below, and a results
 // area that grows downward ONLY when there is something to show. Search starts
@@ -26,6 +55,9 @@ struct PanelContentView: View {
     @State private var recentRows: [RowItem] = []
     @State private var recentLoaded = false
     @State private var degraded = false
+    @State private var hiddenCount = 0
+    @State private var includeDismissed = false
+    @State private var activeSearchQuery = ""
     @State private var answer = ""
     @State private var sources: [AskSource] = []
     @State private var busy = false
@@ -148,6 +180,8 @@ struct PanelContentView: View {
             texts[.search] = ""
             texts[.ask] = ""
             collapseResults()
+            includeDismissed = false
+            activeSearchQuery = ""
         }
         // In the body (not at the hosting site): the controller's hosting view is
         // typed NSHostingView<PanelContentView>, which a modifier there would break.
@@ -200,13 +234,19 @@ struct PanelContentView: View {
     }
 
     private var resultsHeight: CGFloat {
-        if busy || needsSignIn || !error.isEmpty { return 52 }
-        // "No matches" is a single caption line — don't reserve a tall blank box.
-        if mode == .search && searched && hits.isEmpty { return 40 }
-        if mode == .search && !searched && recentLoaded && recentRows.isEmpty { return 40 }
-        let searchRows = searched ? hits : recentRows
-        let body = CGFloat(searchRows.count) * 48 + (answer.isEmpty ? 0 : 120)
-        return min(max(body + 20, 52), 320)
+        panelResultsHeight(
+            busy: busy,
+            needsSignIn: needsSignIn,
+            hasError: !error.isEmpty,
+            isSearch: mode == .search,
+            searched: searched,
+            hitCount: hits.count,
+            recentLoaded: recentLoaded,
+            recentCount: recentRows.count,
+            degraded: degraded,
+            hiddenCount: hiddenCount,
+            hasAnswer: !answer.isEmpty,
+        )
     }
 
     @ViewBuilder private var resultsContent: some View {
@@ -229,6 +269,18 @@ struct PanelContentView: View {
             }
             if hits.isEmpty {
                 Text(L("No matches.")).font(.caption).foregroundStyle(.secondary)
+            }
+            if hiddenCount > 0 {
+                Button(includeDismissed ? L("Hide dismissed results") : DesktopLocalization.shared.format(
+                    "Show %d hidden results", hiddenCount
+                )) {
+                    includeDismissed.toggle()
+                    runFind(activeSearchQuery)
+                }
+                .buttonStyle(.borderless)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .padding(.bottom, 4)
             }
             ForEach(hits) { hit in
                 searchRow(hit)
@@ -255,6 +307,12 @@ struct PanelContentView: View {
             onDelete: { delete(row) },
             onEdit: nil,
             onOpen: { clients.openDetail(row) },
+            onDismiss: searched && row.synced ? {
+                setSearchDismissed(row, dismissed: !row.dismissed)
+            } : nil,
+            dismissTitle: row.dismissed
+                ? L("Restore result") : L("Not relevant for this search"),
+            dismissSystemImage: row.dismissed ? "arrow.uturn.backward" : "eye.slash",
             onPin: {
                 clients.togglePin(row)
                 pinTick &+= 1
@@ -344,35 +402,60 @@ struct PanelContentView: View {
     private func runFind(_ query: String) {
         let generation = clients.session.snapshot()
         inFlight?.cancel()
+        let nextIncludeDismissed = query == activeSearchQuery ? includeDismissed : false
         collapseResults()
-        // 1) Local substring results immediately — offline-first, no login, no network.
-        hits = clients.localSearch(query)
-        searched = true
-        // 2) On-device semantic recall (local Ollama) runs even signed out; the
-        //    server's semantic results merge on top when signed in. Neither needs
-        //    the other, so search keeps improving as far as the environment allows.
+        includeDismissed = nextIncludeDismissed
+        activeSearchQuery = query
         let client = clients.recall()
+        let localLiteral = clients.localSearch(query)
+        let cachedDismissedIDs = includeDismissed
+            ? Set<String>() : (client?.cachedFindDismissedIDs(q: query) ?? [])
+        // Online, retain unsynced captures and dirty server-backed captures whose
+        // local text is newer than the server fragment.
+        hits = client == nil ? localLiteral : RowMerge.localRecallSupplement(
+            localLiteral, id: \.id, synced: \.synced, dirty: \.dirty,
+            excludedIDs: cachedDismissedIDs)
+        searched = true
+        // 2) On-device semantic recall runs even signed out. Online, server-ranked
+        //    results lead and this layer only contributes unsynced local captures.
         busy = hits.isEmpty
         inFlight = Task { @MainActor in
             let semantic = await clients.localSemanticSearch(query)
             guard !Task.isCancelled, clients.session.isCurrent(generation) else { return }
-            mergeHits(semantic)
             if let client {
                 do {
-                    let res = try await client.find(q: query)
+                    let res = try await client.find(q: query, includeDismissed: true)
                     guard !Task.isCancelled, clients.session.isCurrent(generation) else { return }
-                    mergeHits(res.items.map(RowItem.init))
+                    let serverRows = res.items.map(RowItem.init)
+                    hiddenCount = res.hiddenCount ?? serverRows.filter(\.dismissed).count
+                    let dismissedIDs = Set(serverRows.filter(\.dismissed).map(\.id))
+                    let excludedIDs = includeDismissed ? Set<String>() : dismissedIDs
+                    let visibleServerRows = includeDismissed
+                        ? serverRows : serverRows.filter { !$0.dismissed }
+                    hits = RowMerge.localRecallSupplement(
+                        localLiteral, id: \.id, synced: \.synced, dirty: \.dirty,
+                        excludedIDs: excludedIDs)
+                    mergeHits(visibleServerRows)
+                    mergeHits(RowMerge.localRecallSupplement(
+                        semantic, id: \.id, synced: \.synced, dirty: \.dirty,
+                        excludedIDs: excludedIDs))
                     degraded = res.degraded
                 } catch {
                     // Keep local results; a server/auth error must not blank them.
+                    let allDismissedIDs = client.cachedFindDismissedIDs(q: query)
+                    let excludedIDs = includeDismissed ? Set<String>() : allDismissedIDs
+                    hits = localLiteral.filter { !excludedIDs.contains($0.id) }
+                    mergeHits(semantic.filter { !excludedIDs.contains($0.id) })
+                    hiddenCount = allDismissedIDs.count
                 }
+            } else {
+                mergeHits(semantic)
             }
             if clients.session.isCurrent(generation) { busy = false }
         }
     }
 
-    // Append hits not already shown, keyed by id, preserving the order each source
-    // returned them in (local substring, then local semantic, then server).
+    // Append hits not already shown, keyed by id, preserving each source's order.
     private func mergeHits(_ more: [RowItem]) {
         hits = RowMerge.preservingOrder(
             existing: hits,
@@ -380,6 +463,25 @@ struct PanelContentView: View {
             id: \.id,
         ) { current, incoming in
             current.mergeDisplayEvidence(from: incoming)
+        }
+    }
+
+    private func setSearchDismissed(_ row: RowItem, dismissed: Bool) {
+        let q = activeSearchQuery
+        guard !q.isEmpty, let client = clients.recall() else { return }
+        let generation = clients.session.snapshot()
+        inFlight?.cancel()
+        inFlight = Task { @MainActor in
+            do {
+                try await client.setFindResultDismissed(
+                    q: q, targetId: row.id, dismissed: dismissed)
+                guard !Task.isCancelled, clients.session.isCurrent(generation),
+                      q == activeSearchQuery else { return }
+                runFind(q)
+            } catch let err {
+                guard clients.session.isCurrent(generation) else { return }
+                error = describeCaptureError(err)
+            }
         }
     }
 
@@ -451,6 +553,7 @@ struct PanelContentView: View {
 
     private func collapseResults() {
         hits = []; searched = false; recentRows = []; recentLoaded = false; degraded = false
+        hiddenCount = 0
         answer = ""; sources = []; error = ""; needsSignIn = false; busy = false
     }
 

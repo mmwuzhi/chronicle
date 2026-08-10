@@ -21,7 +21,7 @@ VALUES (
   $4, $5, $6,
   $7
 )
-RETURNING id, user_id, capture_id, secret, snapshot_raw_text, captured_at, expires_at, revoked_at, created_at
+RETURNING id, user_id, capture_id, snapshot_raw_text, captured_at, expires_at, revoked_at, created_at, secret
 `
 
 type CreateCaptureShareParams struct {
@@ -49,18 +49,18 @@ func (q *Queries) CreateCaptureShare(ctx context.Context, arg CreateCaptureShare
 		&i.ID,
 		&i.UserID,
 		&i.CaptureID,
-		&i.Secret,
 		&i.SnapshotRawText,
 		&i.CapturedAt,
 		&i.ExpiresAt,
 		&i.RevokedAt,
 		&i.CreatedAt,
+		&i.Secret,
 	)
 	return i, err
 }
 
 const getPublicCaptureShare = `-- name: GetPublicCaptureShare :one
-SELECT cs.id, cs.user_id, cs.capture_id, cs.secret, cs.snapshot_raw_text, cs.captured_at, cs.expires_at, cs.revoked_at, cs.created_at
+SELECT cs.id, cs.user_id, cs.capture_id, cs.snapshot_raw_text, cs.captured_at, cs.expires_at, cs.revoked_at, cs.created_at, cs.secret
 FROM capture_shares cs
 JOIN captures c ON c.id = cs.capture_id
 WHERE cs.id = $1
@@ -76,12 +76,12 @@ func (q *Queries) GetPublicCaptureShare(ctx context.Context, id uuid.UUID) (Capt
 		&i.ID,
 		&i.UserID,
 		&i.CaptureID,
-		&i.Secret,
 		&i.SnapshotRawText,
 		&i.CapturedAt,
 		&i.ExpiresAt,
 		&i.RevokedAt,
 		&i.CreatedAt,
+		&i.Secret,
 	)
 	return i, err
 }
@@ -137,7 +137,7 @@ func (q *Queries) GetShareableCaptureForUpdate(ctx context.Context, arg GetShare
 }
 
 const listCaptureSharesPage = `-- name: ListCaptureSharesPage :many
-SELECT id, user_id, capture_id, secret, snapshot_raw_text, captured_at, expires_at, revoked_at, created_at
+SELECT id, user_id, capture_id, snapshot_raw_text, captured_at, expires_at, revoked_at, created_at, secret
 FROM capture_shares
 WHERE user_id = $1
   AND revoked_at IS NULL
@@ -184,12 +184,12 @@ func (q *Queries) ListCaptureSharesPage(ctx context.Context, arg ListCaptureShar
 			&i.ID,
 			&i.UserID,
 			&i.CaptureID,
-			&i.Secret,
 			&i.SnapshotRawText,
 			&i.CapturedAt,
 			&i.ExpiresAt,
 			&i.RevokedAt,
 			&i.CreatedAt,
+			&i.Secret,
 		); err != nil {
 			return nil, err
 		}

@@ -65,8 +65,8 @@ func TestCaptureFirstUpgradeFromProductionBaseline(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read final migration version: %v", err)
 	}
-	if version != 20260809084919 {
-		t.Fatalf("final migration version = %d, want 20260809084919", version)
+	if version != 20260811120000 {
+		t.Fatalf("final migration version = %d, want 20260811120000", version)
 	}
 
 	for _, table := range []string{
@@ -118,6 +118,15 @@ func TestCaptureFirstUpgradeFromProductionBaseline(t *testing.T) {
 	}
 	if !captureSharesExist {
 		t.Fatal("capture shares table was not created")
+	}
+	var retrievalDismissalsExist bool
+	if err := db.QueryRow(
+		"SELECT to_regclass('public.retrieval_dismissals') IS NOT NULL",
+	).Scan(&retrievalDismissalsExist); err != nil {
+		t.Fatalf("check retrieval dismissals: %v", err)
+	}
+	if !retrievalDismissalsExist {
+		t.Fatal("retrieval dismissals table was not created")
 	}
 	var shareSecretRequired bool
 	if err := db.QueryRow(`

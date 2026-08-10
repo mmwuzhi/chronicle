@@ -19,12 +19,13 @@ import (
 
 const (
 	formatName    = "chronicle-archive"
-	formatVersion = 1
+	formatVersion = 2
 
 	manifestPath    = "manifest.json"
 	capturesPath    = "data/captures.ndjson"
 	linksPath       = "data/links.ndjson"
 	attachmentsPath = "data/attachments.ndjson"
+	dismissalsPath  = "data/retrieval-dismissals.ndjson"
 	notesPath       = "notes/captures.md"
 	checksumsPath   = "checksums.sha256"
 )
@@ -43,6 +44,7 @@ type ManifestCounts struct {
 	Links       int `json:"links"`
 	Attachments int `json:"attachments"`
 	Media       int `json:"media"`
+	Dismissals  int `json:"retrievalDismissals,omitempty"`
 }
 
 type CaptureRecord struct {
@@ -90,6 +92,14 @@ type AttachmentRecord struct {
 	DeletedAt      *string `json:"deletedAt"`
 }
 
+type RetrievalDismissalRecord struct {
+	Surface   string  `json:"surface"`
+	Query     *string `json:"query,omitempty"`
+	AnchorID  *string `json:"anchorId,omitempty"`
+	TargetID  string  `json:"targetId"`
+	CreatedAt string  `json:"createdAt"`
+}
+
 func captureRecord(c db.Capture) CaptureRecord {
 	return CaptureRecord{
 		ID:                    c.ID.String(),
@@ -135,6 +145,21 @@ func attachmentRecord(attachment db.CaptureAttachment) AttachmentRecord {
 		CreatedAt:      formatTime(attachment.CreatedAt.Time),
 		DeletedAt:      timePointer(attachment.DeletedAt),
 	}
+}
+
+func retrievalDismissalRecord(row db.RetrievalDismissal) RetrievalDismissalRecord {
+	record := RetrievalDismissalRecord{
+		Surface: row.Surface, TargetID: row.TargetID.String(),
+		CreatedAt: formatTime(row.CreatedAt.Time),
+	}
+	if row.QueryText.Valid {
+		record.Query = &row.QueryText.String
+	}
+	if row.AnchorID.Valid {
+		anchor := uuid.UUID(row.AnchorID.Bytes).String()
+		record.AnchorID = &anchor
+	}
+	return record
 }
 
 func formatTime(value time.Time) string {

@@ -37,6 +37,7 @@ type ImportResult struct {
 	Media            int      `json:"media"`
 	Links            int      `json:"links"`
 	Attachments      int      `json:"attachments"`
+	Dismissals       int      `json:"retrievalDismissals"`
 	Warnings         []string `json:"warnings"`
 	CreatedCaptureID []string `json:"createdCaptureIds"`
 }

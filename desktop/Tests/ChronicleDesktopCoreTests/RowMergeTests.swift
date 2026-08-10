@@ -10,6 +10,12 @@ private struct Row: Equatable {
     var evidence: [String] = []
 }
 
+private struct RecallRow: Equatable {
+    let id: String
+    let synced: Bool
+    let dirty: Bool
+}
+
 private func row(_ id: String, _ source: String, minutesAgo: Int? = nil) -> Row {
     Row(
         id: id,
@@ -19,6 +25,25 @@ private func row(_ id: String, _ source: String, minutesAgo: Int? = nil) -> Row 
 }
 
 @Suite struct RowMergeTests {
+    @Test func onlineRecallKeepsUnsyncedAndDirtyLocalRows() {
+        let rows = [
+            RecallRow(id: "cached", synced: true, dirty: false),
+            RecallRow(id: "new", synced: false, dirty: false),
+            RecallRow(id: "edited", synced: true, dirty: true),
+            RecallRow(id: "hidden-edit", synced: true, dirty: true),
+        ]
+
+        let supplemental = RowMerge.localRecallSupplement(
+            rows,
+            id: \.id,
+            synced: \.synced,
+            dirty: \.dirty,
+            excludedIDs: ["hidden-edit"],
+        )
+
+        #expect(supplemental.map(\.id) == ["new", "edited"])
+    }
+
     @Test func dedupsKeepingThePrimarySource() {
         let merged = RowMerge.newestFirst(
             primary: [row("a", "remote", minutesAgo: 1)],

@@ -53,6 +53,11 @@ WHERE user_id = sqlc.arg('user_id')
 ORDER BY created_at, id
 LIMIT sqlc.arg('page_size');
 
+-- name: ListArchiveRetrievalDismissals :many
+SELECT * FROM retrieval_dismissals
+WHERE user_id = sqlc.arg('user_id')
+ORDER BY created_at, surface, query_hash, anchor_id, target_id;
+
 -- name: GetCaptureOwner :one
 SELECT id, user_id FROM captures
 WHERE id = sqlc.arg('id')::uuid;
@@ -123,6 +128,39 @@ VALUES (
 )
 ON CONFLICT DO NOTHING
 RETURNING *;
+
+-- name: InsertArchiveSearchDismissal :execrows
+INSERT INTO retrieval_dismissals (
+  user_id, surface, query_hash, query_text, target_id, created_at
+)
+SELECT
+  sqlc.arg('user_id')::uuid, 'search', sqlc.arg('query_hash'),
+  sqlc.arg('query_text')::text, sqlc.arg('target_id')::uuid,
+  sqlc.arg('created_at')::timestamptz
+WHERE EXISTS (
+  SELECT 1 FROM captures
+  WHERE id = sqlc.arg('target_id')::uuid AND user_id = sqlc.arg('user_id')::uuid
+)
+ON CONFLICT (user_id, query_hash, target_id) WHERE surface = 'search'
+DO UPDATE SET query_text = EXCLUDED.query_text, created_at = EXCLUDED.created_at;
+
+-- name: InsertArchiveRelatedDismissal :execrows
+INSERT INTO retrieval_dismissals (
+  user_id, surface, anchor_id, target_id, created_at
+)
+SELECT
+  sqlc.arg('user_id')::uuid, 'related', sqlc.arg('anchor_id')::uuid,
+  sqlc.arg('target_id')::uuid, sqlc.arg('created_at')::timestamptz
+WHERE EXISTS (
+  SELECT 1 FROM captures
+  WHERE id = sqlc.arg('anchor_id')::uuid AND user_id = sqlc.arg('user_id')::uuid
+)
+AND EXISTS (
+  SELECT 1 FROM captures
+  WHERE id = sqlc.arg('target_id')::uuid AND user_id = sqlc.arg('user_id')::uuid
+)
+ON CONFLICT (user_id, anchor_id, target_id) WHERE surface = 'related'
+DO UPDATE SET created_at = EXCLUDED.created_at;
 
 -- name: ClaimArchiveImportOperation :one
 WITH expired AS (

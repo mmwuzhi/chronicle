@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"sync"
 	"testing"
 	"time"
 
@@ -1525,7 +1526,7 @@ func TestCaptureAttachments_NotOwnedOrMissing(t *testing.T) {
 
 func TestCaptureLinks_AddListRemoveBothDirections(t *testing.T) {
 	srv, pool := newServer(t)
-	_, token := createTestUser(t, pool)
+	userID, token := createTestUser(t, pool)
 	a := createCapture(t, srv, token, map[string]any{"rawText": "capture A"})
 	b := createCapture(t, srv, token, map[string]any{"rawText": "capture B"})
 
@@ -1567,6 +1568,145 @@ func TestCaptureLinks_AddListRemoveBothDirections(t *testing.T) {
 	}
 	if got := linksOf(a); len(got) != 0 {
 		t.Fatalf("A links after remove: expected none, got %v", got)
+	}
+	var dismissalCount int
+	if err := pool.QueryRow(context.Background(), `
+		SELECT count(*) FROM retrieval_dismissals
+		WHERE user_id = $1 AND surface = 'related'`, userID).Scan(&dismissalCount); err != nil {
+		t.Fatalf("count unlink dismissals: %v", err)
+	}
+	if dismissalCount != 2 {
+		t.Fatalf("unlink should suppress the pair in both directions, got %d rows", dismissalCount)
+	}
+
+	// Explicitly linking the pair again is a stronger positive action and clears
+	// both directional dismissals.
+	readd := do(t, srv.Client(), http.MethodPost, srv.URL+"/captures/"+a+"/links", token,
+		map[string]any{"targetId": b})
+	readd.Body.Close()
+	if readd.StatusCode != http.StatusNoContent {
+		t.Fatalf("re-add link: expected 204, got %d", readd.StatusCode)
+	}
+	if err := pool.QueryRow(context.Background(), `
+		SELECT count(*) FROM retrieval_dismissals
+		WHERE user_id = $1 AND surface = 'related'`, userID).Scan(&dismissalCount); err != nil {
+		t.Fatalf("count cleared dismissals: %v", err)
+	}
+	if dismissalCount != 0 {
+		t.Fatalf("re-link should clear both dismissals, got %d rows", dismissalCount)
+	}
+}
+
+func TestRelatedDismissalIsIdempotentAndUserScoped(t *testing.T) {
+	srv, pool := newServer(t)
+	userID, token := createTestUser(t, pool)
+	_, otherToken := createTestUser(t, pool)
+	a := createCapture(t, srv, token, map[string]any{"rawText": "anchor"})
+	b := createCapture(t, srv, token, map[string]any{"rawText": "candidate"})
+	linked := do(t, srv.Client(), http.MethodPost,
+		srv.URL+"/captures/"+a+"/links", token, map[string]any{"targetId": b})
+	linked.Body.Close()
+	if linked.StatusCode != http.StatusNoContent {
+		t.Fatalf("setup link: expected 204, got %d", linked.StatusCode)
+	}
+
+	for i := 0; i < 2; i++ {
+		resp := do(t, srv.Client(), http.MethodPut,
+			srv.URL+"/captures/"+a+"/related-dismissals/"+b, token, nil)
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusNoContent {
+			t.Fatalf("dismiss #%d: expected 204, got %d", i, resp.StatusCode)
+		}
+	}
+	var count int
+	if err := pool.QueryRow(context.Background(), `
+		SELECT count(*) FROM retrieval_dismissals
+		WHERE user_id = $1 AND surface = 'related'`, userID).Scan(&count); err != nil {
+		t.Fatalf("count dismissals: %v", err)
+	}
+	if count != 2 {
+		t.Fatalf("expected one row per direction after duplicate requests, got %d", count)
+	}
+	var linkCount int
+	if err := pool.QueryRow(context.Background(), `
+		SELECT count(*) FROM capture_links
+		WHERE user_id = $1`, userID).Scan(&linkCount); err != nil {
+		t.Fatalf("count links: %v", err)
+	}
+	if linkCount != 0 {
+		t.Fatalf("Not related must win over an existing link, got %d links", linkCount)
+	}
+
+	foreign := do(t, srv.Client(), http.MethodPut,
+		srv.URL+"/captures/"+a+"/related-dismissals/"+b, otherToken, nil)
+	foreign.Body.Close()
+	if foreign.StatusCode != http.StatusNotFound {
+		t.Fatalf("another user dismissing pair: expected 404, got %d", foreign.StatusCode)
+	}
+}
+
+func TestCapturePairMutationsNeverLeaveLinkAndDismissalTogether(t *testing.T) {
+	srv, pool := newServer(t)
+	userID, token := createTestUser(t, pool)
+	a := createCapture(t, srv, token, map[string]any{"rawText": "anchor"})
+	b := createCapture(t, srv, token, map[string]any{"rawText": "candidate"})
+
+	var wg sync.WaitGroup
+	errs := make(chan error, 40)
+	for index := range 40 {
+		wg.Add(1)
+		go func(link bool) {
+			defer wg.Done()
+			method := http.MethodPut
+			endpoint := srv.URL + "/captures/" + a + "/related-dismissals/" + b
+			var body io.Reader
+			if link {
+				method = http.MethodPost
+				endpoint = srv.URL + "/captures/" + a + "/links"
+				body = bytes.NewBufferString(`{"targetId":"` + b + `"}`)
+			}
+			req, err := http.NewRequest(method, endpoint, body)
+			if err != nil {
+				errs <- err
+				return
+			}
+			req.Header.Set("Authorization", "Bearer "+token)
+			if link {
+				req.Header.Set("Content-Type", "application/json")
+			}
+			resp, err := srv.Client().Do(req)
+			if err != nil {
+				errs <- err
+				return
+			}
+			resp.Body.Close()
+			if resp.StatusCode != http.StatusNoContent {
+				errs <- fmt.Errorf("%s returned %d", method, resp.StatusCode)
+			}
+		}(index%2 == 0)
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	var linkCount, dismissalCount int
+	if err := pool.QueryRow(context.Background(), `
+		SELECT count(*) FROM capture_links
+		WHERE user_id = $1`, userID).Scan(&linkCount); err != nil {
+		t.Fatalf("count links: %v", err)
+	}
+	if err := pool.QueryRow(context.Background(), `
+		SELECT count(*) FROM retrieval_dismissals
+		WHERE user_id = $1 AND surface = 'related'`, userID).Scan(&dismissalCount); err != nil {
+		t.Fatalf("count dismissals: %v", err)
+	}
+	if !((linkCount == 1 && dismissalCount == 0) ||
+		(linkCount == 0 && dismissalCount == 2)) {
+		t.Fatalf("contradictory pair state: links=%d dismissals=%d", linkCount, dismissalCount)
 	}
 }
 

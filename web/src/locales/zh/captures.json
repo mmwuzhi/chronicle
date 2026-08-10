@@ -93,6 +93,7 @@
     "link": "关联",
     "linking": "关联中…",
     "unlink": "解除关联",
+    "notRelated": "不相关",
     "searchLabel": "搜索要关联的 Capture",
     "searchPlaceholder": "搜索你的 Capture…",
     "searching": "搜索中…",

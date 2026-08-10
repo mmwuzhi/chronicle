@@ -22,6 +22,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	db "github.com/sikaoshenmi/chronicle/db/sqlc"
+	"github.com/sikaoshenmi/chronicle/internal/retrieval"
 	"github.com/sikaoshenmi/chronicle/testutil"
 )
 
@@ -238,6 +239,18 @@ func TestArchiveRoundTripMergePreservesTrashMediaLinksAndAttachments(t *testing.
 	); err != nil {
 		t.Fatalf("insert attachment: %v", err)
 	}
+	query := "blue door"
+	if err := q.AddSearchDismissal(context.Background(), db.AddSearchDismissalParams{
+		UserID: sourceUser, QueryHash: retrieval.QueryHash(sourceUser, query),
+		QueryText: pgtype.Text{String: query, Valid: true}, TargetID: textID,
+	}); err != nil {
+		t.Fatalf("insert search preference: %v", err)
+	}
+	if err := q.AddRelatedDismissal(context.Background(), db.AddRelatedDismissalParams{
+		UserID: sourceUser, AnchorID: textID, TargetID: mediaID,
+	}); err != nil {
+		t.Fatalf("insert related preference: %v", err)
+	}
 
 	store := newMemoryStore()
 	audioBytes := []byte{0, 0, 0, 0, 'f', 't', 'y', 'p', 'M', '4', 'A', ' ', 0, 0, 0, 0}
@@ -270,7 +283,7 @@ func TestArchiveRoundTripMergePreservesTrashMediaLinksAndAttachments(t *testing.
 	if result.Created != 2 || result.Forked != 2 || result.Skipped != 0 {
 		t.Fatalf("unexpected merge result: %+v", result)
 	}
-	if result.Media != 1 || result.Links != 1 || result.Attachments != 1 {
+	if result.Media != 1 || result.Links != 1 || result.Attachments != 1 || result.Dismissals != 3 {
 		t.Fatalf("relationships were not restored: %+v", result)
 	}
 
@@ -298,6 +311,23 @@ func TestArchiveRoundTripMergePreservesTrashMediaLinksAndAttachments(t *testing.
 	store.mu.Unlock()
 	if !bytes.Equal(restoredObject.data, audioBytes) {
 		t.Fatalf("restored media bytes = %x", restoredObject.data)
+	}
+	preferences, err := q.ListArchiveRetrievalDismissals(context.Background(), targetUser)
+	if err != nil {
+		t.Fatalf("list restored retrieval preferences: %v", err)
+	}
+	if len(preferences) != 3 {
+		t.Fatalf("restored %d retrieval preferences, want 3", len(preferences))
+	}
+	searchFound := false
+	for _, preference := range preferences {
+		if preference.Surface == "search" {
+			searchFound = preference.QueryText.Valid && preference.QueryText.String == query &&
+				bytes.Equal(preference.QueryHash, retrieval.QueryHash(targetUser, query))
+		}
+	}
+	if !searchFound {
+		t.Fatal("search preference was not re-hashed for the importing account")
 	}
 
 	failingTarget := createArchiveUser(t, q, "archive-storage-failure@test.com")
@@ -502,6 +532,7 @@ func TestReadArchiveRejectsNegativeManifestCounts(t *testing.T) {
 		capturesPath:    {},
 		linksPath:       {},
 		attachmentsPath: {},
+		dismissalsPath:  {},
 		notesPath:       []byte("# Chronicle Captures\n"),
 	} {
 		if err := addZipBytes(writer, name, data, checksums); err != nil {
@@ -522,6 +553,48 @@ func TestReadArchiveRejectsNegativeManifestCounts(t *testing.T) {
 		!strings.Contains(err.Error(), "count is out of range") {
 		t.Fatalf("negative manifest count error = %v", err)
 	}
+}
+
+func TestReadArchiveAcceptsVersionOneWithoutRetrievalPreferences(t *testing.T) {
+	temp, err := os.CreateTemp(t.TempDir(), "chronicle-v1-*.zip")
+	if err != nil {
+		t.Fatal(err)
+	}
+	archivePath := temp.Name()
+	writer := zip.NewWriter(temp)
+	checksums := make(map[string]string)
+	manifestBytes, err := json.Marshal(Manifest{
+		Format: formatName, FormatVersion: 1, ExportedAt: formatTime(time.Now()),
+		IncludesTrash: true, MediaComplete: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, data := range map[string][]byte{
+		manifestPath: manifestBytes, capturesPath: {}, linksPath: {},
+		attachmentsPath: {}, notesPath: []byte("# Chronicle Captures\n"),
+	} {
+		if err := addZipBytes(writer, name, data, checksums); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := addZipReader(
+		writer, checksumsPath, bytes.NewReader(renderChecksums(checksums)),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := temp.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	data, err := readArchive(archivePath, 1<<20)
+	if err != nil {
+		t.Fatalf("read v1 archive: %v", err)
+	}
+	_ = data.reader.Close()
 }
 
 func TestExportFailsWhenOwnedMediaCannotBeRead(t *testing.T) {

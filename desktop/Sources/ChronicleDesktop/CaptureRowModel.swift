@@ -196,6 +196,7 @@ struct RowItem: Identifiable, Equatable {
     // dirty row ahead of its same-id server fragment so the not-yet-pushed new text
     // wins over the stale server copy (see MainView.rebuildBrowseRows).
     let dirty: Bool
+    var dismissed: Bool
     // Remote media URL (R2) for image/audio captures, when known. Search hits and
     // local records don't carry it (nil); a desktop sticky fills it in on refresh
     // from GET /captures/{id} so it can show an image thumbnail.
@@ -219,6 +220,7 @@ struct RowItem: Identifiable, Equatable {
         modality = hit.modality
         synced = true
         dirty = false
+        dismissed = hit.dismissed ?? false
         mediaUrl = nil
         todoState = nil
         attachments = []
@@ -234,6 +236,7 @@ struct RowItem: Identifiable, Equatable {
         modality = capture.mediaType
         synced = true
         dirty = false
+        dismissed = false
         mediaUrl = capture.mediaUrl
         todoState = capture.todoState
         attachments = capture.attachments ?? []
@@ -249,6 +252,7 @@ struct RowItem: Identifiable, Equatable {
         modality = related.modality
         synced = true
         dirty = false
+        dismissed = false
         mediaUrl = nil
         todoState = nil
         attachments = []
@@ -266,6 +270,7 @@ struct RowItem: Identifiable, Equatable {
         self.modality = modality
         self.synced = true
         self.dirty = false
+        self.dismissed = false
         self.mediaUrl = mediaUrl
         self.todoState = CaptureTodoTag.state(in: content)
         self.attachments = []
@@ -287,6 +292,7 @@ struct RowItem: Identifiable, Equatable {
         modality = record.payload.mediaType
         synced = record.serverId != nil
         dirty = record.hasPendingUpdate
+        dismissed = false
         mediaUrl = nil
         todoState = CaptureTodoTag.state(in: record.payload.rawText)
         attachments = []
@@ -305,6 +311,7 @@ struct RowItem: Identifiable, Equatable {
     }
 
     mutating func mergeDisplayEvidence(from other: RowItem) {
+        dismissed = dismissed || other.dismissed
         guard snippet?.isEmpty != false,
               let evidence = other.snippet,
               !evidence.isEmpty
@@ -325,6 +332,7 @@ struct RowItem: Identifiable, Equatable {
             modality: modality,
             synced: synced,
             dirty: synced,
+            dismissed: dismissed,
             mediaUrl: mediaUrl,
             todoState: CaptureTodoTag.state(in: rawText),
             attachments: attachments
@@ -342,6 +350,7 @@ struct RowItem: Identifiable, Equatable {
             modality: modality,
             synced: synced,
             dirty: dirty,
+            dismissed: dismissed,
             mediaUrl: mediaUrl,
             todoState: todoState,
             attachments: attachments
@@ -358,6 +367,7 @@ struct RowItem: Identifiable, Equatable {
         modality: String,
         synced: Bool,
         dirty: Bool,
+        dismissed: Bool,
         mediaUrl: String?,
         todoState: CaptureTodoState?,
         attachments: [CaptureAttachment]
@@ -371,6 +381,7 @@ struct RowItem: Identifiable, Equatable {
         self.modality = modality
         self.synced = synced
         self.dirty = dirty
+        self.dismissed = dismissed
         self.mediaUrl = mediaUrl
         self.todoState = todoState
         self.attachments = attachments

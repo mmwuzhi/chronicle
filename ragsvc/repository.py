@@ -183,7 +183,9 @@ def recent(user_id: str, limit: int, offset: int) -> list[dict]:
     ]
 
 
-def on_date(user_id: str, date: str, limit: int) -> list[dict]:
+def on_date(
+    user_id: str, date: str, limit: int, excluded_ids: set[str] | None = None,
+) -> list[dict]:
     day = dt.date.fromisoformat(date)
     local_tz = dt.datetime.now().astimezone().tzinfo
     lo = dt.datetime.combine(day, dt.time.min, local_tz)
@@ -193,9 +195,10 @@ def on_date(user_id: str, date: str, limit: int) -> list[dict]:
             f"SELECT c.id::text, {CONTENT_SQL} AS content, c.created_at, c.media_type::text "
             "FROM captures c "
             "WHERE c.user_id = %s AND c.deleted_at IS NULL "
+            "AND NOT (c.id = ANY(%s::uuid[])) "
             "AND c.created_at >= %s AND c.created_at < %s "
             "ORDER BY c.created_at DESC, c.id DESC LIMIT %s",
-            (user_id, lo, hi, limit),
+            (user_id, list(excluded_ids or set()), lo, hi, limit),
         ).fetchall()
     return [
         {

@@ -10,12 +10,9 @@ public actor LocalSemanticSearch {
     private let embedder: LocalEmbedder
     private var indexing = false
 
-    // bge-m3 cosine compresses related content into a high, narrow band (~0.4–0.65
-    // for short notes), so a low floor lets noise through. Without a reranker (the
-    // server's precision stage) this is the lever we have: a recall-oriented gate
-    // that keeps the obvious tail out. These hits merge *below* exact keyword
-    // matches, so the floor errs toward recall — relevant rows still lead.
-    private static let recallFloor: Float = 0.4
+    // Without a reranker, cosine is the only precision gate. Chronicle prefers
+    // fewer, stronger results over a recall-heavy tail of plausible noise.
+    private static let recallFloor: Float = 0.55
 
     public init(store: LocalCaptureStore, embedder: LocalEmbedder) {
         self.store = store

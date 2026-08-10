@@ -6,6 +6,7 @@ import {
   getListCaptureLinksQueryKey,
   getRelatedCapturesQueryKey,
   useAddCaptureLink,
+  useDismissRelatedCapture,
   useListCaptureLinks,
   useRelatedCaptures,
   useRemoveCaptureLink,
@@ -18,7 +19,7 @@ import { Button } from "@/components/ui/button";
 import { Meta } from "@/components/ui/page";
 import { CaptureLinkPicker } from "@/components/CaptureLinkPicker";
 
-const RELATED_LIMIT = 10;
+const RELATED_LIMIT = 5;
 const SNIPPET_MAX = 140;
 
 function XIcon(): React.JSX.Element {
@@ -126,6 +127,9 @@ export function CaptureRelated({
     mutation: { onSuccess: invalidate, onError: onMutationError },
   });
   const removeLink = useRemoveCaptureLink({
+    mutation: { onSuccess: invalidate, onError: onMutationError },
+  });
+  const dismissRelated = useDismissRelatedCapture({
     mutation: { onSuccess: invalidate, onError: onMutationError },
   });
 
@@ -283,10 +287,25 @@ export function CaptureRelated({
                       data: { targetId: capture.id },
                     })
                   }
-                  disabled={addLink.isPending}
+                  disabled={addLink.isPending || dismissRelated.isPending}
                 >
                   <PlusIcon />
                   {t("related.link")}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() =>
+                    dismissRelated.mutate({
+                      id: anchorId,
+                      targetId: capture.id,
+                    })
+                  }
+                  disabled={addLink.isPending || dismissRelated.isPending}
+                  aria-label={t("related.notRelated")}
+                  title={t("related.notRelated")}
+                >
+                  <XIcon />
                 </Button>
               </li>
             ))}

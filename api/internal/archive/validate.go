@@ -11,6 +11,7 @@ import (
 	"time"
 
 	capturelogic "github.com/sikaoshenmi/chronicle/internal/capture"
+	"github.com/sikaoshenmi/chronicle/internal/retrieval"
 )
 
 func readArchive(filename string, maxBytes int64) (*archiveData, error) {
@@ -96,8 +97,15 @@ func readArchive(filename string, maxBytes int64) (*archiveData, error) {
 	if err := strictJSON(manifestBytes, &manifest); err != nil {
 		return nil, err
 	}
-	if manifest.Format != formatName || manifest.FormatVersion != formatVersion {
+	if manifest.Format != formatName ||
+		(manifest.FormatVersion != 1 && manifest.FormatVersion != formatVersion) {
 		return nil, fmt.Errorf("unsupported archive format %q version %d", manifest.Format, manifest.FormatVersion)
+	}
+	if manifest.FormatVersion >= 2 && files[dismissalsPath] == nil {
+		return nil, fmt.Errorf("required entry %q is missing", dismissalsPath)
+	}
+	if manifest.FormatVersion == 1 && files[dismissalsPath] != nil {
+		return nil, errors.New("version 1 archive unexpectedly contains retrieval preferences")
 	}
 	if !manifest.IncludesTrash || !manifest.MediaComplete {
 		return nil, errors.New("archive is not marked complete")
@@ -106,10 +114,11 @@ func readArchive(filename string, maxBytes int64) (*archiveData, error) {
 		return nil, errors.New("manifest exportedAt is invalid")
 	}
 	for name, count := range map[string]int{
-		"captures":    manifest.Counts.Captures,
-		"links":       manifest.Counts.Links,
-		"attachments": manifest.Counts.Attachments,
-		"media":       manifest.Counts.Media,
+		"captures":            manifest.Counts.Captures,
+		"links":               manifest.Counts.Links,
+		"attachments":         manifest.Counts.Attachments,
+		"media":               manifest.Counts.Media,
+		"retrievalDismissals": manifest.Counts.Dismissals,
 	} {
 		if count < 0 || count > maxArchiveRecords {
 			return nil, fmt.Errorf("manifest %s count is out of range", name)
@@ -332,6 +341,59 @@ func validateArchiveRecords(data *archiveData) error {
 	}
 	if attachmentCount != data.manifest.Counts.Attachments {
 		return errors.New("manifest attachment count does not match archive data")
+	}
+	if data.manifest.FormatVersion >= 2 {
+		if err := validateRetrievalDismissals(data, captureIDs); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateRetrievalDismissals(data *archiveData, captureIDs map[string]struct{}) error {
+	seen := make(map[string]struct{}, data.manifest.Counts.Dismissals)
+	count := 0
+	err := forEachNDJSON(data.files[dismissalsPath], func(record RetrievalDismissalRecord) error {
+		count++
+		if _, exists := captureIDs[record.TargetID]; !exists {
+			return fmt.Errorf("retrieval preference references unknown target %s", record.TargetID)
+		}
+		if _, err := time.Parse(time.RFC3339Nano, record.CreatedAt); err != nil {
+			return errors.New("retrieval preference createdAt is invalid")
+		}
+		var key string
+		switch record.Surface {
+		case "search":
+			if record.Query == nil || record.AnchorID != nil {
+				return errors.New("search retrieval preference has invalid shape")
+			}
+			normalized := retrieval.NormalizeQuery(*record.Query)
+			if normalized == "" || normalized != *record.Query {
+				return errors.New("search retrieval preference has invalid normalized query")
+			}
+			key = "search:" + normalized + ":" + record.TargetID
+		case "related":
+			if record.Query != nil || record.AnchorID == nil || *record.AnchorID == record.TargetID {
+				return errors.New("related retrieval preference has invalid shape")
+			}
+			if _, exists := captureIDs[*record.AnchorID]; !exists {
+				return fmt.Errorf("retrieval preference references unknown anchor %s", *record.AnchorID)
+			}
+			key = "related:" + *record.AnchorID + ":" + record.TargetID
+		default:
+			return fmt.Errorf("retrieval preference has invalid surface %q", record.Surface)
+		}
+		if _, exists := seen[key]; exists {
+			return errors.New("retrieval preference is duplicated")
+		}
+		seen[key] = struct{}{}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	if count != data.manifest.Counts.Dismissals {
+		return errors.New("manifest retrieval preference count does not match archive data")
 	}
 	return nil
 }

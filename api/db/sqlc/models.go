@@ -450,12 +450,12 @@ type CaptureShare struct {
 	ID              uuid.UUID          `json:"id"`
 	UserID          uuid.UUID          `json:"user_id"`
 	CaptureID       uuid.UUID          `json:"capture_id"`
-	Secret          string             `json:"secret"`
 	SnapshotRawText string             `json:"snapshot_raw_text"`
 	CapturedAt      pgtype.Timestamptz `json:"captured_at"`
 	ExpiresAt       pgtype.Timestamptz `json:"expires_at"`
 	RevokedAt       pgtype.Timestamptz `json:"revoked_at"`
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	Secret          string             `json:"secret"`
 }
 
 type CaptureToken struct {
@@ -571,6 +571,16 @@ type RefreshToken struct {
 	ExpiresAt pgtype.Timestamptz `json:"expires_at"`
 	Revoked   bool               `json:"revoked"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
+type RetrievalDismissal struct {
+	UserID    uuid.UUID          `json:"user_id"`
+	Surface   string             `json:"surface"`
+	QueryHash []byte             `json:"query_hash"`
+	AnchorID  pgtype.UUID        `json:"anchor_id"`
+	TargetID  uuid.UUID          `json:"target_id"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	QueryText pgtype.Text        `json:"query_text"`
 }
 
 type Task struct {

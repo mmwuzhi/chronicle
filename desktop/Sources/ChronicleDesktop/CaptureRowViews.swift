@@ -47,6 +47,9 @@ struct CaptureRowActions: View {
     var onEdit: (() -> Void)?
     var onOpen: (() -> Void)?
     var onUnlink: (() -> Void)?
+    var onDismiss: (() -> Void)?
+    var dismissTitle: String?
+    var dismissSystemImage: String = "eye.slash"
     var onPin: (() -> Void)?
     var isPinned: Bool = false
 
@@ -57,6 +60,9 @@ struct CaptureRowActions: View {
                 onEdit: onEdit,
                 onPin: onPin,
                 onUnlink: onUnlink,
+                onDismiss: onDismiss,
+                dismissTitle: dismissTitle,
+                dismissSystemImage: dismissSystemImage,
                 onDelete: onDelete,
                 isPinned: isPinned,
             )
@@ -65,7 +71,7 @@ struct CaptureRowActions: View {
     }
 
     private var hasActions: Bool {
-        onOpen != nil || onEdit != nil || onPin != nil || onUnlink != nil || onDelete != nil
+        onOpen != nil || onEdit != nil || onPin != nil || onUnlink != nil || onDismiss != nil || onDelete != nil
     }
 }
 
@@ -80,6 +86,9 @@ private struct RowActionMenu: View {
     var onEdit: (() -> Void)?
     var onPin: (() -> Void)?
     var onUnlink: (() -> Void)?
+    var onDismiss: (() -> Void)?
+    var dismissTitle: String?
+    var dismissSystemImage: String
     var onDelete: (() -> Void)?
     var isPinned: Bool
 
@@ -90,6 +99,9 @@ private struct RowActionMenu: View {
                 onEdit: onEdit,
                 onPin: onPin,
                 onUnlink: onUnlink,
+                onDismiss: onDismiss,
+                dismissTitle: dismissTitle,
+                dismissSystemImage: dismissSystemImage,
                 onDelete: onDelete,
                 isPinned: isPinned,
             )
@@ -104,6 +116,9 @@ enum CaptureRowOverflowMenu {
         onEdit: (() -> Void)? = nil,
         onPin: (() -> Void)?,
         onUnlink: (() -> Void)?,
+        onDismiss: (() -> Void)? = nil,
+        dismissTitle: String? = nil,
+        dismissSystemImage: String = "eye.slash",
         onDelete: (() -> Void)?,
         isPinned: Bool
     ) -> NSMenu {
@@ -136,6 +151,13 @@ enum CaptureRowOverflowMenu {
                 action: onUnlink,
             ))
         }
+        if let onDismiss, let dismissTitle {
+            menu.addItem(ClosureMenuItem(
+                title: dismissTitle,
+                systemImage: dismissSystemImage,
+                action: onDismiss,
+            ))
+        }
         if let onDelete {
             if !menu.items.isEmpty {
                 menu.addItem(.separator())
@@ -156,6 +178,9 @@ enum CaptureRowOverflowMenu {
         onEdit: (() -> Void)? = nil,
         onPin: (() -> Void)?,
         onUnlink: (() -> Void)?,
+        onDismiss: (() -> Void)? = nil,
+        dismissTitle: String? = nil,
+        dismissSystemImage: String = "eye.slash",
         onDelete: (() -> Void)?,
         isPinned: Bool
     ) {
@@ -164,6 +189,9 @@ enum CaptureRowOverflowMenu {
             onEdit: onEdit,
             onPin: onPin,
             onUnlink: onUnlink,
+            onDismiss: onDismiss,
+            dismissTitle: dismissTitle,
+            dismissSystemImage: dismissSystemImage,
             onDelete: onDelete,
             isPinned: isPinned,
         )
@@ -368,6 +396,9 @@ struct CaptureRow: View {
     // Remove an explicit link to this row. Distinct from onDelete: it severs the
     // relation, it does not delete the capture (so it never shows a trash icon).
     var onUnlink: (() -> Void)?
+    var onDismiss: (() -> Void)?
+    var dismissTitle: String?
+    var dismissSystemImage: String = "eye.slash"
     // Pin / unpin this capture as a desktop sticky. When pinned the icon stays lit
     // even without hover, so the list shows at a glance what is on the desktop.
     var onPin: (() -> Void)?
@@ -451,6 +482,9 @@ struct CaptureRow: View {
                                 onEdit: beginEditAction,
                                 onOpen: onOpen,
                                 onUnlink: onUnlink,
+                                onDismiss: onDismiss,
+                                dismissTitle: dismissTitle,
+                                dismissSystemImage: dismissSystemImage,
                                 onPin: onPin,
                                 isPinned: isPinned,
                             )

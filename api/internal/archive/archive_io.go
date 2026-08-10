@@ -102,7 +102,7 @@ func preflightZipEntryCount(filename string) error {
 	return errors.New("archive is missing its ZIP end record")
 }
 
-func forEachNDJSON[T CaptureRecord | LinkRecord | AttachmentRecord](
+func forEachNDJSON[T CaptureRecord | LinkRecord | AttachmentRecord | RetrievalDismissalRecord](
 	file *zip.File,
 	visit func(T) error,
 ) error {

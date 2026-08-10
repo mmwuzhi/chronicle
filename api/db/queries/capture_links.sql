@@ -11,6 +11,17 @@ VALUES (
 )
 ON CONFLICT (a_id, b_id) DO NOTHING;
 
+-- name: LockCapturePair :exec
+-- All link/dismissal mutations take the same transaction-scoped lock for an
+-- undirected pair. Hash collisions only serialize unrelated pairs; they cannot
+-- weaken correctness.
+SELECT pg_advisory_xact_lock(hashtextextended(
+  sqlc.arg('user_id')::uuid::text || ':' ||
+  LEAST(sqlc.arg('x')::uuid, sqlc.arg('y')::uuid)::text || ':' ||
+  GREATEST(sqlc.arg('x')::uuid, sqlc.arg('y')::uuid)::text,
+  0
+));
+
 -- name: RemoveCaptureLink :exec
 -- Hard delete of the normalised pair (derived association table — see migration
 -- 021). user_id scoping prevents removing another user's link.

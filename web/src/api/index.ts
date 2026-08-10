@@ -377,6 +377,8 @@ export interface ErrorModel {
 export interface RecallItem {
   content: string;
   createdAt: string;
+  /** true only when includeDismissed returns a result hidden for this query */
+  dismissed?: boolean;
   id: string;
   lexical: boolean;
   modality: string;
@@ -389,6 +391,8 @@ export interface FindOutputBody {
   readonly $schema?: string;
   /** true when the semantic sidecar was unavailable and keyword FTS was used */
   degraded: boolean;
+  /** Number of matching candidates hidden by explicit feedback */
+  hiddenCount: number;
   /** @nullable */
   items: RecallItem[] | null;
 }
@@ -788,6 +792,26 @@ q: string;
  * @maximum 50
  */
 limit?: number;
+/**
+ * Include results the user hid for this exact normalized query
+ */
+includeDismissed?: boolean;
+};
+
+export type RestoreFindResultParams = {
+/**
+ * @minLength 1
+ * @maxLength 200
+ */
+q: string;
+};
+
+export type DismissFindResultParams = {
+/**
+ * @minLength 1
+ * @maxLength 200
+ */
+q: string;
 };
 
 export type DueRemindersParams = {
@@ -3950,6 +3974,69 @@ export function useRelatedCaptures<TData = Awaited<ReturnType<typeof relatedCapt
 
 
 /**
+ * @summary Hide one semantic relation suggestion
+ */
+export const dismissRelatedCapture = (
+    id: string,
+    targetId: string,
+ options?: SecondParameter<typeof api>,signal?: AbortSignal
+) => {
+
+
+      return api<void>(
+      {url: `/captures/${id}/related-dismissals/${targetId}`, method: 'PUT', signal
+    },
+      options);
+    }
+
+
+
+export const getDismissRelatedCaptureMutationOptions = <TError = ErrorModel,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof dismissRelatedCapture>>, TError,{id: string;targetId: string}, TContext>, request?: SecondParameter<typeof api>}
+): UseMutationOptions<Awaited<ReturnType<typeof dismissRelatedCapture>>, TError,{id: string;targetId: string}, TContext> => {
+
+const mutationKey = ['dismissRelatedCapture'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof dismissRelatedCapture>>, {id: string;targetId: string}> = (props) => {
+          const {id,targetId} = props ?? {};
+
+          return  dismissRelatedCapture(id,targetId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DismissRelatedCaptureMutationResult = NonNullable<Awaited<ReturnType<typeof dismissRelatedCapture>>>
+
+    export type DismissRelatedCaptureMutationError = ErrorModel
+
+    /**
+ * @summary Hide one semantic relation suggestion
+ */
+export const useDismissRelatedCapture = <TError = ErrorModel,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof dismissRelatedCapture>>, TError,{id: string;targetId: string}, TContext>, request?: SecondParameter<typeof api>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof dismissRelatedCapture>>,
+        TError,
+        {id: string;targetId: string},
+        TContext
+      > => {
+      return useMutation(getDismissRelatedCaptureMutationOptions(options), queryClient);
+    }
+
+/**
  * @summary Set or clear a capture reminder
  */
 export const setCaptureRemind = (
@@ -4296,6 +4383,134 @@ export function useFind<TData = Awaited<ReturnType<typeof find>>, TError = Error
 
 
 
+
+/**
+ * @summary Restore a result hidden for an exact normalized search query
+ */
+export const restoreFindResult = (
+    targetId: string,
+    params: RestoreFindResultParams,
+ options?: SecondParameter<typeof api>,signal?: AbortSignal
+) => {
+
+
+      return api<void>(
+      {url: `/find/dismissals/${targetId}`, method: 'DELETE',
+        params, signal
+    },
+      options);
+    }
+
+
+
+export const getRestoreFindResultMutationOptions = <TError = ErrorModel,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof restoreFindResult>>, TError,{targetId: string;params: RestoreFindResultParams}, TContext>, request?: SecondParameter<typeof api>}
+): UseMutationOptions<Awaited<ReturnType<typeof restoreFindResult>>, TError,{targetId: string;params: RestoreFindResultParams}, TContext> => {
+
+const mutationKey = ['restoreFindResult'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof restoreFindResult>>, {targetId: string;params: RestoreFindResultParams}> = (props) => {
+          const {targetId,params} = props ?? {};
+
+          return  restoreFindResult(targetId,params,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RestoreFindResultMutationResult = NonNullable<Awaited<ReturnType<typeof restoreFindResult>>>
+
+    export type RestoreFindResultMutationError = ErrorModel
+
+    /**
+ * @summary Restore a result hidden for an exact normalized search query
+ */
+export const useRestoreFindResult = <TError = ErrorModel,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof restoreFindResult>>, TError,{targetId: string;params: RestoreFindResultParams}, TContext>, request?: SecondParameter<typeof api>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof restoreFindResult>>,
+        TError,
+        {targetId: string;params: RestoreFindResultParams},
+        TContext
+      > => {
+      return useMutation(getRestoreFindResultMutationOptions(options), queryClient);
+    }
+
+/**
+ * @summary Hide a result for an exact normalized search query
+ */
+export const dismissFindResult = (
+    targetId: string,
+    params: DismissFindResultParams,
+ options?: SecondParameter<typeof api>,signal?: AbortSignal
+) => {
+
+
+      return api<void>(
+      {url: `/find/dismissals/${targetId}`, method: 'PUT',
+        params, signal
+    },
+      options);
+    }
+
+
+
+export const getDismissFindResultMutationOptions = <TError = ErrorModel,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof dismissFindResult>>, TError,{targetId: string;params: DismissFindResultParams}, TContext>, request?: SecondParameter<typeof api>}
+): UseMutationOptions<Awaited<ReturnType<typeof dismissFindResult>>, TError,{targetId: string;params: DismissFindResultParams}, TContext> => {
+
+const mutationKey = ['dismissFindResult'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof dismissFindResult>>, {targetId: string;params: DismissFindResultParams}> = (props) => {
+          const {targetId,params} = props ?? {};
+
+          return  dismissFindResult(targetId,params,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DismissFindResultMutationResult = NonNullable<Awaited<ReturnType<typeof dismissFindResult>>>
+
+    export type DismissFindResultMutationError = ErrorModel
+
+    /**
+ * @summary Hide a result for an exact normalized search query
+ */
+export const useDismissFindResult = <TError = ErrorModel,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof dismissFindResult>>, TError,{targetId: string;params: DismissFindResultParams}, TContext>, request?: SecondParameter<typeof api>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof dismissFindResult>>,
+        TError,
+        {targetId: string;params: DismissFindResultParams},
+        TContext
+      > => {
+      return useMutation(getDismissFindResultMutationOptions(options), queryClient);
+    }
 
 /**
  * Accepts one UTF-8 .md/.markdown/.txt file (1 MiB), or a ZIP with up to 5,000 notes and 10,000 entries (32 MiB compressed and expanded).

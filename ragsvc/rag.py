@@ -372,10 +372,15 @@ def _stored_query_vec(row: dict) -> np.ndarray | None:
     return (mat / norms).mean(axis=0)
 
 
-def related(user_id: str, capture_id: str, limit: int = 10) -> list[dict]:
-    """Semantic neighbours of ONE capture, for the 'Related' surface: score the
+def related_candidates(
+    user_id: str, capture_id: str, limit: int = 30,
+    excluded_ids: set[str] | None = None,
+) -> tuple[str, list[dict]]:
+    """Wide semantic candidates for ONE capture's Related surface: score the
     user's other captures against this capture's meaning (max cosine over their
-    chunks), excluding the capture itself. The query vector is rebuilt from the
+    chunks), excluding the capture itself. Search owns the precision threshold
+    and optional rerank stage; this function only supplies the wide vector pool
+    and anchor text. The query vector is rebuilt from the
     capture's own stored chunk vectors (_stored_query_vec), so opening Related
     normally costs no embed round-trip; a fresh full-content embed is the
     fallback when nothing usable is stored (just created, model switched,
@@ -383,19 +388,20 @@ def related(user_id: str, capture_id: str, limit: int = 10) -> list[dict]:
     error — when embeddings are disabled or the capture has no indexable text
     (media-only / missing)."""
     if not EMBED_ENABLED:
-        return []
+        return "", []
     snap = _snapshot(user_id)
     metas = snap.rows
     own = next((r for r in metas if r["id"] == capture_id), None)
     if own is None or not own["content"].strip():
-        return []
+        return "", []
     qv = _stored_query_vec(own)
     if qv is None:
         qv = embed(own["content"])
-    best, _ = _capture_max_sims(snap, qv)
+    best, best_text = _capture_max_sims(snap, qv)
     out: list[dict] = []
+    excluded = excluded_ids or set()
     for i in np.argsort(-best):
-        if metas[i]["id"] == capture_id:
+        if metas[i]["id"] == capture_id or metas[i]["id"] in excluded:
             continue
         # Zero-score captures (no active-model embedding: backfill pending, model
         # changed, media-only, embed failed) sort last; stop before them so they
@@ -405,10 +411,12 @@ def related(user_id: str, capture_id: str, limit: int = 10) -> list[dict]:
             break
         out.append({"id": metas[i]["id"], "content": metas[i]["content"],
                     "created_at": metas[i]["created_at"],
-                    "modality": metas[i]["modality"], "score": float(best[i])})
+                    "modality": metas[i]["modality"], "score": float(best[i]),
+                    "vscore": float(best[i]), "lexical": False,
+                    "rerank_text": best_text[i] or metas[i]["content"]})
         if len(out) >= limit:
             break
-    return out
+    return own["content"], out
 
 
 # Vector floor for wide recall (a fallback only; literal hits ignore it).
@@ -416,7 +424,10 @@ def related(user_id: str, capture_id: str, limit: int = 10) -> list[dict]:
 CANDIDATE_FLOOR = float(os.getenv("CANDIDATE_FLOOR", "0.3"))
 
 
-def candidates(user_id: str, query: str, k: int = 30) -> list[dict]:
+def candidates(
+    user_id: str, query: str, k: int = 30,
+    excluded_ids: set[str] | None = None,
+) -> list[dict]:
     """Wide recall: literal substring hits ∪ vector top-k (low floor), for rerank.
     Zero-content captures are kept out of vector recall (unstable noise); literal
     hits are exempt. With embeddings disabled there is no vector channel, so this
@@ -426,18 +437,22 @@ def candidates(user_id: str, query: str, k: int = 30) -> list[dict]:
     and rerank_text carries the best-matching chunk so the reranker scores the
     matched fragment rather than a long document's truncated opening."""
     q = query.lower()
+    excluded = excluded_ids or set()
     snap = _snapshot(user_id)
     if not EMBED_ENABLED:
         pool_ = [{"id": f["id"], "content": f["content"], "created_at": f["created_at"],
                   "modality": f["modality"], "lexical": True, "vscore": 0.0,
                   "rerank_text": f["content"]}
-                 for f in snap.rows if q in f["content"].lower()]
+                 for f in snap.rows
+                 if f["id"] not in excluded and q in f["content"].lower()]
         pool_.sort(key=lambda c: c["created_at"], reverse=True)
         return pool_[:k]
 
     best, best_text = _capture_max_sims(snap, embed(query))
     pool_: list[dict] = []
     for i, m in enumerate(snap.rows):
+        if m["id"] in excluded:
+            continue
         lex = q in m["content"].lower()
         sim = float(best[i])
         if lex or (sim >= CANDIDATE_FLOOR and _content_chars(m["content"]) > 0):
@@ -457,14 +472,17 @@ def all_fragments(user_id: str) -> list[dict]:
     return repository.load_fragments(user_id)
 
 
-def on_date(user_id: str, d: str, limit: int = 50) -> list[dict]:
+def on_date(
+    user_id: str, d: str, limit: int = 50,
+    excluded_ids: set[str] | None = None,
+) -> list[dict]:
     """Captures on a given local day (YYYY-MM-DD), newest first.
 
     Bounds are computed in the process's local timezone (the same one repository
     timestamp formatting and dates.parse_range use) and queried as a half-open
     timestamptz range, so date bucketing is correct regardless of the Postgres
     session timezone."""
-    return repository.on_date(user_id, d, limit)
+    return repository.on_date(user_id, d, limit, excluded_ids)
 
 
 def update_metadata(capture_id: str, user_id: str, meta: dict, content: str) -> None:

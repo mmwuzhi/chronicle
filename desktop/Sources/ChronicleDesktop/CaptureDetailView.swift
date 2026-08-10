@@ -246,14 +246,13 @@ final class CaptureDetailModel: ObservableObject {
                   id == capture.id else { return }
             related = items.map(RowItem.init)
         }
-        if related.isEmpty {
-            await loadLocalRelated(for: capture, generation: generation)
-        }
+        // An empty online response is authoritative: it may mean every candidate
+        // was explicitly dismissed. Local fallback here would reintroduce those
+        // same rows without access to the server-owned preference set.
     }
 
-    // Offline/default suggestions: use the on-device semantic index to surface
-    // possible neighbours even when the user is signed out or the server has no
-    // embedding result. Explicit links and the current capture are filtered out.
+    // Offline suggestions: use the on-device semantic index when signed out.
+    // Online Related remains server-authoritative so dismissals cannot be bypassed.
     private func loadLocalRelated(for row: RowItem, generation: UInt64) async {
         let q = row.content.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !q.isEmpty else { return }
@@ -262,7 +261,7 @@ final class CaptureDetailModel: ObservableObject {
             .filter { !excluded.contains($0.id) }
         guard !Task.isCancelled, clients.session.isCurrent(generation),
               row.id == capture.id else { return }
-        related = Array(local.prefix(10))
+        related = Array(local.prefix(5))
     }
 
     // Add/remove an explicit link, then re-sync both lists from the server so the
@@ -304,10 +303,30 @@ final class CaptureDetailModel: ObservableObject {
         }
     }
 
+    func dismissRelated(_ targetId: String) {
+        guard let client = clients.recall() else { return }
+        let id = capture.id
+        let generation = clients.session.snapshot()
+        mutationTask?.cancel()
+        mutationTask = Task { @MainActor in
+            do {
+                try await client.dismissRelated(id: id, targetId: targetId)
+            } catch {
+                handleMutateError(error, id: id)
+                return
+            }
+            guard !Task.isCancelled, clients.session.isCurrent(generation),
+                  id == capture.id else { return }
+            await loadLinksAndRelated(for: id, generation: generation)
+        }
+    }
+
     private func handleMutateError(_ error: Error, id: String) {
         guard id == capture.id else { return }
         if case CaptureAPIError.httpStatus(401) = error {
             self.error = L("Session expired — sign in again from Settings.")
+        } else {
+            self.error = describeCaptureError(error)
         }
     }
 
@@ -539,6 +558,8 @@ struct CaptureDetailView: View {
                 CaptureRow(
                     item: row,
                     onOpen: { model.open(row) },
+                    onDismiss: model.signedIn ? { model.dismissRelated(row.id) } : nil,
+                    dismissTitle: L("Not related"),
                     onBeginEdit: {
                         model.open(row)
                         model.beginEditing()

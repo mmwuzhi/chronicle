@@ -53,7 +53,11 @@
     "typeToSearch": "検索キーワードを入力…",
     "matchedTranscript": "文字起こしに一致",
     "openInContext": "文脈で開く",
-    "keywordFallback": "セマンティック検索が利用できないため、キーワード検索を使用しています"
+    "keywordFallback": "セマンティック検索が利用できないため、キーワード検索を使用しています",
+    "notRelevant": "この検索には関連しない",
+    "restoreResult": "結果を戻す",
+    "showDismissed": "非表示の {{count}} 件を表示",
+    "hideDismissed": "除外した結果を隠す"
   },
   "confirm": {
     "cannotUndo": "この操作は取り消せません。",

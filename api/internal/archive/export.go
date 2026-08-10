@@ -264,6 +264,28 @@ func (s *Service) writeExport(
 			return err
 		}
 		checksums[attachmentsPath] = attachmentSum
+
+		dismissalSum, err := addZipGenerated(writer, dismissalsPath, func(output io.Writer) error {
+			rows, listErr := q.ListArchiveRetrievalDismissals(ctx, userID)
+			if listErr != nil {
+				return listErr
+			}
+			encoder := json.NewEncoder(output)
+			for _, row := range rows {
+				counts.Dismissals++
+				if counts.Dismissals > maxArchiveRecords {
+					return &ImportError{Status: 413, Title: "account has too many retrieval preferences to export"}
+				}
+				if err := encoder.Encode(retrievalDismissalRecord(row)); err != nil {
+					return err
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			return err
+		}
+		checksums[dismissalsPath] = dismissalSum
 		return nil
 	})
 	if err != nil {

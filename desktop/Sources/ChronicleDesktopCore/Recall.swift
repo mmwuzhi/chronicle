@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 // Retrieval surface for the desktop app: hybrid search (/find) and query-time
@@ -14,10 +15,11 @@ public struct RecallItem: Codable, Equatable, Identifiable, Sendable {
     public let modality: String
     public let score: Double
     public let lexical: Bool
+    public let dismissed: Bool?
 
     public init(
         id: String, content: String, snippet: String? = nil, createdAt: String,
-        modality: String, score: Double, lexical: Bool
+        modality: String, score: Double, lexical: Bool, dismissed: Bool? = nil
     ) {
         self.id = id
         self.content = content
@@ -26,16 +28,105 @@ public struct RecallItem: Codable, Equatable, Identifiable, Sendable {
         self.modality = modality
         self.score = score
         self.lexical = lexical
+        self.dismissed = dismissed
     }
 }
 
 public struct FindResponse: Codable, Equatable, Sendable {
     public let items: [RecallItem]
     public let degraded: Bool
+    public let hiddenCount: Int?
 
-    public init(items: [RecallItem], degraded: Bool) {
+    public init(items: [RecallItem], degraded: Bool, hiddenCount: Int? = nil) {
         self.items = items
         self.degraded = degraded
+        self.hiddenCount = hiddenCount
+    }
+}
+
+final class SearchDismissalCache: @unchecked Sendable {
+    private static let lock = NSLock()
+    private static let maxQueries = 200
+    private let defaults: UserDefaults
+    private let entriesKey: String
+    private let orderKey: String
+
+    init(config: ChronicleConfig, defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+        let origin = LocalCaptureScope.origin(of: config.apiURL) ?? config.apiURL.absoluteString
+        let scope = origin + "\u{0}" + Self.accountIdentity(token: config.token)
+        let digest = SHA256.hash(data: Data(scope.utf8)).map { String(format: "%02x", $0) }.joined()
+        entriesKey = "chronicle.searchDismissals.entries.\(digest)"
+        orderKey = "chronicle.searchDismissals.order.\(digest)"
+    }
+
+    private static func accountIdentity(token: String) -> String {
+        let parts = token.split(separator: ".", omittingEmptySubsequences: false)
+        if parts.count == 3 {
+            var payload = String(parts[1])
+                .replacingOccurrences(of: "-", with: "+")
+                .replacingOccurrences(of: "_", with: "/")
+            payload += String(repeating: "=", count: (4 - payload.count % 4) % 4)
+            if let data = Data(base64Encoded: payload),
+               let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let subject = object["sub"] as? String,
+               !subject.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            {
+                return "user:" + subject
+            }
+        }
+        let digest = SHA256.hash(data: Data(token.utf8))
+            .map { String(format: "%02x", $0) }.joined()
+        return "credential:" + digest
+    }
+
+    func ids(query: String) -> Set<String> {
+        let key = queryKey(query)
+        return Self.lock.withLock {
+            let entries = defaults.dictionary(forKey: entriesKey) as? [String: [String]] ?? [:]
+            return Set(entries[key] ?? [])
+        }
+    }
+
+    func set(query: String, targetId: String, dismissed: Bool) {
+        update(query: query) { ids in
+            if dismissed { ids.insert(targetId) } else { ids.remove(targetId) }
+        }
+    }
+
+    func replaceIfComplete(query: String, response: FindResponse) {
+        let ids = Set(response.items.filter { $0.dismissed == true }.map(\.id))
+        // A complete recovery response contains one preview for each hidden ID.
+        // If the server could only return a count, preserve the last good cache.
+        guard response.hiddenCount == nil || response.hiddenCount == ids.count else { return }
+        update(query: query) { $0 = ids }
+    }
+
+    private func update(query: String, mutate: (inout Set<String>) -> Void) {
+        let key = queryKey(query)
+        Self.lock.withLock {
+            var entries = defaults.dictionary(forKey: entriesKey) as? [String: [String]] ?? [:]
+            var order = defaults.stringArray(forKey: orderKey) ?? []
+            var ids = Set(entries[key] ?? [])
+            mutate(&ids)
+            entries[key] = ids.sorted()
+            order.removeAll { $0 == key }
+            order.append(key)
+            while order.count > Self.maxQueries {
+                entries.removeValue(forKey: order.removeFirst())
+            }
+            defaults.set(entries, forKey: entriesKey)
+            defaults.set(order, forKey: orderKey)
+        }
+    }
+
+    private func queryKey(_ query: String) -> String {
+        let normalized = query.precomposedStringWithCompatibilityMapping
+            .lowercased()
+            .split(whereSeparator: \.isWhitespace)
+            .joined(separator: " ")
+        return SHA256.hash(data: Data(normalized.utf8))
+            .map { String(format: "%02x", $0) }.joined()
     }
 }
 
@@ -212,6 +303,7 @@ public final class RecallAPIClient: @unchecked Sendable {
     private let config: ChronicleConfig
     private let session: URLSession
     private let refresher: AuthRefresher?
+    private let dismissalCache: SearchDismissalCache
 
     public init(
         config: ChronicleConfig, session: URLSession = .shared,
@@ -220,9 +312,12 @@ public final class RecallAPIClient: @unchecked Sendable {
         self.config = config
         self.session = session
         self.refresher = refresher
+        self.dismissalCache = SearchDismissalCache(config: config)
     }
 
-    public func makeFindRequest(q: String, limit: Int = 10) -> URLRequest {
+    public func makeFindRequest(
+        q: String, limit: Int = 10, includeDismissed: Bool = false
+    ) -> URLRequest {
         var components = URLComponents(
             url: config.apiURL.appending(path: "find"),
             resolvingAgainstBaseURL: false,
@@ -231,18 +326,57 @@ public final class RecallAPIClient: @unchecked Sendable {
             URLQueryItem(name: "q", value: q),
             URLQueryItem(name: "limit", value: String(limit)),
         ]
+        if includeDismissed {
+            components.queryItems?.append(URLQueryItem(name: "includeDismissed", value: "true"))
+        }
         var request = URLRequest(url: components.url!)
         request.httpMethod = "GET"
         request.setValue("Bearer \(config.token)", forHTTPHeaderField: "Authorization")
         return request
     }
 
-    public func find(q: String, limit: Int = 10) async throws -> FindResponse {
-        let request = makeFindRequest(q: q, limit: limit)
+    public func find(
+        q: String, limit: Int = 10, includeDismissed: Bool = false
+    ) async throws -> FindResponse {
+        let request = makeFindRequest(q: q, limit: limit, includeDismissed: includeDismissed)
         let (data, response) = try await AuthedTransport.send(
             request, session: session, refresher: refresher)
         try Self.validate(response)
-        return try JSONDecoder().decode(FindResponse.self, from: data)
+        let result = try JSONDecoder().decode(FindResponse.self, from: data)
+        if includeDismissed {
+            dismissalCache.replaceIfComplete(query: q, response: result)
+        }
+        return result
+    }
+
+    public func makeSetFindResultDismissedRequest(
+        q: String, targetId: String, dismissed: Bool
+    ) -> URLRequest {
+        var components = URLComponents(
+            url: config.apiURL.appending(path: "find/dismissals").appending(path: targetId),
+            resolvingAgainstBaseURL: false
+        )!
+        components.queryItems = [URLQueryItem(name: "q", value: q)]
+        var request = URLRequest(url: components.url!)
+        request.httpMethod = dismissed ? "PUT" : "DELETE"
+        request.setValue("Bearer \(config.token)", forHTTPHeaderField: "Authorization")
+        return request
+    }
+
+    public func setFindResultDismissed(q: String, targetId: String, dismissed: Bool) async throws {
+        let request = makeSetFindResultDismissedRequest(
+            q: q, targetId: targetId, dismissed: dismissed)
+        let (_, response) = try await AuthedTransport.send(
+            request, session: session, refresher: refresher)
+        try Self.validate(response)
+        dismissalCache.set(query: q, targetId: targetId, dismissed: dismissed)
+    }
+
+    /// Exact-query preferences last confirmed by this account. Search views use
+    /// these only when an online request fails, so local fallback does not
+    /// immediately reintroduce a result the user explicitly hid.
+    public func cachedFindDismissedIDs(q: String) -> Set<String> {
+        dismissalCache.ids(query: q)
     }
 
     public func makeAskRequest(question: String) throws -> URLRequest {
@@ -422,7 +556,7 @@ public final class RecallAPIClient: @unchecked Sendable {
     // already excludes the capture itself and anything explicitly linked, and
     // returns an empty list (not an error) when embeddings are off or the capture
     // has no indexable text.
-    public func makeRelatedRequest(id: String, limit: Int = 10) -> URLRequest {
+    public func makeRelatedRequest(id: String, limit: Int = 5) -> URLRequest {
         var components = URLComponents(
             url: captureURL(id).appending(path: "related"),
             resolvingAgainstBaseURL: false,
@@ -434,7 +568,7 @@ public final class RecallAPIClient: @unchecked Sendable {
         return request
     }
 
-    public func related(id: String, limit: Int = 10) async throws -> [RelatedCapture] {
+    public func related(id: String, limit: Int = 5) async throws -> [RelatedCapture] {
         let request = makeRelatedRequest(id: id, limit: limit)
         let (data, response) = try await AuthedTransport.send(
             request, session: session, refresher: refresher)
@@ -486,6 +620,21 @@ public final class RecallAPIClient: @unchecked Sendable {
         var request = URLRequest(url: url)
         request.httpMethod = "DELETE"
         request.setValue("Bearer \(config.token)", forHTTPHeaderField: "Authorization")
+        let (_, response) = try await AuthedTransport.send(
+            request, session: session, refresher: refresher)
+        try Self.validate(response)
+    }
+
+    public func makeDismissRelatedRequest(id: String, targetId: String) -> URLRequest {
+        let url = captureURL(id).appending(path: "related-dismissals").appending(path: targetId)
+        var request = URLRequest(url: url)
+        request.httpMethod = "PUT"
+        request.setValue("Bearer \(config.token)", forHTTPHeaderField: "Authorization")
+        return request
+    }
+
+    public func dismissRelated(id: String, targetId: String) async throws {
+        let request = makeDismissRelatedRequest(id: id, targetId: targetId)
         let (_, response) = try await AuthedTransport.send(
             request, session: session, refresher: refresher)
         try Self.validate(response)

@@ -12,5 +12,5 @@ import (
 // query-time analysis (/ask). Captures are the only searchable entity now;
 // keyword FTS over captures (SearchCaptures) remains as the /find fallback.
 func Register(api huma.API, pool *pgxpool.Pool, rag *ragclient.Client, authMW func(huma.Context, func(huma.Context))) {
-	registerRecall(api, db.New(pool), rag, authMW)
+	registerRecall(api, pool, db.New(pool), rag, authMW)
 }
