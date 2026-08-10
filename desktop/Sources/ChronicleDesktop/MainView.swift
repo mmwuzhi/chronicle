@@ -45,6 +45,9 @@ struct MainView: View {
     @State private var hits: [RowItem] = []
     @State private var searched = false
     @State private var degraded = false
+    @State private var hiddenCount = 0
+    @State private var includeDismissed = false
+    @State private var activeSearchQuery = ""
     @State private var nextCursor: String?
     @State private var loadingMore = false
     @State private var editDraft: CaptureEditDraft?
@@ -239,6 +242,9 @@ struct MainView: View {
         browseRows = []
         searched = false
         degraded = false
+        hiddenCount = 0
+        includeDismissed = false
+        activeSearchQuery = ""
         nextCursor = nil
         loadingMore = false
         editDraft = nil
@@ -359,6 +365,17 @@ struct MainView: View {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 12)
         }
+        if searched && hiddenCount > 0 {
+            Button(includeDismissed ? L("Hide dismissed results") : DesktopLocalization.shared.format(
+                "Show %d hidden results", hiddenCount
+            )) {
+                includeDismissed.toggle()
+                runBrowse()
+            }
+            .buttonStyle(.borderless)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
         if searched && rows.isEmpty && !busy {
             Text(L("No matches."))
                 .foregroundStyle(.secondary)
@@ -375,6 +392,13 @@ struct MainView: View {
                         onDelete: { delete(row) },
                         onEdit: { edit(row.id, $0) },
                         onOpen: { clients.openDetail(row) },
+                        onDismiss: searched && row.synced ? {
+                            setSearchDismissed(row, dismissed: !row.dismissed)
+                        } : nil,
+                        dismissTitle: row.dismissed
+                            ? L("Restore result") : L("Not relevant for this search"),
+                        dismissSystemImage: row.dismissed
+                            ? "arrow.uturn.backward" : "eye.slash",
                         onPin: { clients.togglePin(row) },
                         isPinned: clients.isPinned(row.id),
                         onBeginEdit: { beginEdit(row) },
@@ -446,37 +470,70 @@ struct MainView: View {
         error = ""
         if q.isEmpty {
             searched = false
+            hiddenCount = 0
+            includeDismissed = false
+            activeSearchQuery = ""
             Task { await loadBrowse(reset: true) }
             return
         }
-        // Local substring results immediately — offline-first, no login.
-        hits = clients.localSearch(q)
-        searched = true
-        // On-device semantic recall runs even signed out; server semantic merges
-        // on top when signed in. Neither depends on the other.
+        if q != activeSearchQuery {
+            includeDismissed = false
+            activeSearchQuery = q
+        }
         let client = clients.recall()
+        let localLiteral = clients.localSearch(q)
+        let cachedDismissedIDs = includeDismissed
+            ? Set<String>() : (client?.cachedFindDismissedIDs(q: q) ?? [])
+        // Online, retain rows the server cannot safely replace: unsynced captures
+        // and dirty server-backed captures whose local text is newer.
+        hits = client == nil ? localLiteral : RowMerge.localRecallSupplement(
+            localLiteral, id: \.id, synced: \.synced, dirty: \.dirty,
+            excludedIDs: cachedDismissedIDs)
+        searched = true
+        // On-device semantic recall runs even signed out. When signed in, the
+        // server's precision-ranked results lead and local semantic recall only
+        // contributes unsynced captures that the server cannot know about.
         busy = hits.isEmpty
         searchTask?.cancel()
         searchTask = Task { @MainActor in
             let localSemantic = await clients.localSemanticSearch(q)
             guard !Task.isCancelled, clients.session.isCurrent(generation) else { return }
-            mergeHits(localSemantic)
             if let client {
                 do {
-                    let res = try await client.find(q: q)
+                    let res = try await client.find(q: q, includeDismissed: true)
                     guard !Task.isCancelled, clients.session.isCurrent(generation) else { return }
-                    mergeHits(res.items.map(RowItem.init))
+                    let serverRows = res.items.map(RowItem.init)
+                    hiddenCount = res.hiddenCount ?? serverRows.filter(\.dismissed).count
+                    let dismissedIDs = Set(serverRows.filter(\.dismissed).map(\.id))
+                    let excludedIDs = includeDismissed ? Set<String>() : dismissedIDs
+                    let visibleServerRows = includeDismissed
+                        ? serverRows : serverRows.filter { !$0.dismissed }
+                    hits = RowMerge.localRecallSupplement(
+                        localLiteral, id: \.id, synced: \.synced, dirty: \.dirty,
+                        excludedIDs: excludedIDs)
+                    mergeHits(visibleServerRows)
+                    mergeHits(RowMerge.localRecallSupplement(
+                        localSemantic, id: \.id, synced: \.synced, dirty: \.dirty,
+                        excludedIDs: excludedIDs))
                     degraded = res.degraded
                 } catch {
                     // Keep local results; a server/auth error must not blank them.
+                    let allDismissedIDs = client.cachedFindDismissedIDs(q: q)
+                    let excludedIDs = includeDismissed ? Set<String>() : allDismissedIDs
+                    hits = localLiteral.filter { !excludedIDs.contains($0.id) }
+                    mergeHits(localSemantic.filter { !excludedIDs.contains($0.id) })
+                    hiddenCount = allDismissedIDs.count
                 }
+            } else {
+                mergeHits(localSemantic)
             }
             if !Task.isCancelled, clients.session.isCurrent(generation) { busy = false }
         }
     }
 
-    // Append hits not already shown, keyed by id (local substring, then local
-    // semantic, then server).
+    // Append hits not already shown, keyed by id. Online ordering is local
+    // substring → server precision results → unsynced local semantic; offline it
+    // is local substring → local semantic.
     private func mergeHits(_ more: [RowItem]) {
         hits = RowMerge.preservingOrder(
             existing: hits,
@@ -484,6 +541,25 @@ struct MainView: View {
             id: \.id,
         ) { current, incoming in
             current.mergeDisplayEvidence(from: incoming)
+        }
+    }
+
+    private func setSearchDismissed(_ row: RowItem, dismissed: Bool) {
+        let q = activeSearchQuery
+        guard !q.isEmpty, let client = clients.recall() else { return }
+        let generation = clients.session.snapshot()
+        searchTask?.cancel()
+        searchTask = Task { @MainActor in
+            do {
+                try await client.setFindResultDismissed(
+                    q: q, targetId: row.id, dismissed: dismissed)
+                guard !Task.isCancelled, clients.session.isCurrent(generation),
+                      q == activeSearchQuery else { return }
+                runBrowse()
+            } catch let err {
+                guard clients.session.isCurrent(generation) else { return }
+                error = describeCaptureError(err)
+            }
         }
     }
 

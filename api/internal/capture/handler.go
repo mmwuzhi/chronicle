@@ -117,6 +117,7 @@ func Register(api huma.API, pool *pgxpool.Pool, rag *ragclient.Client, frontendU
 	huma.Register(api, op("add-capture-link", http.MethodPost, "/captures/{id}/links", "Link this capture to another"), h.addLink)
 	huma.Register(api, op("remove-capture-link", http.MethodDelete, "/captures/{id}/links/{targetId}", "Remove a link between two captures"), h.removeLink)
 	huma.Register(api, op("related-captures", http.MethodGet, "/captures/{id}/related", "Semantic suggestions related to this capture"), h.related)
+	huma.Register(api, op("dismiss-related-capture", http.MethodPut, "/captures/{id}/related-dismissals/{targetId}", "Hide one semantic relation suggestion"), h.dismissRelated)
 	huma.Register(api, op("create-capture-share", http.MethodPost, "/captures/{id}/shares", "Create or replace a read-only Capture snapshot"), h.createShare)
 	huma.Register(api, op("list-capture-shares", http.MethodGet, "/shares", "List active Capture shares"), h.listShares)
 	huma.Register(api, op("revoke-capture-share", http.MethodDelete, "/shares/{id}", "Revoke a Capture share"), h.revokeShare)

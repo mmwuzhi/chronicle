@@ -42,6 +42,7 @@ ranked AS (
   FROM captures, params
   WHERE user_id = sqlc.arg(user_id)
     AND deleted_at IS NULL
+    AND NOT (captures.id = ANY(COALESCE(sqlc.arg(excluded_ids)::uuid[], '{}'::uuid[])))
     AND (
       raw_text ILIKE params.q_like
       OR transcript ILIKE params.q_like

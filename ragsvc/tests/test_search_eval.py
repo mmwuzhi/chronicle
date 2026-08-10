@@ -2,6 +2,11 @@
 from __future__ import annotations
 
 from search_eval import THRESHOLDS, assert_thresholds, evaluate, load_fixture
+from related_eval import (
+    THRESHOLDS as RELATED_THRESHOLDS,
+    assert_thresholds as assert_related_thresholds,
+    evaluate as evaluate_related,
+)
 
 
 def test_search_quality_baseline() -> None:
@@ -29,4 +34,20 @@ def test_search_quality_baseline() -> None:
         "mrr_at_10": 0.80,
         "forbidden_false_positive_rate": 0.10,
         "degraded_recall_at_10": 0.75,
+    }
+
+
+def test_related_quality_baseline() -> None:
+    metrics = evaluate_related(load_fixture())
+    assert metrics == {
+        "scenario_count": 30,
+        "recall_at_5": 1.0,
+        "forbidden_false_positive_rate": 0.0,
+        "degraded_recall_at_5": 1.0,
+    }
+    assert_related_thresholds(metrics)
+    assert RELATED_THRESHOLDS == {
+        "recall_at_5": 0.90,
+        "forbidden_false_positive_rate": 0.10,
+        "degraded_recall_at_5": 0.75,
     }

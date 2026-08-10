@@ -15,7 +15,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"net/url"
 	"time"
 )
 
@@ -166,18 +165,22 @@ func (c *Client) index(userID, captureID string, fireWebhooks bool) {
 }
 
 // Find runs the hybrid semantic search. Returns ErrDisabled on a nil client.
-func (c *Client) Find(ctx context.Context, userID, query string, limit int) ([]FindItem, error) {
+func (c *Client) Find(ctx context.Context, userID, query string, limit int, excludedIDs []string) ([]FindItem, error) {
 	if c == nil {
 		return nil, ErrDisabled
 	}
 	ctx, cancel := context.WithTimeout(ctx, findTimeout)
 	defer cancel()
-	u := fmt.Sprintf("%s/find?q=%s&limit=%d", c.baseURL, url.QueryEscape(query), limit)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	body, err := json.Marshal(map[string]any{"query": query, "limit": limit, "excluded_ids": excludedIDs})
+	if err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/find", bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("X-User-Id", userID)
+	req.Header.Set("Content-Type", "application/json")
 	resp, err := c.http.Do(req)
 	if err != nil {
 		return nil, err
@@ -196,18 +199,22 @@ func (c *Client) Find(ctx context.Context, userID, query string, limit int) ([]F
 // Related returns semantic neighbours of one capture (for the "Related" surface).
 // Returns ErrDisabled on a nil client; an empty list (not an error) when the
 // sidecar has no embeddings or the capture has no indexable text.
-func (c *Client) Related(ctx context.Context, userID, captureID string, limit int) ([]FindItem, error) {
+func (c *Client) Related(ctx context.Context, userID, captureID string, limit int, excludedIDs []string) ([]FindItem, error) {
 	if c == nil {
 		return nil, ErrDisabled
 	}
 	ctx, cancel := context.WithTimeout(ctx, findTimeout)
 	defer cancel()
-	u := fmt.Sprintf("%s/related?id=%s&limit=%d", c.baseURL, url.QueryEscape(captureID), limit)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	body, err := json.Marshal(map[string]any{"capture_id": captureID, "limit": limit, "excluded_ids": excludedIDs})
+	if err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/related", bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("X-User-Id", userID)
+	req.Header.Set("Content-Type", "application/json")
 	resp, err := c.http.Do(req)
 	if err != nil {
 		return nil, err

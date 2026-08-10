@@ -53,7 +53,11 @@
     "typeToSearch": "输入搜索内容…",
     "matchedTranscript": "命中转写",
     "openInContext": "在上下文中打开",
-    "keywordFallback": "语义检索暂不可用，已用关键词搜索"
+    "keywordFallback": "语义检索暂不可用，已用关键词搜索",
+    "notRelevant": "与这次搜索无关",
+    "restoreResult": "恢复结果",
+    "showDismissed": "显示已隐藏的 {{count}} 条",
+    "hideDismissed": "隐藏已排除结果"
   },
   "confirm": {
     "cannotUndo": "此操作无法撤销。",

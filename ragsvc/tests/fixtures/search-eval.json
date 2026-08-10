@@ -12,7 +12,17 @@
     {"id":"telescope","content":"阳台上的望远镜需要重新校准赤道仪","created_at":"2026-07-24T21:00:00+09:00","modality":"text"},
     {"id":"function-old","content":"我说周五再确认一次","created_at":"2026-07-13T08:00:00+09:00","modality":"text"},
     {"id":"function-new","content":"我说今天再确认","created_at":"2026-07-15T08:00:00+09:00","modality":"text"},
-    {"id":"noise","content":"晚上看了一部老电影","created_at":"2026-07-14T20:00:00+09:00","modality":"text"}
+    {"id":"noise","content":"晚上看了一部老电影","created_at":"2026-07-14T20:00:00+09:00","modality":"text"},
+    {"id":"quote-followup","content":"报价第二版发送前要让客户确认最终数字","created_at":"2026-07-25T09:00:00+09:00","modality":"text"},
+    {"id":"recipe-grocery","content":"味噌汤采购清单：豆腐、海带和味噌","created_at":"2026-07-25T10:00:00+09:00","modality":"text"},
+    {"id":"dental-card","content":"Tuesday dental visit needs the blue insurance card from the desk.","created_at":"2026-07-25T11:00:00+09:00","modality":"text"},
+    {"id":"restore-drill","content":"Test restoring the encrypted cedar backup before month end.","created_at":"2026-07-25T12:00:00+09:00","modality":"text"},
+    {"id":"star-calibration","content":"观星前重新校准阳台望远镜的赤道仪","created_at":"2026-07-25T13:00:00+09:00","modality":"text"},
+    {"id":"noodle-receipt","content":"午饭拉面收据是 1200 日元","created_at":"2026-07-25T14:00:00+09:00","modality":"text"},
+    {"id":"search-copy","content":"搜索结果页的说明文案需要在设计评审中确认","created_at":"2026-07-25T15:00:00+09:00","modality":"text"},
+    {"id":"bookstore-address","content":"京都那家旧书店的地址，店里有蓝色装帧的书","created_at":"2026-07-25T16:00:00+09:00","modality":"text"},
+    {"id":"pantry-list","content":"整理厨房香料架后补买孜然和辣椒粉","created_at":"2026-07-25T17:00:00+09:00","modality":"text"},
+    {"id":"gate-map","content":"Gate 17 locker map marks the emergency code location.","created_at":"2026-07-25T18:00:00+09:00","modality":"text"}
   ],
   "scorePresets": {
     "ramen":{"vector_scores":{"ramen":0.81,"noise":0.34},"rerank_scores":{"ramen":0.96,"noise":0.01}},
@@ -74,5 +84,46 @@
     {"name":"embedding and reranker outage literal","query":"設計会議","language":"ja","categories":["degraded"],"relevant":["design"],"expected_prefix":["design"],"embedding_unavailable":true,"rerank_unavailable":true},
     {"name":"analyzer outage does not affect search","query":"豆腐とわかめ","language":"ja","categories":["degraded"],"preset":"recipe","relevant":["recipe"],"expected_prefix":["recipe"],"analyzer_unavailable":true},
     {"name":"all AI unavailable exact text","query":"第二版报价","language":"zh","categories":["degraded"],"relevant":["quote"],"expected_prefix":["quote"],"embedding_unavailable":true,"rerank_unavailable":true,"analyzer_unavailable":true}
+  ],
+  "relatedCases": [
+    {"name":"quote reranked","anchor":"quote","relevant":["quote-followup"],"forbidden":["noise"],"expected_prefix":["quote-followup"],"vector_scores":{"quote-followup":0.82,"noise":0.72},"rerank_scores":{"quote-followup":0.94,"noise":0.04}},
+    {"name":"quote weak noise","anchor":"quote","relevant":[],"forbidden":["noise"],"expected_empty":true,"vector_scores":{"noise":0.54},"rerank_scores":{"noise":0.80}},
+    {"name":"quote degraded","anchor":"quote","relevant":["quote-followup"],"forbidden":["noise"],"expected_prefix":["quote-followup"],"rerank_unavailable":true,"vector_scores":{"quote-followup":0.75,"noise":0.54}},
+
+    {"name":"recipe reranked","anchor":"recipe","relevant":["recipe-grocery"],"forbidden":["noise"],"expected_prefix":["recipe-grocery"],"vector_scores":{"recipe-grocery":0.81,"noise":0.70},"rerank_scores":{"recipe-grocery":0.93,"noise":0.03}},
+    {"name":"recipe weak noise","anchor":"recipe","relevant":[],"forbidden":["noise"],"expected_empty":true,"vector_scores":{"noise":0.54},"rerank_scores":{"noise":0.80}},
+    {"name":"recipe degraded","anchor":"recipe","relevant":["recipe-grocery"],"forbidden":["noise"],"expected_prefix":["recipe-grocery"],"rerank_unavailable":true,"vector_scores":{"recipe-grocery":0.74,"noise":0.53}},
+
+    {"name":"dentist reranked","anchor":"dentist","relevant":["dental-card"],"forbidden":["noise"],"expected_prefix":["dental-card"],"vector_scores":{"dental-card":0.84,"noise":0.71},"rerank_scores":{"dental-card":0.96,"noise":0.02}},
+    {"name":"dentist weak noise","anchor":"dentist","relevant":[],"forbidden":["noise"],"expected_empty":true,"vector_scores":{"noise":0.54},"rerank_scores":{"noise":0.80}},
+    {"name":"dentist degraded","anchor":"dentist","relevant":["dental-card"],"forbidden":["noise"],"expected_prefix":["dental-card"],"rerank_unavailable":true,"vector_scores":{"dental-card":0.77,"noise":0.52}},
+
+    {"name":"backup reranked","anchor":"backup","relevant":["restore-drill"],"forbidden":["noise"],"expected_prefix":["restore-drill"],"vector_scores":{"restore-drill":0.83,"noise":0.69},"rerank_scores":{"restore-drill":0.95,"noise":0.02}},
+    {"name":"backup weak noise","anchor":"backup","relevant":[],"forbidden":["noise"],"expected_empty":true,"vector_scores":{"noise":0.54},"rerank_scores":{"noise":0.80}},
+    {"name":"backup degraded","anchor":"backup","relevant":["restore-drill"],"forbidden":["noise"],"expected_prefix":["restore-drill"],"rerank_unavailable":true,"vector_scores":{"restore-drill":0.76,"noise":0.54}},
+
+    {"name":"telescope reranked","anchor":"telescope","relevant":["star-calibration"],"forbidden":["noise"],"expected_prefix":["star-calibration"],"vector_scores":{"star-calibration":0.86,"noise":0.73},"rerank_scores":{"star-calibration":0.97,"noise":0.01}},
+    {"name":"telescope weak noise","anchor":"telescope","relevant":[],"forbidden":["noise"],"expected_empty":true,"vector_scores":{"noise":0.54},"rerank_scores":{"noise":0.80}},
+    {"name":"telescope degraded","anchor":"telescope","relevant":["star-calibration"],"forbidden":["noise"],"expected_prefix":["star-calibration"],"rerank_unavailable":true,"vector_scores":{"star-calibration":0.78,"noise":0.51}},
+
+    {"name":"ramen reranked","anchor":"ramen","relevant":["noodle-receipt"],"forbidden":["noise"],"expected_prefix":["noodle-receipt"],"vector_scores":{"noodle-receipt":0.88,"noise":0.72},"rerank_scores":{"noodle-receipt":0.98,"noise":0.02}},
+    {"name":"ramen weak noise","anchor":"ramen","relevant":[],"forbidden":["noise"],"expected_empty":true,"vector_scores":{"noise":0.54},"rerank_scores":{"noise":0.80}},
+    {"name":"ramen degraded","anchor":"ramen","relevant":["noodle-receipt"],"forbidden":["noise"],"expected_prefix":["noodle-receipt"],"rerank_unavailable":true,"vector_scores":{"noodle-receipt":0.80,"noise":0.54}},
+
+    {"name":"design reranked","anchor":"design","relevant":["search-copy"],"forbidden":["noise"],"expected_prefix":["search-copy"],"vector_scores":{"search-copy":0.85,"noise":0.68},"rerank_scores":{"search-copy":0.96,"noise":0.03}},
+    {"name":"design weak noise","anchor":"design","relevant":[],"forbidden":["noise"],"expected_empty":true,"vector_scores":{"noise":0.54},"rerank_scores":{"noise":0.80}},
+    {"name":"design degraded","anchor":"design","relevant":["search-copy"],"forbidden":["noise"],"expected_prefix":["search-copy"],"rerank_unavailable":true,"vector_scores":{"search-copy":0.76,"noise":0.50}},
+
+    {"name":"book reranked","anchor":"blue-book","relevant":["bookstore-address"],"forbidden":["noise"],"expected_prefix":["bookstore-address"],"vector_scores":{"bookstore-address":0.84,"noise":0.71},"rerank_scores":{"bookstore-address":0.95,"noise":0.04}},
+    {"name":"book weak noise","anchor":"blue-book","relevant":[],"forbidden":["noise"],"expected_empty":true,"vector_scores":{"noise":0.54},"rerank_scores":{"noise":0.80}},
+    {"name":"book degraded","anchor":"blue-book","relevant":["bookstore-address"],"forbidden":["noise"],"expected_prefix":["bookstore-address"],"rerank_unavailable":true,"vector_scores":{"bookstore-address":0.75,"noise":0.53}},
+
+    {"name":"spice reranked","anchor":"spice-rack","relevant":["pantry-list"],"forbidden":["noise"],"expected_prefix":["pantry-list"],"vector_scores":{"pantry-list":0.82,"noise":0.69},"rerank_scores":{"pantry-list":0.94,"noise":0.03}},
+    {"name":"spice weak noise","anchor":"spice-rack","relevant":[],"forbidden":["noise"],"expected_empty":true,"vector_scores":{"noise":0.54},"rerank_scores":{"noise":0.80}},
+    {"name":"spice degraded","anchor":"spice-rack","relevant":["pantry-list"],"forbidden":["noise"],"expected_prefix":["pantry-list"],"rerank_unavailable":true,"vector_scores":{"pantry-list":0.74,"noise":0.52}},
+
+    {"name":"trip reranked","anchor":"long-trip","relevant":["gate-map"],"forbidden":["noise"],"expected_prefix":["gate-map"],"vector_scores":{"gate-map":0.87,"noise":0.70},"rerank_scores":{"gate-map":0.97,"noise":0.02}},
+    {"name":"trip weak noise","anchor":"long-trip","relevant":[],"forbidden":["noise"],"expected_empty":true,"vector_scores":{"noise":0.54},"rerank_scores":{"noise":0.80}},
+    {"name":"trip degraded","anchor":"long-trip","relevant":["gate-map"],"forbidden":["noise"],"expected_prefix":["gate-map"],"rerank_unavailable":true,"vector_scores":{"gate-map":0.79,"noise":0.54}}
   ]
 }

@@ -13,6 +13,7 @@ import bm25
 import dates
 import extract
 import rag
+import search
 
 
 def test_bm25_tokenize_ascii_and_cjk():
@@ -183,6 +184,100 @@ def test_stored_query_vec_reuses_chunks(monkeypatch):
 
     assert rag._stored_query_vec({"model": "old", "chunks": [v1.tobytes()]}) is None
     assert rag._stored_query_vec({"model": "m", "chunks": []}) is None
+
+
+def test_related_requires_vector_floor_and_rerank_threshold(monkeypatch):
+    candidates = [
+        {"id": "strong", "content": "strong match", "created_at": "2026-01-01",
+         "modality": "text", "vscore": 0.82, "score": 0.82, "lexical": False,
+         "rerank_text": "strong match"},
+        {"id": "rejected", "content": "plausible noise", "created_at": "2026-01-02",
+         "modality": "text", "vscore": 0.72, "score": 0.72, "lexical": False,
+         "rerank_text": "plausible noise"},
+        {"id": "weak", "content": "weak vector", "created_at": "2026-01-03",
+         "modality": "text", "vscore": 0.54, "score": 0.54, "lexical": False,
+         "rerank_text": "weak vector"},
+    ]
+    monkeypatch.setattr(
+        rag, "related_candidates", lambda *_args, **_kwargs: ("anchor", candidates),
+    )
+    monkeypatch.setattr(search, "_rerank_scores", lambda _query, _items: [0.91, 0.10])
+
+    results = search.related("user", "anchor")
+
+    assert [item["id"] for item in results] == ["strong"]
+
+
+def test_related_degraded_mode_keeps_only_strong_vectors(monkeypatch):
+    candidates = [
+        {"id": "strong", "content": "strong match", "created_at": "2026-01-01",
+         "modality": "text", "vscore": 0.75, "score": 0.75, "lexical": False,
+         "rerank_text": "strong match"},
+        {"id": "weak", "content": "weak vector", "created_at": "2026-01-02",
+         "modality": "text", "vscore": 0.54, "score": 0.54, "lexical": False,
+         "rerank_text": "weak vector"},
+    ]
+    monkeypatch.setattr(
+        rag, "related_candidates", lambda *_args, **_kwargs: ("anchor", candidates),
+    )
+    monkeypatch.setattr(search, "_rerank_scores", lambda _query, _items: None)
+
+    results = search.related("user", "anchor")
+
+    assert [item["id"] for item in results] == ["strong"]
+
+
+def test_related_passes_exclusions_before_candidate_window(monkeypatch):
+    seen = {}
+
+    def candidates(_user, _anchor, limit, excluded_ids):
+        seen["limit"] = limit
+        seen["excluded"] = excluded_ids
+        return "anchor", []
+
+    monkeypatch.setattr(rag, "related_candidates", candidates)
+    search.related("user", "anchor", limit=5, excluded_ids={f"id-{i}" for i in range(31)})
+
+    assert seen == {"limit": 30, "excluded": {f"id-{i}" for i in range(31)}}
+
+
+def test_every_rerank_backend_receives_bounded_query(monkeypatch):
+    seen = {}
+    monkeypatch.setattr(search, "_resolve_rerank_backend", lambda: "local")
+    monkeypatch.setattr(
+        search, "_llm_rerank",
+        lambda query, _cands, _backend: seen.setdefault("query", query) or [1.0],
+    )
+
+    search._rerank_scores("x" * (search.RERANK_QUERY_CHARS + 500), [{"content": "candidate"}])
+
+    assert len(seen["query"]) == search.RERANK_QUERY_CHARS
+
+
+def test_related_candidates_rerank_the_best_matching_chunk(monkeypatch):
+    rows = [
+        {"id": "anchor", "content": "anchor full text", "created_at": "2026-01-01",
+         "modality": "text"},
+        {"id": "candidate", "content": "irrelevant opening " * 500,
+         "created_at": "2026-01-02", "modality": "text"},
+    ]
+    snapshot = rag._Snapshot(rows=rows, model="model", built_at=0.0)
+    monkeypatch.setattr(rag, "EMBED_ENABLED", True)
+    monkeypatch.setattr(rag, "_snapshot", lambda _user_id: snapshot)
+    monkeypatch.setattr(rag, "_stored_query_vec", lambda _row: np.array([1.0, 0.0]))
+    monkeypatch.setattr(
+        rag,
+        "_capture_max_sims",
+        lambda _snapshot, _query: (
+            np.array([1.0, 0.82]),
+            ["anchor evidence", "the matching passage near the end"],
+        ),
+    )
+
+    _query, candidates = rag.related_candidates("user", "anchor")
+
+    assert candidates[0]["id"] == "candidate"
+    assert candidates[0]["rerank_text"] == "the matching passage near the end"
 
 
 def test_renumber_maps_positions_to_uuids():

@@ -28,14 +28,14 @@ from rag import _content_chars
 
 RERANK_BACKEND = os.getenv("RERANK_BACKEND", "auto")
 RERANK_MODEL = os.getenv("RERANK_MODEL", "BAAI/bge-reranker-v2-m3")
-RERANK_MIN_SCORE = float(os.getenv("RERANK_MIN_SCORE", "0.1"))
+RERANK_MIN_SCORE = float(os.getenv("RERANK_MIN_SCORE", "0.2"))
 VECTOR_TAIL = float(os.getenv("VECTOR_TAIL", "0.55"))
-TAIL_MIN_CHARS = int(os.getenv("TAIL_MIN_CHARS", "3"))
 SEARCH_TOPK = int(os.getenv("SEARCH_TOPK", "10"))
 
 _DATE_RE = re.compile(r"^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$")
 BM25_TOPK = int(os.getenv("BM25_TOPK", "10"))
 RERANK_IDLE_UNLOAD = int(os.getenv("RERANK_IDLE_UNLOAD", "900"))
+RERANK_QUERY_CHARS = max(1, int(os.getenv("RERANK_QUERY_CHARS", "2000")))
 
 _reranker = None
 _reranker_lock = threading.Lock()
@@ -256,6 +256,10 @@ def _rerank_api(query: str, cands: list[dict]) -> list[float] | None:
 
 
 def _rerank_scores(query: str, cands: list[dict]) -> list[float] | None:
+    # Every backend sees the same bounded query. Related uses Capture content as
+    # its query, which can otherwise turn one large Capture into an unbounded
+    # local/provider prompt.
+    query = query[:RERANK_QUERY_CHARS]
     backend = _resolve_rerank_backend()
     if backend == "off":
         return None
@@ -270,7 +274,11 @@ def _rerank_scores(query: str, cands: list[dict]) -> list[float] | None:
     return None
 
 
-def search(user_id: str, query: str, limit: int = SEARCH_TOPK) -> list[dict]:
+def search(
+    user_id: str, query: str, limit: int = SEARCH_TOPK,
+    excluded_ids: set[str] | None = None,
+) -> list[dict]:
+    limit = max(1, min(limit, 50))
     q = query.strip()
     if not q:
         return []
@@ -278,14 +286,17 @@ def search(user_id: str, query: str, limit: int = SEARCH_TOPK) -> list[dict]:
     m = _DATE_RE.match(q)
     if m:
         y, mo, d = (int(x) for x in m.groups())
-        return _public_results(
-            rag.on_date(user_id, f"{y:04d}-{mo:02d}-{d:02d}", limit), q)
+        dated = rag.on_date(
+            user_id, f"{y:04d}-{mo:02d}-{d:02d}", limit, excluded_ids or set())
+        return _public_results(dated, q)
 
     # One corpus load for the whole request: the BM25 channel below uses `corpus`
     # directly, and candidates reads the same per-user cached snapshot (a cache
     # hit here), so neither re-pulls every capture from Postgres per query.
     corpus = rag.search_corpus(user_id)
-    cands = rag.candidates(user_id, q, k=30)
+    excluded = excluded_ids or set()
+    candidate_limit = max(30, limit)
+    cands = rag.candidates(user_id, q, k=candidate_limit, excluded_ids=excluded)
 
     # Information-poor query: single char, or all function words. No alignable
     # topic, rerank score is noise → literal hits only, newest first.
@@ -303,7 +314,8 @@ def search(user_id: str, query: str, limit: int = SEARCH_TOPK) -> list[dict]:
     frags = corpus
     by_id = {f["id"]: f for f in frags}
     seen = {c["id"] for c in cands}
-    for fid, _s in bm25.top_k(q, [(f["id"], f["content"]) for f in frags], k=BM25_TOPK):
+    bm25_rows = [(f["id"], f["content"]) for f in frags if f["id"] not in excluded]
+    for fid, _s in bm25.top_k(q, bm25_rows, k=max(BM25_TOPK, limit)):
         f = by_id[fid]
         if fid in seen or _content_chars(f["content"]) == 0:
             continue
@@ -318,18 +330,53 @@ def search(user_id: str, query: str, limit: int = SEARCH_TOPK) -> list[dict]:
     if scores is None:
         for c in cands:
             c["score"] = c["vscore"]
-        cands.sort(key=lambda c: (not c["lexical"], -c["vscore"]))
-        return _public_results(cands[:limit], q)
+        # Without a precision-stage reranker, the wide 0.3 candidate floor is
+        # only for recall and is too permissive to show directly. Literal hits
+        # remain authoritative; fuzzy results need a strong vector signal.
+        kept = [c for c in cands if c["lexical"] or c["vscore"] >= VECTOR_TAIL]
+        kept.sort(key=lambda c: (not c["lexical"], -c["vscore"]))
+        return _public_results(kept[:limit], q)
 
     for c, s in zip(cands, scores):
         c["score"] = float(s)
     # Literal hits (a user-typed substring) are always kept and ranked first —
     # this is literal search, rerank must not veto it. Others kept if rerank ≥
-    # threshold, or strong vector signal on a dense capture (rerank misfires on
-    # transliterations / cross-language).
-    kept = [c for c in cands
-            if c["lexical"] or c["score"] >= RERANK_MIN_SCORE
-            or (c["vscore"] >= VECTOR_TAIL
-                and _content_chars(c["content"]) >= TAIL_MIN_CHARS)]
-    kept.sort(key=lambda c: (not c["lexical"], -max(c["score"], c["vscore"] - 0.5)))
+    # threshold. A strong embedding no longer bypasses a rerank rejection: this
+    # product prefers an honest empty state over a plausible-looking false hit.
+    kept = [c for c in cands if c["lexical"] or c["score"] >= RERANK_MIN_SCORE]
+    kept.sort(key=lambda c: (not c["lexical"], -c["score"]))
     return _public_results(kept[:limit], q)
+
+
+def related(
+    user_id: str, capture_id: str, limit: int = 5,
+    excluded_ids: set[str] | None = None,
+) -> list[dict]:
+    """Precision-first semantic neighbours for the Related surface.
+
+    The embedding layer supplies a wide top-30 candidate set plus the anchor
+    text. Candidates must first clear the strong vector floor; when a reranker
+    is available it is the final judge, using the same calibrated threshold as
+    search. Empty is a valid result and preferable to weak neighbours.
+    """
+    limit = max(1, min(limit, 50))
+    query, cands = rag.related_candidates(
+        user_id, capture_id, limit=max(30, limit),
+        excluded_ids=excluded_ids or set())
+    if not query or not cands:
+        return []
+    query = query[:RERANK_QUERY_CHARS]
+    kept = [c for c in cands if c["vscore"] >= VECTOR_TAIL]
+    if not kept:
+        return []
+    scores = _rerank_scores(query, kept)
+    if scores is None:
+        for c in kept:
+            c["score"] = c["vscore"]
+        kept.sort(key=lambda c: -c["vscore"])
+    else:
+        for c, score in zip(kept, scores):
+            c["score"] = float(score)
+        kept = [c for c in kept if c["score"] >= RERANK_MIN_SCORE]
+        kept.sort(key=lambda c: -c["score"])
+    return _public_results(kept[:limit], query)

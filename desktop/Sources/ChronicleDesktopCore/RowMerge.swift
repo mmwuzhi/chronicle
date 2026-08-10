@@ -4,6 +4,22 @@ import Foundation
 /// Pure and generic so it can be unit-tested here while the UI row types stay
 /// in the app target.
 public enum RowMerge {
+    /// Rows the server cannot safely replace during online recall: unsynced
+    /// captures do not exist remotely, while dirty server-backed captures carry
+    /// newer local text. Exact-query dismissals may still exclude either row.
+    public static func localRecallSupplement<T>(
+        _ rows: [T],
+        id: KeyPath<T, String>,
+        synced: KeyPath<T, Bool>,
+        dirty: KeyPath<T, Bool>,
+        excludedIDs: Set<String> = [],
+    ) -> [T] {
+        rows.filter { row in
+            (!row[keyPath: synced] || row[keyPath: dirty])
+                && !excludedIDs.contains(row[keyPath: id])
+        }
+    }
+
     public static func newestFirst<T>(
         primary: [T],
         secondary: [T],

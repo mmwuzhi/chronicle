@@ -99,6 +99,29 @@ func (q *Queries) ListLinkedCaptures(ctx context.Context, arg ListLinkedCaptures
 	return items, nil
 }
 
+const lockCapturePair = `-- name: LockCapturePair :exec
+SELECT pg_advisory_xact_lock(hashtextextended(
+  $1::uuid::text || ':' ||
+  LEAST($2::uuid, $3::uuid)::text || ':' ||
+  GREATEST($2::uuid, $3::uuid)::text,
+  0
+))
+`
+
+type LockCapturePairParams struct {
+	UserID uuid.UUID `json:"user_id"`
+	X      uuid.UUID `json:"x"`
+	Y      uuid.UUID `json:"y"`
+}
+
+// All link/dismissal mutations take the same transaction-scoped lock for an
+// undirected pair. Hash collisions only serialize unrelated pairs; they cannot
+// weaken correctness.
+func (q *Queries) LockCapturePair(ctx context.Context, arg LockCapturePairParams) error {
+	_, err := q.db.Exec(ctx, lockCapturePair, arg.UserID, arg.X, arg.Y)
+	return err
+}
+
 const removeCaptureLink = `-- name: RemoveCaptureLink :exec
 DELETE FROM capture_links
 WHERE user_id = $1

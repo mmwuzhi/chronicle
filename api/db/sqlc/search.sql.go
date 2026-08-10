@@ -52,6 +52,7 @@ ranked AS (
   FROM captures, params
   WHERE user_id = $3
     AND deleted_at IS NULL
+    AND NOT (captures.id = ANY(COALESCE($4::uuid[], '{}'::uuid[])))
     AND (
       raw_text ILIKE params.q_like
       OR transcript ILIKE params.q_like
@@ -67,9 +68,10 @@ LIMIT $1
 `
 
 type SearchCapturesParams struct {
-	ResultLimit int32     `json:"result_limit"`
-	Query       string    `json:"query"`
-	UserID      uuid.UUID `json:"user_id"`
+	ResultLimit int32       `json:"result_limit"`
+	Query       string      `json:"query"`
+	UserID      uuid.UUID   `json:"user_id"`
+	ExcludedIds []uuid.UUID `json:"excluded_ids"`
 }
 
 type SearchCapturesRow struct {
@@ -105,7 +107,12 @@ type SearchCapturesRow struct {
 // as wildcards — an unescaped "%" would ILIKE-match every capture and inflate
 // its relevance as a fake literal hit. FTS and similarity() keep the raw query.
 func (q *Queries) SearchCaptures(ctx context.Context, arg SearchCapturesParams) ([]SearchCapturesRow, error) {
-	rows, err := q.db.Query(ctx, searchCaptures, arg.ResultLimit, arg.Query, arg.UserID)
+	rows, err := q.db.Query(ctx, searchCaptures,
+		arg.ResultLimit,
+		arg.Query,
+		arg.UserID,
+		arg.ExcludedIds,
+	)
 	if err != nil {
 		return nil, err
 	}

@@ -415,6 +415,83 @@ func (q *Queries) InsertArchiveCaptureLink(ctx context.Context, arg InsertArchiv
 	return i, err
 }
 
+const insertArchiveRelatedDismissal = `-- name: InsertArchiveRelatedDismissal :execrows
+INSERT INTO retrieval_dismissals (
+  user_id, surface, anchor_id, target_id, created_at
+)
+SELECT
+  $1::uuid, 'related', $2::uuid,
+  $3::uuid, $4::timestamptz
+WHERE EXISTS (
+  SELECT 1 FROM captures
+  WHERE id = $2::uuid AND user_id = $1::uuid
+)
+AND EXISTS (
+  SELECT 1 FROM captures
+  WHERE id = $3::uuid AND user_id = $1::uuid
+)
+ON CONFLICT (user_id, anchor_id, target_id) WHERE surface = 'related'
+DO UPDATE SET created_at = EXCLUDED.created_at
+`
+
+type InsertArchiveRelatedDismissalParams struct {
+	UserID    uuid.UUID          `json:"user_id"`
+	AnchorID  uuid.UUID          `json:"anchor_id"`
+	TargetID  uuid.UUID          `json:"target_id"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
+func (q *Queries) InsertArchiveRelatedDismissal(ctx context.Context, arg InsertArchiveRelatedDismissalParams) (int64, error) {
+	result, err := q.db.Exec(ctx, insertArchiveRelatedDismissal,
+		arg.UserID,
+		arg.AnchorID,
+		arg.TargetID,
+		arg.CreatedAt,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const insertArchiveSearchDismissal = `-- name: InsertArchiveSearchDismissal :execrows
+INSERT INTO retrieval_dismissals (
+  user_id, surface, query_hash, query_text, target_id, created_at
+)
+SELECT
+  $1::uuid, 'search', $2,
+  $3::text, $4::uuid,
+  $5::timestamptz
+WHERE EXISTS (
+  SELECT 1 FROM captures
+  WHERE id = $4::uuid AND user_id = $1::uuid
+)
+ON CONFLICT (user_id, query_hash, target_id) WHERE surface = 'search'
+DO UPDATE SET query_text = EXCLUDED.query_text, created_at = EXCLUDED.created_at
+`
+
+type InsertArchiveSearchDismissalParams struct {
+	UserID    uuid.UUID          `json:"user_id"`
+	QueryHash []byte             `json:"query_hash"`
+	QueryText string             `json:"query_text"`
+	TargetID  uuid.UUID          `json:"target_id"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
+func (q *Queries) InsertArchiveSearchDismissal(ctx context.Context, arg InsertArchiveSearchDismissalParams) (int64, error) {
+	result, err := q.db.Exec(ctx, insertArchiveSearchDismissal,
+		arg.UserID,
+		arg.QueryHash,
+		arg.QueryText,
+		arg.TargetID,
+		arg.CreatedAt,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const listArchiveCaptureAttachments = `-- name: ListArchiveCaptureAttachments :many
 SELECT id, user_id, capture_id, provider, provider_file_id, name, mime_type, size_bytes, web_url, created_at, deleted_at FROM capture_attachments
 WHERE user_id = $1
@@ -705,6 +782,40 @@ func (q *Queries) ListArchiveCapturesPage(ctx context.Context, arg ListArchiveCa
 			&i.TodoAt,
 			&i.DoneAt,
 			&i.LinkUrl,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listArchiveRetrievalDismissals = `-- name: ListArchiveRetrievalDismissals :many
+SELECT user_id, surface, query_hash, anchor_id, target_id, created_at, query_text FROM retrieval_dismissals
+WHERE user_id = $1
+ORDER BY created_at, surface, query_hash, anchor_id, target_id
+`
+
+func (q *Queries) ListArchiveRetrievalDismissals(ctx context.Context, userID uuid.UUID) ([]RetrievalDismissal, error) {
+	rows, err := q.db.Query(ctx, listArchiveRetrievalDismissals, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []RetrievalDismissal
+	for rows.Next() {
+		var i RetrievalDismissal
+		if err := rows.Scan(
+			&i.UserID,
+			&i.Surface,
+			&i.QueryHash,
+			&i.AnchorID,
+			&i.TargetID,
+			&i.CreatedAt,
+			&i.QueryText,
 		); err != nil {
 			return nil, err
 		}

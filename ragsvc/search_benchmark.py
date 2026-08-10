@@ -7,6 +7,8 @@ import json
 from pathlib import Path
 
 from search_eval import assert_thresholds, evaluate, load_fixture
+from related_eval import assert_thresholds as assert_related_thresholds
+from related_eval import evaluate as evaluate_related
 
 
 def main() -> int:
@@ -20,11 +22,14 @@ def main() -> int:
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
 
-    metrics = evaluate(load_fixture(), live=args.live)
+    fixture = load_fixture()
+    metrics = evaluate(fixture, live=args.live)
     report = {
         "mode": "live" if args.live else "fixed",
         "metrics": metrics,
     }
+    if not args.live:
+        report["related_metrics"] = evaluate_related(fixture)
     encoded = json.dumps(report, ensure_ascii=False, indent=2) + "\n"
     print(encoded, end="")
     if args.output:
@@ -32,6 +37,7 @@ def main() -> int:
 
     if not args.live:
         assert_thresholds(metrics)
+        assert_related_thresholds(report["related_metrics"])
         return 0
 
     baseline = json.loads(args.baseline.read_text())["metrics"]

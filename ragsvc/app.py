@@ -10,7 +10,7 @@ Endpoints:
   POST /warmup                 preheat reranker + embedding (fire-and-forget)
   POST /index   {capture_id}   embed + extract one capture (called by Go on write)
   POST /backfill-queue         enqueue one deduplicated user repair pass
-  GET  /find?q=&limit=         hybrid search → ranked captures
+  GET|POST /find               hybrid search → ranked captures
   POST /ask     {question}     query-time cluster analysis → {answer, sources}
   POST /backfill               index/extract everything missing (one user, or all)
   GET  /config                 runtime config + local backend detection
@@ -26,7 +26,7 @@ import time
 
 import uvicorn
 from fastapi import BackgroundTasks, FastAPI, Header, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 import analysis
 import detect
@@ -109,17 +109,47 @@ def index(body: IndexIn, background: BackgroundTasks,
     return {"status": "queued"}
 
 
+class FindIn(BaseModel):
+    query: str
+    limit: int = 10
+    excluded_ids: list[str] = Field(default_factory=list)
+
+
+@app.post("/find")
+def find(body: FindIn, user_id: str = Header(..., alias="X-User-Id")) -> list[dict]:
+    return search_svc.search(user_id, body.query, body.limit, set(body.excluded_ids))
+
+
 @app.get("/find")
-def find(q: str, limit: int = 10, user_id: str = Header(..., alias="X-User-Id")) -> list[dict]:
+def find_compat(
+    q: str, limit: int = 10, user_id: str = Header(..., alias="X-User-Id"),
+) -> list[dict]:
+    """Compatibility for API instances rolling forward before their sidecar."""
     return search_svc.search(user_id, q, limit)
 
 
-@app.get("/related")
-def related(id: str, limit: int = 10,
+class RelatedIn(BaseModel):
+    capture_id: str
+    limit: int = 5
+    excluded_ids: list[str] = Field(default_factory=list)
+
+
+@app.post("/related")
+def related(body: RelatedIn,
             user_id: str = Header(..., alias="X-User-Id")) -> list[dict]:
     """Semantic neighbours of one capture (for the 'Related' surface). Empty when
     embeddings are off or the capture has no text — never an error."""
-    return rag.related(user_id, id, limit)
+    return search_svc.related(
+        user_id, body.capture_id, body.limit, set(body.excluded_ids))
+
+
+@app.get("/related")
+def related_compat(
+    id: str, limit: int = 5,
+    user_id: str = Header(..., alias="X-User-Id"),
+) -> list[dict]:
+    """Compatibility for API instances rolling forward before their sidecar."""
+    return search_svc.related(user_id, id, limit)
 
 
 class AskIn(BaseModel):

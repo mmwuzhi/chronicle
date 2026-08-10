@@ -14,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	db "github.com/sikaoshenmi/chronicle/db/sqlc"
+	"github.com/sikaoshenmi/chronicle/internal/retrieval"
 )
 
 func (s *Service) Import(
@@ -220,6 +221,36 @@ func (s *Service) Import(
 			return nil
 		}); insertErr != nil {
 			return insertErr
+		}
+		if data.manifest.FormatVersion >= 2 {
+			if insertErr := forEachNDJSON(data.files[dismissalsPath], func(record RetrievalDismissalRecord) error {
+				targetID := idMap[uuid.MustParse(record.TargetID)]
+				createdAt, parseErr := parseTimestamp(record.CreatedAt)
+				if parseErr != nil {
+					return parseErr
+				}
+				var rows int64
+				var insertErr error
+				switch record.Surface {
+				case "search":
+					rows, insertErr = q.InsertArchiveSearchDismissal(ctx, db.InsertArchiveSearchDismissalParams{
+						UserID: userID, QueryHash: retrieval.QueryHash(userID, *record.Query),
+						QueryText: *record.Query, TargetID: targetID, CreatedAt: createdAt,
+					})
+				case "related":
+					rows, insertErr = q.InsertArchiveRelatedDismissal(ctx, db.InsertArchiveRelatedDismissalParams{
+						UserID: userID, AnchorID: idMap[uuid.MustParse(*record.AnchorID)],
+						TargetID: targetID, CreatedAt: createdAt,
+					})
+				}
+				if insertErr != nil {
+					return insertErr
+				}
+				result.Dismissals += int(rows)
+				return nil
+			}); insertErr != nil {
+				return insertErr
+			}
 		}
 		resultBytes, marshalErr := json.Marshal(result)
 		if marshalErr != nil {

@@ -53,7 +53,11 @@
     "typeToSearch": "Type to search…",
     "matchedTranscript": "Matched transcript",
     "openInContext": "Open in context",
-    "keywordFallback": "Semantic search unavailable. Using keyword search."
+    "keywordFallback": "Semantic search unavailable. Using keyword search.",
+    "notRelevant": "Not relevant for this search",
+    "restoreResult": "Restore result",
+    "showDismissed": "Show {{count}} hidden",
+    "hideDismissed": "Hide dismissed"
   },
   "confirm": {
     "cannotUndo": "This cannot be undone.",
