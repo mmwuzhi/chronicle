@@ -436,8 +436,12 @@ struct PanelContentView: View {
                         res.hiddenCount ?? serverRows.filter(\.dismissed).count,
                         dismissedIDs.count)
                     let excludedIDs = includeDismissed ? Set<String>() : dismissedIDs
-                    let visibleServerRows = includeDismissed
-                        ? serverRows : serverRows.filter { !$0.dismissed }
+                    let visibleServerRows = RowMerge.visibleRecallResults(
+                        serverRows,
+                        includeDismissed: includeDismissed,
+                        id: \.id,
+                        dismissed: \.dismissed,
+                        excludedIDs: dismissedIDs)
                     hits = RowMerge.localRecallSupplement(
                         localLiteral, id: \.id, synced: \.synced, dirty: \.dirty,
                         excludedIDs: excludedIDs)

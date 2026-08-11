@@ -4,6 +4,27 @@ import Foundation
 /// Pure and generic so it can be unit-tested here while the UI row types stay
 /// in the app target.
 public enum RowMerge {
+    /// Apply both server-declared and last-known local dismissal state. The
+    /// cached exclusion remains authoritative when the server says its
+    /// preference read was incomplete, so a degraded response cannot make an
+    /// explicitly hidden Capture reappear.
+    public static func visibleRecallResults<T>(
+        _ rows: [T],
+        includeDismissed: Bool,
+        id: KeyPath<T, String>,
+        dismissed: WritableKeyPath<T, Bool>,
+        excludedIDs: Set<String>,
+    ) -> [T] {
+        var projected = rows
+        for index in projected.indices where excludedIDs.contains(projected[index][keyPath: id]) {
+            projected[index][keyPath: dismissed] = true
+        }
+        guard !includeDismissed else { return projected }
+        return projected.filter { row in
+            !row[keyPath: dismissed] && !excludedIDs.contains(row[keyPath: id])
+        }
+    }
+
     /// Rows the server cannot safely replace during online recall: unsynced
     /// captures do not exist remotely, while dirty server-backed captures carry
     /// newer local text. Exact-query dismissals may still exclude either row.
