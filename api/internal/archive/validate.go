@@ -380,7 +380,7 @@ func validateRetrievalDismissals(
 			}
 			normalized := retrieval.NormalizeQuery(*record.Query)
 			if normalized == "" || normalized != *record.Query ||
-				len([]rune(normalized)) > retrieval.MaxSearchQueryRunes {
+				len([]rune(normalized)) > retrieval.MaxNormalizedSearchQueryRunes {
 				return errors.New("search retrieval preference has invalid normalized query")
 			}
 			key = "search:" + normalized + ":" + record.TargetID
