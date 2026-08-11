@@ -3,6 +3,7 @@ package ragclient
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -93,6 +94,63 @@ func TestRecallQueriesRetryLegacyGETOnMethodMismatch(t *testing.T) {
 		if requests[index] != want[index] {
 			t.Fatalf("request %d = %+v, want %+v", index, requests[index], want[index])
 		}
+	}
+}
+
+func TestLegacyRecallSignalsWhenExcludedRowsExhaustWindow(t *testing.T) {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		items := make([]FindItem, 11)
+		for index := range items {
+			items[index].ID = "hidden"
+		}
+		_ = json.NewEncoder(w).Encode(items)
+	}))
+	defer srv.Close()
+
+	client := New(srv.URL)
+	for name, recall := range map[string]func() error{
+		"find": func() error {
+			_, err := client.Find(context.Background(), "user", "needle", 10, []string{"hidden"})
+			return err
+		},
+		"related": func() error {
+			_, err := client.Related(context.Background(), "user", "anchor", 5, []string{"hidden"})
+			return err
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if err := recall(); !errors.Is(err, ErrLegacyExclusionsIncomplete) {
+				t.Fatalf("error = %v", err)
+			}
+		})
+	}
+}
+
+func TestLegacyRecallPreservesSafePartialResults(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[{"id":"hidden"},{"id":"safe-a"},{"id":"safe-b"}]`))
+	}))
+	defer srv.Close()
+
+	items, err := New(srv.URL).Related(
+		context.Background(), "user", "anchor", 5, []string{"hidden"},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 2 || items[0].ID != "safe-a" || items[1].ID != "safe-b" {
+		t.Fatalf("safe partial results = %+v", items)
 	}
 }
 

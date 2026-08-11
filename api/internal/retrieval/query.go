@@ -13,6 +13,10 @@ import (
 const (
 	MaxSearchDismissalsPerUser = 1000
 	MaxSearchQueryRunes        = 200
+	// Unicode NFKC expands one code point to at most 18 code points in the
+	// version shipped by x/text. Keep the normalized portable form bounded
+	// without making a previously valid 200-character query unreachable.
+	MaxNormalizedSearchQueryRunes = MaxSearchQueryRunes * 18
 )
 
 func NormalizeQuery(query string) string {

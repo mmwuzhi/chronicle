@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -327,6 +328,36 @@ func TestFindDismissalsPreserveVisibleLimitAndRecoverOutsideCandidateWindow(t *t
 	if visibleCount != 10 || shown.HiddenCount != 56 || len(dismissedIDs) != 56 ||
 		!dismissedIDs[oldID.String()] || !dismissedIDs[newestID.String()] {
 		t.Fatalf("expected ten visible and both recoverable dismissals, got %+v", shown)
+	}
+}
+
+func TestSearchAcceptsBoundedQueryThatExpandsDuringNormalization(t *testing.T) {
+	server, pool := newSearchServer(t)
+	userID, token := createSearchUser(t, pool)
+	query := strings.Repeat("ﬃ", 200)
+
+	find := findRequest(t, server, token, query)
+	find.Body.Close()
+	if find.StatusCode != http.StatusOK {
+		t.Fatalf("find status = %d", find.StatusCode)
+	}
+
+	targetID := uuid.New()
+	if _, err := pool.Exec(context.Background(),
+		"INSERT INTO captures (id, user_id, raw_text) VALUES ($1, $2, 'target')",
+		targetID, userID,
+	); err != nil {
+		t.Fatalf("insert capture: %v", err)
+	}
+	dismiss := setFindDismissed(t, server, token, targetID.String(), query, true)
+	dismiss.Body.Close()
+	if dismiss.StatusCode != http.StatusNoContent {
+		t.Fatalf("dismiss status = %d", dismiss.StatusCode)
+	}
+	restore := setFindDismissed(t, server, token, targetID.String(), query, false)
+	restore.Body.Close()
+	if restore.StatusCode != http.StatusNoContent {
+		t.Fatalf("restore status = %d", restore.StatusCode)
 	}
 }
 

@@ -67,46 +67,73 @@ func searchQueryHash(userID uuid.UUID, query string) []byte {
 	return retrieval.QueryHash(userID, query)
 }
 
+func validatedSearchQuery(query string) (string, error) {
+	trimmed := strings.TrimSpace(query)
+	normalized := normalizedSearchQuery(trimmed)
+	if normalized == "" {
+		return "", huma.Error422UnprocessableEntity("q must not be empty")
+	}
+	if len([]rune(trimmed)) > retrieval.MaxSearchQueryRunes {
+		return "", huma.Error422UnprocessableEntity("q must be at most 200 characters")
+	}
+	if len([]rune(normalized)) > retrieval.MaxNormalizedSearchQueryRunes {
+		return "", huma.Error422UnprocessableEntity("q exceeds the supported normalized length")
+	}
+	return trimmed, nil
+}
+
 func (h *recallHandler) find(ctx context.Context, input *FindInput) (*FindOutput, error) {
 	uid, err := recallUserID(ctx)
 	if err != nil {
 		return nil, err
 	}
-	query := strings.TrimSpace(input.Q)
-	if query == "" {
-		return nil, huma.Error422UnprocessableEntity("q must not be empty")
+	query, err := validatedSearchQuery(input.Q)
+	if err != nil {
+		return nil, err
 	}
 
 	out := &FindOutput{}
 	out.Body.Items = []RecallItem{}
 	out.Body.DismissalsAuthoritative = true
-	dismissedIDs, dismissErr := h.q.ListSearchDismissedIDs(ctx, db.ListSearchDismissedIDsParams{
-		UserID: uid, QueryHash: searchQueryHash(uid, query),
-	})
-	if dismissErr != nil {
-		// Feedback is a preference layer, not a search dependency. A missing or
-		// temporarily unavailable preference table must not take retrieval down.
-		slog.WarnContext(ctx, "search dismissals unavailable",
-			"traceId", middleware.GetTraceID(ctx), "err", dismissErr)
-		dismissedIDs = nil
-		out.Body.DismissalsAuthoritative = false
+	queryHash := searchQueryHash(uid, query)
+	var dismissedIDs []uuid.UUID
+	var dismissedRows []db.ListSearchDismissedCapturesRow
+	if input.IncludeDismissed {
+		// Recovery rows are the authoritative snapshot: derive IDs and count from
+		// this one query so a concurrent mutation cannot split exclusion and
+		// preview state across two READ COMMITTED statements.
+		dismissedRows, err = h.q.ListSearchDismissedCaptures(ctx, db.ListSearchDismissedCapturesParams{
+			UserID: uid, QueryHash: queryHash,
+		})
+		if err == nil {
+			dismissedIDs = make([]uuid.UUID, 0, len(dismissedRows))
+			for _, row := range dismissedRows {
+				dismissedIDs = append(dismissedIDs, row.ID)
+			}
+		} else {
+			slog.WarnContext(ctx, "search dismissal recovery unavailable",
+				"traceId", middleware.GetTraceID(ctx), "err", err)
+			dismissedRows = nil
+			out.Body.DismissalsAuthoritative = false
+		}
+	}
+	if !input.IncludeDismissed || !out.Body.DismissalsAuthoritative {
+		dismissedIDs, err = h.q.ListSearchDismissedIDs(ctx, db.ListSearchDismissedIDsParams{
+			UserID: uid, QueryHash: queryHash,
+		})
+		if err != nil {
+			// Feedback is a preference layer, not a search dependency. A missing or
+			// temporarily unavailable preference table must not take retrieval down.
+			slog.WarnContext(ctx, "search dismissals unavailable",
+				"traceId", middleware.GetTraceID(ctx), "err", err)
+			dismissedIDs = nil
+			out.Body.DismissalsAuthoritative = false
+		}
 	}
 	out.Body.HiddenCount = len(dismissedIDs)
 	excluded := make([]string, 0, len(dismissedIDs))
 	for _, id := range dismissedIDs {
 		excluded = append(excluded, id.String())
-	}
-	var dismissedRows []db.ListSearchDismissedCapturesRow
-	if input.IncludeDismissed && len(dismissedIDs) > 0 {
-		dismissedRows, dismissErr = h.q.ListSearchDismissedCaptures(ctx, db.ListSearchDismissedCapturesParams{
-			UserID: uid, QueryHash: searchQueryHash(uid, query),
-		})
-		if dismissErr != nil {
-			slog.WarnContext(ctx, "search dismissal recovery unavailable",
-				"traceId", middleware.GetTraceID(ctx), "err", dismissErr)
-			dismissedRows = nil
-			out.Body.DismissalsAuthoritative = false
-		}
 	}
 
 	items, err := h.rag.Find(ctx, uid.String(), query, input.Limit, excluded)
@@ -261,9 +288,9 @@ func (h *recallHandler) findDismissalParams(
 	if err != nil {
 		return uuid.Nil, uuid.Nil, "", huma.Error422UnprocessableEntity("invalid targetId")
 	}
-	query := strings.TrimSpace(input.Q)
-	if query == "" {
-		return uuid.Nil, uuid.Nil, "", huma.Error422UnprocessableEntity("q must not be empty")
+	query, err := validatedSearchQuery(input.Q)
+	if err != nil {
+		return uuid.Nil, uuid.Nil, "", err
 	}
 	if _, err := h.q.GetCapture(ctx, db.GetCaptureParams{ID: target, UserID: uid}); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {

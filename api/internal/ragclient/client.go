@@ -24,6 +24,12 @@ import (
 // callers can fall back (e.g. to keyword FTS) instead of surfacing an error.
 var ErrDisabled = errors.New("rag sidecar not configured")
 
+// ErrLegacyExclusionsIncomplete means an old GET-only sidecar returned hidden
+// rows inside its bounded window and could not prove that enough eligible rows
+// were considered. Search callers should use their durable FTS fallback;
+// optional related suggestions should fail closed.
+var ErrLegacyExclusionsIncomplete = errors.New("legacy rag sidecar could not refill excluded results")
+
 // Per-call deadlines. They must stay below the HTTP server's WriteTimeout (30s)
 // so a slow sidecar can never hold a request past the point where the response
 // can still be written — a cold model that overruns this returns an error the
@@ -187,7 +193,9 @@ func (c *Client) Find(ctx context.Context, userID, query string, limit int, excl
 	if err != nil {
 		return nil, err
 	}
-	if resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusMethodNotAllowed {
+	legacy := resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusMethodNotAllowed
+	legacyLimit := limit
+	if legacy {
 		resp.Body.Close()
 		compatURL, urlErr := url.Parse(c.baseURL + "/find")
 		if urlErr != nil {
@@ -195,7 +203,8 @@ func (c *Client) Find(ctx context.Context, userID, query string, limit int, excl
 		}
 		values := compatURL.Query()
 		values.Set("q", query)
-		values.Set("limit", strconv.Itoa(min(50, limit+len(excludedIDs))))
+		legacyLimit = min(50, limit+len(excludedIDs))
+		values.Set("limit", strconv.Itoa(legacyLimit))
 		compatURL.RawQuery = values.Encode()
 		req, err = http.NewRequestWithContext(ctx, http.MethodGet, compatURL.String(), nil)
 		if err != nil {
@@ -214,6 +223,9 @@ func (c *Client) Find(ctx context.Context, userID, query string, limit int, excl
 	var items []FindItem
 	if err := json.NewDecoder(resp.Body).Decode(&items); err != nil {
 		return nil, err
+	}
+	if legacy {
+		return filterLegacyExcluded(items, excludedIDs, limit, legacyLimit)
 	}
 	return items, nil
 }
@@ -241,7 +253,9 @@ func (c *Client) Related(ctx context.Context, userID, captureID string, limit in
 	if err != nil {
 		return nil, err
 	}
-	if resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusMethodNotAllowed {
+	legacy := resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusMethodNotAllowed
+	legacyLimit := limit
+	if legacy {
 		resp.Body.Close()
 		compatURL, urlErr := url.Parse(c.baseURL + "/related")
 		if urlErr != nil {
@@ -249,7 +263,8 @@ func (c *Client) Related(ctx context.Context, userID, captureID string, limit in
 		}
 		values := compatURL.Query()
 		values.Set("id", captureID)
-		values.Set("limit", strconv.Itoa(min(50, limit+len(excludedIDs))))
+		legacyLimit = min(50, limit+len(excludedIDs))
+		values.Set("limit", strconv.Itoa(legacyLimit))
 		compatURL.RawQuery = values.Encode()
 		req, err = http.NewRequestWithContext(ctx, http.MethodGet, compatURL.String(), nil)
 		if err != nil {
@@ -269,7 +284,41 @@ func (c *Client) Related(ctx context.Context, userID, captureID string, limit in
 	if err := json.NewDecoder(resp.Body).Decode(&items); err != nil {
 		return nil, err
 	}
+	if legacy {
+		return filterLegacyExcluded(items, excludedIDs, limit, legacyLimit)
+	}
 	return items, nil
+}
+
+func filterLegacyExcluded(
+	items []FindItem,
+	excludedIDs []string,
+	limit int,
+	legacyLimit int,
+) ([]FindItem, error) {
+	if len(excludedIDs) == 0 {
+		return items, nil
+	}
+	excluded := make(map[string]struct{}, len(excludedIDs))
+	for _, id := range excludedIDs {
+		excluded[id] = struct{}{}
+	}
+	filtered := make([]FindItem, 0, len(items))
+	removed := false
+	for _, item := range items {
+		if _, skip := excluded[item.ID]; skip {
+			removed = true
+			continue
+		}
+		filtered = append(filtered, item)
+	}
+	// A short legacy response is a complete, precision-thresholded result set;
+	// return its safe subset. Only a full response window proves exclusions may
+	// have displaced unseen eligible rows.
+	if removed && len(items) >= legacyLimit && len(filtered) < limit {
+		return nil, ErrLegacyExclusionsIncomplete
+	}
+	return filtered, nil
 }
 
 // Ask runs query-time cluster analysis. Returns ErrDisabled on a nil client.
