@@ -82,6 +82,7 @@ func (s *Service) Import(
 	if err != nil {
 		return nil, err
 	}
+	targetIDs := uniqueArchiveTargetIDs(idMap)
 
 	decisionsBySource := make(map[uuid.UUID]*importDecision, len(decisions))
 	for index := range decisions {
@@ -152,6 +153,17 @@ func (s *Service) Import(
 
 	err = pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
 		q := s.q.WithTx(tx)
+		if lockErr := q.LockArchiveImportUser(ctx, userID); lockErr != nil {
+			return lockErr
+		}
+		if _, lockErr := q.LockArchiveImportCaptures(ctx, db.LockArchiveImportCapturesParams{
+			UserID: userID, CaptureIds: targetIDs,
+		}); lockErr != nil {
+			return lockErr
+		}
+		if lockErr := lockArchiveRetrievalGuards(ctx, q, userID); lockErr != nil {
+			return lockErr
+		}
 		if insertErr := forEachNDJSON(data.files[capturesPath], func(record CaptureRecord) error {
 			sourceID, parseErr := uuid.Parse(record.ID)
 			if parseErr != nil {
@@ -222,9 +234,6 @@ func (s *Service) Import(
 			return insertErr
 		}
 		if data.manifest.FormatVersion >= 2 {
-			if lockErr := q.LockSearchDismissals(ctx, userID); lockErr != nil {
-				return lockErr
-			}
 			if insertErr := forEachNDJSON(data.files[dismissalsPath], func(record RetrievalDismissalRecord) error {
 				targetID := idMap[uuid.MustParse(record.TargetID)]
 				createdAt, parseErr := parseTimestamp(record.CreatedAt)
@@ -316,17 +325,45 @@ func (s *Service) Import(
 	return result, nil
 }
 
+func uniqueArchiveTargetIDs(idMap map[uuid.UUID]uuid.UUID) []uuid.UUID {
+	seen := make(map[uuid.UUID]struct{}, len(idMap))
+	ids := make([]uuid.UUID, 0, len(idMap))
+	for _, id := range idMap {
+		if _, exists := seen[id]; exists {
+			continue
+		}
+		seen[id] = struct{}{}
+		ids = append(ids, id)
+	}
+	return ids
+}
+
+func lockArchiveRetrievalGuards(
+	ctx context.Context,
+	q *db.Queries,
+	userID uuid.UUID,
+) error {
+	guards, err := q.TryLockArchiveRetrievalGuards(ctx, userID)
+	if err != nil {
+		return err
+	}
+	if !guards.RelationshipLocked || !guards.SearchLocked {
+		return &ImportError{
+			Status: 409,
+			Title:  "archive import conflicts with an active retrieval update",
+		}
+	}
+	return nil
+}
+
 func restoreArchiveLink(
 	ctx context.Context,
 	q *db.Queries,
 	userID, first, second uuid.UUID,
 	createdAt pgtype.Timestamptz,
 ) (bool, error) {
-	if err := q.LockCapturePair(ctx, db.LockCapturePairParams{
-		UserID: userID, X: first, Y: second,
-	}); err != nil {
-		return false, err
-	}
+	// The import transaction holds the archive retrieval guards, so pair
+	// reconciliation needs no per-record advisory lock.
 	state, err := q.GetArchiveCapturePairState(ctx, db.GetArchiveCapturePairStateParams{
 		UserID: userID, X: first, Y: second,
 	})
@@ -353,11 +390,8 @@ func restoreArchiveRelatedDismissal(
 	userID, first, second uuid.UUID,
 	createdAt pgtype.Timestamptz,
 ) (bool, int64, error) {
-	if err := q.LockCapturePair(ctx, db.LockCapturePairParams{
-		UserID: userID, X: first, Y: second,
-	}); err != nil {
-		return false, 0, err
-	}
+	// The import transaction holds the archive retrieval guards, so pair
+	// reconciliation needs no per-record advisory lock.
 	state, err := q.GetArchiveCapturePairState(ctx, db.GetArchiveCapturePairStateParams{
 		UserID: userID, X: first, Y: second,
 	})

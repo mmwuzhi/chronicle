@@ -141,3 +141,34 @@ func (q *Queries) RemoveCaptureLink(ctx context.Context, arg RemoveCaptureLinkPa
 	_, err := q.db.Exec(ctx, removeCaptureLink, arg.UserID, arg.X, arg.Y)
 	return err
 }
+
+const tryLockArchiveRetrievalGuards = `-- name: TryLockArchiveRetrievalGuards :one
+WITH relationship_guard AS MATERIALIZED (
+  SELECT pg_try_advisory_xact_lock(hashtextextended(
+    'capture-relationships:' || $1::uuid::text,
+    0
+  )) AS locked
+)
+SELECT
+  locked AS relationship_locked,
+  CASE WHEN locked THEN pg_try_advisory_xact_lock(hashtextextended(
+    'search-dismissals:' || $1::uuid::text,
+    0
+  )) ELSE false END AS search_locked
+FROM relationship_guard
+`
+
+type TryLockArchiveRetrievalGuardsRow struct {
+	RelationshipLocked bool `json:"relationship_locked"`
+	SearchLocked       bool `json:"search_locked"`
+}
+
+// Archive restore needs both retrieval guards for its whole transaction. Take
+// them without waiting so a rolling deployment cannot deadlock with an older
+// importer that acquired the search guard before a relationship write.
+func (q *Queries) TryLockArchiveRetrievalGuards(ctx context.Context, userID uuid.UUID) (TryLockArchiveRetrievalGuardsRow, error) {
+	row := q.db.QueryRow(ctx, tryLockArchiveRetrievalGuards, userID)
+	var i TryLockArchiveRetrievalGuardsRow
+	err := row.Scan(&i.RelationshipLocked, &i.SearchLocked)
+	return i, err
+}
