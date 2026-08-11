@@ -16,6 +16,11 @@ private struct RecallRow: Equatable {
     let dirty: Bool
 }
 
+private struct ServerRecallRow: Equatable {
+    let id: String
+    var dismissed: Bool
+}
+
 private func row(_ id: String, _ source: String, minutesAgo: Int? = nil) -> Row {
     Row(
         id: id,
@@ -25,6 +30,32 @@ private func row(_ id: String, _ source: String, minutesAgo: Int? = nil) -> Row 
 }
 
 @Suite struct RowMergeTests {
+    @Test func degradedServerRecallStillHonorsCachedDismissals() {
+        let rows = [
+            ServerRecallRow(id: "cached-hidden", dismissed: false),
+            ServerRecallRow(id: "server-hidden", dismissed: true),
+            ServerRecallRow(id: "visible", dismissed: false),
+        ]
+
+        let visible = RowMerge.visibleRecallResults(
+            rows,
+            includeDismissed: false,
+            id: \.id,
+            dismissed: \.dismissed,
+            excludedIDs: ["cached-hidden"],
+        )
+        #expect(visible.map(\.id) == ["visible"])
+        let expanded = RowMerge.visibleRecallResults(
+            rows,
+            includeDismissed: true,
+            id: \.id,
+            dismissed: \.dismissed,
+            excludedIDs: ["cached-hidden"],
+        )
+        #expect(expanded.map(\.id) == ["cached-hidden", "server-hidden", "visible"])
+        #expect(expanded.map(\.dismissed) == [true, true, false])
+    }
+
     @Test func onlineRecallKeepsUnsyncedAndDirtyLocalRows() {
         let rows = [
             RecallRow(id: "cached", synced: true, dirty: false),
