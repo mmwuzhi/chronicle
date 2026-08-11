@@ -11,6 +11,24 @@ VALUES (
 )
 ON CONFLICT (a_id, b_id) DO NOTHING;
 
+-- name: TryLockArchiveRetrievalGuards :one
+-- Archive restore needs both retrieval guards for its whole transaction. Take
+-- them without waiting so a rolling deployment cannot deadlock with an older
+-- importer that acquired the search guard before a relationship write.
+WITH relationship_guard AS MATERIALIZED (
+  SELECT pg_try_advisory_xact_lock(hashtextextended(
+    'capture-relationships:' || sqlc.arg('user_id')::uuid::text,
+    0
+  )) AS locked
+)
+SELECT
+  locked AS relationship_locked,
+  CASE WHEN locked THEN pg_try_advisory_xact_lock(hashtextextended(
+    'search-dismissals:' || sqlc.arg('user_id')::uuid::text,
+    0
+  )) ELSE false END AS search_locked
+FROM relationship_guard;
+
 -- name: LockCapturePair :exec
 -- All link/dismissal mutations take the same transaction-scoped lock for an
 -- undirected pair. Hash collisions only serialize unrelated pairs; they cannot

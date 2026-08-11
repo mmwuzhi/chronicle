@@ -1026,3 +1026,52 @@ func (q *Queries) ListArchiveSearchDismissalsPage(ctx context.Context, arg ListA
 	}
 	return items, nil
 }
+
+const lockArchiveImportCaptures = `-- name: LockArchiveImportCaptures :many
+SELECT id FROM captures
+WHERE user_id = $1::uuid
+  AND id = ANY($2::uuid[])
+ORDER BY id
+FOR KEY SHARE
+`
+
+type LockArchiveImportCapturesParams struct {
+	UserID     uuid.UUID   `json:"user_id"`
+	CaptureIds []uuid.UUID `json:"capture_ids"`
+}
+
+// Canonical ordering prevents two imports from taking overlapping Capture row
+// locks in opposite orders. Missing rows are new archive Captures and need no
+// lock before they are inserted by this transaction.
+func (q *Queries) LockArchiveImportCaptures(ctx context.Context, arg LockArchiveImportCapturesParams) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, lockArchiveImportCaptures, arg.UserID, arg.CaptureIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []uuid.UUID
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const lockArchiveImportUser = `-- name: LockArchiveImportUser :exec
+SELECT id FROM users
+WHERE id = $1::uuid
+FOR KEY SHARE
+`
+
+// Lock parent rows before the archive retrieval guards. This keeps account
+// deletion and its relationship cascades out of the reverse lock order.
+func (q *Queries) LockArchiveImportUser(ctx context.Context, userID uuid.UUID) error {
+	_, err := q.db.Exec(ctx, lockArchiveImportUser, userID)
+	return err
+}

@@ -92,6 +92,23 @@ LIMIT sqlc.arg('page_size');
 SELECT id, user_id FROM captures
 WHERE id = sqlc.arg('id')::uuid;
 
+-- name: LockArchiveImportUser :exec
+-- Lock parent rows before the archive retrieval guards. This keeps account
+-- deletion and its relationship cascades out of the reverse lock order.
+SELECT id FROM users
+WHERE id = sqlc.arg('user_id')::uuid
+FOR KEY SHARE;
+
+-- name: LockArchiveImportCaptures :many
+-- Canonical ordering prevents two imports from taking overlapping Capture row
+-- locks in opposite orders. Missing rows are new archive Captures and need no
+-- lock before they are inserted by this transaction.
+SELECT id FROM captures
+WHERE user_id = sqlc.arg('user_id')::uuid
+  AND id = ANY(sqlc.arg('capture_ids')::uuid[])
+ORDER BY id
+FOR KEY SHARE;
+
 -- name: InsertArchiveCapture :one
 INSERT INTO captures (
   id, user_id, raw_text, media_url, media_type, classified_as, created_at,

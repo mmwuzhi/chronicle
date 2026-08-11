@@ -249,7 +249,9 @@ func TestArchiveRoundTripMergePreservesTrashMediaLinksAndAttachments(t *testing.
 	); err != nil {
 		t.Fatalf("insert attachment: %v", err)
 	}
-	query := "blue door"
+	// A public 200-rune query can expand under NFKC. Its normalized portable
+	// value must remain exportable and importable for rolling compatibility.
+	query := retrieval.NormalizeQuery(strings.Repeat("ﬃ", retrieval.MaxSearchQueryRunes))
 	if err := q.AddSearchDismissal(context.Background(), db.AddSearchDismissalParams{
 		UserID: sourceUser, QueryHash: retrieval.QueryHash(sourceUser, query),
 		QueryText: pgtype.Text{String: query, Valid: true}, TargetID: textID,
@@ -853,6 +855,9 @@ func TestArchiveRelationshipRestoreKeepsNewestPairState(t *testing.T) {
 		var applied bool
 		var rows int64
 		err := pgx.BeginFunc(context.Background(), pool, func(tx pgx.Tx) error {
+			if err := lockArchiveRetrievalGuards(context.Background(), q.WithTx(tx), userID); err != nil {
+				return err
+			}
 			var err error
 			applied, rows, err = restoreArchiveRelatedDismissal(
 				context.Background(), q.WithTx(tx), userID, first, second,
@@ -876,6 +881,9 @@ func TestArchiveRelationshipRestoreKeepsNewestPairState(t *testing.T) {
 		t.Helper()
 		var applied bool
 		err := pgx.BeginFunc(context.Background(), pool, func(tx pgx.Tx) error {
+			if err := lockArchiveRetrievalGuards(context.Background(), q.WithTx(tx), userID); err != nil {
+				return err
+			}
 			var err error
 			applied, err = restoreArchiveLink(
 				context.Background(), q.WithTx(tx), userID, first, second,
@@ -914,6 +922,312 @@ func TestArchiveRelationshipRestoreKeepsNewestPairState(t *testing.T) {
 	}
 	if links != 1 || dismissals != 0 {
 		t.Fatalf("final pair state links=%d dismissals=%d", links, dismissals)
+	}
+}
+
+func TestArchiveRelationshipRestoreHoldsBoundedAdvisoryKeysForManyPairs(t *testing.T) {
+	pool := testutil.NewPool(t)
+	testutil.Truncate(t, pool, "captures", "users")
+	q := db.New(pool)
+	userID := createArchiveUser(t, q, "archive-lock-bound@test.com")
+	createdAt := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	ids := make([]uuid.UUID, 12)
+	for index := range ids {
+		ids[index] = uuid.New()
+		if _, err := q.InsertArchiveCapture(
+			context.Background(), archiveCaptureParamsForTest(ids[index], userID, "pair", createdAt),
+		); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	err := pgx.BeginFunc(context.Background(), pool, func(tx pgx.Tx) error {
+		txq := q.WithTx(tx)
+		if err := lockArchiveRetrievalGuards(context.Background(), txq, userID); err != nil {
+			return err
+		}
+		for index := 0; index < len(ids); index += 2 {
+			if _, err := restoreArchiveLink(
+				context.Background(), txq, userID, ids[index], ids[index+1],
+				pgtype.Timestamptz{Time: createdAt, Valid: true},
+			); err != nil {
+				return err
+			}
+		}
+		var advisoryKeys int
+		if err := tx.QueryRow(context.Background(), `
+			SELECT count(DISTINCT (classid, objid, objsubid)) FROM pg_locks
+			WHERE pid = pg_backend_pid() AND locktype = 'advisory'
+		`).Scan(&advisoryKeys); err != nil {
+			return err
+		}
+		if advisoryKeys != 2 {
+			return fmt.Errorf("archive restore held %d advisory keys, want 2", advisoryKeys)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestArchiveRelationshipGuardCoordinatesLegacyWriter(t *testing.T) {
+	pool := testutil.NewPool(t)
+	testutil.Truncate(t, pool, "captures", "users")
+	q := db.New(pool)
+	userID := createArchiveUser(t, q, "archive-rolling-lock@test.com")
+	first, second := uuid.New(), uuid.New()
+	createdAt := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	for _, id := range []uuid.UUID{first, second} {
+		if _, err := q.InsertArchiveCapture(
+			context.Background(), archiveCaptureParamsForTest(id, userID, "pair", createdAt),
+		); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	archiveTx, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer archiveTx.Rollback(ctx) // no-op after Commit
+	archiveQ := q.WithTx(archiveTx)
+	if err := q.WithTx(archiveTx).LockArchiveImportUser(ctx, userID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := q.WithTx(archiveTx).LockArchiveImportCaptures(ctx, db.LockArchiveImportCapturesParams{
+		UserID: userID, CaptureIds: []uuid.UUID{first, second},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := lockArchiveRetrievalGuards(ctx, archiveQ, userID); err != nil {
+		t.Fatal(err)
+	}
+
+	legacyPID := make(chan int)
+	legacyDone := make(chan error, 1)
+	go func() {
+		legacyDone <- pgx.BeginFunc(ctx, pool, func(tx pgx.Tx) error {
+			legacyQ := q.WithTx(tx)
+			if err := legacyQ.LockCapturePair(ctx, db.LockCapturePairParams{
+				UserID: userID, X: first, Y: second,
+			}); err != nil {
+				return err
+			}
+			var pid int
+			if err := tx.QueryRow(ctx, "SELECT pg_backend_pid()").Scan(&pid); err != nil {
+				return err
+			}
+			legacyPID <- pid
+			if err := legacyQ.AddCaptureLink(ctx, db.AddCaptureLinkParams{
+				UserID: userID, X: first, Y: second,
+			}); err != nil {
+				return err
+			}
+			return legacyQ.RemoveRelatedDismissal(ctx, db.RemoveRelatedDismissalParams{
+				UserID: userID, AnchorID: first, TargetID: second,
+			})
+		})
+	}()
+	var pid int
+	select {
+	case pid = <-legacyPID:
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	for {
+		var waiting bool
+		if err := pool.QueryRow(ctx, `
+			SELECT COALESCE(wait_event = 'advisory', false)
+			FROM pg_stat_activity WHERE pid = $1
+		`, pid).Scan(&waiting); err != nil {
+			t.Fatal(err)
+		}
+		if waiting {
+			break
+		}
+		select {
+		case err := <-legacyDone:
+			t.Fatalf("legacy writer bypassed archive guard: %v", err)
+		case <-ctx.Done():
+			t.Fatal(ctx.Err())
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+
+	applied, _, err := restoreArchiveRelatedDismissal(
+		ctx, archiveQ, userID, first, second,
+		pgtype.Timestamptz{Time: createdAt, Valid: true},
+	)
+	if err != nil || !applied {
+		t.Fatalf("restore dismissal applied=%v, err=%v", applied, err)
+	}
+	select {
+	case err := <-legacyDone:
+		t.Fatalf("legacy writer bypassed archive guard: %v", err)
+	default:
+	}
+	if err := archiveTx.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-legacyDone:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+
+	var links, dismissals int
+	if err := pool.QueryRow(ctx, `
+		SELECT
+		  (SELECT count(*) FROM capture_links
+		   WHERE user_id = $1 AND a_id = LEAST($2::uuid, $3::uuid)
+		     AND b_id = GREATEST($2::uuid, $3::uuid)),
+		  (SELECT count(*) FROM retrieval_dismissals
+		   WHERE user_id = $1 AND surface = 'related'
+		     AND ((anchor_id = $2 AND target_id = $3)
+		       OR (anchor_id = $3 AND target_id = $2)))
+	`, userID, first, second).Scan(&links, &dismissals); err != nil {
+		t.Fatal(err)
+	}
+	if links != 1 || dismissals != 0 {
+		t.Fatalf("rolling writer final state links=%d dismissals=%d", links, dismissals)
+	}
+}
+
+func TestArchiveRetrievalGuardsFailFastBehindLegacySearchLock(t *testing.T) {
+	pool := testutil.NewPool(t)
+	testutil.Truncate(t, pool, "captures", "users")
+	q := db.New(pool)
+	userID := createArchiveUser(t, q, "archive-rolling-search-lock@test.com")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	legacyTx, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer legacyTx.Rollback(ctx)
+	if err := q.WithTx(legacyTx).LockSearchDismissals(ctx, userID); err != nil {
+		t.Fatal(err)
+	}
+
+	archiveTx, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer archiveTx.Rollback(ctx)
+	started := time.Now()
+	err = lockArchiveRetrievalGuards(ctx, q.WithTx(archiveTx), userID)
+	var importErr *ImportError
+	if !errors.As(err, &importErr) || importErr.Status != 409 {
+		t.Fatalf("guard error = %v, want import conflict", err)
+	}
+	if elapsed := time.Since(started); elapsed > time.Second {
+		t.Fatalf("guard conflict took %s, want fail-fast", elapsed)
+	}
+}
+
+func TestArchiveScopeLocksPreventCascadeDeleteDeadlock(t *testing.T) {
+	pool := testutil.NewPool(t)
+	testutil.Truncate(t, pool, "captures", "users")
+	q := db.New(pool)
+	userID := createArchiveUser(t, q, "archive-cascade-lock@test.com")
+	first, second := uuid.New(), uuid.New()
+	createdAt := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	for _, id := range []uuid.UUID{first, second} {
+		if _, err := q.InsertArchiveCapture(
+			context.Background(), archiveCaptureParamsForTest(id, userID, "pair", createdAt),
+		); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := q.AddCaptureLink(context.Background(), db.AddCaptureLinkParams{
+		UserID: userID, X: first, Y: second,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	archiveTx, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer archiveTx.Rollback(ctx)
+	archiveQ := q.WithTx(archiveTx)
+	if err := archiveQ.LockArchiveImportUser(ctx, userID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := archiveQ.LockArchiveImportCaptures(ctx, db.LockArchiveImportCapturesParams{
+		UserID: userID, CaptureIds: []uuid.UUID{first, second},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := lockArchiveRetrievalGuards(ctx, archiveQ, userID); err != nil {
+		t.Fatal(err)
+	}
+
+	deletePID := make(chan int)
+	deleteDone := make(chan error, 1)
+	go func() {
+		deleteDone <- pgx.BeginFunc(ctx, pool, func(tx pgx.Tx) error {
+			var pid int
+			if err := tx.QueryRow(ctx, "SELECT pg_backend_pid()").Scan(&pid); err != nil {
+				return err
+			}
+			deletePID <- pid
+			_, err := tx.Exec(ctx, "DELETE FROM captures WHERE id = $1 AND user_id = $2", first, userID)
+			return err
+		})
+	}()
+	var pid int
+	select {
+	case pid = <-deletePID:
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	for {
+		var waiting bool
+		if err := pool.QueryRow(ctx, `
+			SELECT COALESCE(wait_event_type = 'Lock', false)
+			FROM pg_stat_activity WHERE pid = $1
+		`, pid).Scan(&waiting); err != nil {
+			t.Fatal(err)
+		}
+		if waiting {
+			break
+		}
+		select {
+		case err := <-deleteDone:
+			t.Fatalf("delete bypassed archive scope locks: %v", err)
+		case <-ctx.Done():
+			t.Fatal(ctx.Err())
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+
+	applied, _, err := restoreArchiveRelatedDismissal(
+		ctx, archiveQ, userID, first, second,
+		pgtype.Timestamptz{Time: time.Now().UTC().Add(time.Hour), Valid: true},
+	)
+	if err != nil || !applied {
+		t.Fatalf("restore dismissal applied=%v, err=%v", applied, err)
+	}
+	if err := archiveTx.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-deleteDone:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
 	}
 }
 
