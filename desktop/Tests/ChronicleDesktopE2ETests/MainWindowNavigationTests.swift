@@ -606,11 +606,52 @@ struct MainWindowNavigationTests {
         await Task.yield()
         host.layoutSubtreeIfNeeded()
 
-        let textView: SubmitTextView = try #require(host.firstDescendant(ofType: SubmitTextView.self))
+        let textView: SubmitTextView = try #require(
+            host.firstDescendant(ofType: SubmitTextView.self)
+        )
         #expect(textView.string == "ヤニネコ")
         #expect(textView.font?.pointSize == NSFont.preferredFont(forTextStyle: .body).pointSize)
         #expect(textView.frame.height > 0)
         #expect((textView.textContainer?.size.width ?? 0) > 0)
+    }
+
+    @Test("multiline capture editor starts near its draft height")
+    func multilineCaptureEditorSeedsItsHeight() throws {
+        let draft = "First line\nSecond line\nThird line\nFourth line"
+        let row = RowItem(
+            id: "multiline-row",
+            content: draft,
+            createdAt: "2026-07-04T14:35:00Z",
+            modality: "text",
+            mediaUrl: nil
+        )
+        let host = NSHostingView(rootView: CaptureRow(
+            item: row,
+            onDismiss: {},
+            dismissTitle: "Not related",
+            dismissSystemImage: "eye.slash",
+            isEditing: true,
+            draftText: draft
+        ))
+        host.frame = NSRect(x: 0, y: 0, width: 640, height: 240)
+        host.layoutSubtreeIfNeeded()
+
+        let textView: SubmitTextView = try #require(
+            host.firstDescendant(ofType: SubmitTextView.self)
+        )
+        let editorHeight = try #require(textView.enclosingScrollView?.frame.height)
+        #expect(editorHeight >= 80)
+    }
+
+    @Test("capture editor height estimate keeps its layout bounds")
+    func captureEditorHeightEstimateKeepsBounds() {
+        #expect(CaptureEditorLayout.estimatedHeight(for: "") == 22)
+        #expect(CaptureEditorLayout.estimatedHeight(for: "one\ntwo\nthree\nfour") == 88)
+        #expect(
+            CaptureEditorLayout.estimatedHeight(
+                for: String(repeating: "line\n", count: 20)
+            ) == 160
+        )
     }
 
     @Test("mounted editors follow an updated preferred font size")
