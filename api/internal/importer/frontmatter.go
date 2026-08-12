@@ -3,7 +3,6 @@ package importer
 import (
 	"fmt"
 	"net/url"
-	"path"
 	"regexp"
 	"strings"
 	"time"
@@ -37,9 +36,6 @@ func parseNote(filename, input string, location *time.Location, issues *issueCol
 	body, metadata, parsed := splitFrontmatter(filename, input, issues)
 	body = strings.TrimSpace(body)
 	title := metadata.title
-	if title == "" && !h1Pattern.MatchString(body) {
-		title = strings.TrimSuffix(path.Base(filename), path.Ext(filename))
-	}
 	if title != "" && !hasMatchingH1(body, title) {
 		body = "# " + oneLine(title) + joinSection(body)
 	}

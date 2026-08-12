@@ -113,11 +113,28 @@ func TestParseNoteKeepsMalformedFrontmatterAsContent(t *testing.T) {
 	}
 }
 
-func TestParseNoteKeepsExistingHeadingInsteadOfAddingFilename(t *testing.T) {
-	issues := newIssueCollector()
-	rawText, _, _, _, _ := parseNote("machine-generated-slug.md", "# Human title\n\nBody", time.UTC, issues)
-	if strings.Contains(rawText, "machine-generated-slug") {
-		t.Fatalf("filename heading was added despite existing H1: %q", rawText)
+func TestParseNoteOnlyAddsUserAuthoredHeadings(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{name: "plain body", input: "Body", want: "Body"},
+		{name: "body H1", input: "# Human title\n\nBody", want: "# Human title\n\nBody"},
+		{
+			name:  "frontmatter title",
+			input: "---\ntitle: User title\n---\nBody",
+			want:  "# User title\n\nBody",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			issues := newIssueCollector()
+			rawText, _, _, _, _ := parseNote("machine-generated-slug.md", test.input, time.UTC, issues)
+			if rawText != test.want {
+				t.Fatalf("raw text = %q, want %q", rawText, test.want)
+			}
+		})
 	}
 }
 
