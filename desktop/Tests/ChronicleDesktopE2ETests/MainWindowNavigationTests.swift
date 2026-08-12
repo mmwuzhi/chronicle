@@ -560,6 +560,37 @@ struct MainWindowNavigationTests {
         #expect(textView == nil)
     }
 
+    @Test("capture detail leaves its body double-click gesture unobstructed")
+    func captureDetailLeavesBodyEditGestureUnobstructed() async throws {
+        let record = try tempStore().create(CapturePayload(rawText: "Editable Capture body"))
+        let clients = CaptureClients(
+            recall: { nil },
+            webhook: { nil },
+            openSignIn: {},
+            localSearch: { _ in [] },
+            localRecent: { _ in [] },
+            localDelete: { _ in }
+        )
+        let model = CaptureDetailModel(capture: RowItem(record), clients: clients)
+        let detail = CaptureDetailView(
+            model: model,
+            clients: clients,
+            onCopy: { _ in }
+        )
+        let bodyType = String(reflecting: type(of: detail.body))
+        #expect(!bodyType.contains("TextSelectability"))
+
+        model.beginEditing()
+        let host = NSHostingView(rootView: detail)
+        host.frame = NSRect(x: 0, y: 0, width: 640, height: 600)
+        host.layoutSubtreeIfNeeded()
+        await Task.yield()
+        host.layoutSubtreeIfNeeded()
+
+        let editor: SubmitTextView = try #require(host.firstDescendant(ofType: SubmitTextView.self))
+        #expect(editor.string == "Editable Capture body")
+    }
+
     @Test("capture edit bubble renders its existing draft")
     func captureEditBubbleRendersDraft() async throws {
         let record = try tempStore().create(CapturePayload(rawText: "ヤニネコ"))
