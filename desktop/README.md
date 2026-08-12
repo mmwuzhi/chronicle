@@ -14,9 +14,9 @@ swift run ChronicleDesktop
 
 The app starts in the menu bar. Use Sign In from the main window's Ask composer
 or Account settings to open the account sheet, then continue with Google,
-GitHub, or a Chronicle email and password (MFA login is not implemented yet). It targets
-`http://localhost:8080` by default; set `CHRONICLE_API_URL` for another
-endpoint.
+GitHub, or a Chronicle email and password. TOTP and recovery-code challenges
+are supported. The app targets `http://localhost:8080` by default; set
+`CHRONICLE_API_URL` for another endpoint.
 
 For a bundled dev run that only restarts the menu bar app when the build output
 changed, use `make desktop-reload` / `just desktop-reload` from the repo root.

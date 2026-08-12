@@ -65,21 +65,26 @@ func TestAuthEphemeralStateRejectsExpiredRows(t *testing.T) {
 	pool := testutil.NewPool(t)
 	testutil.Truncate(t, pool, "auth_ephemeral_states")
 	queries := db.New(pool)
+	ctx := context.Background()
+	var expiredAt time.Time
+	if err := pool.QueryRow(ctx, "SELECT now() - interval '1 minute'").Scan(&expiredAt); err != nil {
+		t.Fatalf("read database clock: %v", err)
+	}
 	keyHash := sha256.Sum256([]byte("expired-code"))
 	if err := queries.StoreAuthEphemeralState(
-		context.Background(),
+		ctx,
 		db.StoreAuthEphemeralStateParams{
 			Purpose:   "test",
 			KeyHash:   keyHash[:],
 			Payload:   []byte("expired"),
-			ExpiresAt: pgtype.Timestamptz{Time: time.Now().Add(-time.Second), Valid: true},
+			ExpiresAt: pgtype.Timestamptz{Time: expiredAt, Valid: true},
 		},
 	); err != nil {
 		t.Fatalf("store expired state: %v", err)
 	}
 
 	_, err := queries.GetAuthEphemeralState(
-		context.Background(),
+		ctx,
 		db.GetAuthEphemeralStateParams{Purpose: "test", KeyHash: keyHash[:]},
 	)
 	if !errors.Is(err, pgx.ErrNoRows) {

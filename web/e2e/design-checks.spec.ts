@@ -61,7 +61,11 @@ test("captures: current capture-first controls are visible", async ({
   page,
 }) => {
   await goto(page, "/captures");
-  await expect(page.getByText(/dump a thought/i)).toBeVisible();
+  await expect(
+    page
+      .locator("main header")
+      .getByText("Capture it now. Find it later.", { exact: true }),
+  ).toBeVisible();
 
   const composer = page.getByPlaceholder(/what's on your mind/i);
   await expect(composer).toBeVisible();
