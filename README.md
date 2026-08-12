@@ -136,6 +136,32 @@ The backup command writes a PostgreSQL dump, MinIO media copy, and portable
 Chronicle archive under `backups/`. Core capture and full-text search work
 without AI keys or the optional RAG profile.
 
+### Connecting the desktop app
+
+The macOS desktop app defaults to `http://localhost:8080`, which targets the
+local development API rather than the self-host stack. Self-host serves the API
+under `/api` through Caddy. Point the app at that base URL either for one launch
+or persist it in Settings.
+
+For a self-host stack running on the same Mac, launch the built app binary with
+the loopback URL (include a custom `HTTP_PORT` when configured):
+
+```bash
+CHRONICLE_API_URL=http://localhost/api ./desktop/ChronicleDesktop.app/Contents/MacOS/ChronicleDesktop
+```
+
+Remote endpoints must use HTTPS because Chronicle credentials cross this
+boundary:
+
+```bash
+CHRONICLE_API_URL=https://chronicle.example.com/api ./desktop/ChronicleDesktop.app/Contents/MacOS/ChronicleDesktop
+```
+
+Running the binary directly matters because `open` does not forward shell
+environment variables. Alternatively, launch normally and save the API URL in
+the app's Settings. A saved value persists across restarts and takes precedence
+over `CHRONICLE_API_URL`.
+
 ## Common Commands
 
 ```bash
