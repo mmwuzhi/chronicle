@@ -15,7 +15,7 @@
   "profile": {
     "title": "个人信息",
     "email": "邮箱",
-    "verifyHint": "你的邮箱尚未验证，请查看收件箱中的验证链接。",
+    "verifyHint": "邮箱尚未验证，请查收验证邮件。",
     "verifyResend": "重新发送",
     "verifySending": "发送中…",
     "verifySent": "已发送！",
@@ -30,7 +30,7 @@
     "oauthSetHint": "设置密码后也可以使用邮箱登录。",
     "currentPassword": "当前密码",
     "newPassword": "新密码",
-    "placeholder": "至少8个字符",
+    "placeholder": "至少 8 个字符",
     "saving": "保存中…",
     "updated": "密码已更新",
     "error": "出错了"
@@ -39,7 +39,7 @@
     "title": "安全",
     "passkeys": {
       "title": "通行密钥",
-      "description": "使用设备的生物识别或安全密钥登录，无需密码。",
+      "description": "使用本机生物识别或安全密钥登录，无需密码。",
       "add": "添加通行密钥",
       "empty": "尚未注册通行密钥。",
       "delete": "移除",
@@ -56,13 +56,13 @@
       "setupTitle": "设置两步验证",
       "scanQR": "使用验证器应用扫描此二维码。",
       "manualEntry": "或手动输入此密钥：",
-      "enterCode": "输入验证器应用中的6位数字",
+      "enterCode": "输入验证器应用中的 6 位数字",
       "verifyAndEnable": "验证并启用",
       "recoveryCodes": "恢复码",
       "recoveryCodesDescription": "将这些恢复码保存在安全的地方。每个恢复码只能使用一次。",
       "recoveryCodesSaved": "我已保存这些恢复码",
       "disableConfirm": "停用两步验证？",
-      "disableDescription": "输入验证器应用中的6位数字，或恢复码，以确认操作。",
+      "disableDescription": "输入验证器应用中的 6 位数字，或恢复码，以确认操作。",
       "invalidCode": "验证码无效，请重试。"
     }
   },
@@ -89,7 +89,7 @@
       "addTitle": "新建令牌",
       "namePlaceholder": "名称，例如 iPhone Action Button",
       "generate": "生成令牌",
-      "revealTitle": "立即复制此令牌——它只显示这一次。",
+      "revealTitle": "立即复制此令牌。它只显示这一次。",
       "revealHint": "在 iOS 快捷指令的 Authorization 头里填：Bearer <令牌>",
       "docHint": "搭建步骤见文档里的 iOS 快捷指令指南。",
       "copy": "复制",
@@ -113,7 +113,7 @@
   },
   "language": {
     "title": "语言",
-    "description": "选择你的首选语言。此设置保存在本地。"
+    "description": "选择界面语言。此设置保存在本机。"
   },
   "todoFeature": {
     "title": "待办功能",
@@ -141,7 +141,7 @@
       "title": "数据与迁移",
       "description": "保存一份完整且可直接阅读的 Capture 副本，并可恢复到任意 Chronicle 账号。",
       "exportTitle": "导出归档",
-      "exportDescription": "包含当前及废纸篓中的 Capture、关联、外部文件引用、转录和 Chronicle 管理的媒体。",
+      "exportDescription": "包含当前及回收站中的 Capture、关联、外部文件引用、转写和 Chronicle 管理的媒体。",
       "export": "下载归档",
       "exporting": "正在准备归档…",
       "exportFailed": "无法创建归档，请重试。",
@@ -164,13 +164,13 @@
       "importFailed": "无法导入这些文件。",
       "resultTitle": "内容导入完成",
       "result": "新建 {{created}}，跳过 {{skipped}}，关联 {{links}}，应用 frontmatter {{frontmatter}}。",
-      "analysis": "全文搜索已可用；语义搜索与 Related Captures 正在后台生成。",
+      "analysis": "全文搜索已可用；语义搜索与关联 Capture 正在后台生成。",
       "replayed": "这次重试此前已经完成，当前显示的是已保存结果。",
       "issueFallback": "{{code}}：{{count}}",
-      "undo": "把本次导入移到废纸篓",
-      "undoing": "正在移到废纸篓…",
-      "undone": "已移到废纸篓",
-      "undoConfirm": "要把本次导入创建的所有 Capture 移到废纸篓吗？",
+      "undo": "把本次导入移到回收站",
+      "undoing": "正在移到回收站…",
+      "undone": "已移到回收站",
+      "undoConfirm": "要把本次导入创建的所有 Capture 移到回收站吗？",
       "undoFailed": "无法撤销本次导入。",
       "issues": {
         "unsupported_file": "已跳过不支持的文件：{{count}}",

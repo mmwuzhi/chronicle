@@ -15,9 +15,9 @@
   "uploading": "アップロード中…",
   "uploadFailed": "アップロード失敗",
   "cloudFile": {
-    "missingClientId": "Google Drive が設定されていません",
-    "tooLarge": "現在は 100 MB までのファイルに対応しています",
-    "authFailed": "Google Drive の認可に失敗しました",
+    "missingClientId": "Google Driveが設定されていません",
+    "tooLarge": "現在は100 MBまでのファイルに対応しています",
+    "authFailed": "Google Driveの認可に失敗しました",
     "uploadFailed": "クラウドアップロードに失敗しました"
   },
   "attachments": {
@@ -57,6 +57,11 @@
   "longContent": {
     "showMore": "もっと見る"
   },
+  "tasks": {
+    "markComplete": "完了にする",
+    "markIncomplete": "未完了に戻す",
+    "completedOn": "完了日"
+  },
   "showScheduled": "予約済みを表示",
   "scheduledHint": "将来のリマインダーがあるCaptureは期限まで非表示です。表示してリマインダーを編集・解除できます。",
   "context": {
@@ -65,7 +70,7 @@
     "open": "前後のCaptureを見る",
     "earlier": "以前",
     "later": "以後",
-    "failedToLoad": "Captureの文脈を読み込めませんでした"
+    "failedToLoad": "Captureの前後の記録を読み込めませんでした"
   },
   "transcript": {
     "label": "AI文字起こし",
@@ -82,7 +87,7 @@
     "clear": "解除",
     "cancel": "キャンセル",
     "keepVisible": "表示したまま",
-    "keepVisibleHint": "通知のみ — 期限まで隠さずブラウズに表示し続けます"
+    "keepVisibleHint": "通知のみ。期限まで非表示にせず、一覧に表示したままにします。"
   },
   "related": {
     "title": "リンク",
@@ -93,7 +98,7 @@
     "link": "リンク",
     "linking": "リンク中…",
     "unlink": "リンク解除",
-    "notRelated": "関連しない",
+    "notRelated": "関連なし",
     "searchLabel": "リンクするCaptureを検索",
     "searchPlaceholder": "Captureを検索…",
     "searching": "検索中…",
@@ -105,7 +110,7 @@
   "trash": {
     "link": "ゴミ箱",
     "title": "ゴミ箱",
-    "subtitle": "削除したCapture。必要なものは復元できます。",
+    "subtitle": "削除したCaptureはここに残ります。必要なものは復元できます。",
     "empty": "ゴミ箱は空です。",
     "restore": "復元",
     "deletePermanently": "完全に削除",

@@ -373,7 +373,11 @@ export function CaptureDetailDialog({
                     void beginTextEdit();
                   }}
                 >
-                  <Markdown>{capture.rawText ?? ""}</Markdown>
+                  <Markdown
+                    onTaskChange={(rawText) => onSaveText(capture.id, rawText)}
+                  >
+                    {capture.rawText ?? ""}
+                  </Markdown>
                 </div>
                 <Button
                   variant="ghost"

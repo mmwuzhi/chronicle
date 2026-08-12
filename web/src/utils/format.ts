@@ -30,7 +30,7 @@ export function fmtListTime(iso: string, locale: string): string {
   });
 }
 
-// Precise stamp for tooltips and detail contexts ("Jul 4, 2026 · 2:35pm") —
+// Precise stamp for tooltips and detail contexts ("Jul 4, 2026 · 2:35pm"),
 // the same shape as the desktop app's hover timestamp.
 export function fmtPreciseDateTime(iso: string, locale?: string): string {
   const d = new Date(iso);
@@ -53,11 +53,28 @@ export function fmtPreciseDateTime(iso: string, locale?: string): string {
 export function timeAgo(iso: string, locale: string): string {
   const diff = Date.now() - new Date(iso).getTime();
   const rtf = new Intl.RelativeTimeFormat(locale, { numeric: "auto" });
+  if (Math.abs(diff) < 60000) return relativeNow(locale, rtf);
   const m = Math.floor(diff / 60000);
   if (m < 60) return rtf.format(-m, "minute");
   const h = Math.floor(m / 60);
   if (h < 24) return rtf.format(-h, "hour");
   return rtf.format(-Math.floor(h / 24), "day");
+}
+
+function relativeNow(
+  locale: string,
+  formatter: Intl.RelativeTimeFormat,
+): string {
+  switch (locale.toLowerCase().split(/[-_]/)[0]) {
+    case "en":
+      return "now";
+    case "ja":
+      return "たった今";
+    case "zh":
+      return "刚刚";
+    default:
+      return formatter.format(0, "second");
+  }
 }
 
 export function fmtFileSize(bytes: number): string {

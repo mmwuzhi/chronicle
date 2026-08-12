@@ -157,6 +157,10 @@ export const CaptureCard = memo(function CaptureCard({
     },
   });
   const openDetail = () => setDetailOpen(true);
+  const saveTaskText = useCallback(
+    (rawText: string) => onSaveText(c.id, rawText),
+    [c.id, onSaveText],
+  );
 
   return (
     <Card asChild>
@@ -211,7 +215,10 @@ export const CaptureCard = memo(function CaptureCard({
               </Button>
             </div>
           )}
-          <CollapsibleMarkdown showMoreLabel={t("longContent.showMore")}>
+          <CollapsibleMarkdown
+            showMoreLabel={t("longContent.showMore")}
+            onTaskChange={saveTaskText}
+          >
             {c.rawText ?? ""}
           </CollapsibleMarkdown>
           {transcribable && c.transcript && (

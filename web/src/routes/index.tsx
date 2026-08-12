@@ -50,9 +50,7 @@ function Dashboard() {
           <p className="text-caption font-semibold uppercase tracking-[0.13em] text-faint">
             {dateEyebrow}
           </p>
-          <PageTitle>
-            {t(greetingKey)} {name}
-          </PageTitle>
+          <PageTitle>{t(greetingKey, { name })}</PageTitle>
         </PageHeader>
 
         <div className="mb-3 mt-[26px] flex items-center gap-2.5">

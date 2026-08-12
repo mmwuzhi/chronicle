@@ -1,15 +1,15 @@
 {
-  "goodMorning": "Good morning,",
-  "goodAfternoon": "Good afternoon,",
-  "goodEvening": "Good evening,",
+  "goodMorning": "Good morning, {{name}}",
+  "goodAfternoon": "Good afternoon, {{name}}",
+  "goodEvening": "Good evening, {{name}}",
   "thisWeek": "This week",
   "tasksDoneLabel": "Tasks done",
   "capturesLabel": "Captures",
   "logsLabel": "Logs",
   "trackedLabel": "Tracked",
-  "recentCaptures": "Recent captures",
+  "recentCaptures": "Recent Captures",
   "activeTasks": "Active tasks",
   "viewAll": "All",
-  "noCaptures": "No captures yet",
+  "noCaptures": "No Captures yet",
   "noTasks": "No active tasks"
 }

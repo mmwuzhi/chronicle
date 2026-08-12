@@ -8,7 +8,7 @@
     "disconnect": "Disconnect",
     "disconnectConfirm": "Disconnect {{provider}}?",
     "disconnectDescription": "You will no longer be able to sign in with this {{provider}} account.",
-    "cannotDisconnect": "Set a password first before disconnecting your only login method.",
+    "cannotDisconnect": "Set a password before disconnecting your only login method.",
     "linkSuccess": "{{provider}} account linked successfully.",
     "linkError": "This account is already linked to another user."
   },
@@ -19,7 +19,7 @@
     "verifyResend": "Resend",
     "verifySending": "Sending…",
     "verifySent": "Sent!",
-    "verifyFailed": "Failed — try again"
+    "verifyFailed": "Couldn't send. Try again."
   },
   "password": {
     "label": "Password",
@@ -70,7 +70,7 @@
     "title": "Integrations",
     "webhooks": {
       "title": "Webhooks",
-      "description": "When a capture matches a rule (keyword or semantic), POST a templated payload to an external URL.",
+      "description": "When a Capture matches a rule (keyword or semantic), POST a templated payload to an external URL.",
       "empty": "No webhooks yet.",
       "addTitle": "New webhook",
       "name": "Name",
@@ -83,14 +83,14 @@
       "disable": "Disable"
     },
     "captureTokens": {
-      "title": "Quick capture tokens",
-      "description": "Long-lived tokens for headless quick capture, like the iOS Action Button shortcut. A token can only create captures — it can't read, edit, or delete anything.",
+      "title": "Quick Capture tokens",
+      "description": "Long-lived tokens for headless Quick Capture, like the iOS Action Button shortcut. A token can only create Captures. It can't read, edit, or delete anything.",
       "empty": "No tokens yet.",
       "addTitle": "New token",
       "namePlaceholder": "Name, e.g. iPhone Action Button",
       "generate": "Generate token",
-      "revealTitle": "Copy this token now — it won't be shown again.",
-      "revealHint": "Use it in your iOS Shortcut's Authorization header as: Bearer <token>",
+      "revealTitle": "Copy this token now. It won't be shown again.",
+      "revealHint": "Set the iOS Shortcut's Authorization header to: Bearer <token>",
       "docHint": "See the iOS Shortcut setup guide in the docs.",
       "copy": "Copy",
       "copied": "Copied",
@@ -124,7 +124,7 @@
     "shares": {
       "title": "Shared copies",
       "description": "Review and revoke the read-only Capture copies you have shared.",
-      "empty": "No Capture copies are shared.",
+      "empty": "You haven't shared any Capture copies.",
       "expires": "Expires {{time}}",
       "expired": "Expired",
       "noExpiry": "No expiration",
@@ -157,7 +157,7 @@
     "markdown": {
       "title": "Import Markdown & text",
       "description": "Add one Capture per file. YAML frontmatter can restore titles, dates, tags, aliases, source URLs, and todo state.",
-      "formatHint": "Use UTF-8 .md, .markdown, or .txt (1 MiB per note), or a ZIP of up to 5,000 notes and 32 MiB. Folders only resolve links.",
+      "formatHint": "Use UTF-8 files (.md/.markdown/.txt, up to 1 MiB each), or a ZIP of up to 5,000 notes and 32 MiB. Folders only resolve links.",
       "import": "Import files",
       "importing": "Reading and importing…",
       "importConfirm": "Import these files as new Captures? This is additive and will not update existing Captures.",

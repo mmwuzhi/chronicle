@@ -5,12 +5,14 @@ interface CollapsibleMarkdownProps {
   children: string;
   showMoreLabel: string;
   tone?: "surface" | "accent";
+  onTaskChange?: (markdown: string) => Promise<unknown>;
 }
 
 export function CollapsibleMarkdown({
   children,
   showMoreLabel,
   tone = "surface",
+  onTaskChange,
 }: CollapsibleMarkdownProps): React.JSX.Element {
   const clipRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -39,7 +41,7 @@ export function CollapsibleMarkdown({
     <div className="ch-collapsible-markdown" data-tone={tone}>
       <div ref={clipRef} className="max-h-40 overflow-hidden">
         <div ref={contentRef}>
-          <Markdown>{children}</Markdown>
+          <Markdown onTaskChange={onTaskChange}>{children}</Markdown>
         </div>
       </div>
       {canExpand && (

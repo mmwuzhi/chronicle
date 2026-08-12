@@ -57,6 +57,11 @@
   "longContent": {
     "showMore": "展开"
   },
+  "tasks": {
+    "markComplete": "标记为完成",
+    "markIncomplete": "恢复为未完成",
+    "completedOn": "完成日期"
+  },
   "showScheduled": "显示已安排提醒",
   "scheduledHint": "设有未来提醒的 Capture 在到期前会被隐藏。显示它们以编辑或清除提醒。",
   "context": {
@@ -82,7 +87,7 @@
     "clear": "取消提醒",
     "cancel": "取消",
     "keepVisible": "保持可见",
-    "keepVisibleHint": "仅通知——保持在浏览列表中，不到点前隐藏"
+    "keepVisibleHint": "仅通知。提醒前仍在列表中显示。"
   },
   "related": {
     "title": "关联",
@@ -95,7 +100,7 @@
     "unlink": "解除关联",
     "notRelated": "不相关",
     "searchLabel": "搜索要关联的 Capture",
-    "searchPlaceholder": "搜索你的 Capture…",
+    "searchPlaceholder": "搜索 Capture…",
     "searching": "搜索中…",
     "searchFailed": "无法加载搜索结果。",
     "noSearchResults": "没有找到尚未关联的 Capture。",
@@ -105,7 +110,7 @@
   "trash": {
     "link": "回收站",
     "title": "回收站",
-    "subtitle": "已删除的 Capture。需要的话可以恢复。",
+    "subtitle": "删除的 Capture 会保留在这里，需要时可以恢复。",
     "empty": "回收站是空的。",
     "restore": "恢复",
     "deletePermanently": "彻底删除",
@@ -123,6 +128,6 @@
     "subtitle": "重温你之前记下的内容。",
     "onThisDay": "历史上的今天",
     "rediscover": "重新发现",
-    "empty": "还没有可回顾的内容，随着时间推移，较早的 Capture 会出现在这里。"
+    "empty": "暂时没有可回顾的内容。较早的 Capture 之后会出现在这里。"
   }
 }
