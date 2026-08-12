@@ -384,6 +384,23 @@ struct SelectableRowText: NSViewRepresentable {
 
 // MARK: - Capture row
 
+enum CaptureEditorLayout {
+    static let minimumHeight: CGFloat = 22
+    static let maximumHeight: CGFloat = 160
+
+    static func estimatedHeight(for text: String) -> CGFloat {
+        let lineCount = max(
+            text.split(separator: "\n", omittingEmptySubsequences: false).count,
+            1
+        )
+        return clamped(CGFloat(lineCount) * minimumHeight)
+    }
+
+    static func clamped(_ height: CGFloat) -> CGFloat {
+        min(max(height, minimumHeight), maximumHeight)
+    }
+}
+
 /// One capture/hit row: content, timestamp, stable shared actions, and
 /// double-click-to-edit (when an edit path is provided). Content owns the full
 /// row width; metadata and overflow actions share the quiet footer line.
@@ -417,7 +434,55 @@ struct CaptureRow: View {
     @State private var fallbackEditing = false
     @State private var fallbackText = ""
     @State private var draftFocused = false
-    @State private var editorHeight: CGFloat = 22
+    @State private var editorHeight: CGFloat
+
+    init(
+        item: RowItem,
+        onDelete: (() -> Void)? = nil,
+        onEdit: ((String) -> Void)? = nil,
+        onOpen: (() -> Void)? = nil,
+        onUnlink: (() -> Void)? = nil,
+        onDismiss: (() -> Void)? = nil,
+        dismissTitle: String? = nil,
+        dismissSystemImage: String = "eye.slash",
+        onPin: (() -> Void)? = nil,
+        isPinned: Bool = false,
+        isEditing: Bool = false,
+        draftText: String = "",
+        showsUnsavedPrompt: Bool = false,
+        onBeginEdit: (() -> Void)? = nil,
+        onDraftChange: ((String) -> Void)? = nil,
+        onCommitEdit: (() -> Void)? = nil,
+        onCancelEdit: (() -> Void)? = nil,
+        onSaveAndContinue: (() -> Void)? = nil,
+        onDiscardAndContinue: (() -> Void)? = nil,
+        onKeepEditing: (() -> Void)? = nil,
+    ) {
+        self.item = item
+        self.onDelete = onDelete
+        self.onEdit = onEdit
+        self.onOpen = onOpen
+        self.onUnlink = onUnlink
+        self.onDismiss = onDismiss
+        self.dismissTitle = dismissTitle
+        self.dismissSystemImage = dismissSystemImage
+        self.onPin = onPin
+        self.isPinned = isPinned
+        self.isEditing = isEditing
+        self.draftText = draftText
+        self.showsUnsavedPrompt = showsUnsavedPrompt
+        self.onBeginEdit = onBeginEdit
+        self.onDraftChange = onDraftChange
+        self.onCommitEdit = onCommitEdit
+        self.onCancelEdit = onCancelEdit
+        self.onSaveAndContinue = onSaveAndContinue
+        self.onDiscardAndContinue = onDiscardAndContinue
+        self.onKeepEditing = onKeepEditing
+        let initialText = isEditing ? draftText : (item.editableRawText ?? item.displayText)
+        _editorHeight = State(
+            initialValue: CaptureEditorLayout.estimatedHeight(for: initialText)
+        )
+    }
 
     private var rowIsEditing: Bool {
         isEditing || fallbackEditing
@@ -548,7 +613,7 @@ struct CaptureRow: View {
                 submitsOnEnter: false,
                 onSubmit: { commitDraft() },
                 onCancel: { cancelDraft() },
-                onHeight: { h in editorHeight = min(max(h, 22), 160) },
+                onHeight: { h in editorHeight = CaptureEditorLayout.clamped(h) },
                 fontSize: NSFont.preferredFont(forTextStyle: .body).pointSize,
             )
             .frame(height: editorHeight)
@@ -629,6 +694,7 @@ struct CaptureRow: View {
         }
         guard let editableRawText = item.editableRawText else { return }
         fallbackText = editableRawText
+        editorHeight = CaptureEditorLayout.estimatedHeight(for: editableRawText)
         fallbackEditing = true
     }
 
