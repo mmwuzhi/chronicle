@@ -1,7 +1,7 @@
 {
-  "goodMorning": "おはようございます、",
-  "goodAfternoon": "こんにちは、",
-  "goodEvening": "こんばんは、",
+  "goodMorning": "{{name}}さん、おはようございます",
+  "goodAfternoon": "{{name}}さん、こんにちは",
+  "goodEvening": "{{name}}さん、こんばんは",
   "thisWeek": "今週",
   "tasksDoneLabel": "完了タスク",
   "capturesLabel": "Capture",

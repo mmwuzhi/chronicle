@@ -39,6 +39,19 @@ describe("fmtPreciseDateTime", () => {
 });
 
 describe("timeAgo", () => {
+  it.each([
+    ["en", "now"],
+    ["ja", "たった今"],
+    ["zh", "刚刚"],
+  ])("uses a native now label for %s", (locale, expected) => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-06-03T09:00:30.000Z"));
+
+    expect(timeAgo("2026-06-03T09:00:00.000Z", locale)).toBe(expected);
+
+    vi.useRealTimers();
+  });
+
   it("uses relative time for minutes", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-06-03T09:00:00.000Z"));

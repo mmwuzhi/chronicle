@@ -1,13 +1,13 @@
 {
   "title": "Captures",
-  "subtitle": "Dump a thought now, find it later.",
+  "subtitle": "Capture it now. Find it later.",
   "placeholder": "What's on your mind?",
   "tabs": {
     "all": "All",
     "todo": "Todo"
   },
   "nothingHere": "Nothing here yet.",
-  "failedToLoad": "Failed to load captures",
+  "failedToLoad": "Failed to load Captures",
   "attach": "Attach",
   "record": "Record",
   "recording": "Recording…",
@@ -57,6 +57,11 @@
   "longContent": {
     "showMore": "Show more"
   },
+  "tasks": {
+    "markComplete": "Mark complete",
+    "markIncomplete": "Mark incomplete",
+    "completedOn": "Completed on"
+  },
   "showScheduled": "Show scheduled",
   "scheduledHint": "Captures with a future reminder are hidden until due. Show them to edit or clear the reminder.",
   "context": {
@@ -65,16 +70,16 @@
     "open": "View nearby Captures",
     "earlier": "Earlier",
     "later": "Later",
-    "failedToLoad": "Failed to load capture context"
+    "failedToLoad": "Failed to load nearby Captures"
   },
   "transcript": {
     "label": "AI transcript",
     "processing": "Transcribing in the background…",
     "failed": "Transcription failed.",
     "retry": "Retry",
-    "append": "Append to capture",
-    "replace": "Replace capture text",
-    "useAsText": "Use as capture text"
+    "append": "Append to Capture",
+    "replace": "Replace Capture text",
+    "useAsText": "Use as Capture text"
   },
   "remind": {
     "set": "Remind",
@@ -82,7 +87,7 @@
     "clear": "Clear",
     "cancel": "Cancel",
     "keepVisible": "Keep visible",
-    "keepVisibleHint": "Notify only — stays in browse instead of hiding until due"
+    "keepVisibleHint": "Notify only. Keep this Capture visible until it's due."
   },
   "related": {
     "title": "Connections",
@@ -105,13 +110,13 @@
   "trash": {
     "link": "Trash",
     "title": "Trash",
-    "subtitle": "Deleted captures. Restore anything you still need.",
+    "subtitle": "Deleted Captures. Restore anything you still need.",
     "empty": "Trash is empty.",
     "restore": "Restore",
     "deletePermanently": "Delete permanently",
-    "deletePermanentlyConfirm": "Permanently delete this capture? This can't be undone.",
+    "deletePermanentlyConfirm": "Permanently delete this Capture? This can't be undone.",
     "emptyAll": "Empty trash",
-    "emptyConfirm": "Permanently delete all captures in the trash? This can't be undone.",
+    "emptyConfirm": "Permanently delete all Captures in Trash? This can't be undone.",
     "deletedAt": "Deleted {{time}}",
     "failedToLoad": "Failed to load trash"
   },
@@ -123,6 +128,6 @@
     "subtitle": "Revisit what you captured before.",
     "onThisDay": "On this day",
     "rediscover": "Rediscover",
-    "empty": "Nothing to revisit yet — your older captures will surface here over time."
+    "empty": "Nothing to revisit yet. Older Captures will appear here over time."
   }
 }

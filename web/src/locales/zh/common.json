@@ -10,11 +10,11 @@
   },
   "ask": {
     "title": "提问",
-    "subtitle": "用自然语言问你记下的东西，答案只依据你的 Capture。",
+    "subtitle": "用自然语言询问记录过的内容，回答只依据保存的 Capture。",
     "placeholder": "比如：这周吃饭花了多少？最近为什么这么累？",
     "button": "提问",
     "thinking": "思考中…",
-    "sources": "依据的 Capture",
+    "sources": "回答依据",
     "noData": "还没有可供分析的 Capture，先记几条吧。",
     "unavailable": "提问服务暂不可用，请稍后再试。"
   },
@@ -52,18 +52,18 @@
     "noResults": "无结果",
     "typeToSearch": "输入搜索内容…",
     "matchedTranscript": "命中转写",
-    "openInContext": "在上下文中打开",
+    "openInContext": "查看前后记录",
     "keywordFallback": "语义检索暂不可用，已用关键词搜索",
-    "notRelevant": "与这次搜索无关",
-    "restoreResult": "恢复结果",
+    "notRelevant": "与本次搜索无关",
+    "restoreResult": "恢复到搜索结果",
     "showDismissed": "显示已隐藏的 {{count}} 条",
-    "hideDismissed": "隐藏已排除结果"
+    "hideDismissed": "隐藏已排除的结果"
   },
   "confirm": {
     "cannotUndo": "此操作无法撤销。",
     "deleteCapture": "删除 Capture？",
     "discardChanges": "放弃未保存的更改？",
-    "discardChangesDescription": "刚才的编辑将会丢失。",
+    "discardChangesDescription": "未保存的编辑将会丢失。",
     "discard": "放弃更改",
     "keepEditing": "继续编辑"
   }

@@ -10,13 +10,13 @@
   },
   "ask": {
     "title": "質問",
-    "subtitle": "記録した内容に自然な言葉で質問できます。回答はあなたのCaptureだけに基づきます。",
+    "subtitle": "記録したCaptureについて、自然な言葉で質問できます。回答には保存した内容だけを使います。",
     "placeholder": "例：今週は食事にいくら使った？最近なぜこんなに疲れている？",
     "button": "質問する",
     "thinking": "考え中…",
-    "sources": "根拠にしたCapture",
-    "noData": "分析できるCaptureがまだありません。まず記録してみましょう。",
-    "unavailable": "現在質問機能を利用できません。しばらくしてから再試行してください。"
+    "sources": "回答の根拠",
+    "noData": "質問に使えるCaptureがまだありません。いくつか記録してみましょう。",
+    "unavailable": "質問機能は現在利用できません。しばらくしてからもう一度お試しください。"
   },
   "actions": {
     "save": "保存",
@@ -52,10 +52,10 @@
     "noResults": "結果なし",
     "typeToSearch": "検索キーワードを入力…",
     "matchedTranscript": "文字起こしに一致",
-    "openInContext": "文脈で開く",
+    "openInContext": "前後の記録を表示",
     "keywordFallback": "セマンティック検索が利用できないため、キーワード検索を使用しています",
-    "notRelevant": "この検索には関連しない",
-    "restoreResult": "結果を戻す",
+    "notRelevant": "この検索に関連しない",
+    "restoreResult": "検索結果に戻す",
     "showDismissed": "非表示の {{count}} 件を表示",
     "hideDismissed": "除外した結果を隠す"
   },

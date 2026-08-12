@@ -1,15 +1,15 @@
 {
-  "goodMorning": "早上好，",
-  "goodAfternoon": "下午好，",
-  "goodEvening": "晚上好，",
+  "goodMorning": "{{name}}，早上好",
+  "goodAfternoon": "{{name}}，下午好",
+  "goodEvening": "{{name}}，晚上好",
   "thisWeek": "本周",
-  "tasksDoneLabel": "任务完成",
+  "tasksDoneLabel": "已完成任务",
   "capturesLabel": "Capture",
   "logsLabel": "日志",
   "trackedLabel": "已追踪",
   "recentCaptures": "最近的 Capture",
-  "activeTasks": "进行中的任务",
+  "activeTasks": "进行中任务",
   "viewAll": "全部",
   "noCaptures": "暂无 Capture",
-  "noTasks": "没有进行中的任务"
+  "noTasks": "暂无进行中任务"
 }

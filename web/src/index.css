@@ -159,6 +159,38 @@ body {
 
 .ch-prose li > input[type="checkbox"] {
   margin-right: 6px;
+  cursor: pointer;
+  accent-color: var(--accent);
+}
+
+.ch-prose li > input[type="checkbox"]:disabled {
+  cursor: wait;
+}
+
+.ch-prose .ch-task-completed-on {
+  width: 8.2rem;
+  margin-left: 8px;
+  padding: 1px 4px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.5;
+  vertical-align: 1px;
+}
+
+.ch-prose .ch-task-completed-on:hover,
+.ch-prose .ch-task-completed-on:focus-visible {
+  border-color: var(--border);
+  background: var(--bg-tint);
+  color: var(--text);
+  outline: none;
+}
+
+.ch-prose .ch-task-completed-on:focus-visible {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 20%, transparent);
 }
 
 .ch-prose code {

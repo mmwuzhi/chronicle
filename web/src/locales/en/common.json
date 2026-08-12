@@ -10,12 +10,12 @@
   },
   "ask": {
     "title": "Ask",
-    "subtitle": "Ask your captures in plain language. Answers are grounded only in what you saved.",
+    "subtitle": "Ask about your Captures in plain language. Answers use only what you saved.",
     "placeholder": "e.g. How much did I spend on food this week? Why have I been so tired lately?",
     "button": "Ask",
     "thinking": "Thinking…",
     "sources": "Grounded in",
-    "noData": "No captures to analyze yet. Save a few first.",
+    "noData": "No Captures to analyze yet. Save a few first.",
     "unavailable": "Ask is unavailable right now. Please try again later."
   },
   "actions": {
@@ -48,7 +48,7 @@
   "search": {
     "placeholder": "Search…",
     "captures": "Captures",
-    "recentCaptures": "Recent captures",
+    "recentCaptures": "Recent Captures",
     "noResults": "No results",
     "typeToSearch": "Type to search…",
     "matchedTranscript": "Matched transcript",
@@ -61,7 +61,7 @@
   },
   "confirm": {
     "cannotUndo": "This cannot be undone.",
-    "deleteCapture": "Delete capture?",
+    "deleteCapture": "Delete Capture?",
     "discardChanges": "Discard unsaved changes?",
     "discardChangesDescription": "Your edits will be lost.",
     "discard": "Discard changes",
