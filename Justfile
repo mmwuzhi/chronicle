@@ -19,7 +19,9 @@ setup: docker-check
     @test -f .env || cp .env.example .env
     docker compose up -d postgres
     sleep 3
-    cd {{ api_dir }} && goose -dir db/migrations postgres "$DATABASE_URL" up
+    # just loads dotenv before this recipe can create .env on a first run, so
+    # source the newly created file in the migration shell explicitly.
+    cd {{ api_dir }} && set -a && . ../.env && set +a && goose -dir db/migrations postgres "$DATABASE_URL" up
 
 # start full stack (docker compose watch)
 dev: docker-check
