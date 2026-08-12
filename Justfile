@@ -20,8 +20,8 @@ setup: docker-check
     docker compose up -d postgres
     sleep 3
     # just loads dotenv before this recipe can create .env on a first run, so
-    # source the newly created file in the migration shell explicitly.
-    cd {{ api_dir }} && set -a && . ../.env && set +a && goose -dir db/migrations postgres "$DATABASE_URL" up
+    # start a new process that parses the generated file as dotenv data.
+    just migrate
 
 # start full stack (docker compose watch)
 dev: docker-check
@@ -72,6 +72,10 @@ orval:
 # run all Go tests (serial)
 test:
     cd {{ api_dir }} && go test -p 1 ./...
+
+# verify first-run setup treats generated dotenv values as data
+setup-env-test:
+    bash scripts/setup-env-test.sh
 
 # vet + staticcheck the API
 lint:
