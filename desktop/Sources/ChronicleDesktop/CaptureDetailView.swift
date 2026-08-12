@@ -413,6 +413,9 @@ struct CaptureDetailView: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
+                    // Text selection installs an AppKit gesture layer that wins
+                    // over CaptureRow's double-click editor. The toolbar keeps a
+                    // full-text Copy action without intercepting that gesture.
                     CaptureRow(
                         item: model.capture,
                         onEdit: { _ in },
@@ -423,7 +426,6 @@ struct CaptureDetailView: View {
                         onCommitEdit: model.commitEditing,
                         onCancelEdit: model.cancelEditing
                     )
-                    .textSelection(.enabled)
 
                     if model.editDraft == nil, !model.capture.attachments.isEmpty {
                         attachmentSection
