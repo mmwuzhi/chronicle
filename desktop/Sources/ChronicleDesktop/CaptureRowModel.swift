@@ -63,6 +63,10 @@ final class CaptureClients {
     // was changed; false means the row isn't cached locally (a signed-in,
     // server-only browse fragment) and must be edited directly against the server.
     let localSetText: (String, String) -> Bool
+    // Read the current locally cached raw text without conflating a missing row
+    // with a database failure. Task controls use it to rebase a one-line change
+    // instead of replacing the document from a stale UI snapshot.
+    let localTaskSource: (String) -> Result<LocalTaskSource?, Error>
     // Push offline/optimistic edits (dirty rows) to the server now, if a session is
     // live. No-op when signed out — the edits stay queued and replay on sign-in.
     let syncEdits: () async -> Void
@@ -92,6 +96,7 @@ final class CaptureClients {
         localRecent: @escaping (Int) -> [RowItem],
         localDelete: @escaping (String) -> Void,
         localSetText: @escaping (String, String) -> Bool = { _, _ in false },
+        localTaskSource: @escaping (String) -> Result<LocalTaskSource?, Error> = { _ in .success(nil) },
         syncEdits: @escaping () async -> Void = {}
     ) {
         self.session = session
@@ -112,6 +117,7 @@ final class CaptureClients {
         self.localRecent = localRecent
         self.localDelete = localDelete
         self.localSetText = localSetText
+        self.localTaskSource = localTaskSource
         self.syncEdits = syncEdits
     }
 }
@@ -119,6 +125,18 @@ final class CaptureClients {
 enum CaptureClientError: Error {
     case creationUnavailable
     case requiresSignIn
+}
+
+enum MarkdownTaskMutationError: Error {
+    case sourceUnavailable
+}
+
+struct LocalTaskSource: Equatable {
+    let rawText: String
+    // Unsynced or dirty local rows are newer than the server and must not be
+    // refreshed before applying a task change. A clean server-backed cache row
+    // can be refreshed first to pick up edits made on another device.
+    let isAuthoritative: Bool
 }
 
 enum QuickCaptureSaveResult: Equatable {

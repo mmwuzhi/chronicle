@@ -224,4 +224,41 @@ struct CaptureRowModelTests {
         #expect(model.capture.displayText == "After")
         #expect(model.editDraft == nil)
     }
+
+    @Test("detail task controls persist completion metadata in local Capture text")
+    func detailTaskControlSavesLocalCapture() async throws {
+        let current = "#todo\n- [x] Task A ✅ 2026-08-12\n- [ ] Task B"
+        var saved: (String, String)?
+        let clients = CaptureClients(
+            recall: { nil },
+            webhook: { nil },
+            openSignIn: {},
+            localSearch: { _ in [] },
+            localRecent: { _ in [] },
+            localDelete: { _ in },
+            localSetText: { id, text in
+                saved = (id, text)
+                return true
+            },
+            localTaskSource: { _ in .success(LocalTaskSource(
+                rawText: current,
+                isAuthoritative: true
+            )) }
+        )
+        let storeURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("chronicle-detail-task-\(UUID().uuidString).sqlite")
+        let record = try LocalCaptureStore(fileURL: storeURL, scope: .testing)
+            .create(CapturePayload(rawText: "#todo\n- [ ] Task A\n- [ ] Task B"))
+        let model = CaptureDetailModel(capture: RowItem(record), clients: clients)
+
+        model.setMarkdownTask(lineIndex: 2, completedOn: "2026-08-13")
+        while model.loadingEdit {
+            await Task.yield()
+        }
+
+        #expect(saved?.0 == record.id)
+        #expect(saved?.1 == "#todo\n- [x] Task A ✅ 2026-08-12\n- [x] Task B ✅ 2026-08-13")
+        #expect(model.capture.editableRawText == saved?.1)
+        #expect(model.markdownTaskText == saved?.1)
+    }
 }

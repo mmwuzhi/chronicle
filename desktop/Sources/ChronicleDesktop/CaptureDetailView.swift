@@ -36,6 +36,94 @@ final class CaptureDetailModel: ObservableObject {
     var isPinned: Bool { clients.isPinned(capture.id) }
     func togglePin() { clients.togglePin(capture) }
 
+    var markdownTaskText: String? {
+        guard capture.modality == "text", let rawText = capture.editableRawText,
+              capture.content == rawText
+        else { return nil }
+        return rawText
+    }
+
+    func setMarkdownTask(lineIndex: Int, completedOn: String?) {
+        guard !loadingEdit, editDraft == nil,
+              let displayedRawText = capture.editableRawText, capture.modality == "text",
+              capture.content == displayedRawText
+        else { return }
+
+        let id = capture.id
+        loadingEdit = true
+        let generation = clients.session.snapshot()
+        editTask?.cancel()
+        editTask = Task { @MainActor in
+            defer { loadingEdit = false }
+            do {
+                let initialLocal = try clients.localTaskSource(id).get()
+                let client = clients.recall()
+                var currentRawText: String
+                var writesLocally: Bool
+
+                if let initialLocal, initialLocal.isAuthoritative || client == nil {
+                    currentRawText = initialLocal.rawText
+                    writesLocally = true
+                } else {
+                    guard let client else {
+                        throw MarkdownTaskMutationError.sourceUnavailable
+                    }
+                    let current = try await client.capture(id: id)
+                    guard !Task.isCancelled, clients.session.isCurrent(generation),
+                          capture.id == id, current.mediaType == "text",
+                          let remoteRawText = current.rawText
+                    else { return }
+                    let latestLocal = try clients.localTaskSource(id).get()
+                    if let latestLocal, latestLocal.isAuthoritative {
+                        currentRawText = latestLocal.rawText
+                        writesLocally = true
+                    } else {
+                        currentRawText = remoteRawText
+                        writesLocally = initialLocal != nil
+                    }
+                }
+
+                guard let next = MarkdownTaskDocument.settingCompletion(
+                    in: currentRawText,
+                    matchingTaskIn: displayedRawText,
+                    lineIndex: lineIndex,
+                    completedOn: completedOn
+                ) else {
+                    capture = capture.replacingRawText(currentRawText)
+                    error = L("We couldn't update this task. Try again.")
+                    return
+                }
+                guard next != currentRawText else { return }
+
+                if writesLocally {
+                    guard clients.localSetText(id, next) else {
+                        throw MarkdownTaskMutationError.sourceUnavailable
+                    }
+                    capture = capture.replacingRawText(next)
+                    error = ""
+                    CaptureEvents.postChanged()
+                    await clients.syncEdits()
+                    return
+                }
+
+                guard let client else {
+                    error = L("Not signed in — sign in from Settings to edit.")
+                    return
+                }
+                let updated = try await client.update(id: id, rawText: next)
+                guard !Task.isCancelled, clients.session.isCurrent(generation),
+                      capture.id == id else { return }
+                capture = RowItem(updated)
+                error = ""
+                CaptureEvents.postChanged()
+            } catch let taskError {
+                guard !Task.isCancelled, clients.session.isCurrent(generation),
+                      capture.id == id else { return }
+                error = describeCaptureError(taskError)
+            }
+        }
+    }
+
     func beginEditing() {
         guard editDraft == nil, !loadingEdit else { return }
         if let draft = CaptureEditDraft(item: capture) {
@@ -217,6 +305,20 @@ final class CaptureDetailModel: ObservableObject {
     // The id guard drops a write whose capture the user has since navigated past.
     private func loadLinksAndRelated(for id: String, generation: UInt64) async {
         guard let client = clients.recall() else { return }
+        if capture.editableRawText == nil {
+            do {
+                let fullCapture = try await client.capture(id: id)
+                guard !Task.isCancelled, clients.session.isCurrent(generation),
+                      id == capture.id else { return }
+                capture = RowItem(fullCapture)
+            } catch {
+                guard !Task.isCancelled, clients.session.isCurrent(generation),
+                      id == capture.id else { return }
+                if case CaptureAPIError.httpStatus(401) = error {
+                    self.error = L("Session expired — sign in again from Settings.")
+                }
+            }
+        }
         do {
             let attachments = try await client.attachments(id: id)
             guard !Task.isCancelled, clients.session.isCurrent(generation),
@@ -424,7 +526,10 @@ struct CaptureDetailView: View {
                         onBeginEdit: model.beginEditing,
                         onDraftChange: model.updateEditDraft,
                         onCommitEdit: model.commitEditing,
-                        onCancelEdit: model.cancelEditing
+                        onCancelEdit: model.cancelEditing,
+                        markdownTaskBusy: model.loadingEdit,
+                        markdownTaskText: model.markdownTaskText,
+                        onMarkdownTaskChange: model.setMarkdownTask
                     )
 
                     if model.editDraft == nil, !model.capture.attachments.isEmpty {

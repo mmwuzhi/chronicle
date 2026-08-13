@@ -430,6 +430,9 @@ struct CaptureRow: View {
     var onSaveAndContinue: (() -> Void)?
     var onDiscardAndContinue: (() -> Void)?
     var onKeepEditing: (() -> Void)?
+    var markdownTaskBusy: Bool
+    var markdownTaskText: String?
+    var onMarkdownTaskChange: ((Int, String?) -> Void)?
 
     @State private var fallbackEditing = false
     @State private var fallbackText = ""
@@ -457,6 +460,9 @@ struct CaptureRow: View {
         onSaveAndContinue: (() -> Void)? = nil,
         onDiscardAndContinue: (() -> Void)? = nil,
         onKeepEditing: (() -> Void)? = nil,
+        markdownTaskBusy: Bool = false,
+        markdownTaskText: String? = nil,
+        onMarkdownTaskChange: ((Int, String?) -> Void)? = nil,
     ) {
         self.item = item
         self.onDelete = onDelete
@@ -478,6 +484,9 @@ struct CaptureRow: View {
         self.onSaveAndContinue = onSaveAndContinue
         self.onDiscardAndContinue = onDiscardAndContinue
         self.onKeepEditing = onKeepEditing
+        self.markdownTaskBusy = markdownTaskBusy
+        self.markdownTaskText = markdownTaskText
+        self.onMarkdownTaskChange = onMarkdownTaskChange
         let initialText = isEditing ? draftText : (item.editableRawText ?? item.displayText)
         _editorHeight = State(
             initialValue: CaptureEditorLayout.estimatedHeight(for: initialText)
@@ -581,6 +590,17 @@ struct CaptureRow: View {
         if item.displayText.isEmpty {
             Text(L("(media capture)"))
                 .foregroundStyle(.secondary)
+        } else if let markdownTaskText,
+                  !MarkdownTaskDocument.tasks(in: markdownTaskText).isEmpty,
+                  let onMarkdownTaskChange
+        {
+            MarkdownTaskContentView(
+                markdown: markdownTaskText,
+                surface: .detail,
+                taskBusy: markdownTaskBusy,
+                hidesTodoTag: item.todoState != nil,
+                onTaskChange: onMarkdownTaskChange
+            )
         } else {
             Text(item.displayText)
                 .frame(maxWidth: .infinity, alignment: .leading)

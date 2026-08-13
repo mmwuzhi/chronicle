@@ -50,7 +50,9 @@ Every capture can open in its own independent window; several stay open side by
 side, and opening a capture that is already on screen just focuses its window.
 Entry points: **Open** in a row's overflow, double-clicking a desktop sticky, and
 tapping a reminder notification. The detail window shows the capture together
-with its linked and related captures.
+with its linked and related captures. Markdown task checkboxes can be completed
+in place; Chronicle records the local completion date in the Capture text and
+keeps that date editable.
 
 ## Desktop stickies
 
@@ -59,7 +61,8 @@ always-on-top glass note that stays on the Space where it was created and
 restores across launches. Drag the top bar to move; drag the bottom edge to
 resize (height only — width is fixed). The ✕ (or Esc) unpins, copy sits in the
 header, and a double-click anywhere opens the detail window. Body text renders
-inline markdown and supports click-drag selection.
+inline markdown and supports click-drag selection. Markdown task checkboxes and
+their completion dates are editable directly on the sticky.
 
 ## Reminders
 

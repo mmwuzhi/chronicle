@@ -25,6 +25,10 @@ struct PinnedStickyView: View {
     let mediaType: String
     let mediaUrl: String?
     let todoState: CaptureTodoState?
+    let taskMarkdown: String?
+    let taskBusy: Bool
+    let taskError: String?
+    let onTaskChange: (Int, String?) -> Void
     let onUnpin: () -> Void
     let onOpen: () -> Void
     let onCopy: () -> Void
@@ -60,13 +64,33 @@ struct PinnedStickyView: View {
                         TodoFacetChip(state: todoState)
                     }
                     if !visibleContent.isEmpty {
-                        StickySelectableText(
-                            markdown: visibleContent,
-                            onDoubleClick: onOpen,
-                            onCancel: onUnpin
-                        )
+                        if let taskMarkdown,
+                           !MarkdownTaskDocument.tasks(in: taskMarkdown).isEmpty
+                        {
+                            MarkdownTaskContentView(
+                                markdown: taskMarkdown,
+                                surface: .sticky(
+                                    onDoubleClick: onOpen,
+                                    onCancel: onUnpin
+                                ),
+                                taskBusy: taskBusy,
+                                hidesTodoTag: todoState != nil,
+                                onTaskChange: onTaskChange
+                            )
+                        } else {
+                            StickySelectableText(
+                                markdown: visibleContent,
+                                onDoubleClick: onOpen,
+                                onCancel: onUnpin
+                            )
+                        }
                     } else if thumbURL == nil {
                         Text(L("(media capture)")).foregroundStyle(.secondary)
+                    }
+                    if let taskError {
+                        Text(taskError)
+                            .font(.caption)
+                            .foregroundStyle(.red)
                     }
                     if let thumbURL { StickyThumbnail(url: thumbURL) }
                 }
@@ -157,13 +181,159 @@ func renderedMarkdown(_ md: String) -> AttributedString {
     return (try? AttributedString(markdown: bulletized, options: opts)) ?? AttributedString(md)
 }
 
+// MARK: - Interactive Markdown tasks
+
+enum MarkdownTaskSurface {
+    case detail
+    case sticky(onDoubleClick: () -> Void, onCancel: () -> Void)
+}
+
+/// Shared task-list rendering for the detail window and pinned desktop stickies.
+/// Non-task text keeps each surface's established rendering behavior; real Markdown
+/// task lines gain a native checkbox and an editable completion date.
+struct MarkdownTaskContentView: View {
+    @ObservedObject private var localization = DesktopLocalization.shared
+    let markdown: String
+    let surface: MarkdownTaskSurface
+    let taskBusy: Bool
+    let hidesTodoTag: Bool
+    let onTaskChange: (Int, String?) -> Void
+
+    init(
+        markdown: String,
+        surface: MarkdownTaskSurface,
+        taskBusy: Bool,
+        hidesTodoTag: Bool = false,
+        onTaskChange: @escaping (Int, String?) -> Void
+    ) {
+        self.markdown = markdown
+        self.surface = surface
+        self.taskBusy = taskBusy
+        self.hidesTodoTag = hidesTodoTag
+        self.onTaskChange = onTaskChange
+    }
+
+    private var blocks: [MarkdownTaskBlock] {
+        MarkdownTaskDocument.blocks(in: markdown)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            ForEach(blocks) { block in
+                switch block {
+                case .text(_, let text):
+                    textBlock(text)
+                case .task(let task):
+                    taskBlock(task)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private func textBlock(_ text: String) -> some View {
+        let visible = hidesTodoTag
+            ? CaptureTodoTag.displayTextPreservingLines(from: text)
+            : text
+        if !visible.isEmpty {
+            switch surface {
+            case .detail:
+                Text(renderedMarkdown(visible))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            case .sticky(let onDoubleClick, let onCancel):
+                StickySelectableText(
+                    markdown: visible,
+                    onDoubleClick: onDoubleClick,
+                    onCancel: onCancel
+                )
+            }
+        }
+    }
+
+    private func taskBlock(_ task: MarkdownTask) -> some View {
+        HStack(alignment: .top, spacing: 7) {
+            Toggle(
+                isOn: Binding(
+                    get: { task.isCompleted },
+                    set: { checked in
+                        onTaskChange(
+                            task.lineIndex,
+                            checked ? MarkdownTaskDocument.localDateString() : nil
+                        )
+                    }
+                )
+            ) {
+                EmptyView()
+            }
+            .labelsHidden()
+            .toggleStyle(.checkbox)
+            .disabled(taskBusy)
+            .help(L(task.isCompleted ? "Mark incomplete" : "Mark complete"))
+            .accessibilityLabel(L(task.isCompleted ? "Mark incomplete" : "Mark complete"))
+            .frame(minWidth: 24, minHeight: 24, alignment: .top)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(renderedMarkdown(
+                    hidesTodoTag ? CaptureTodoTag.displayText(from: task.text) : task.text
+                ))
+                    .foregroundStyle(task.isCompleted ? .secondary : .primary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                if task.isCompleted {
+                    completionDateControl(task)
+                }
+            }
+            .padding(.top, 1)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .contain)
+    }
+
+    @ViewBuilder
+    private func completionDateControl(_ task: MarkdownTask) -> some View {
+        if let value = task.completedOn,
+           let date = MarkdownTaskDocument.date(fromCalendarDate: value)
+        {
+            DatePicker(
+                L("Completed on"),
+                selection: Binding(
+                    get: { date },
+                    set: { next in
+                        onTaskChange(
+                            task.lineIndex,
+                            MarkdownTaskDocument.localDateString(next)
+                        )
+                    }
+                ),
+                displayedComponents: .date
+            )
+            .labelsHidden()
+            .datePickerStyle(.field)
+            .controlSize(.small)
+            .fixedSize()
+            .disabled(taskBusy)
+            .accessibilityLabel(L("Completed on"))
+        } else {
+            Button(L("Add completion date")) {
+                onTaskChange(task.lineIndex, MarkdownTaskDocument.localDateString())
+            }
+            .buttonStyle(.plain)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .disabled(taskBusy)
+            .accessibilityLabel(L("Add completion date"))
+        }
+    }
+}
+
 // MARK: - Selectable body text
 
 /// Sticky body text: a shared NSTextView (native click-drag selection,
 /// `clickCount == 2` handed to the open action instead of word selection). SwiftUI's
 /// `Text` + `.textSelection` swallows double-clicks in its AppKit host, which made
 /// most of a text-dense sticky a dead zone for the open gesture.
-private struct StickySelectableText: NSViewRepresentable {
+struct StickySelectableText: NSViewRepresentable {
     let attributed: NSAttributedString
     let onDoubleClick: () -> Void
     let onCancel: () -> Void

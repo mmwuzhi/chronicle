@@ -30,6 +30,8 @@ final class LocalizationTests: XCTestCase {
 
         XCTAssertEqual(localization["Settings"], "设置")
         XCTAssertEqual(localization["Capture"], "Capture")
+        XCTAssertEqual(localization["Completed on"], "完成日期")
+        XCTAssertEqual(localization["Mark incomplete"], "标记为未完成")
         localization.set(.english)
         XCTAssertEqual(localization["Settings"], "Settings")
         XCTAssertEqual(defaults.string(forKey: InterfaceLanguage.storageKey), "english")
