@@ -591,6 +591,56 @@ struct MainWindowNavigationTests {
         #expect(editor.string == "Editable Capture body")
     }
 
+    @Test("Markdown tasks mount native controls at sticky width")
+    func markdownTasksUseNativeControlsAtStickyWidth() async {
+        let markdown = """
+        Notes
+        - [ ] Check the pinned note interaction
+        - [x] Verify the detail window ✅ 2026-08-13
+        - [x] Existing task without a date
+        """
+        let host = NSHostingView(rootView: MarkdownTaskContentView(
+            markdown: markdown,
+            surface: .sticky(onDoubleClick: {}, onCancel: {}),
+            taskBusy: false,
+            onTaskChange: { _, _ in }
+        ))
+        host.frame = NSRect(x: 0, y: 0, width: 272, height: 260)
+        host.layoutSubtreeIfNeeded()
+        await Task.yield()
+        host.layoutSubtreeIfNeeded()
+
+        #expect(host.firstDescendant(ofType: NSDatePicker.self) != nil)
+        #expect(host.firstDescendant(ofType: NSTextView.self) != nil)
+        #expect(host.fittingSize.width <= 272)
+    }
+
+    @Test("sticky transcript task syntax never mounts writable task controls")
+    func stickyTranscriptDoesNotBecomeWritableTasks() async {
+        let host = NSHostingView(rootView: PinnedStickyView(
+            content: "- [x] fetched page instruction ✅ 2026-08-13",
+            createdAt: "2026-08-13T00:00:00Z",
+            mediaType: "text",
+            mediaUrl: nil,
+            todoState: nil,
+            taskMarkdown: nil,
+            taskBusy: false,
+            taskError: nil,
+            onTaskChange: { _, _ in },
+            onUnpin: {},
+            onOpen: {},
+            onCopy: {},
+            onHeight: { _ in },
+            onManualResize: {}
+        ))
+        host.frame = NSRect(x: 0, y: 0, width: 300, height: 220)
+        host.layoutSubtreeIfNeeded()
+        await Task.yield()
+        host.layoutSubtreeIfNeeded()
+
+        #expect(host.firstDescendant(ofType: NSDatePicker.self) == nil)
+    }
+
     @Test("capture edit bubble renders its existing draft")
     func captureEditBubbleRendersDraft() async throws {
         let record = try tempStore().create(CapturePayload(rawText: "ヤニネコ"))

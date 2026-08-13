@@ -61,7 +61,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
         detailWindowController = CaptureDetailWindowController(clients: clients)
         pinnedStickyController = PinnedStickyController(
-            recall: clients.recall,
+            clients: clients,
             initialScope: localStore.scope
         )
         // Double-clicking a sticky opens that capture in a detail window.
@@ -331,6 +331,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             localDelete: { [localStore] id in try? localStore.delete(id: id) },
             localSetText: { [localStore] id, text in
                 ((try? localStore.setText(id: id, rawText: text)) ?? 0) > 0
+            },
+            localTaskSource: { [localStore] id in
+                do {
+                    if let record = try localStore.find(serverId: id) {
+                        return .success(LocalTaskSource(
+                            rawText: record.payload.rawText,
+                            isAuthoritative: record.hasPendingUpdate
+                        ))
+                    }
+                    let record = try localStore.find(localId: id)
+                    return .success(record.map {
+                        LocalTaskSource(
+                            rawText: $0.payload.rawText,
+                            isAuthoritative: $0.serverId == nil || $0.hasPendingUpdate
+                        )
+                    })
+                } catch {
+                    return .failure(error)
+                }
             },
             syncEdits: { [weak self] in
                 guard let self, let client = self.makeClient() else { return }

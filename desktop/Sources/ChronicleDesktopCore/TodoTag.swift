@@ -13,6 +13,19 @@ public enum CaptureTodoTag {
     }
 
     public static func displayText(from text: String) -> String {
+        displayTextPreservingLines(from: text)
+            .replacingOccurrences(
+                of: #"[ \t]{2,}"#,
+                with: " ",
+                options: .regularExpression
+            )
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// Removes the facet token without trimming leading or trailing newlines.
+    /// Interactive Markdown controls use source line numbers for writes, so their
+    /// display projection must keep every original line in place.
+    public static func displayTextPreservingLines(from text: String) -> String {
         guard let match = firstMatch(in: text),
               let tokenRange = Range(match.range(at: 2), in: text)
         else {
@@ -21,12 +34,6 @@ public enum CaptureTodoTag {
         var result = text
         result.removeSubrange(tokenRange)
         return result
-            .replacingOccurrences(
-                of: #"[ \t]{2,}"#,
-                with: " ",
-                options: .regularExpression
-            )
-            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     /// The trailing hash token currently being typed, e.g. "#", "#t".

@@ -24,7 +24,7 @@ import ChronicleDesktopCore
 // its own, so recompositeAfterWake() nudges each frame by 1px to force a re-composite.
 @MainActor
 final class PinnedStickyController: NSObject, NSWindowDelegate {
-    private let recall: () -> RecallAPIClient?
+    private let clients: CaptureClients
     private var activeScopeKey: String?
     private var windows: [String: NSPanel] = [:]
     private var saved: [String: PersistedPin] = [:]
@@ -32,6 +32,9 @@ final class PinnedStickyController: NSObject, NSWindowDelegate {
     // Pins whose panel exists but hasn't been ordered on screen yet because a
     // fullscreen Space was active at the time (see surface(_:id:)).
     private var deferredUntilNormalSpace: Set<String> = []
+    private var taskMutationTasks: [String: Task<Void, Never>] = [:]
+    private var taskUpdating: Set<String> = []
+    private var taskErrors: [String: String] = [:]
 
     /// Injected by AppDelegate: double-click a sticky → open that capture's window.
     var onOpen: ((RowItem) -> Void)?
@@ -40,10 +43,10 @@ final class PinnedStickyController: NSObject, NSWindowDelegate {
     private static let defaultMaxHeight: CGFloat = 360
 
     init(
-        recall: @escaping () -> RecallAPIClient?,
+        clients: CaptureClients,
         initialScope: LocalCaptureScope?
     ) {
-        self.recall = recall
+        self.clients = clients
         activeScopeKey = initialScope?.persistenceKey
         super.init()
         load()
@@ -97,6 +100,10 @@ final class PinnedStickyController: NSObject, NSWindowDelegate {
         saved.removeAll()
         manualHeight.removeAll()
         deferredUntilNormalSpace.removeAll()
+        for task in taskMutationTasks.values { task.cancel() }
+        taskMutationTasks.removeAll()
+        taskUpdating.removeAll()
+        taskErrors.removeAll()
         activeScopeKey = scope?.persistenceKey
         load()
         restore()
@@ -140,7 +147,8 @@ final class PinnedStickyController: NSObject, NSWindowDelegate {
             id: row.id, content: row.content, createdAt: row.createdAt,
             mediaType: row.modality, mediaUrl: row.mediaUrl,
             todoDone: row.todoState.map { $0 == .done }, frame: nil,
-            accountScope: activeScopeKey)
+            accountScope: activeScopeKey,
+            rawText: row.modality == "text" ? row.editableRawText : nil)
         saved[row.id] = pin
         let panel = makePanel(for: pin, cascade: true)
         windows[row.id] = panel
@@ -158,6 +166,9 @@ final class PinnedStickyController: NSObject, NSWindowDelegate {
         saved.removeValue(forKey: id)
         manualHeight.remove(id)
         deferredUntilNormalSpace.remove(id)
+        taskMutationTasks.removeValue(forKey: id)?.cancel()
+        taskUpdating.remove(id)
+        taskErrors.removeValue(forKey: id)
         persist()
         if let panel = windows.removeValue(forKey: id) {
             panel.close()
@@ -230,15 +241,25 @@ final class PinnedStickyController: NSObject, NSWindowDelegate {
 
     private func setContent(_ panel: NSPanel, pin: PersistedPin) {
         let id = pin.id
+        let taskMarkdown = (pin.mediaType ?? "text") == "text" ? pin.rawText : nil
+        let renderedContent = taskMarkdown.flatMap {
+            MarkdownTaskDocument.tasks(in: $0).isEmpty ? nil : $0
+        } ?? pin.content
         let hosting = NSHostingView(rootView: PinnedStickyView(
-            content: pin.content,
+            content: renderedContent,
             createdAt: pin.createdAt,
             mediaType: pin.mediaType ?? "text",
             mediaUrl: pin.mediaUrl,
             todoState: pin.todoDone.map { $0 ? .done : .open },
+            taskMarkdown: taskMarkdown,
+            taskBusy: taskUpdating.contains(id),
+            taskError: taskErrors[id],
+            onTaskChange: { [weak self] lineIndex, completedOn in
+                self?.setTaskCompletion(id: id, lineIndex: lineIndex, completedOn: completedOn)
+            },
             onUnpin: { [weak self] in self?.unpin(id) },
             onOpen: { [weak self] in self?.openDetail(id) },
-            onCopy: { Self.copy(pin.content) },
+            onCopy: { Self.copy(renderedContent) },
             onHeight: { [weak self, weak panel] h in
                 guard let self, let panel, !self.manualHeight.contains(id) else { return }
                 self.resize(panel, toContent: h)
@@ -281,6 +302,123 @@ final class PinnedStickyController: NSObject, NSWindowDelegate {
             modality: pin.mediaType ?? "text", mediaUrl: pin.mediaUrl))
     }
 
+    private func setTaskCompletion(id: String, lineIndex: Int, completedOn: String?) {
+        guard !taskUpdating.contains(id),
+              let displayedRawText = saved[id]?.rawText,
+              let scope = activeScopeKey
+        else { return }
+
+        let generation = clients.session.snapshot()
+        taskUpdating.insert(id)
+        taskErrors.removeValue(forKey: id)
+        if let panel = windows[id], let pin = saved[id] {
+            setContent(panel, pin: pin)
+        }
+        let task = Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer {
+                self.taskUpdating.remove(id)
+                self.taskMutationTasks.removeValue(forKey: id)
+                if let panel = self.windows[id], let current = self.saved[id] {
+                    self.setContent(panel, pin: current)
+                }
+            }
+            do {
+                let initialLocal = try self.clients.localTaskSource(id).get()
+                let client = self.clients.recall()
+                var currentRawText: String
+                var writesLocally: Bool
+
+                if let initialLocal, initialLocal.isAuthoritative || client == nil {
+                    currentRawText = initialLocal.rawText
+                    writesLocally = true
+                } else {
+                    guard let client else {
+                        throw MarkdownTaskMutationError.sourceUnavailable
+                    }
+                    let current = try await client.capture(id: id)
+                    guard !Task.isCancelled, self.activeScopeKey == scope,
+                          self.clients.session.isCurrent(generation), self.saved[id] != nil,
+                          current.mediaType == "text", let remoteRawText = current.rawText
+                    else { return }
+                    let latestLocal = try self.clients.localTaskSource(id).get()
+                    if let latestLocal, latestLocal.isAuthoritative {
+                        currentRawText = latestLocal.rawText
+                        writesLocally = true
+                    } else {
+                        currentRawText = remoteRawText
+                        writesLocally = initialLocal != nil
+                    }
+                }
+
+                guard let next = MarkdownTaskDocument.settingCompletion(
+                    in: currentRawText,
+                    matchingTaskIn: displayedRawText,
+                    lineIndex: lineIndex,
+                    completedOn: completedOn
+                ) else {
+                    self.updateRawText(currentRawText, id: id)
+                    self.taskErrors[id] = L("We couldn't update this task. Try again.")
+                    self.persist()
+                    return
+                }
+                guard next != currentRawText else { return }
+
+                if writesLocally {
+                    guard self.clients.localSetText(id, next) else {
+                        throw MarkdownTaskMutationError.sourceUnavailable
+                    }
+                    self.updateRawText(next, id: id)
+                    self.taskErrors.removeValue(forKey: id)
+                    self.persist()
+                    CaptureEvents.postChanged()
+                    await self.clients.syncEdits()
+                    return
+                }
+
+                guard let client else {
+                    throw MarkdownTaskMutationError.sourceUnavailable
+                }
+                let updated = try await client.update(id: id, rawText: next)
+                guard !Task.isCancelled, self.activeScopeKey == scope,
+                      self.clients.session.isCurrent(generation), self.saved[id] != nil
+                else { return }
+                self.updatePin(from: updated, id: id)
+                self.taskErrors.removeValue(forKey: id)
+                self.persist()
+                CaptureEvents.postChanged()
+            } catch {
+                guard !Task.isCancelled, self.activeScopeKey == scope,
+                      self.clients.session.isCurrent(generation), self.saved[id] != nil
+                else { return }
+                self.taskErrors[id] = L("We couldn't update this task. Try again.")
+            }
+        }
+        taskMutationTasks[id] = task
+    }
+
+    private func updateRawText(_ rawText: String, id: String) {
+        guard var pin = saved[id] else { return }
+        let previousRawText = pin.rawText
+        pin.rawText = rawText
+        if let previousRawText, pin.content == previousRawText {
+            pin.content = rawText
+        }
+        pin.todoDone = CaptureTodoTag.state(in: rawText).map { $0 == .done }
+        saved[id] = pin
+    }
+
+    private func updatePin(from capture: Capture, id: String) {
+        guard var pin = saved[id] else { return }
+        pin.content = capture.content
+        pin.createdAt = capture.createdAt
+        pin.mediaType = capture.mediaType
+        pin.mediaUrl = capture.mediaUrl
+        pin.todoDone = capture.todoState.map { $0 == .done }
+        pin.rawText = capture.mediaType == "text" ? capture.rawText : nil
+        saved[id] = pin
+    }
+
     // Offset each new sticky from the top-right so several don't stack exactly.
     private func positionCascaded(_ panel: NSPanel) {
         let screen = ScreenPlacement.active()?.visibleFrame
@@ -298,15 +436,12 @@ final class PinnedStickyController: NSObject, NSWindowDelegate {
     // out, a 404 for a capture deleted elsewhere) keeps the cached sticky, which the
     // user can still read and close. Only a successful fetch updates cache + view.
     private func refresh(_ id: String) {
-        guard let scope = activeScopeKey, let client = recall() else { return }
+        guard let scope = activeScopeKey, let client = clients.recall() else { return }
         Task { @MainActor in
             guard let capture = try? await client.capture(id: id) else { return }
-            guard activeScopeKey == scope, saved[id] != nil else { return }
-            saved[id]?.content = capture.content
-            saved[id]?.createdAt = capture.createdAt
-            saved[id]?.mediaType = capture.mediaType
-            saved[id]?.mediaUrl = capture.mediaUrl
-            saved[id]?.todoDone = capture.todoState.map { $0 == .done }
+            guard activeScopeKey == scope, saved[id] != nil,
+                  !taskUpdating.contains(id) else { return }
+            updatePin(from: capture, id: id)
             persist()
             if let panel = windows[id], let pin = saved[id] {
                 setContent(panel, pin: pin)
@@ -386,6 +521,7 @@ private struct PersistedPin: Codable {
     var frame: NSRect?
     var manualHeight: Bool?
     var accountScope: String?
+    var rawText: String?
 }
 
 /// A borderless sticky can't become key by default, so its content never sees the

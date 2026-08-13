@@ -34,6 +34,10 @@ struct TodoTagTests {
             CaptureTodoTag.displayText(from: "write #todo(done) notes")
                 == "write notes"
         )
+        #expect(
+            CaptureTodoTag.displayTextPreservingLines(from: "#todo\n  - [ ] task  ")
+                == "\n  - [ ] task  "
+        )
     }
 
     @Test func completesTrailingSuggestion() {
