@@ -56,66 +56,32 @@ final class CaptureDetailModel: ObservableObject {
         editTask = Task { @MainActor in
             defer { loadingEdit = false }
             do {
-                let initialLocal = try clients.localTaskSource(id).get()
-                let client = clients.recall()
-                var currentRawText: String
-                var writesLocally: Bool
-
-                if let initialLocal, initialLocal.isAuthoritative || client == nil {
-                    currentRawText = initialLocal.rawText
-                    writesLocally = true
-                } else {
-                    guard let client else {
-                        throw MarkdownTaskMutationError.sourceUnavailable
-                    }
-                    let current = try await client.capture(id: id)
-                    guard !Task.isCancelled, clients.session.isCurrent(generation),
-                          capture.id == id, current.mediaType == "text",
-                          let remoteRawText = current.rawText
-                    else { return }
-                    let latestLocal = try clients.localTaskSource(id).get()
-                    if let latestLocal, latestLocal.isAuthoritative {
-                        currentRawText = latestLocal.rawText
-                        writesLocally = true
-                    } else {
-                        currentRawText = remoteRawText
-                        writesLocally = initialLocal != nil
-                    }
-                }
-
-                guard let next = MarkdownTaskDocument.settingCompletion(
-                    in: currentRawText,
-                    matchingTaskIn: displayedRawText,
+                let result = try await MarkdownTaskMutationCoordinator(
+                    clients: clients
+                ).setCompletion(
+                    captureID: id,
+                    displayedRawText: displayedRawText,
                     lineIndex: lineIndex,
-                    completedOn: completedOn
-                ) else {
+                    completedOn: completedOn,
+                    sessionGeneration: generation,
+                    targetIsCurrent: { self.capture.id == id }
+                )
+                switch result {
+                case .conflict(let currentRawText):
                     capture = capture.replacingRawText(currentRawText)
                     error = L("We couldn't update this task. Try again.")
-                    return
-                }
-                guard next != currentRawText else { return }
-
-                if writesLocally {
-                    guard clients.localSetText(id, next) else {
-                        throw MarkdownTaskMutationError.sourceUnavailable
-                    }
-                    capture = capture.replacingRawText(next)
+                case .updatedLocally(let rawText):
+                    capture = capture.replacingRawText(rawText)
                     error = ""
                     CaptureEvents.postChanged()
                     await clients.syncEdits()
-                    return
+                case .updatedRemotely(let updated):
+                    capture = RowItem(updated)
+                    error = ""
+                    CaptureEvents.postChanged()
+                case .unchanged, nil:
+                    break
                 }
-
-                guard let client else {
-                    error = L("Not signed in — sign in from Settings to edit.")
-                    return
-                }
-                let updated = try await client.update(id: id, rawText: next)
-                guard !Task.isCancelled, clients.session.isCurrent(generation),
-                      capture.id == id else { return }
-                capture = RowItem(updated)
-                error = ""
-                CaptureEvents.postChanged()
             } catch let taskError {
                 guard !Task.isCancelled, clients.session.isCurrent(generation),
                       capture.id == id else { return }

@@ -324,69 +324,37 @@ final class PinnedStickyController: NSObject, NSWindowDelegate {
                 }
             }
             do {
-                let initialLocal = try self.clients.localTaskSource(id).get()
-                let client = self.clients.recall()
-                var currentRawText: String
-                var writesLocally: Bool
-
-                if let initialLocal, initialLocal.isAuthoritative || client == nil {
-                    currentRawText = initialLocal.rawText
-                    writesLocally = true
-                } else {
-                    guard let client else {
-                        throw MarkdownTaskMutationError.sourceUnavailable
-                    }
-                    let current = try await client.capture(id: id)
-                    guard !Task.isCancelled, self.activeScopeKey == scope,
-                          self.clients.session.isCurrent(generation), self.saved[id] != nil,
-                          current.mediaType == "text", let remoteRawText = current.rawText
-                    else { return }
-                    let latestLocal = try self.clients.localTaskSource(id).get()
-                    if let latestLocal, latestLocal.isAuthoritative {
-                        currentRawText = latestLocal.rawText
-                        writesLocally = true
-                    } else {
-                        currentRawText = remoteRawText
-                        writesLocally = initialLocal != nil
-                    }
-                }
-
-                guard let next = MarkdownTaskDocument.settingCompletion(
-                    in: currentRawText,
-                    matchingTaskIn: displayedRawText,
+                let result = try await MarkdownTaskMutationCoordinator(
+                    clients: self.clients
+                ).setCompletion(
+                    captureID: id,
+                    displayedRawText: displayedRawText,
                     lineIndex: lineIndex,
-                    completedOn: completedOn
-                ) else {
+                    completedOn: completedOn,
+                    sessionGeneration: generation,
+                    targetIsCurrent: {
+                        self.activeScopeKey == scope && self.saved[id] != nil
+                    }
+                )
+                switch result {
+                case .conflict(let currentRawText):
                     self.updateRawText(currentRawText, id: id)
                     self.taskErrors[id] = L("We couldn't update this task. Try again.")
                     self.persist()
-                    return
-                }
-                guard next != currentRawText else { return }
-
-                if writesLocally {
-                    guard self.clients.localSetText(id, next) else {
-                        throw MarkdownTaskMutationError.sourceUnavailable
-                    }
-                    self.updateRawText(next, id: id)
+                case .updatedLocally(let rawText):
+                    self.updateRawText(rawText, id: id)
                     self.taskErrors.removeValue(forKey: id)
                     self.persist()
                     CaptureEvents.postChanged()
                     await self.clients.syncEdits()
-                    return
+                case .updatedRemotely(let updated):
+                    self.updatePin(from: updated, id: id)
+                    self.taskErrors.removeValue(forKey: id)
+                    self.persist()
+                    CaptureEvents.postChanged()
+                case .unchanged, nil:
+                    break
                 }
-
-                guard let client else {
-                    throw MarkdownTaskMutationError.sourceUnavailable
-                }
-                let updated = try await client.update(id: id, rawText: next)
-                guard !Task.isCancelled, self.activeScopeKey == scope,
-                      self.clients.session.isCurrent(generation), self.saved[id] != nil
-                else { return }
-                self.updatePin(from: updated, id: id)
-                self.taskErrors.removeValue(forKey: id)
-                self.persist()
-                CaptureEvents.postChanged()
             } catch {
                 guard !Task.isCancelled, self.activeScopeKey == scope,
                       self.clients.session.isCurrent(generation), self.saved[id] != nil
