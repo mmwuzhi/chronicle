@@ -32,6 +32,7 @@ public enum MarkdownTaskDocument {
         let prefix: String
         let closingBracket: String
         let contentWithoutCompletion: String
+        let trailingWhitespace: String
     }
 
     private struct Fence {
@@ -51,7 +52,7 @@ public enum MarkdownTaskDocument {
         pattern: #"^([\t ]*)((?:[-+*])|(?:\d+[.)]))[\t ]+(.*)$"#
     )
     private static let completionPattern = try! NSRegularExpression(
-        pattern: #"[\t ]+✅[\t ]*(\d{4}-\d{2}-\d{2})[\t ]*$"#
+        pattern: #"[\t ]+✅[\t ]*(\d{4}-\d{2}-\d{2})([\t ]*)$"#
     )
     private static let fencePattern = try! NSRegularExpression(
         pattern: #"^[\t ]{0,3}(`{3,}|~{3,})(.*)$"#
@@ -110,6 +111,7 @@ public enum MarkdownTaskDocument {
             + parsed.closingBracket
             + parsed.contentWithoutCompletion
             + suffix
+            + parsed.trailingWhitespace
             + (hasCarriageReturn ? "\r" : "")
         return lines.joined(separator: "\n")
     }
@@ -218,8 +220,14 @@ public enum MarkdownTaskDocument {
         let closing = ns.substring(with: match.range(at: 3))
         let content = ns.substring(with: match.range(at: 4))
         let completion = validCompletion(in: content)
-        let visible = completion.map { (content as NSString).substring(to: $0.fullRange.location) }
-            ?? content
+        let visible: String
+        let trailingWhitespace: String
+        if let completion {
+            visible = (content as NSString).substring(to: completion.fullRange.location)
+            trailingWhitespace = completion.trailingWhitespace
+        } else {
+            (visible, trailingWhitespace) = splittingTrailingWhitespace(in: content)
+        }
         return ParsedTask(
             task: MarkdownTask(
                 lineIndex: lineIndex,
@@ -229,7 +237,8 @@ public enum MarkdownTaskDocument {
             ),
             prefix: prefix,
             closingBracket: closing,
-            contentWithoutCompletion: visible
+            contentWithoutCompletion: visible,
+            trailingWhitespace: trailingWhitespace
         )
     }
 
@@ -237,13 +246,22 @@ public enum MarkdownTaskDocument {
         parsedLines(in: markdown).first { $0.index == lineIndex }?.task
     }
 
-    private static func validCompletion(in content: String) -> (fullRange: NSRange, date: String)? {
+    private static func validCompletion(
+        in content: String
+    ) -> (fullRange: NSRange, date: String, trailingWhitespace: String)? {
         let ns = content as NSString
         let full = NSRange(location: 0, length: ns.length)
         guard let match = completionPattern.firstMatch(in: content, range: full) else { return nil }
         let date = ns.substring(with: match.range(at: 1))
         guard isCalendarDate(date) else { return nil }
-        return (match.range(at: 0), date)
+        return (match.range(at: 0), date, ns.substring(with: match.range(at: 2)))
+    }
+
+    private static func splittingTrailingWhitespace(in content: String) -> (String, String) {
+        let contentEnd = content.lastIndex { $0 != " " && $0 != "\t" }
+            .map { content.index(after: $0) }
+            ?? content.startIndex
+        return (String(content[..<contentEnd]), String(content[contentEnd...]))
     }
 
     private static func listItem(in line: String) -> (indent: Int, remainder: String)? {

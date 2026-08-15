@@ -84,21 +84,21 @@ struct MarkdownTaskTests {
             lineIndex: 1,
             completedOn: "2026-08-13"
         )
-        #expect(checked == "Intro\r\n> - [x] **ship it**   ✅ 2026-08-13\r\nOutro")
+        #expect(checked == "Intro\r\n> - [x] **ship it** ✅ 2026-08-13  \r\nOutro")
 
         let dated = MarkdownTaskDocument.settingCompletion(
             in: checked,
             lineIndex: 1,
             completedOn: "2026-08-12"
         )
-        #expect(dated == "Intro\r\n> - [x] **ship it** ✅ 2026-08-12\r\nOutro")
+        #expect(dated == "Intro\r\n> - [x] **ship it** ✅ 2026-08-12  \r\nOutro")
 
         let unchecked = MarkdownTaskDocument.settingCompletion(
             in: dated,
             lineIndex: 1,
             completedOn: nil
         )
-        #expect(unchecked == "Intro\r\n> - [ ] **ship it**\r\nOutro")
+        #expect(unchecked == original)
     }
 
     @Test("rebases a task change onto current text without overwriting sibling edits")
