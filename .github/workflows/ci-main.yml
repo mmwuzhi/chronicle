@@ -337,6 +337,11 @@ jobs:
       FLY_APP: chronicle-api-mmwuzhi
       PAGES_PROJECT: chronicle-web
       API_URL: ${{ vars.BACKEND_URL }}
+      COMPATIBLE_SCHEMA_VERSIONS: >-
+        13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32
+        20260809054125 20260809084919 20260810160338 20260811120000
+        20260811130000
+      LATEST_SCHEMA_VERSION: "20260811130000"
 
     steps:
       - uses: actions/checkout@v4
@@ -386,10 +391,50 @@ jobs:
         working-directory: api
         run: |
           version="$(goose -dir db/migrations postgres "$DATABASE_URL" version 2>&1 | awk '{print $NF}')"
-          case "$version" in
-            13|1[4-9]|2[0-9]|3[0-2]) ;;
-            *) echo "Unexpected production schema version: $version"; exit 1 ;;
-          esac
+          read -r -a compatible_versions <<< "$COMPATIBLE_SCHEMA_VERSIONS"
+          schema_version_is_compatible() {
+            local candidate="$1"
+            local compatible
+            for compatible in "${compatible_versions[@]}"; do
+              if [ "$candidate" = "$compatible" ]; then
+                return 0
+              fi
+            done
+            return 1
+          }
+
+          repository_versions=()
+          for migration in db/migrations/*.sql; do
+            filename="${migration##*/}"
+            migration_version="$(printf '%s\n' "${filename%%_*}" | sed 's/^0*//')"
+            repository_versions+=("$migration_version")
+          done
+          repository_latest="$(printf '%s\n' "${repository_versions[@]}" | sort -n | tail -1)"
+          if [ "$repository_latest" != "$LATEST_SCHEMA_VERSION" ]; then
+            echo "Deployment schema policy is stale: configured latest is $LATEST_SCHEMA_VERSION, repository latest is $repository_latest"
+            exit 1
+          fi
+          if ! schema_version_is_compatible "$LATEST_SCHEMA_VERSION"; then
+            echo "Deployment schema policy is stale: latest version $LATEST_SCHEMA_VERSION is not marked compatible"
+            exit 1
+          fi
+          for compatible in "${compatible_versions[@]}"; do
+            repository_has_version=false
+            for migration_version in "${repository_versions[@]}"; do
+              if [ "$compatible" = "$migration_version" ]; then
+                repository_has_version=true
+                break
+              fi
+            done
+            if [ "$repository_has_version" != "true" ]; then
+              echo "Deployment schema policy contains unknown migration version $compatible"
+              exit 1
+            fi
+          done
+          if ! schema_version_is_compatible "$version"; then
+            echo "Unexpected production schema version: $version"
+            exit 1
+          fi
           echo "schema_version=$version" >> "$GITHUB_OUTPUT"
 
           fly_status="$(flyctl status --app "$FLY_APP" --json)"
@@ -512,25 +557,33 @@ jobs:
         working-directory: api
         run: |
           version="$(goose -dir db/migrations postgres "$DATABASE_URL" version 2>&1 | awk '{print $NF}')"
+          read -r -a compatible_versions <<< "$COMPATIBLE_SCHEMA_VERSIONS"
+          schema_version_is_compatible() {
+            local candidate="$1"
+            local compatible
+            for compatible in "${compatible_versions[@]}"; do
+              if [ "$candidate" = "$compatible" ]; then
+                return 0
+              fi
+            done
+            return 1
+          }
 
-          # Migrations 14–32 are expand-only and covered by the production
+          # Migrations after 13 are expand-only and covered by the production
           # compatibility test, so the previous API remains the safest
           # recovery target even after a forward migration.
-          if [ "$version" != "${{ steps.preflight.outputs.schema_version }}" ] && [ "$version" != "32" ]; then
+          if [ "$version" != "${{ steps.preflight.outputs.schema_version }}" ] && [ "$version" != "$LATEST_SCHEMA_VERSION" ]; then
             goose -dir db/migrations postgres "$DATABASE_URL" up || true
             version="$(goose -dir db/migrations postgres "$DATABASE_URL" version 2>&1 | awk '{print $NF}')"
           fi
 
-          case "$version" in
-            13|1[4-9]|2[0-9]|3[0-2])
+          if schema_version_is_compatible "$version"; then
             echo "api_image=${{ steps.preflight.outputs.previous_api_image }}" >> "$GITHUB_OUTPUT"
             echo "pages_mode=previous" >> "$GITHUB_OUTPUT"
-              ;;
-            *)
+          else
             echo "Schema stopped at unsafe intermediate version $version; refusing to start an incompatible API image"
             exit 1
-              ;;
-          esac
+          fi
           echo "schema_version=$version" >> "$GITHUB_OUTPUT"
 
       - name: Recover API independently of frontend
