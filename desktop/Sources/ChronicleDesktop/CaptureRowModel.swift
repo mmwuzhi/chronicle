@@ -192,7 +192,7 @@ func sessionRefreshStillCurrent(
 
 /// One renderable row, projected from either a search hit (RecallItem) or a
 /// browsed capture (Capture) so the list rendering is shared.
-struct RowItem: Identifiable, Equatable {
+struct RowItem: Identifiable, Equatable, Sendable {
     let id: String
     // Text chosen for the current surface. This may be a transcript, a search
     // projection, or cached sticky text and is never assumed to be writable.
