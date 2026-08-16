@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useState, type ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 import { Button, buttonClassName } from "@/components/ui/button";
 import { FieldError } from "@/components/ui/field";
 import { completeSignIn } from "@/lib/post-auth-redirect";
+import { loginWithPasskey } from "@/lib/pre-auth";
 
 function GoogleIcon() {
   return (
@@ -41,10 +42,7 @@ function GitHubIcon() {
   );
 }
 
-// Everything below the password form's divider: OAuth links and passkey
-// sign-in. The passkey ceremony uses plain fetch (pre-auth, not in the
-// OpenAPI spec) and owns its own failure state.
-export function LoginProviders() {
+export function LoginProviders(): ReactElement {
   const { t } = useTranslation("auth");
   const [passkeyError, setPasskeyError] = useState(false);
   const apiBase = import.meta.env.VITE_API_URL ?? "/api";
@@ -52,31 +50,10 @@ export function LoginProviders() {
   const handlePasskeyLogin = async () => {
     setPasskeyError(false);
     try {
-      const { startAuthentication } = await import("@simplewebauthn/browser");
-
-      const beginRes = await fetch(`${apiBase}/auth/passkeys/login/begin`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-      });
-      if (!beginRes.ok) return;
-      const { options } = await beginRes.json();
-
-      const credential = await startAuthentication({ optionsJSON: options });
-
-      const finishRes = await fetch(`${apiBase}/auth/passkeys/login/finish`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ credential }),
-        credentials: "include",
-      });
-      if (!finishRes.ok) {
-        setPasskeyError(true);
-        return;
-      }
-      const { accessToken } = await finishRes.json();
-      completeSignIn(accessToken);
+      const accessToken = await loginWithPasskey();
+      if (accessToken) completeSignIn(accessToken);
     } catch {
-      // user cancelled
+      setPasskeyError(true);
     }
   };
 
