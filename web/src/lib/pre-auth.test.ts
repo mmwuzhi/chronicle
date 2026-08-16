@@ -42,6 +42,23 @@ describe("pre-auth requests", () => {
     });
   });
 
+  it("forwards cancellation to an in-flight MFA verification", async () => {
+    const controller = new AbortController();
+    fetchMock.mockImplementationOnce((_input, init) => {
+      return new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => {
+          reject(new DOMException("The operation was aborted", "AbortError"));
+        });
+      });
+    });
+
+    const verification = verifyMfa("mfa-token", "123456", controller.signal);
+    controller.abort();
+
+    await expect(verification).rejects.toMatchObject({ name: "AbortError" });
+    expect(fetchMock.mock.calls[0]?.[1]?.signal).toBe(controller.signal);
+  });
+
   it("preserves an expired MFA response for the shared UI semantics", async () => {
     fetchMock.mockResolvedValueOnce(
       jsonResponse({ detail: "invalid or expired MFA token" }, 401),
@@ -105,6 +122,25 @@ describe("pre-auth requests", () => {
         message: "The ceremony was cancelled",
         code: "ERROR_CEREMONY_ABORTED",
         cause: new Error("cancelled"),
+      }),
+    );
+
+    await expect(loginWithPasskey()).resolves.toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("silences a native passkey prompt dismissal", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ options: { challenge: "abc" } }),
+    );
+    startAuthenticationMock.mockRejectedValueOnce(
+      new WebAuthnError({
+        message: "The user cancelled the prompt",
+        code: "ERROR_PASSTHROUGH_SEE_CAUSE_PROPERTY",
+        cause: new DOMException(
+          "The operation was not allowed",
+          "NotAllowedError",
+        ),
       }),
     );
 

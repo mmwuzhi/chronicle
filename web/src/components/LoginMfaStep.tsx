@@ -1,4 +1,4 @@
-import { useState, type ReactElement } from "react";
+import { useEffect, useRef, useState, type ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 import { AuthPanel, AuthShell } from "@/components/ui/auth-shell";
 import { Button } from "@/components/ui/button";
@@ -17,22 +17,42 @@ export function LoginMfaStep({
   const [code, setCode] = useState("");
   const [error, setError] = useState("");
   const [verifying, setVerifying] = useState(false);
+  const verification = useRef<AbortController | null>(null);
+
+  useEffect(
+    () => () => {
+      verification.current?.abort();
+    },
+    [],
+  );
 
   const verify = async () => {
-    if (!code.trim()) return;
+    if (!code.trim() || verifying) return;
+    const controller = new AbortController();
+    verification.current?.abort();
+    verification.current = controller;
     setError("");
     setVerifying(true);
     try {
-      completeSignIn(await verifyMfa(mfaToken, code));
+      completeSignIn(await verifyMfa(mfaToken, code, controller.signal));
     } catch (error) {
+      if (controller.signal.aborted) return;
       setError(
         isExpiredMfaTokenError(error)
           ? t("mfa.tokenExpired")
           : t("mfa.invalidCode"),
       );
     } finally {
-      setVerifying(false);
+      if (verification.current === controller) {
+        verification.current = null;
+        if (!controller.signal.aborted) setVerifying(false);
+      }
     }
+  };
+
+  const back = () => {
+    verification.current?.abort();
+    onBack();
   };
 
   return (
@@ -68,7 +88,7 @@ export function LoginMfaStep({
           {verifying ? t("mfa.verifying") : t("mfa.verify")}
         </Button>
 
-        <Button variant="ghost" type="button" onClick={onBack}>
+        <Button variant="ghost" type="button" onClick={back}>
           {t("verifyEmail.backToSignIn")}
         </Button>
       </AuthPanel>
