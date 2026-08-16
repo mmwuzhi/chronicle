@@ -18,6 +18,8 @@ Endpoints:
 """
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 import os
 import queue
 import sys
@@ -35,7 +37,18 @@ import rag
 import search as search_svc
 import webhook
 
-app = FastAPI(title="Chronicle RAG sidecar", version="0.1.0")
+
+@asynccontextmanager
+async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    start_repair_workers()
+    yield
+
+
+app = FastAPI(
+    title="Chronicle RAG sidecar",
+    version="0.1.0",
+    lifespan=lifespan,
+)
 _BACKFILL_INTERVAL = int(os.getenv("BACKFILL_INTERVAL_SECONDS", "900"))
 _BACKFILL_CHUNK_SIZE = 50
 _backfill_lock = threading.Lock()
@@ -305,7 +318,6 @@ def _periodic_backfill() -> None:
             print(f"[backfill] periodic run failed: {error}", file=sys.stderr)
 
 
-@app.on_event("startup")
 def start_repair_workers() -> None:
     threading.Thread(target=_queued_backfill_worker, daemon=True).start()
     threading.Thread(target=_periodic_backfill, daemon=True).start()
