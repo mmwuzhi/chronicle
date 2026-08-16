@@ -406,93 +406,50 @@ struct PanelContentView: View {
         collapseResults()
         includeDismissed = nextIncludeDismissed
         activeSearchQuery = query
-        let client = clients.recall()
-        let localLiteral = clients.localSearch(query)
-        let allCachedDismissedIDs = clients.cachedFindDismissedIDs(query)
-        let cachedDismissedIDs = includeDismissed
-            ? Set<String>() : allCachedDismissedIDs
-        // Online, retain unsynced captures and dirty server-backed captures whose
-        // local text is newer than the server fragment.
-        hits = client == nil
-            ? localLiteral.filter { !cachedDismissedIDs.contains($0.id) }
-            : RowMerge.localRecallSupplement(
-                localLiteral, id: \.id, synced: \.synced, dirty: \.dirty,
-                excludedIDs: cachedDismissedIDs)
+        let coordinator = RecallSearchCoordinator(clients: clients)
+        let search = coordinator.start(
+            query: query,
+            includeDismissed: includeDismissed
+        )
+        applySearchSnapshot(search.initial)
         searched = true
-        // 2) On-device semantic recall runs even signed out. Online, server-ranked
-        //    results lead and this layer only contributes unsynced local captures.
         busy = hits.isEmpty
         inFlight = Task { @MainActor in
-            let semantic = await clients.localSemanticSearch(query)
-            guard !Task.isCancelled, clients.session.isCurrent(generation) else { return }
-            if let client {
-                do {
-                    let res = try await client.find(q: query, includeDismissed: true)
-                    guard !Task.isCancelled, clients.session.isCurrent(generation) else { return }
-                    let serverRows = res.items.map(RowItem.init)
-                    let dismissedIDs = clients.cachedFindDismissedIDs(query).union(
-                        serverRows.filter(\.dismissed).map(\.id))
-                    hiddenCount = max(
-                        res.hiddenCount ?? serverRows.filter(\.dismissed).count,
-                        dismissedIDs.count)
-                    let excludedIDs = includeDismissed ? Set<String>() : dismissedIDs
-                    let visibleServerRows = RowMerge.visibleRecallResults(
-                        serverRows,
-                        includeDismissed: includeDismissed,
-                        id: \.id,
-                        dismissed: \.dismissed,
-                        excludedIDs: dismissedIDs)
-                    hits = RowMerge.localRecallSupplement(
-                        localLiteral, id: \.id, synced: \.synced, dirty: \.dirty,
-                        excludedIDs: excludedIDs)
-                    mergeHits(visibleServerRows)
-                    mergeHits(RowMerge.localRecallSupplement(
-                        semantic, id: \.id, synced: \.synced, dirty: \.dirty,
-                        excludedIDs: excludedIDs))
-                    degraded = res.degraded
-                } catch {
-                    // Keep local results; a server/auth error must not blank them.
-                    let allDismissedIDs = clients.cachedFindDismissedIDs(query)
-                    let excludedIDs = includeDismissed ? Set<String>() : allDismissedIDs
-                    hits = localLiteral.filter { !excludedIDs.contains($0.id) }
-                    mergeHits(semantic.filter { !excludedIDs.contains($0.id) })
-                    hiddenCount = allDismissedIDs.count
-                }
-            } else {
-                let excludedIDs = includeDismissed ? Set<String>() : allCachedDismissedIDs
-                hits = localLiteral.filter { !excludedIDs.contains($0.id) }
-                mergeHits(semantic.filter { !excludedIDs.contains($0.id) })
-                hiddenCount = allCachedDismissedIDs.count
-            }
-            if clients.session.isCurrent(generation) { busy = false }
+            guard let resolved = await coordinator.resolve(
+                search,
+                sessionGeneration: generation,
+                targetIsCurrent: { activeSearchQuery == query }
+            ) else { return }
+            applySearchSnapshot(resolved)
+            busy = false
         }
     }
 
-    // Append hits not already shown, keyed by id, preserving each source's order.
-    private func mergeHits(_ more: [RowItem]) {
-        hits = RowMerge.preservingOrder(
-            existing: hits,
-            incoming: more,
-            id: \.id,
-        ) { current, incoming in
-            current.mergeDisplayEvidence(from: incoming)
-        }
+    private func applySearchSnapshot(_ snapshot: RecallSearchSnapshot) {
+        hits = snapshot.hits
+        hiddenCount = snapshot.hiddenCount
+        degraded = snapshot.degraded
     }
 
     private func setSearchDismissed(_ row: RowItem, dismissed: Bool) {
         let q = activeSearchQuery
-        guard !q.isEmpty, let client = clients.recall() else { return }
+        guard !q.isEmpty, clients.recall() != nil else { return }
         let generation = clients.session.snapshot()
+        let coordinator = RecallSearchCoordinator(clients: clients)
         inFlight?.cancel()
         inFlight = Task { @MainActor in
             do {
-                try await client.setFindResultDismissed(
-                    q: q, targetId: row.id, dismissed: dismissed)
-                guard !Task.isCancelled, clients.session.isCurrent(generation),
-                      q == activeSearchQuery else { return }
+                guard try await coordinator.setDismissed(
+                    query: q,
+                    targetID: row.id,
+                    dismissed: dismissed,
+                    sessionGeneration: generation,
+                    targetIsCurrent: { q == activeSearchQuery }
+                ) else { return }
                 runFind(q)
             } catch let err {
-                guard clients.session.isCurrent(generation) else { return }
+                guard !Task.isCancelled, clients.session.isCurrent(generation),
+                      q == activeSearchQuery else { return }
                 error = describeCaptureError(err)
             }
         }
