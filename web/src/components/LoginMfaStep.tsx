@@ -1,20 +1,18 @@
-import { useState } from "react";
+import { useState, type ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 import { AuthPanel, AuthShell } from "@/components/ui/auth-shell";
 import { Button } from "@/components/ui/button";
 import { FieldError, Input } from "@/components/ui/field";
 import { completeSignIn } from "@/lib/post-auth-redirect";
+import { isExpiredMfaTokenError, verifyMfa } from "@/lib/pre-auth";
 
-// Second step of password sign-in when the account has TOTP enabled: exchanges
-// the short-lived mfaToken plus the user's code for a real session. Plain fetch,
-// not an orval hook — this runs pre-auth, like the passkey ceremonies.
 export function LoginMfaStep({
   mfaToken,
   onBack,
 }: {
   mfaToken: string;
   onBack: () => void;
-}) {
+}): ReactElement {
   const { t } = useTranslation("auth");
   const [code, setCode] = useState("");
   const [error, setError] = useState("");
@@ -25,19 +23,13 @@ export function LoginMfaStep({
     setError("");
     setVerifying(true);
     try {
-      const apiBase = import.meta.env.VITE_API_URL ?? "/api";
-      const res = await fetch(`${apiBase}/auth/mfa/verify`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mfaToken, code }),
-        credentials: "include",
-      });
-      if (!res.ok) {
-        setError(t("mfa.invalidCode"));
-        return;
-      }
-      const { accessToken } = await res.json();
-      completeSignIn(accessToken);
+      completeSignIn(await verifyMfa(mfaToken, code));
+    } catch (error) {
+      setError(
+        isExpiredMfaTokenError(error)
+          ? t("mfa.tokenExpired")
+          : t("mfa.invalidCode"),
+      );
     } finally {
       setVerifying(false);
     }
