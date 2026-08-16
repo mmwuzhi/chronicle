@@ -34,12 +34,17 @@ async function readJson(response: Response): Promise<unknown> {
   }
 }
 
-async function preAuthPost(path: string, body?: unknown): Promise<unknown> {
+async function preAuthPost(
+  path: string,
+  body?: unknown,
+  signal?: AbortSignal,
+): Promise<unknown> {
   const apiBase = import.meta.env.VITE_API_URL ?? "/api";
   const response = await fetch(`${apiBase}${path}`, {
     method: "POST",
     credentials: "include",
     headers: { "Content-Type": "application/json" },
+    signal,
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
   const payload = await readJson(response);
@@ -63,9 +68,10 @@ function readAccessToken(payload: unknown): string {
 export async function verifyMfa(
   mfaToken: string,
   code: string,
+  signal?: AbortSignal,
 ): Promise<string> {
   return readAccessToken(
-    await preAuthPost("/auth/mfa/verify", { mfaToken, code }),
+    await preAuthPost("/auth/mfa/verify", { mfaToken, code }, signal),
   );
 }
 
@@ -91,7 +97,10 @@ export async function loginWithPasskey(): Promise<string | null> {
   } catch (error) {
     if (
       error instanceof WebAuthnError &&
-      error.code === "ERROR_CEREMONY_ABORTED"
+      (error.code === "ERROR_CEREMONY_ABORTED" ||
+        (error.code === "ERROR_PASSTHROUGH_SEE_CAUSE_PROPERTY" &&
+          isRecord(error.cause) &&
+          error.cause.name === "NotAllowedError"))
     ) {
       return null;
     }
